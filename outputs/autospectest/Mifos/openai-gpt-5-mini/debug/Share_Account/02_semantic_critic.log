@@ -1,0 +1,582 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-05-21T14:10:47.597126
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[14:12:40] Semantic Critic - SYSTEM PROMPT
+------------------------------------------------------------
+You are a UI-AST Semantic Critic. You receive (1) a raw functional description and (2) a generated UI-AST JSON.
+
+Your single job: decide whether this AST is good enough to use, or whether it should be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the JSON. You DO NOT generate a new JSON. You ONLY audit.
+
+---
+
+**INPUT:**
+
+<description>
+{Raw functional description text}
+</description>
+
+<ast>
+{Generated UI-AST JSON}
+</ast>
+
+---
+
+**WHAT COUNTS AS INTERACTIVE (in scope):**
+- Form fields, checkboxes, file uploads, search inputs (user inputs a value)
+- Buttons, links, row actions, bulk actions, submit actions (user triggers something)
+- Tabs, sub-tabs, wizard steps (user navigates)
+- Action consequences (`on_success`), preconditions, validation constraints
+- States in a state_bound_action_bar (Pending/Active/Closed are routing keys)
+
+**WHAT IS OUT OF SCOPE (do NOT expect these in the AST):**
+- Passive display labels — "the page displays the client name, account number, status badge, activation date, office" produces ZERO expected items. The AST is correct to omit them.
+- Chip colors, badge styles, decorative icons, visual styling
+
+---
+
+**METHOD:**
+
+**Step 1 — Walk the description and list every interactive element.**
+Apply the scope rules above. A passive display sentence produces zero expected items.
+If the description names a tab or step but gives zero fields for it, the correct AST has
+`fields: {}` for that tab/step — do NOT expect fields there.
+
+**Step 2 — Walk the AST and verify each expected element is present at the right path.**
+Note any expected items that are MISSING.
+
+**Step 3 — Walk the AST and check for PHANTOMS.**
+A phantom is anything in the AST that isn't traceable to explicit text in the description:
+- Buttons not named in the description (e.g., a "Start Import" button when description only says "uploading a file")
+- Fields invented inside generic-name tabs (e.g., an Add_Note field in a Notes tab, an Upload_Document field in a Documents tab) when the description only names the tab and gives no field details
+- Constraints inferred from UX intuition, not stated in the description text
+- Passive display fields (Client_Name, Status_Badge in a display_fields block)
+
+A reasonable inference with no textual anchor is still a phantom. Flag it.
+
+**Step 4 — Check conditional logic.**
+Count a conditional ONLY if the description has explicit trigger language:
+"when X is selected", "if X then", "required if", "Y is enabled when X", "selecting X reveals Y".
+Do NOT infer conditionals from field relationships. If no trigger phrase exists, expected = 0.
+
+**Step 5 — Decide the verdict.**
+
+```
+yes   →  Missing items: 0–2 minor (optional fields, non-critical)
+          AND Phantoms: 0–2 minor
+          AND no critical structural errors
+
+retry →  Missing items: 3+, OR
+          Phantoms: 3+, OR
+          Any required field missing, OR
+          Any state in state_bound_action_bar missing, OR
+          Recursive nesting (sub-tabs/sub-steps) missing when description names them, OR
+          Constraint placed at wrong level (floating instead of nested)
+```
+
+There is no third option. Don't agonize over edge cases — when in doubt, retry. A single regeneration is cheap.
+
+---
+
+**OUTPUT FORMAT — JSON only, no prose, no markdown fencing:**
+
+{
+  "verdict": "yes | retry",
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    "<dotted path of expected element absent from AST — e.g., 'Create_Client_Wizard.steps[3].fields.Document_Type'>"
+  ],
+  "phantoms": [
+    "<dotted path of AST element not in description — e.g., 'Bulk_Import_Page.submit_actions[0] (Start_Import button not in description)'>"
+  ],
+  "fixes": [
+    "<actionable instruction for regeneration — only populated when verdict is retry>",
+    "<each fix references a JSON path and the exact change needed>"
+  ]
+}
+
+If verdict is "yes", `fixes` must be an empty array.
+
+Output ONLY the JSON object. No explanation, no markdown fencing, no preamble.
+
+
+------------------------------------------------------------
+[14:12:40] Semantic Critic - USER PROMPT
+------------------------------------------------------------
+<description>
+
+A new share account is created from the Client Detail page. The Share Account Application form contains Share Product dropdown (selecting a product auto-populates default values), Submitted On date, Requested Shares (bounded by product min/max per client), Application Date, Savings Account for Charges dropdown (lists the client's active savings accounts to debit fees from), External ID, and a Charges section. Clicking "Submit" creates the account in "Submitted and Pending Approval" status.
+
+The Share Account Detail page displays the share account number, product name, client name, status badge, total approved shares, total pending shares, and unit price. Action buttons change based on status: Pending offers Approve (with Approved Shares and Approved Date) and Reject; Approved offers Activate and Undo Approval; Active offers Apply Additional Shares (purchase more shares), Redeem Shares (redemption amount is calculated as shares multiplied by current unit price and credited to the linked savings account), and Close. Tabs show Purchased Shares (table with Date, Type, Number of Shares, Unit Price, Amount, and Status), Dividends (posted dividend distributions with Date, Amount Per Share, and Total Amount), and Charges.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Share Account",
+  "components": {
+    "Share_Account_Application_Form": {
+      "type": "form",
+      "fields": {
+        "Share_Product": {
+          "type": "dropdown",
+          "required": true,
+          "on_change": "auto-populates default values"
+        },
+        "Submitted_On": {
+          "type": "date",
+          "required": true
+        },
+        "Requested_Shares": {
+          "type": "number",
+          "required": true,
+          "constraints": [
+            "min = product.min_per_client",
+            "max = product.max_per_client"
+          ]
+        },
+        "Application_Date": {
+          "type": "date",
+          "required": false
+        },
+        "Savings_Account_for_Charges": {
+          "type": "dropdown",
+          "required": false,
+          "options_source": "client_active_savings_accounts"
+        },
+        "External_ID": {
+          "type": "unspecified",
+          "required": false
+        },
+        "Charges": {
+          "type": "repeating_group",
+          "item_fields": {}
+        }
+      },
+      "submit_actions": [
+        {
+          "element_name": "Submit",
+          "on_success": "creates account in Submitted and Pending Approval status"
+        }
+      ]
+    },
+    "Share_Account_Detail_Actions": {
+      "type": "state_bound_action_bar",
+      "states": {
+        "Submitted and Pending Approval": {
+          "available_actions": [
+            {
+              "action_name": "Approve",
+              "fields": {
+                "Approved_Shares": {
+                  "type": "number",
+                  "required": true,
+                  "constraints": [
+                    "must be >= product.min_per_client",
+                    "must be <= product.max_per_client",
+                    "must be <= Requested_Shares"
+                  ]
+                },
+                "Approved_Date": {
+                  "type": "date",
+                  "required": true
+                }
+              },
+              "on_success": "transitions to Approved"
+            },
+            {
+              "action_name": "Reject",
+              "on_success": "transitions to Rejected"
+            }
+          ]
+        },
+        "Approved": {
+          "available_actions": [
+            {
+              "action_name": "Activate",
+              "preconditions": [
+                "status must be Approved"
+              ],
+              "on_success": "transitions to Active"
+            },
+            {
+              "action_name": "Undo Approval",
+              "on_success": "reverts to Submitted and Pending Approval"
+            }
+          ]
+        },
+        "Active": {
+          "available_actions": [
+            {
+              "action_name": "Apply Additional Shares",
+              "fields": {
+                "Number_of_Shares": {
+                  "type": "number",
+                  "required": true
+                }
+              },
+              "on_success": "increases total approved shares"
+            },
+            {
+              "action_name": "Redeem Shares",
+              "preconditions": [
+                "status must be Active"
+              ],
+              "fields": {
+                "Number_of_Shares": {
+                  "type": "number",
+                  "required": true
+                },
+                "Savings_Account_for_Redemption": {
+                  "type": "dropdown",
+                  "required": true,
+                  "options_source": "linked_savings_accounts"
+                }
+              },
+              "constraints": [
+                "redemption_amount = Number_of_Shares * current_unit_price"
+              ],
+              "on_success": "creates credit to selected savings account"
+            },
+            {
+              "action_name": "Close",
+              "preconditions": [
+                "status must be Active"
+              ],
+              "on_success": "transitions to Closed"
+            }
+          ]
+        }
+      }
+    },
+    "Share_Account_Detail_Tabs": {
+      "type": "tab_container",
+      "tabs": [
+        {
+          "tab_name": "Purchased Shares",
+          "fields": {
+            "Purchased_Shares_Table": {
+              "type": "data_table",
+              "columns": [
+                "Date",
+                "Type",
+                "Number of Shares",
+                "Unit Price",
+                "Amount",
+                "Status"
+              ],
+              "row_actions": [],
+              "bulk_actions": []
+            }
+          }
+        },
+        {
+          "tab_name": "Dividends",
+          "fields": {
+            "Dividends_Table": {
+              "type": "data_table",
+              "columns": [
+                "Date",
+                "Amount Per Share",
+                "Total Amount"
+              ],
+              "row_actions": [],
+              "bulk_actions": []
+            }
+          }
+        },
+        {
+          "tab_name": "Charges",
+          "fields": {}
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[14:14:35] Semantic Critic - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "summary": "AST is mostly complete but includes several inferred constraints/preconditions and an unexplained transition that are not explicitly stated in the description; regenerate after removing or justifying these phantoms.",
+  "missing": [],
+  "phantoms": [
+    "Share_Account_Detail_Actions.states.\"Submitted and Pending Approval\".available_actions[0].fields.Approved_Shares.constraints (constraints on Approved_Shares referencing product min/max and Requested_Shares are not specified in the description)",
+    "Share_Account_Detail_Actions.states.Approved.available_actions[0].preconditions (precondition \"status must be Approved\" is an inferred/duplicate constraint — state-bound actions already imply state)",
+    "Share_Account_Detail_Actions.states.Active.available_actions[1].preconditions (precondition \"status must be Active\" is an inferred/duplicate constraint — state-bound actions already imply state)",
+    "Share_Account_Detail_Actions.states.\"Submitted and Pending Approval\".available_actions[1].on_success (transition target \"Rejected\" is not explicitly named in the description)"
+  ],
+  "fixes": [
+    "Share_Account_Detail_Actions.states.\"Submitted and Pending Approval\".available_actions[0].fields.Approved_Shares: remove the inferred constraints array (references to product.min_per_client, product.max_per_client, and Requested_Shares) unless the description is updated to explicitly require these validations for Approved Shares.",
+    "Share_Account_Detail_Actions.states.Approved.available_actions[0]: remove the preconditions array (\"status must be Approved\"); the action is already scoped to the Approved state in the state_bound_action_bar.",
+    "Share_Account_Detail_Actions.states.Active.available_actions[1]: remove the preconditions array (\"status must be Active\"); the action is already scoped to the Active state in the state_bound_action_bar.",
+    "Share_Account_Detail_Actions.states.\"Submitted and Pending Approval\".available_actions[1].on_success: either remove the explicit transition target \"Rejected\" or add an explicit 'Rejected' state to the states object; currently the description only states a Reject action but does not name the resulting state.",
+    "Share_Account_Application_Form.fields.External_ID: set a concrete type (e.g., \"text\") instead of \"unspecified\" or explicitly document that type in the description if it may vary."
+  ]
+}
+
+------------------------------------------------------------
+[14:14:35] Semantic Critic - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "summary": "AST is mostly complete but includes several inferred constraints/preconditions and an unexplained transition that are not explicitly stated in the description; regenerate after removing or justifying these phantoms.",
+  "missing": [],
+  "phantoms": [
+    "Share_Account_Detail_Actions.states.\"Submitted and Pending Approval\".available_actions[0].fields.Approved_Shares.constraints (constraints on Approved_Shares referencing product min/max and Requested_Shares are not specified in the description)",
+    "Share_Account_Detail_Actions.states.Approved.available_actions[0].preconditions (precondition \"status must be Approved\" is an inferred/duplicate constraint \u2014 state-bound actions already imply state)",
+    "Share_Account_Detail_Actions.states.Active.available_actions[1].preconditions (precondition \"status must be Active\" is an inferred/duplicate constraint \u2014 state-bound actions already imply state)",
+    "Share_Account_Detail_Actions.states.\"Submitted and Pending Approval\".available_actions[1].on_success (transition target \"Rejected\" is not explicitly named in the description)"
+  ],
+  "fixes": [
+    "Share_Account_Detail_Actions.states.\"Submitted and Pending Approval\".available_actions[0].fields.Approved_Shares: remove the inferred constraints array (references to product.min_per_client, product.max_per_client, and Requested_Shares) unless the description is updated to explicitly require these validations for Approved Shares.",
+    "Share_Account_Detail_Actions.states.Approved.available_actions[0]: remove the preconditions array (\"status must be Approved\"); the action is already scoped to the Approved state in the state_bound_action_bar.",
+    "Share_Account_Detail_Actions.states.Active.available_actions[1]: remove the preconditions array (\"status must be Active\"); the action is already scoped to the Active state in the state_bound_action_bar.",
+    "Share_Account_Detail_Actions.states.\"Submitted and Pending Approval\".available_actions[1].on_success: either remove the explicit transition target \"Rejected\" or add an explicit 'Rejected' state to the states object; currently the description only states a Reject action but does not name the resulting state.",
+    "Share_Account_Application_Form.fields.External_ID: set a concrete type (e.g., \"text\") instead of \"unspecified\" or explicitly document that type in the description if it may vary."
+  ]
+}
+
+------------------------------------------------------------
+[14:16:03] Semantic Critic - USER PROMPT
+------------------------------------------------------------
+<description>
+
+A new share account is created from the Client Detail page. The Share Account Application form contains Share Product dropdown (selecting a product auto-populates default values), Submitted On date, Requested Shares (bounded by product min/max per client), Application Date, Savings Account for Charges dropdown (lists the client's active savings accounts to debit fees from), External ID, and a Charges section. Clicking "Submit" creates the account in "Submitted and Pending Approval" status.
+
+The Share Account Detail page displays the share account number, product name, client name, status badge, total approved shares, total pending shares, and unit price. Action buttons change based on status: Pending offers Approve (with Approved Shares and Approved Date) and Reject; Approved offers Activate and Undo Approval; Active offers Apply Additional Shares (purchase more shares), Redeem Shares (redemption amount is calculated as shares multiplied by current unit price and credited to the linked savings account), and Close. Tabs show Purchased Shares (table with Date, Type, Number of Shares, Unit Price, Amount, and Status), Dividends (posted dividend distributions with Date, Amount Per Share, and Total Amount), and Charges.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Share Account",
+  "components": {
+    "Share_Account_Application_Form": {
+      "type": "form",
+      "fields": {
+        "Share_Product": {
+          "type": "dropdown",
+          "required": true,
+          "on_change": "auto-populates default values"
+        },
+        "Submitted_On": {
+          "type": "date",
+          "required": true
+        },
+        "Requested_Shares": {
+          "type": "number",
+          "required": true,
+          "constraints": [
+            ">= product.min_per_client",
+            "<= product.max_per_client"
+          ]
+        },
+        "Application_Date": {
+          "type": "date",
+          "required": false
+        },
+        "Savings_Account_for_Charges": {
+          "type": "dropdown",
+          "required": false,
+          "options_source": "client_active_savings_accounts"
+        },
+        "External_ID": {
+          "type": "text",
+          "required": false
+        },
+        "Charges": {
+          "type": "repeating_group",
+          "item_fields": {}
+        }
+      },
+      "submit_actions": [
+        {
+          "element_name": "Submit",
+          "on_success": "creates account in Submitted and Pending Approval status"
+        }
+      ]
+    },
+    "Share_Account_Detail_Actions": {
+      "type": "state_bound_action_bar",
+      "states": {
+        "Submitted and Pending Approval": {
+          "available_actions": [
+            {
+              "action_name": "Approve",
+              "fields": {
+                "Approved_Shares": {
+                  "type": "number",
+                  "required": true
+                },
+                "Approved_Date": {
+                  "type": "date",
+                  "required": true
+                }
+              },
+              "on_success": "changes status to Approved"
+            },
+            {
+              "action_name": "Reject",
+              "fields": {},
+              "on_success": "changes status to Rejected"
+            }
+          ]
+        },
+        "Approved": {
+          "available_actions": [
+            {
+              "action_name": "Activate",
+              "fields": {},
+              "on_success": "changes status to Active"
+            },
+            {
+              "action_name": "Undo Approval",
+              "fields": {},
+              "on_success": "reverts status to Submitted and Pending Approval"
+            }
+          ]
+        },
+        "Active": {
+          "available_actions": [
+            {
+              "action_name": "Apply Additional Shares",
+              "fields": {
+                "Number_of_Shares": {
+                  "type": "number",
+                  "required": true
+                }
+              },
+              "on_success": "adds purchased shares to account"
+            },
+            {
+              "action_name": "Redeem Shares",
+              "fields": {
+                "Number_of_Shares": {
+                  "type": "number",
+                  "required": true
+                },
+                "Savings_Account_for_Credit": {
+                  "type": "dropdown",
+                  "required": true,
+                  "options_source": "linked_savings_accounts"
+                }
+              },
+              "constraints": [
+                "redemption_amount = Number_of_Shares * current_unit_price"
+              ],
+              "on_success": "credits redemption amount to linked savings account"
+            },
+            {
+              "action_name": "Close",
+              "fields": {},
+              "on_success": "changes status to Closed"
+            }
+          ]
+        },
+        "Rejected": {
+          "available_actions": []
+        },
+        "Closed": {
+          "available_actions": []
+        }
+      }
+    },
+    "Share_Account_Detail_Tabs": {
+      "type": "tab_container",
+      "tabs": [
+        {
+          "tab_name": "Purchased Shares",
+          "fields": {},
+          "components": {
+            "Purchased_Shares_Table": {
+              "type": "data_table",
+              "columns": [
+                "Date",
+                "Type",
+                "Number of Shares",
+                "Unit Price",
+                "Amount",
+                "Status"
+              ],
+              "row_actions": [],
+              "bulk_actions": []
+            }
+          }
+        },
+        {
+          "tab_name": "Dividends",
+          "fields": {},
+          "components": {
+            "Dividends_Table": {
+              "type": "data_table",
+              "columns": [
+                "Date",
+                "Amount Per Share",
+                "Total Amount"
+              ],
+              "row_actions": [],
+              "bulk_actions": []
+            }
+          }
+        },
+        {
+          "tab_name": "Charges",
+          "fields": {},
+          "components": {
+            "Charges_Table": {
+              "type": "data_table",
+              "columns": [],
+              "row_actions": [],
+              "bulk_actions": []
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[14:17:02] Semantic Critic - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "summary": "AST correctly captures the form fields, submit behavior, state-bound actions, and the three detail tabs; only a minor inferred control (selection of savings account for redeem) is added but not critical.",
+  "missing": [],
+  "phantoms": [
+    "components.Share_Account_Detail_Actions.states.Active.available_actions[1].fields.Savings_Account_for_Credit (dropdown for selecting savings account to credit on Redeem — description only states redemption is credited to the linked savings account, not that the user selects one)"
+  ],
+  "fixes": []
+}
+
+------------------------------------------------------------
+[14:17:02] Semantic Critic - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "summary": "AST correctly captures the form fields, submit behavior, state-bound actions, and the three detail tabs; only a minor inferred control (selection of savings account for redeem) is added but not critical.",
+  "missing": [],
+  "phantoms": [
+    "components.Share_Account_Detail_Actions.states.Active.available_actions[1].fields.Savings_Account_for_Credit (dropdown for selecting savings account to credit on Redeem \u2014 description only states redemption is credited to the linked savings account, not that the user selects one)"
+  ],
+  "fixes": []
+}

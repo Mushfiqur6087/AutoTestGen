@@ -1,0 +1,859 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-05-21T14:10:47.600003
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[14:13:53] Semantic Critic - SYSTEM PROMPT
+------------------------------------------------------------
+You are a UI-AST Semantic Critic. You receive (1) a raw functional description and (2) a generated UI-AST JSON.
+
+Your single job: decide whether this AST is good enough to use, or whether it should be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the JSON. You DO NOT generate a new JSON. You ONLY audit.
+
+---
+
+**INPUT:**
+
+<description>
+{Raw functional description text}
+</description>
+
+<ast>
+{Generated UI-AST JSON}
+</ast>
+
+---
+
+**WHAT COUNTS AS INTERACTIVE (in scope):**
+- Form fields, checkboxes, file uploads, search inputs (user inputs a value)
+- Buttons, links, row actions, bulk actions, submit actions (user triggers something)
+- Tabs, sub-tabs, wizard steps (user navigates)
+- Action consequences (`on_success`), preconditions, validation constraints
+- States in a state_bound_action_bar (Pending/Active/Closed are routing keys)
+
+**WHAT IS OUT OF SCOPE (do NOT expect these in the AST):**
+- Passive display labels — "the page displays the client name, account number, status badge, activation date, office" produces ZERO expected items. The AST is correct to omit them.
+- Chip colors, badge styles, decorative icons, visual styling
+
+---
+
+**METHOD:**
+
+**Step 1 — Walk the description and list every interactive element.**
+Apply the scope rules above. A passive display sentence produces zero expected items.
+If the description names a tab or step but gives zero fields for it, the correct AST has
+`fields: {}` for that tab/step — do NOT expect fields there.
+
+**Step 2 — Walk the AST and verify each expected element is present at the right path.**
+Note any expected items that are MISSING.
+
+**Step 3 — Walk the AST and check for PHANTOMS.**
+A phantom is anything in the AST that isn't traceable to explicit text in the description:
+- Buttons not named in the description (e.g., a "Start Import" button when description only says "uploading a file")
+- Fields invented inside generic-name tabs (e.g., an Add_Note field in a Notes tab, an Upload_Document field in a Documents tab) when the description only names the tab and gives no field details
+- Constraints inferred from UX intuition, not stated in the description text
+- Passive display fields (Client_Name, Status_Badge in a display_fields block)
+
+A reasonable inference with no textual anchor is still a phantom. Flag it.
+
+**Step 4 — Check conditional logic.**
+Count a conditional ONLY if the description has explicit trigger language:
+"when X is selected", "if X then", "required if", "Y is enabled when X", "selecting X reveals Y".
+Do NOT infer conditionals from field relationships. If no trigger phrase exists, expected = 0.
+
+**Step 5 — Decide the verdict.**
+
+```
+yes   →  Missing items: 0–2 minor (optional fields, non-critical)
+          AND Phantoms: 0–2 minor
+          AND no critical structural errors
+
+retry →  Missing items: 3+, OR
+          Phantoms: 3+, OR
+          Any required field missing, OR
+          Any state in state_bound_action_bar missing, OR
+          Recursive nesting (sub-tabs/sub-steps) missing when description names them, OR
+          Constraint placed at wrong level (floating instead of nested)
+```
+
+There is no third option. Don't agonize over edge cases — when in doubt, retry. A single regeneration is cheap.
+
+---
+
+**OUTPUT FORMAT — JSON only, no prose, no markdown fencing:**
+
+{
+  "verdict": "yes | retry",
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    "<dotted path of expected element absent from AST — e.g., 'Create_Client_Wizard.steps[3].fields.Document_Type'>"
+  ],
+  "phantoms": [
+    "<dotted path of AST element not in description — e.g., 'Bulk_Import_Page.submit_actions[0] (Start_Import button not in description)'>"
+  ],
+  "fixes": [
+    "<actionable instruction for regeneration — only populated when verdict is retry>",
+    "<each fix references a JSON path and the exact change needed>"
+  ]
+}
+
+If verdict is "yes", `fixes` must be an empty array.
+
+Output ONLY the JSON object. No explanation, no markdown fencing, no preamble.
+
+
+------------------------------------------------------------
+[14:13:53] Semantic Critic - USER PROMPT
+------------------------------------------------------------
+<description>
+
+The Manage Scheduler Jobs page displays a table of all batch jobs with columns for Job Name, Is Active (toggle), CRON Expression, Previous Run Status (Success/Failed with start/end times), Next Run Time, Currently Running indicator, and action buttons. Jobs include Apply Annual Fee, Add Accrual Transactions, Apply Penalty to Overdue Loans, Update Loan Summary, Post Interest for Savings, Transfer Fees, and Generate Loan Loss Provisioning. Each job can be toggled active/inactive and its CRON expression edited. A global Start/Stop scheduler toggle controls whether all scheduled jobs execute.
+
+The Global Configuration page displays a table of system-wide feature flags with columns for Configuration Name, Enabled (toggle), Value, and Description. Key settings include maker-checker (4-eyes approval), reschedule-future-repayments, allow-transactions-on-non-workingday, reschedule-repayments-on-holidays, savings-interest-posting-current-period-end, financial-year-beginning-month, and meetings-mandatory-for-jlg-loans.
+
+The Manage Codes page lists all code lists (Client Type, Gender, Address Type, Loan Purpose, etc.) with Name and Is System Defined columns. Clicking a code opens its values for adding, editing, reordering, and deactivating entries that populate dropdown options throughout the system.
+
+The Manage Data Tables page lists custom data tables that extend core entities (m_client, m_group, m_loan, m_office, m_saving_account, m_product_loan, m_savings_product) with custom fields. The Create form includes Data Table Name, Application Table Name dropdown, Multi Row checkbox, and column definitions — each with Name, Type (string, number, boolean, decimal, date, datetime, text, dropdown), Length, Is Mandatory, and Is Unique checkboxes.
+
+The Audit Trails page displays all system actions with columns for Action Name, Entity Name, Resource ID, Maker, Made On Date, Checker, Checked On Date, Processing Result (Pending, Approved, Rejected), Office Name, and Client/Loan/Savings details. Filters allow searching by Action Name, Entity Name, Resource ID, Maker ID, Checker ID, Office, and Date Range. When maker-checker is enabled, pending commands appear with Approve and Reject buttons.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "System Administration",
+  "components": {
+    "Manage_Scheduler_Jobs": {
+      "type": "data_table",
+      "description": "Table of all batch jobs",
+      "row_fields": {
+        "Job_Name": {
+          "type": "unspecified",
+          "required": false
+        },
+        "Is_Active": {
+          "type": "checkbox",
+          "required": false,
+          "on_change": "toggles job active state",
+          "on_success": "sets job Active/Inactive"
+        },
+        "CRON_Expression": {
+          "type": "unspecified",
+          "required": false,
+          "editable": true,
+          "on_save": "updates job schedule"
+        }
+      },
+      "row_actions": [],
+      "notes": "Columns for Previous Run Status, Next Run Time, Currently Running are display-only and not captured here.",
+      "predefined_jobs": [
+        "Apply Annual Fee",
+        "Add Accrual Transactions",
+        "Apply Penalty to Overdue Loans",
+        "Update Loan Summary",
+        "Post Interest for Savings",
+        "Transfer Fees",
+        "Generate Loan Loss Provisioning"
+      ]
+    },
+    "Global_Scheduler_Control": {
+      "type": "form",
+      "fields": {
+        "Scheduler_Enabled": {
+          "type": "checkbox",
+          "required": false,
+          "on_change": "toggles global scheduler execution",
+          "on_success": "if true: starts scheduler (all scheduled jobs may execute); if false: stops scheduler (scheduled jobs will not execute)"
+        }
+      }
+    },
+    "Global_Configuration_Table": {
+      "type": "data_table",
+      "description": "System-wide feature flags and configuration values",
+      "row_fields": {
+        "Configuration_Name": {
+          "type": "unspecified"
+        },
+        "Enabled": {
+          "type": "checkbox",
+          "required": false,
+          "on_change": "toggles configuration flag"
+        },
+        "Value": {
+          "type": "unspecified",
+          "required": false
+        },
+        "Description": {
+          "type": "unspecified",
+          "required": false
+        }
+      },
+      "predefined_entries": {
+        "maker-checker": {
+          "display_name": "maker-checker (4-eyes approval)",
+          "type": "feature_flag"
+        },
+        "reschedule-future-repayments": {
+          "display_name": "reschedule-future-repayments",
+          "type": "feature_flag"
+        },
+        "allow-transactions-on-non-workingday": {
+          "display_name": "allow-transactions-on-non-workingday",
+          "type": "feature_flag"
+        },
+        "reschedule-repayments-on-holidays": {
+          "display_name": "reschedule-repayments-on-holidays",
+          "type": "feature_flag"
+        },
+        "savings-interest-posting-current-period-end": {
+          "display_name": "savings-interest-posting-current-period-end",
+          "type": "feature_flag"
+        },
+        "financial-year-beginning-month": {
+          "display_name": "financial-year-beginning-month",
+          "type": "unspecified"
+        },
+        "meetings-mandatory-for-jlg-loans": {
+          "display_name": "meetings-mandatory-for-jlg-loans",
+          "type": "feature_flag"
+        }
+      }
+    },
+    "Manage_Codes_Table": {
+      "type": "data_table",
+      "description": "Lists code lists; open a code list to manage its values",
+      "row_fields": {
+        "Name": {
+          "type": "unspecified"
+        },
+        "Is_System_Defined": {
+          "type": "checkbox",
+          "required": false
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "Open",
+          "on_trigger": "opens Code_List_Detail for selected code"
+        }
+      ],
+      "notes": "Code lists include Client Type, Gender, Address Type, Loan Purpose, etc."
+    },
+    "Code_List_Detail": {
+      "type": "form",
+      "description": "Manage values for a selected code list",
+      "fields": {
+        "Code_Values": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Value": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Is_Active": {
+              "type": "checkbox",
+              "required": false,
+              "on_change": "activates/deactivates code value"
+            },
+            "Order": {
+              "type": "number",
+              "required": false
+            }
+          },
+          "min": 0,
+          "reorderable": true,
+          "on_add": "adds new code list entry",
+          "on_edit": "edits existing code list entry",
+          "on_deactivate": "deactivates entry",
+          "on_success": "updates dropdown options throughout the system"
+        }
+      },
+      "actions": [
+        {
+          "element_name": "Add Entry",
+          "on_trigger": "adds new Code_Values item",
+          "on_success": "updates dropdown options throughout the system"
+        },
+        {
+          "element_name": "Save Changes",
+          "on_trigger": "persists edits and reordering",
+          "on_success": "updates dropdown options throughout the system"
+        }
+      ]
+    },
+    "Manage_Data_Tables": {
+      "type": "data_table",
+      "description": "Lists custom data tables that extend core entities",
+      "row_fields": {
+        "Data_Table_Name": {
+          "type": "unspecified"
+        },
+        "Application_Table_Name": {
+          "type": "unspecified"
+        },
+        "Multi_Row": {
+          "type": "checkbox",
+          "required": false
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "Edit",
+          "on_trigger": "opens Create_Data_Table_Form to edit"
+        },
+        {
+          "action_name": "Delete",
+          "on_trigger": "deletes the custom data table",
+          "on_success": "removes custom fields from application"
+        }
+      ],
+      "create_action": {
+        "element_name": "Create Data Table",
+        "on_trigger": "opens Create_Data_Table_Form"
+      },
+      "application_table_options": [
+        "m_client",
+        "m_group",
+        "m_loan",
+        "m_office",
+        "m_saving_account",
+        "m_product_loan",
+        "m_savings_product"
+      ]
+    },
+    "Create_Data_Table_Form": {
+      "type": "form",
+      "fields": {
+        "Data_Table_Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Application_Table_Name": {
+          "type": "dropdown",
+          "required": true,
+          "options": [
+            "m_client",
+            "m_group",
+            "m_loan",
+            "m_office",
+            "m_saving_account",
+            "m_product_loan",
+            "m_savings_product"
+          ]
+        },
+        "Multi_Row": {
+          "type": "checkbox",
+          "required": false
+        },
+        "Columns": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Type": {
+              "type": "dropdown",
+              "required": true,
+              "options": [
+                "string",
+                "number",
+                "boolean",
+                "decimal",
+                "date",
+                "datetime",
+                "text",
+                "dropdown"
+              ]
+            },
+            "Length": {
+              "type": "number",
+              "required": false
+            },
+            "Is_Mandatory": {
+              "type": "checkbox",
+              "required": false
+            },
+            "Is_Unique": {
+              "type": "checkbox",
+              "required": false
+            }
+          },
+          "min": 0,
+          "on_add": "adds new column definition"
+        }
+      },
+      "submit_actions": [
+        {
+          "element_name": "Create",
+          "on_success": "creates custom data table with defined columns"
+        },
+        {
+          "element_name": "Cancel",
+          "on_trigger": "cancels creation"
+        }
+      ]
+    },
+    "Audit_Trails": {
+      "type": "module",
+      "description": "Search and act on system audit commands",
+      "filters": {
+        "Action_Name": {
+          "type": "search",
+          "required": false
+        },
+        "Entity_Name": {
+          "type": "search",
+          "required": false
+        },
+        "Resource_ID": {
+          "type": "search",
+          "required": false
+        },
+        "Maker_ID": {
+          "type": "search",
+          "required": false
+        },
+        "Checker_ID": {
+          "type": "search",
+          "required": false
+        },
+        "Office": {
+          "type": "unspecified",
+          "required": false
+        },
+        "Date_Range": {
+          "type": "date",
+          "required": false,
+          "description": "Start and end date filter"
+        }
+      },
+      "results_table": {
+        "type": "data_table",
+        "row_fields": {
+          "Action_Name": {
+            "type": "unspecified"
+          },
+          "Entity_Name": {
+            "type": "unspecified"
+          },
+          "Resource_ID": {
+            "type": "unspecified"
+          },
+          "Maker": {
+            "type": "unspecified"
+          },
+          "Made_On_Date": {
+            "type": "date"
+          },
+          "Checker": {
+            "type": "unspecified"
+          },
+          "Checked_On_Date": {
+            "type": "date"
+          },
+          "Processing_Result": {
+            "type": "unspecified",
+            "required": false
+          },
+          "Office_Name": {
+            "type": "unspecified"
+          },
+          "Client_Loan_Savings_Details": {
+            "type": "unspecified"
+          }
+        },
+        "row_actions": [
+          {
+            "action_name": "Approve",
+            "preconditions": [
+              "Processing_Result == Pending",
+              "maker-checker feature flag enabled"
+            ],
+            "on_trigger": "approves the pending command",
+            "on_success": "marks command as Approved"
+          },
+          {
+            "action_name": "Reject",
+            "preconditions": [
+              "Processing_Result == Pending",
+              "maker-checker feature flag enabled"
+            ],
+            "fields": {
+              "Rejection_Reason": {
+                "type": "unspecified",
+                "required": true
+              }
+            },
+            "on_trigger": "rejects the pending command",
+            "on_success": "marks command as Rejected"
+          }
+        ]
+      }
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[14:15:14] Semantic Critic - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "summary": "The AST mostly covers the pages but misses the per-job action buttons on Manage Scheduler Jobs and includes a few phantom actions (Cancel on Create Data Table form and Delete on Manage Data Tables) that are not present in the description.",
+  "missing": [
+    "components.Manage_Scheduler_Jobs.row_actions (per-job action buttons mentioned in the description are not present)"
+  ],
+  "phantoms": [
+    "components.Create_Data_Table_Form.submit_actions[1] (Cancel button — not specified in description)",
+    "components.Manage_Data_Tables.row_actions[1] (Delete action — not specified in description)"
+  ],
+  "fixes": [
+    "components.Manage_Scheduler_Jobs.row_actions: Add explicit per-row action(s) to match the description's 'action buttons' for each job; for example add an action object with action_name 'Edit Schedule' (opens CRON editing), and optionally action_name '...' only if other named actions are described. Ensure row_actions is not an empty array.",
+    "components.Create_Data_Table_Form.submit_actions: Remove the 'Cancel' submit action (submit_actions[1]) because the description does not mention a Cancel control on the Create form; leave only the explicitly implied 'Create' action.",
+    "components.Manage_Data_Tables.row_actions: Remove the 'Delete' row action (row_actions[1]) unless deletion of custom data tables is explicitly described; if deletion is intended, update the description to mention it and keep the action."
+  ]
+}
+
+------------------------------------------------------------
+[14:15:14] Semantic Critic - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "summary": "The AST mostly covers the pages but misses the per-job action buttons on Manage Scheduler Jobs and includes a few phantom actions (Cancel on Create Data Table form and Delete on Manage Data Tables) that are not present in the description.",
+  "missing": [
+    "components.Manage_Scheduler_Jobs.row_actions (per-job action buttons mentioned in the description are not present)"
+  ],
+  "phantoms": [
+    "components.Create_Data_Table_Form.submit_actions[1] (Cancel button \u2014 not specified in description)",
+    "components.Manage_Data_Tables.row_actions[1] (Delete action \u2014 not specified in description)"
+  ],
+  "fixes": [
+    "components.Manage_Scheduler_Jobs.row_actions: Add explicit per-row action(s) to match the description's 'action buttons' for each job; for example add an action object with action_name 'Edit Schedule' (opens CRON editing), and optionally action_name '...' only if other named actions are described. Ensure row_actions is not an empty array.",
+    "components.Create_Data_Table_Form.submit_actions: Remove the 'Cancel' submit action (submit_actions[1]) because the description does not mention a Cancel control on the Create form; leave only the explicitly implied 'Create' action.",
+    "components.Manage_Data_Tables.row_actions: Remove the 'Delete' row action (row_actions[1]) unless deletion of custom data tables is explicitly described; if deletion is intended, update the description to mention it and keep the action."
+  ]
+}
+
+------------------------------------------------------------
+[14:16:55] Semantic Critic - USER PROMPT
+------------------------------------------------------------
+<description>
+
+The Manage Scheduler Jobs page displays a table of all batch jobs with columns for Job Name, Is Active (toggle), CRON Expression, Previous Run Status (Success/Failed with start/end times), Next Run Time, Currently Running indicator, and action buttons. Jobs include Apply Annual Fee, Add Accrual Transactions, Apply Penalty to Overdue Loans, Update Loan Summary, Post Interest for Savings, Transfer Fees, and Generate Loan Loss Provisioning. Each job can be toggled active/inactive and its CRON expression edited. A global Start/Stop scheduler toggle controls whether all scheduled jobs execute.
+
+The Global Configuration page displays a table of system-wide feature flags with columns for Configuration Name, Enabled (toggle), Value, and Description. Key settings include maker-checker (4-eyes approval), reschedule-future-repayments, allow-transactions-on-non-workingday, reschedule-repayments-on-holidays, savings-interest-posting-current-period-end, financial-year-beginning-month, and meetings-mandatory-for-jlg-loans.
+
+The Manage Codes page lists all code lists (Client Type, Gender, Address Type, Loan Purpose, etc.) with Name and Is System Defined columns. Clicking a code opens its values for adding, editing, reordering, and deactivating entries that populate dropdown options throughout the system.
+
+The Manage Data Tables page lists custom data tables that extend core entities (m_client, m_group, m_loan, m_office, m_saving_account, m_product_loan, m_savings_product) with custom fields. The Create form includes Data Table Name, Application Table Name dropdown, Multi Row checkbox, and column definitions — each with Name, Type (string, number, boolean, decimal, date, datetime, text, dropdown), Length, Is Mandatory, and Is Unique checkboxes.
+
+The Audit Trails page displays all system actions with columns for Action Name, Entity Name, Resource ID, Maker, Made On Date, Checker, Checked On Date, Processing Result (Pending, Approved, Rejected), Office Name, and Client/Loan/Savings details. Filters allow searching by Action Name, Entity Name, Resource ID, Maker ID, Checker ID, Office, and Date Range. When maker-checker is enabled, pending commands appear with Approve and Reject buttons.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "System Administration",
+  "components": {
+    "Manage_Scheduler_Jobs": {
+      "type": "data_table",
+      "description": "Table of batch jobs; interactive columns for toggling and editing schedules.",
+      "interactive_columns": [
+        {
+          "column_name": "Is Active",
+          "field_name": "Is_Active",
+          "type": "checkbox",
+          "editable": true,
+          "constraints": [],
+          "on_change_on_success": "toggles job active state"
+        },
+        {
+          "column_name": "CRON Expression",
+          "field_name": "CRON_Expression",
+          "type": "unspecified",
+          "editable": true,
+          "constraints": [],
+          "on_change_on_success": "updates job CRON expression"
+        }
+      ],
+      "row_actions": [
+        {
+          "action_name": "Edit Schedule",
+          "fields": {
+            "CRON_Expression": {
+              "type": "unspecified",
+              "required": true
+            }
+          },
+          "on_success": "updates job CRON expression"
+        }
+      ],
+      "bulk_actions": [],
+      "notes": "Other columns (Previous Run Status, Next Run Time, Currently Running) are passive displays and therefore not represented as interactive elements."
+    },
+    "Scheduler_Global_Toggle": {
+      "type": "checkbox",
+      "element_name": "Scheduler Enabled",
+      "on_change_on_success": "starts or stops execution of all scheduled jobs",
+      "on_success": "when enabled scheduler executes scheduled jobs; when disabled scheduled jobs will not execute"
+    },
+    "Global_Configuration": {
+      "type": "data_table",
+      "description": "System-wide feature flags and configuration values.",
+      "interactive_columns": [
+        {
+          "column_name": "Enabled",
+          "field_name": "Enabled",
+          "type": "checkbox",
+          "editable": true,
+          "on_change_on_success": "toggles the configuration flag",
+          "constraints": []
+        },
+        {
+          "column_name": "Value",
+          "field_name": "Value",
+          "type": "unspecified",
+          "editable": true,
+          "constraints": []
+        }
+      ],
+      "row_actions": [],
+      "bulk_actions": []
+    },
+    "Manage_Codes": {
+      "type": "data_table",
+      "description": "List of code lists. Clicking a code navigates to manage its values.",
+      "interactive_columns": [
+        {
+          "column_name": "Name",
+          "field_name": "Code_List_Name",
+          "type": "link",
+          "navigation_target": "Code_List_Detail"
+        }
+      ],
+      "row_actions": [
+        {
+          "action_name": "Manage Values",
+          "on_success": "opens Code_List_Detail for the selected code list"
+        }
+      ],
+      "bulk_actions": []
+    },
+    "Code_List_Detail": {
+      "type": "data_table",
+      "description": "Values for a specific code list. Supports adding, editing, reordering, and deactivating entries.",
+      "top_actions": [
+        {
+          "action_name": "Add Entry",
+          "fields": {},
+          "on_success": "adds new code list entry"
+        },
+        {
+          "action_name": "Reorder Entries",
+          "fields": {},
+          "on_success": "reorders entries which changes dropdown ordering"
+        }
+      ],
+      "row_actions": [
+        {
+          "action_name": "Edit Entry",
+          "fields": {},
+          "on_success": "saves changes to entry"
+        },
+        {
+          "action_name": "Deactivate Entry",
+          "fields": {},
+          "on_success": "marks entry inactive so it no longer appears in dropdowns"
+        }
+      ],
+      "bulk_actions": []
+    },
+    "Manage_Data_Tables": {
+      "type": "data_table",
+      "description": "Lists custom data tables that extend core entities.",
+      "interactive_columns": [
+        {
+          "column_name": "Name",
+          "field_name": "Data_Table_Name",
+          "type": "link",
+          "navigation_target": "Edit_Data_Table_Form"
+        }
+      ],
+      "row_actions": [
+        {
+          "action_name": "Edit",
+          "on_success": "opens Create/Edit form for the selected custom data table"
+        }
+      ],
+      "bulk_actions": []
+    },
+    "Create_Data_Table_Form": {
+      "type": "form",
+      "fields": {
+        "Data_Table_Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Application_Table_Name": {
+          "type": "dropdown",
+          "required": true,
+          "options": [
+            "m_client",
+            "m_group",
+            "m_loan",
+            "m_office",
+            "m_saving_account",
+            "m_product_loan",
+            "m_savings_product"
+          ]
+        },
+        "Multi_Row": {
+          "type": "checkbox",
+          "required": false
+        },
+        "Columns": {
+          "type": "repeating_group",
+          "min": 0,
+          "item_fields": {
+            "Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Type": {
+              "type": "dropdown",
+              "required": true,
+              "options": [
+                "string",
+                "number",
+                "boolean",
+                "decimal",
+                "date",
+                "datetime",
+                "text",
+                "dropdown"
+              ]
+            },
+            "Length": {
+              "type": "number",
+              "required": false
+            },
+            "Is_Mandatory": {
+              "type": "checkbox",
+              "required": false
+            },
+            "Is_Unique": {
+              "type": "checkbox",
+              "required": false
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "element_name": "Create",
+          "on_success": "creates custom data table with defined columns"
+        }
+      ]
+    },
+    "Audit_Trails": {
+      "type": "data_table",
+      "description": "System audit trail with filters and maker-checker actions for pending commands.",
+      "filters": [
+        {
+          "field_name": "Action_Name",
+          "type": "search"
+        },
+        {
+          "field_name": "Entity_Name",
+          "type": "search"
+        },
+        {
+          "field_name": "Resource_ID",
+          "type": "search"
+        },
+        {
+          "field_name": "Maker_ID",
+          "type": "search"
+        },
+        {
+          "field_name": "Checker_ID",
+          "type": "search"
+        },
+        {
+          "field_name": "Office",
+          "type": "search"
+        },
+        {
+          "field_name": "Date_Range",
+          "type": "repeating_group",
+          "item_fields": {
+            "Start_Date": {
+              "type": "date"
+            },
+            "End_Date": {
+              "type": "date"
+            }
+          }
+        }
+      ],
+      "row_actions": [
+        {
+          "action_name": "Approve",
+          "preconditions": [
+            "processing result must be Pending",
+            "maker-checker must be enabled"
+          ],
+          "fields": {},
+          "on_success": "changes processing result to Approved"
+        },
+        {
+          "action_name": "Reject",
+          "preconditions": [
+            "processing result must be Pending",
+            "maker-checker must be enabled"
+          ],
+          "fields": {},
+          "on_success": "changes processing result to Rejected"
+        }
+      ],
+      "bulk_actions": []
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[14:17:27] Semantic Critic - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "summary": "AST accurately captures the interactive elements (scheduler jobs toggles and CRON editing, global scheduler toggle, global config flags, code list management, data table create/edit form with repeating column definitions, and audit trail filters/actions) with no critical omissions or extraneous phantoms.",
+  "missing": [],
+  "phantoms": [],
+  "fixes": []
+}
+
+------------------------------------------------------------
+[14:17:27] Semantic Critic - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "summary": "AST accurately captures the interactive elements (scheduler jobs toggles and CRON editing, global scheduler toggle, global config flags, code list management, data table create/edit form with repeating column definitions, and audit trail filters/actions) with no critical omissions or extraneous phantoms.",
+  "missing": [],
+  "phantoms": [],
+  "fixes": []
+}
