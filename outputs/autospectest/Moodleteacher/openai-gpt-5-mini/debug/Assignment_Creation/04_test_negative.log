@@ -1,0 +1,834 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-05-22T21:47:19.054760
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:47:19] Test-Negative - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Negative Test Case Generator. You receive (1) a UI-AST JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
+
+---
+
+**INPUT:**
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module UI-AST JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+---
+
+**UI-AST REFERENCE — How to Read the AST for Negative Testing:**
+
+The AST represents every interactive element in the module. Each node type has a corresponding failure category:
+
+| AST node / field | What to test for failure |
+|---|---|
+| `required: true` field | Leave it blank and submit — inline validation error |
+| `constraints: []` on a field or action | One TC per unique constraint: violate it specifically |
+| `preconditions: []` on an action | One TC attempting the action when the precondition is NOT met |
+| `visible_when` / `required_when` conditional field | Trigger the condition, then submit the revealed field blank or invalid |
+| `state_bound_action_bar` states | Attempt an action from the wrong state (e.g., Approve an already-Active entity) |
+| `on_success` with quoted text | The negative expected_result is the *blocking* behavior — the entity stays unchanged |
+| `submit_actions[]` | If any button has `preconditions`, test that button when precondition fails |
+
+> If a module has no `form`, no `wizard`, no `state_bound_action_bar`, and no `constraints` — it is display-only. Generate at most 1–2 tests (unauthenticated access, or a non-implemented link if described). Do not invent validation scenarios.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — Name the field, the violated rule, and the visible error indicator.**
+Never write a vague expected result. Always specify what the tester sees.
+
+- ❌ `"Validation error shown"` — too vague
+- ❌ `"Error is displayed"` — too vague
+- ✅ `"Inline validation error appears on the <Field Name> field indicating it is required"`
+- ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
+- ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
+
+**Rule B — Quote exact error text when the spec provides it.**
+If the description quotes a specific error string, copy it verbatim into the expected_result.
+- ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
+- ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+
+**Rule C — Assert the blocking behavior, not just the error.**
+The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
+- ❌ `"Error shown"` (doesn't confirm the action was blocked)
+- ✅ `"Form does not submit; <Entity> is not created; error shown on <Field>"`
+- ✅ `"Status remains <Current State>; no transition occurs"`
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Use generic placeholders in angle brackets.
+
+- ✅ `"Enter <invalid email format> in the Email field"`
+- ✅ `"Enter <amount exceeding available balance> in the Amount field"`
+- ✅ `"Enter <password shorter than minimum length> in the Password field"`
+- ❌ `"Enter 'notanemail' in the Email field"`
+- ❌ `"Enter 'abc123' in the Password field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic user action — one field, one click, one navigation. No grouping.
+
+- ✅ `"1. Leave the <Required Field> blank"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill all fields except <Required Field> and submit"`
+
+---
+
+**SCOPE GATE (run before writing any test):**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact sentence in the description or field/constraint/state in the AST justifies this test? If you cannot point to one → delete it.
+2. **UI-executable:** Can a tester trigger this by clicking, typing, selecting, or navigating in a browser? If verification requires dev tools, DOM inspection, concurrent users, API calls, or server-side error simulation → out of scope.
+3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
+
+Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Required field representatives (deduplicated by field type):**
+
+Group required fields by type: `text/unspecified`, `email`, `password`, `number`, `date`, `dropdown`, `file_upload`. Generate:
+- ONE "leave blank and submit" test per **type group** (not per field) — use the most prominent field as representative
+- ONE "submit with ALL required fields empty" test
+
+Do NOT generate a separate blank-field test for every required field. If 5 text fields are all required, one representative covers them all.
+
+**2. Format violations:**
+
+For fields with type-specific format rules (from AST type or description):
+- `email` → one test with invalid format
+- `number` → one test with non-numeric input
+- `date` → one test with invalid/impossible date
+- `password` → ONE representative test for policy violation (not one per sub-rule — see Deduplication)
+
+Only generate if the spec or AST implies format validation for that field.
+
+**3. Numeric bounds and balance violations:**
+
+If the spec describes minimum/maximum values, amount ranges, or balance checks:
+- One test per distinct bound violation (e.g., amount below minimum, amount above maximum, amount exceeding available balance)
+- Use `<amount below minimum>`, `<amount exceeding available balance>` as placeholders
+
+Examples across the dataset:
+- Transfer amount > available balance → error
+- Loan amount outside product min/max → error
+- Deposit below minimum requirement → error
+
+**4. Constraint violations:**
+
+For each unique `constraints[]` entry in the AST, and for cross-field rules described in the spec:
+- `"must be unique"` → submit with a duplicate value
+- `"must match"` (confirm fields) → enter mismatched values
+- `"must not be same as current"` → select the current value
+- `"cannot perform <action> while <condition>"` → attempt the action when the condition is true
+- `"<date> must be after <other date>"` → enter reversed dates
+
+One test per unique constraint. Do not duplicate the same mechanism.
+
+**5. Precondition violations (auth, role, and state):**
+
+For each `preconditions[]` entry on any action — and for auth/role rules described in the spec:
+
+- **Unauthenticated access:** If any page or action requires login, generate one test: an unauthenticated user attempts to access it and is redirected to the login page.
+- **Wrong role:** If the spec explicitly states a feature is restricted to a specific role (e.g., Teacher only, Admin only), generate one test: a user of the wrong role attempts the action and is blocked or the control is not visible.
+- **Precondition not met:** For each AST `preconditions[]` entry, attempt the action when that precondition is not satisfied.
+
+**6. State-machine violations:**
+
+From `state_bound_action_bar` nodes:
+- For each state where an action is NOT listed in `available_actions`, generate one test attempting that action from that state. Example: attempting "Approve" on an entity already in "Active" state.
+- If a state has an empty `available_actions` array, generate one test verifying no action buttons are visible in that state.
+
+One test per unique wrong-state scenario — do not enumerate every action × every invalid state.
+
+---
+
+**DEDUPLICATION GATE (run before outputting):**
+
+1. **Required field dedup:** Multiple required text fields → ONE representative test, not one per field.
+2. **Sub-rule dedup:** A field with multiple validation sub-rules (e.g., password: length + uppercase + lowercase + number + special char) → ONE representative violation test, not one per sub-rule.
+3. **Cross-form dedup:** If two forms in the same module share the same validation mechanism (e.g., both have a required text field) → test it on the primary form only.
+4. **Uniqueness check:** Before outputting, ask for each TC: "Does this test catch a bug that NO other test in this module would catch?" If no → remove it.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (standard CRUD form, form with constraints): **4–8 tests**
+- Complex module (state machine, multi-form, wizard with many constraints): **8–12 tests**
+
+If you exceed these ranges, you are generating redundant tests. Apply the deduplication gate again before outputting.
+
+---
+
+**PRIORITY:**
+
+- **High:** State precondition violations, constraint violations that could corrupt data, unauthenticated access, required field representatives
+- **Medium:** Format violations, cross-field validation, numeric bounds, wrong-role access, wrong-state action attempts
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "What error/block should occur, naming the field and indicator",
+      "priority": "high | medium"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "high_priority": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[21:47:19] Test-Negative - USER PROMPT
+------------------------------------------------------------
+<module_name>Assignment Creation</module_name>
+
+<ast>
+{
+  "module_name": "Assignment Creation",
+  "components": {
+    "Assignment_Form": {
+      "type": "form",
+      "constraints": [
+        "required fields validated inline before saving"
+      ],
+      "panels": [
+        {
+          "panel_name": "General",
+          "collapsible": true,
+          "fields": {
+            "Assignment_Name": {
+              "type": "text",
+              "required": true,
+              "constraints": [
+                "required",
+                "must be non-empty"
+              ]
+            },
+            "Description": {
+              "type": "rich_text",
+              "required": false
+            },
+            "Additional_Files_Upload": {
+              "type": "file_upload",
+              "required": false,
+              "constraints": [
+                "optional"
+              ]
+            }
+          }
+        },
+        {
+          "panel_name": "Availability",
+          "collapsible": true,
+          "fields": {
+            "Allow_Submissions_From_Enable": {
+              "type": "toggle",
+              "required": false
+            },
+            "Allow_Submissions_From_Date": {
+              "type": "datetime",
+              "required": false,
+              "enabled_when": "Allow_Submissions_From_Enable == true"
+            },
+            "Due_Date_Enable": {
+              "type": "toggle",
+              "required": false
+            },
+            "Due_Date": {
+              "type": "datetime",
+              "required": false,
+              "enabled_when": "Due_Date_Enable == true"
+            },
+            "Cutoff_Date_Enable": {
+              "type": "toggle",
+              "required": false
+            },
+            "Cutoff_Date": {
+              "type": "datetime",
+              "required": false,
+              "enabled_when": "Cutoff_Date_Enable == true"
+            }
+          }
+        },
+        {
+          "panel_name": "Submission types",
+          "collapsible": true,
+          "fields": {
+            "Online_Text_Submissions": {
+              "type": "checkbox",
+              "required": false
+            },
+            "File_Submissions": {
+              "type": "checkbox",
+              "required": false
+            },
+            "Max_Number_Uploaded_Files": {
+              "type": "number",
+              "required": false,
+              "visible_when": "File_Submissions == true",
+              "constraints": [
+                "must be integer",
+                "min 1"
+              ]
+            },
+            "Max_Submission_Size": {
+              "type": "size",
+              "required": false,
+              "visible_when": "File_Submissions == true",
+              "units": [
+                "MB",
+                "GB"
+              ],
+              "constraints": [
+                "must be a positive number"
+              ]
+            },
+            "Accepted_File_Types": {
+              "type": "file_type_list",
+              "required": false,
+              "visible_when": "File_Submissions == true",
+              "constraints": [
+                "comma-separated list or file type tokens"
+              ]
+            }
+          }
+        },
+        {
+          "panel_name": "Feedback types",
+          "collapsible": true,
+          "fields": {
+            "Feedback_Comments": {
+              "type": "checkbox",
+              "required": false
+            },
+            "Feedback_Files": {
+              "type": "checkbox",
+              "required": false
+            },
+            "Offline_Grading_Worksheet": {
+              "type": "checkbox",
+              "required": false
+            }
+          }
+        },
+        {
+          "panel_name": "Submission settings",
+          "collapsible": true,
+          "fields": {
+            "Require_Submit_Button": {
+              "type": "toggle",
+              "required": false
+            },
+            "Require_Submission_Statement": {
+              "type": "toggle",
+              "required": false
+            },
+            "Attempts_Reopened": {
+              "type": "dropdown",
+              "required": false,
+              "options": [
+                "Never",
+                "Manually",
+                "Automatically until pass"
+              ]
+            },
+            "Maximum_Attempts": {
+              "type": "number",
+              "required": false,
+              "constraints": [
+                "must be integer",
+                "min 1"
+              ]
+            }
+          }
+        },
+        {
+          "panel_name": "Group submission settings",
+          "collapsible": true,
+          "fields": {
+            "Group_Submissions": {
+              "type": "toggle",
+              "required": false
+            },
+            "Require_All_Group_Members_To_Submit": {
+              "type": "toggle",
+              "required": false,
+              "visible_when": "Group_Submissions == true"
+            },
+            "Grouping_Selection": {
+              "type": "group_selector",
+              "required": false,
+              "visible_when": "Group_Submissions == true"
+            }
+          }
+        },
+        {
+          "panel_name": "Notifications",
+          "collapsible": true,
+          "fields": {
+            "Notify_Graders_New_Submissions": {
+              "type": "toggle",
+              "required": false
+            },
+            "Notify_Graders_Late_Submissions": {
+              "type": "toggle",
+              "required": false
+            }
+          }
+        },
+        {
+          "panel_name": "Grade",
+          "collapsible": true,
+          "fields": {
+            "Grade_Type": {
+              "type": "dropdown",
+              "required": false
+            },
+            "Maximum_Points": {
+              "type": "number",
+              "required": false,
+              "constraints": [
+                "must be numeric",
+                "min 0"
+              ]
+            },
+            "Grading_Method": {
+              "type": "dropdown",
+              "required": false
+            },
+            "Grade_Category": {
+              "type": "category_selector",
+              "required": false
+            },
+            "Grade_To_Pass": {
+              "type": "number",
+              "required": false,
+              "constraints": [
+                "must be numeric",
+                "min 0"
+              ]
+            }
+          }
+        },
+        {
+          "panel_name": "Access restrictions",
+          "collapsible": true,
+          "fields": {
+            "Restrictions_List": {
+              "type": "repeating_group",
+              "min": 0,
+              "item_fields": {
+                "Restriction_Type": {
+                  "type": "dropdown",
+                  "required": true,
+                  "constraints": [
+                    "required"
+                  ]
+                },
+                "Restriction_Parameters": {
+                  "type": "unspecified",
+                  "required": false
+                }
+              }
+            },
+            "Add_Restriction_Button": {
+              "type": "button",
+              "element_name": "Add restriction",
+              "action": "opens_dialog",
+              "opens": "Restriction_Type_Picker"
+            }
+          }
+        },
+        {
+          "panel_name": "Activity completion",
+          "collapsible": true,
+          "fields": {
+            "Completion_Tracking": {
+              "type": "dropdown",
+              "required": false
+            },
+            "Required_Conditions": {
+              "type": "repeating_group",
+              "min": 0,
+              "item_fields": {
+                "Condition_Type": {
+                  "type": "dropdown",
+                  "required": true
+                },
+                "Condition_Parameters": {
+                  "type": "unspecified",
+                  "required": false
+                }
+              }
+            }
+          }
+        },
+        {
+          "panel_name": "Tags",
+          "collapsible": true,
+          "fields": {
+            "Tags": {
+              "type": "tag_entry",
+              "required": false
+            }
+          }
+        },
+        {
+          "panel_name": "Competencies",
+          "collapsible": true,
+          "fields": {
+            "Competency_Link": {
+              "type": "competency_selector",
+              "required": false,
+              "constraints": [
+                "links course competencies to this activity"
+              ]
+            }
+          }
+        }
+      ],
+      "submit_actions": [
+        {
+          "element_name": "Save and return to course",
+          "on_success": "creates assignment and redirects to course page",
+          "constraints": [
+            "form-level inline validation must pass before save"
+          ]
+        },
+        {
+          "element_name": "Save and display",
+          "on_success": "creates assignment and opens the new assignment's page",
+          "constraints": [
+            "form-level inline validation must pass before save"
+          ]
+        },
+        {
+          "element_name": "Cancel",
+          "on_success": "discards all changes"
+        }
+      ]
+    },
+    "Restriction_Type_Picker": {
+      "type": "dialog",
+      "fields": {
+        "Restriction_Type": {
+          "type": "dropdown",
+          "required": true,
+          "constraints": [
+            "required"
+          ]
+        }
+      },
+      "submit_actions": [
+        {
+          "element_name": "Add restriction",
+          "on_success": "adds restriction to Restrictions_List and closes dialog",
+          "preconditions": [],
+          "constraints": [
+            "Restriction_Type required"
+          ]
+        },
+        {
+          "element_name": "Cancel",
+          "on_success": "closes dialog without adding restriction"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The assignment creation form opens after selecting Assignment from the Activity Chooser. Assignment name is a required text field at the top. The form is organized into collapsible panels. General contains the required Assignment name field, a Description rich text editor, and an optional Additional files upload area. Availability contains Allow submissions from, Due date, and Cut-off date, each with a date/time picker and an Enable toggle; disabled toggles exclude that date from enforcement. Submission types contains checkboxes for Online text and File submissions; enabling File submissions reveals additional controls for maximum number of uploaded files, maximum submission size, and accepted file types. Feedback types contains options for feedback comments, feedback files, and offline grading worksheet. Submission settings contains options for requiring a submit button click, requiring submission statements, attempts reopened settings, and maximum attempts. Group submission settings contains controls for group submissions, requiring all group members to submit, and grouping selection. Notifications contains toggles for notifying graders of new and late submissions. Grade contains the grade type and maximum points, grading method selector, and grade category and grade to pass fields. Access restrictions contains an "+ Add restriction" button that opens a restriction-type picker. Activity completion contains completion tracking options and required conditions. Tags contains a tag entry field, and Competencies contains course competency linking controls. At the bottom, "Save and return to course" creates the assignment and redirects to the course page, "Save and display" creates it and opens the new assignment's page, and "Cancel" discards all changes. Required fields and constraints are validated inline before saving.
+
+---
+
+
+</description>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:48:41] Test-Negative - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Assignment Creation",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "test_case": "Submit form with required Assignment name left blank",
+      "preconditions": [
+        "Assignment creation form is open"
+      ],
+      "steps": [
+        "1. Leave the Assignment_Name field blank",
+        "2. Click the 'Save and return to course' button"
+      ],
+      "expected_result": "Inline validation error appears on the Assignment_Name field indicating it is required; form does not submit; no assignment is created; user remains on the form",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "test_case": "Attempt to save with all required fields empty (form-level validation)",
+      "preconditions": [
+        "Assignment creation form is open"
+      ],
+      "steps": [
+        "1. Ensure all fields that are required are left empty (Assignment_Name blank)",
+        "2. Click the 'Save and display' button"
+      ],
+      "expected_result": "Form-level inline validation prevents save; Assignment_Name field displays an inline validation error indicating it is required; the form does not submit and no assignment is created",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "test_case": "Enter non-integer into Max_Number_Uploaded_Files after enabling file submissions",
+      "preconditions": [
+        "Assignment creation form is open"
+      ],
+      "steps": [
+        "1. Check the File_Submissions checkbox to reveal file-related controls",
+        "2. Enter <non-integer value> in the Max_Number_Uploaded_Files field",
+        "3. Click the 'Save and return to course' button"
+      ],
+      "expected_result": "Max_Number_Uploaded_Files field displays an inline validation error: 'must be integer'; form does not submit; no assignment is created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-004",
+      "test_case": "Set Max_Number_Uploaded_Files below allowed minimum (min 1)",
+      "preconditions": [
+        "Assignment creation form is open"
+      ],
+      "steps": [
+        "1. Check the File_Submissions checkbox to reveal file-related controls",
+        "2. Enter <number less than 1> in the Max_Number_Uploaded_Files field",
+        "3. Click the 'Save and display' button"
+      ],
+      "expected_result": "Max_Number_Uploaded_Files field displays an inline validation error: 'min 1'; form does not submit; no assignment is created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-005",
+      "test_case": "Enter non-positive value for Max_Submission_Size when File submissions enabled",
+      "preconditions": [
+        "Assignment creation form is open"
+      ],
+      "steps": [
+        "1. Check the File_Submissions checkbox to reveal file-related controls",
+        "2. Enter <non-positive number> in the Max_Submission_Size field",
+        "3. Click the 'Save and return to course' button"
+      ],
+      "expected_result": "Max_Submission_Size field displays an inline validation error: 'must be a positive number'; form does not submit; no assignment is created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-006",
+      "test_case": "Enter invalid/impossible Due_Date after enabling Due date toggle",
+      "preconditions": [
+        "Assignment creation form is open"
+      ],
+      "steps": [
+        "1. Toggle Due_Date_Enable to true to enable the Due_Date field",
+        "2. Enter <invalid or impossible date/time> into the Due_Date field",
+        "3. Click the 'Save and display' button"
+      ],
+      "expected_result": "Due_Date field displays an inline validation error indicating the date/time is invalid or impossible; form does not submit; no assignment is created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-007",
+      "test_case": "Set Maximum_Attempts below allowed minimum (min 1)",
+      "preconditions": [
+        "Assignment creation form is open"
+      ],
+      "steps": [
+        "1. In Submission settings, enter <number less than 1> in the Maximum_Attempts field",
+        "2. Click the 'Save and return to course' button"
+      ],
+      "expected_result": "Maximum_Attempts field displays an inline validation error: 'min 1'; form does not submit; no assignment is created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-008",
+      "test_case": "Attempt to add a restriction without selecting a Restriction_Type",
+      "preconditions": [
+        "Assignment creation form is open"
+      ],
+      "steps": [
+        "1. Click the 'Add restriction' button to open the Restriction_Type_Picker dialog",
+        "2. Leave the Restriction_Type field blank in the dialog",
+        "3. Click the 'Add restriction' button inside the dialog"
+      ],
+      "expected_result": "Restriction_Type field in the dialog displays an inline validation error indicating it is required (constraint: 'Restriction_Type required'); the dialog remains open; no restriction is added to the Restrictions_List",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "high_priority": 3,
+    "medium_priority": 5,
+    "low_priority": 0
+  }
+}
+
+------------------------------------------------------------
+[21:48:41] Test-Negative - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Assignment Creation",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "test_case": "Submit form with required Assignment name left blank",
+      "preconditions": [
+        "Assignment creation form is open"
+      ],
+      "steps": [
+        "1. Leave the Assignment_Name field blank",
+        "2. Click the 'Save and return to course' button"
+      ],
+      "expected_result": "Inline validation error appears on the Assignment_Name field indicating it is required; form does not submit; no assignment is created; user remains on the form",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "test_case": "Attempt to save with all required fields empty (form-level validation)",
+      "preconditions": [
+        "Assignment creation form is open"
+      ],
+      "steps": [
+        "1. Ensure all fields that are required are left empty (Assignment_Name blank)",
+        "2. Click the 'Save and display' button"
+      ],
+      "expected_result": "Form-level inline validation prevents save; Assignment_Name field displays an inline validation error indicating it is required; the form does not submit and no assignment is created",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "test_case": "Enter non-integer into Max_Number_Uploaded_Files after enabling file submissions",
+      "preconditions": [
+        "Assignment creation form is open"
+      ],
+      "steps": [
+        "1. Check the File_Submissions checkbox to reveal file-related controls",
+        "2. Enter <non-integer value> in the Max_Number_Uploaded_Files field",
+        "3. Click the 'Save and return to course' button"
+      ],
+      "expected_result": "Max_Number_Uploaded_Files field displays an inline validation error: 'must be integer'; form does not submit; no assignment is created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-004",
+      "test_case": "Set Max_Number_Uploaded_Files below allowed minimum (min 1)",
+      "preconditions": [
+        "Assignment creation form is open"
+      ],
+      "steps": [
+        "1. Check the File_Submissions checkbox to reveal file-related controls",
+        "2. Enter <number less than 1> in the Max_Number_Uploaded_Files field",
+        "3. Click the 'Save and display' button"
+      ],
+      "expected_result": "Max_Number_Uploaded_Files field displays an inline validation error: 'min 1'; form does not submit; no assignment is created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-005",
+      "test_case": "Enter non-positive value for Max_Submission_Size when File submissions enabled",
+      "preconditions": [
+        "Assignment creation form is open"
+      ],
+      "steps": [
+        "1. Check the File_Submissions checkbox to reveal file-related controls",
+        "2. Enter <non-positive number> in the Max_Submission_Size field",
+        "3. Click the 'Save and return to course' button"
+      ],
+      "expected_result": "Max_Submission_Size field displays an inline validation error: 'must be a positive number'; form does not submit; no assignment is created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-006",
+      "test_case": "Enter invalid/impossible Due_Date after enabling Due date toggle",
+      "preconditions": [
+        "Assignment creation form is open"
+      ],
+      "steps": [
+        "1. Toggle Due_Date_Enable to true to enable the Due_Date field",
+        "2. Enter <invalid or impossible date/time> into the Due_Date field",
+        "3. Click the 'Save and display' button"
+      ],
+      "expected_result": "Due_Date field displays an inline validation error indicating the date/time is invalid or impossible; form does not submit; no assignment is created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-007",
+      "test_case": "Set Maximum_Attempts below allowed minimum (min 1)",
+      "preconditions": [
+        "Assignment creation form is open"
+      ],
+      "steps": [
+        "1. In Submission settings, enter <number less than 1> in the Maximum_Attempts field",
+        "2. Click the 'Save and return to course' button"
+      ],
+      "expected_result": "Maximum_Attempts field displays an inline validation error: 'min 1'; form does not submit; no assignment is created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-008",
+      "test_case": "Attempt to add a restriction without selecting a Restriction_Type",
+      "preconditions": [
+        "Assignment creation form is open"
+      ],
+      "steps": [
+        "1. Click the 'Add restriction' button to open the Restriction_Type_Picker dialog",
+        "2. Leave the Restriction_Type field blank in the dialog",
+        "3. Click the 'Add restriction' button inside the dialog"
+      ],
+      "expected_result": "Restriction_Type field in the dialog displays an inline validation error indicating it is required (constraint: 'Restriction_Type required'); the dialog remains open; no restriction is added to the Restrictions_List",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "high_priority": 3,
+    "medium_priority": 5,
+    "low_priority": 0
+  }
+}

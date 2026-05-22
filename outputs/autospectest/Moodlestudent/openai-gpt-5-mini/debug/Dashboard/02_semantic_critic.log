@@ -1,0 +1,525 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-05-22T21:39:05.857951
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:39:33] Semantic Critic - SYSTEM PROMPT
+------------------------------------------------------------
+You are a UI-AST Semantic Critic. You receive (1) a raw functional description and (2) a generated UI-AST JSON.
+
+Your single job: decide whether this AST is good enough to use, or whether it should be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the JSON. You DO NOT generate a new JSON. You ONLY audit.
+
+---
+
+**INPUT:**
+
+<description>
+{Raw functional description text}
+</description>
+
+<ast>
+{Generated UI-AST JSON}
+</ast>
+
+---
+
+**WHAT COUNTS AS INTERACTIVE (in scope):**
+- Form fields, checkboxes, file uploads, search inputs (user inputs a value)
+- Buttons, links, row actions, bulk actions, submit actions (user triggers something)
+- Tabs, sub-tabs, wizard steps (user navigates)
+- Action consequences (`on_success`), preconditions, validation constraints
+- States in a state_bound_action_bar (Pending/Active/Closed are routing keys)
+
+**WHAT IS OUT OF SCOPE (do NOT expect these in the AST):**
+- Passive display labels — "the page displays the client name, account number, status badge, activation date, office" produces ZERO expected items. The AST is correct to omit them.
+- Chip colors, badge styles, decorative icons, visual styling
+
+---
+
+**METHOD:**
+
+**Step 1 — Walk the description and list every interactive element.**
+Apply the scope rules above. A passive display sentence produces zero expected items.
+If the description names a tab or step but gives zero fields for it, the correct AST has
+`fields: {}` for that tab/step — do NOT expect fields there.
+
+**Step 2 — Walk the AST and verify each expected element is present at the right path.**
+Note any expected items that are MISSING.
+
+**Step 3 — Walk the AST and check for PHANTOMS.**
+A phantom is anything in the AST that isn't traceable to explicit text in the description:
+- Buttons not named in the description (e.g., a "Start Import" button when description only says "uploading a file")
+- Fields invented inside generic-name tabs (e.g., an Add_Note field in a Notes tab, an Upload_Document field in a Documents tab) when the description only names the tab and gives no field details
+- Constraints inferred from UX intuition, not stated in the description text
+- Passive display fields (Client_Name, Status_Badge in a display_fields block)
+
+A reasonable inference with no textual anchor is still a phantom. Flag it.
+
+**Step 4 — Check conditional logic.**
+Count a conditional ONLY if the description has explicit trigger language:
+"when X is selected", "if X then", "required if", "Y is enabled when X", "selecting X reveals Y".
+Do NOT infer conditionals from field relationships. If no trigger phrase exists, expected = 0.
+
+**Step 5 — Decide the verdict.**
+
+```
+yes   →  Missing items: 0–2 minor (optional fields, non-critical)
+          AND Phantoms: 0–2 minor
+          AND no critical structural errors
+
+retry →  Missing items: 3+, OR
+          Phantoms: 3+, OR
+          Any required field missing, OR
+          Any state in state_bound_action_bar missing, OR
+          Recursive nesting (sub-tabs/sub-steps) missing when description names them, OR
+          Constraint placed at wrong level (floating instead of nested)
+```
+
+There is no third option. Don't agonize over edge cases — when in doubt, retry. A single regeneration is cheap.
+
+---
+
+**OUTPUT FORMAT — JSON only, no prose, no markdown fencing:**
+
+{
+  "verdict": "yes | retry",
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    "<dotted path of expected element absent from AST — e.g., 'Create_Client_Wizard.steps[3].fields.Document_Type'>"
+  ],
+  "phantoms": [
+    "<dotted path of AST element not in description — e.g., 'Bulk_Import_Page.submit_actions[0] (Start_Import button not in description)'>"
+  ],
+  "fixes": [
+    "<actionable instruction for regeneration — only populated when verdict is retry>",
+    "<each fix references a JSON path and the exact change needed>"
+  ]
+}
+
+If verdict is "yes", `fixes` must be an empty array.
+
+Output ONLY the JSON object. No explanation, no markdown fencing, no preamble.
+
+
+------------------------------------------------------------
+[21:39:33] Semantic Critic - USER PROMPT
+------------------------------------------------------------
+<description>
+
+The Dashboard displays a personalized greeting at the top. The main content area contains two blocks side by side: the Timeline block and the Calendar block. The Timeline block shows upcoming activities and deadlines across all enrolled courses. It includes a time range dropdown (e.g., "Next 7 days"), a sort order dropdown, and a search field to find activities by name or type. When no items exist within the selected range, an empty state is shown. The Calendar block shows a monthly view with the current month and year as a heading. It includes an "All courses" dropdown to filter events by course, a "New event" button to create personal calendar entries, and left/right arrows to navigate between months. The current date is highlighted, and dates with events display their names inline. Two links at the bottom — "Full calendar" and "Import or export calendars" — open the dedicated calendar view and calendar data management respectively. When Edit mode is toggled on, a "Reset page to default" button appears at the top right and a "+ Add a block" button appears below the Dashboard heading, opening a page listing all available block types. In Edit mode, each existing block shows a move icon and a three-dot menu for configure, move, and delete actions.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Dashboard",
+  "components": {
+    "Dashboard_Page": {
+      "type": "container",
+      "fields": {
+        "Edit_Mode_Toggle": {
+          "type": "checkbox",
+          "required": false
+        },
+        "Add_A_Block_Button": {
+          "type": "button",
+          "visible_when": "Edit_Mode_Toggle == true",
+          "on_click": "opens Block_Library_Page"
+        },
+        "Reset_Page_To_Default": {
+          "type": "button",
+          "visible_when": "Edit_Mode_Toggle == true",
+          "on_click": "resets dashboard layout to default",
+          "on_success": "page layout restored to default"
+        }
+      }
+    },
+    "Timeline_Block": {
+      "type": "block",
+      "visible_when": null,
+      "fields": {
+        "Time_Range": {
+          "type": "dropdown",
+          "required": false,
+          "constraints": []
+        },
+        "Sort_Order": {
+          "type": "dropdown",
+          "required": false,
+          "constraints": []
+        },
+        "Search_Activities": {
+          "type": "search",
+          "required": false,
+          "constraints": [],
+          "placeholder": "find activities by name or type"
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "Move_Handle",
+          "type": "button",
+          "visible_when": "Edit_Mode_Toggle == true"
+        },
+        {
+          "action_name": "Three_Dot_Menu",
+          "type": "dropdown",
+          "visible_when": "Edit_Mode_Toggle == true",
+          "menu_actions": [
+            {
+              "action_name": "Configure"
+            },
+            {
+              "action_name": "Move"
+            },
+            {
+              "action_name": "Delete"
+            }
+          ]
+        }
+      ]
+    },
+    "Calendar_Block": {
+      "type": "block",
+      "fields": {
+        "Course_Filter": {
+          "type": "dropdown",
+          "required": false,
+          "constraints": []
+        },
+        "New_Event": {
+          "type": "button",
+          "required": false,
+          "on_click": "opens New_Event_Form",
+          "on_success": "creates personal calendar entry"
+        },
+        "Prev_Month": {
+          "type": "button",
+          "required": false,
+          "on_click": "navigates to previous month"
+        },
+        "Next_Month": {
+          "type": "button",
+          "required": false,
+          "on_click": "navigates to next month"
+        },
+        "Full_Calendar_Link": {
+          "type": "link",
+          "on_click": "navigates to Full calendar view"
+        },
+        "Import_Export_Calendars_Link": {
+          "type": "link",
+          "on_click": "opens calendar data management (import/export)"
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "Move_Handle",
+          "type": "button",
+          "visible_when": "Edit_Mode_Toggle == true"
+        },
+        {
+          "action_name": "Three_Dot_Menu",
+          "type": "dropdown",
+          "visible_when": "Edit_Mode_Toggle == true",
+          "menu_actions": [
+            {
+              "action_name": "Configure"
+            },
+            {
+              "action_name": "Move"
+            },
+            {
+              "action_name": "Delete"
+            }
+          ]
+        }
+      ]
+    },
+    "New_Event_Form": {
+      "type": "form",
+      "fields": {
+        "Title": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Date": {
+          "type": "date",
+          "required": true
+        },
+        "Time": {
+          "type": "unspecified",
+          "required": false
+        },
+        "Course_Association": {
+          "type": "dropdown",
+          "required": false
+        }
+      },
+      "submit_actions": [
+        {
+          "element_name": "Save",
+          "on_success": "creates personal calendar entry"
+        },
+        {
+          "element_name": "Cancel",
+          "on_success": "closes New_Event_Form without saving"
+        }
+      ]
+    },
+    "Block_Library_Page": {
+      "type": "data_table",
+      "description": "Lists available block types to add to the dashboard",
+      "row_actions": [
+        {
+          "action_name": "Add_Block",
+          "on_success": "adds selected block to dashboard"
+        }
+      ],
+      "fields": {}
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:40:00] Semantic Critic - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "summary": "The AST captures the major interactive elements (edit toggle, block actions, timeline and calendar controls) but includes multiple inferred form fields/actions not present in the description and omits the explicitly-stated Timeline empty state conditional.",
+  "missing": [
+    "components.Timeline_Block.Empty_State (empty state shown when no items exist within the selected time range)"
+  ],
+  "phantoms": [
+    "components.New_Event_Form.fields.Title (no form fields were specified in the description)",
+    "components.New_Event_Form.fields.Time (inferred field not present in description)",
+    "components.New_Event_Form.fields.Course_Association (inferred field not present in description)",
+    "components.New_Event_Form.submit_actions[0] (Save button - not described explicitly)",
+    "components.New_Event_Form.submit_actions[1] (Cancel button - not described explicitly)",
+    "components.Dashboard_Page.Reset_Page_To_Default.on_click (explicit on_click behavior was inferred)",
+    "components.Dashboard_Page.Reset_Page_To_Default.on_success (inferred on_success consequence)",
+    "components.Block_Library_Page.row_actions[0] (Add_Block row action was inferred but the description only said the page lists block types)"
+  ],
+  "fixes": [
+    "Add components.Timeline_Block.Empty_State: create an element (e.g., type 'empty_state' or 'display_state') with a visible_when expression representing 'no activities exist for the selected Time_Range'. Example: components.Timeline_Block.fields.Empty_State { type: 'empty_state', visible_when: 'Timeline_Block.items_in_range == 0' }",
+    "Remove or neutralize inferred New_Event_Form internals: either remove components.New_Event_Form.fields.* and components.New_Event_Form.submit_actions entirely (leaving New_Event_Form as an opaque target opened by the New_Event button), or update the raw description to enumerate exact fields and buttons to keep them. Specifically remove components.New_Event_Form.fields.Title, components.New_Event_Form.fields.Time, components.New_Event_Form.fields.Course_Association, and components.New_Event_Form.submit_actions[*] unless those were explicitly specified.",
+    "Remove explicit on_click/on_success behavior text from Reset_Page_To_Default (components.Dashboard_Page.Reset_Page_To_Default.on_click and .on_success) unless the description is amended to state the exact behavior; instead keep the button and its visible_when condition only.",
+    "Clarify Block_Library_Page actions: if the description intends selectable rows that add blocks, keep components.Block_Library_Page.row_actions[0] (Add_Block) and document it in the description; otherwise remove this inferred row action and keep the page as a list-only view (components.Block_Library_Page.fields remains {})."
+  ]
+}
+
+------------------------------------------------------------
+[21:40:00] Semantic Critic - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "summary": "The AST captures the major interactive elements (edit toggle, block actions, timeline and calendar controls) but includes multiple inferred form fields/actions not present in the description and omits the explicitly-stated Timeline empty state conditional.",
+  "missing": [
+    "components.Timeline_Block.Empty_State (empty state shown when no items exist within the selected time range)"
+  ],
+  "phantoms": [
+    "components.New_Event_Form.fields.Title (no form fields were specified in the description)",
+    "components.New_Event_Form.fields.Time (inferred field not present in description)",
+    "components.New_Event_Form.fields.Course_Association (inferred field not present in description)",
+    "components.New_Event_Form.submit_actions[0] (Save button - not described explicitly)",
+    "components.New_Event_Form.submit_actions[1] (Cancel button - not described explicitly)",
+    "components.Dashboard_Page.Reset_Page_To_Default.on_click (explicit on_click behavior was inferred)",
+    "components.Dashboard_Page.Reset_Page_To_Default.on_success (inferred on_success consequence)",
+    "components.Block_Library_Page.row_actions[0] (Add_Block row action was inferred but the description only said the page lists block types)"
+  ],
+  "fixes": [
+    "Add components.Timeline_Block.Empty_State: create an element (e.g., type 'empty_state' or 'display_state') with a visible_when expression representing 'no activities exist for the selected Time_Range'. Example: components.Timeline_Block.fields.Empty_State { type: 'empty_state', visible_when: 'Timeline_Block.items_in_range == 0' }",
+    "Remove or neutralize inferred New_Event_Form internals: either remove components.New_Event_Form.fields.* and components.New_Event_Form.submit_actions entirely (leaving New_Event_Form as an opaque target opened by the New_Event button), or update the raw description to enumerate exact fields and buttons to keep them. Specifically remove components.New_Event_Form.fields.Title, components.New_Event_Form.fields.Time, components.New_Event_Form.fields.Course_Association, and components.New_Event_Form.submit_actions[*] unless those were explicitly specified.",
+    "Remove explicit on_click/on_success behavior text from Reset_Page_To_Default (components.Dashboard_Page.Reset_Page_To_Default.on_click and .on_success) unless the description is amended to state the exact behavior; instead keep the button and its visible_when condition only.",
+    "Clarify Block_Library_Page actions: if the description intends selectable rows that add blocks, keep components.Block_Library_Page.row_actions[0] (Add_Block) and document it in the description; otherwise remove this inferred row action and keep the page as a list-only view (components.Block_Library_Page.fields remains {})."
+  ]
+}
+
+------------------------------------------------------------
+[21:40:25] Semantic Critic - USER PROMPT
+------------------------------------------------------------
+<description>
+
+The Dashboard displays a personalized greeting at the top. The main content area contains two blocks side by side: the Timeline block and the Calendar block. The Timeline block shows upcoming activities and deadlines across all enrolled courses. It includes a time range dropdown (e.g., "Next 7 days"), a sort order dropdown, and a search field to find activities by name or type. When no items exist within the selected range, an empty state is shown. The Calendar block shows a monthly view with the current month and year as a heading. It includes an "All courses" dropdown to filter events by course, a "New event" button to create personal calendar entries, and left/right arrows to navigate between months. The current date is highlighted, and dates with events display their names inline. Two links at the bottom — "Full calendar" and "Import or export calendars" — open the dedicated calendar view and calendar data management respectively. When Edit mode is toggled on, a "Reset page to default" button appears at the top right and a "+ Add a block" button appears below the Dashboard heading, opening a page listing all available block types. In Edit mode, each existing block shows a move icon and a three-dot menu for configure, move, and delete actions.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Dashboard",
+  "components": {
+    "Dashboard_Page": {
+      "type": "page",
+      "fields": {
+        "Edit_Mode": {
+          "type": "checkbox",
+          "required": false,
+          "description": "Toggle to enter/exit Edit mode"
+        },
+        "Reset_Page_To_Default": {
+          "type": "button",
+          "visible_when": "Edit_Mode == true"
+        },
+        "Add_Block_Button": {
+          "type": "button",
+          "element_name": "+ Add a block",
+          "visible_when": "Edit_Mode == true",
+          "opens": "Block_Library_Page"
+        }
+      }
+    },
+    "Timeline_Block": {
+      "type": "block",
+      "fields": {
+        "Time_Range": {
+          "type": "dropdown",
+          "required": false,
+          "options": [
+            "Next 7 days"
+          ]
+        },
+        "Sort_Order": {
+          "type": "dropdown",
+          "required": false
+        },
+        "Search_Activities": {
+          "type": "search",
+          "required": false,
+          "description": "Search activities by name or type"
+        },
+        "Empty_State": {
+          "type": "empty_state",
+          "visible_when": "Timeline_Block.items_in_range == 0"
+        }
+      },
+      "edit_controls": {
+        "visible_when": "Edit_Mode == true",
+        "move_handle": {
+          "type": "button",
+          "element_name": "Move"
+        },
+        "options_menu": {
+          "type": "menu",
+          "menu_actions": [
+            {
+              "action_name": "Configure"
+            },
+            {
+              "action_name": "Move"
+            },
+            {
+              "action_name": "Delete"
+            }
+          ]
+        }
+      }
+    },
+    "Calendar_Block": {
+      "type": "block",
+      "fields": {
+        "All_Courses_Filter": {
+          "type": "dropdown",
+          "required": false
+        },
+        "New_Event_Button": {
+          "type": "button",
+          "element_name": "New event",
+          "opens": "New_Event_Form"
+        },
+        "Prev_Month": {
+          "type": "button",
+          "element_name": "Previous month"
+        },
+        "Next_Month": {
+          "type": "button",
+          "element_name": "Next month"
+        },
+        "Full_Calendar_Link": {
+          "type": "link",
+          "element_name": "Full calendar",
+          "opens": "Full_Calendar_View"
+        },
+        "Import_or_Export_Calendars_Link": {
+          "type": "link",
+          "element_name": "Import or export calendars",
+          "opens": "Calendar_Data_Management"
+        }
+      },
+      "edit_controls": {
+        "visible_when": "Edit_Mode == true",
+        "move_handle": {
+          "type": "button",
+          "element_name": "Move"
+        },
+        "options_menu": {
+          "type": "menu",
+          "menu_actions": [
+            {
+              "action_name": "Configure"
+            },
+            {
+              "action_name": "Move"
+            },
+            {
+              "action_name": "Delete"
+            }
+          ]
+        }
+      }
+    },
+    "Block_Library_Page": {
+      "type": "page",
+      "fields": {}
+    },
+    "New_Event_Form": {
+      "type": "modal",
+      "fields": {}
+    },
+    "Full_Calendar_View": {
+      "type": "page",
+      "fields": {}
+    },
+    "Calendar_Data_Management": {
+      "type": "page",
+      "fields": {}
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:40:37] Semantic Critic - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "summary": "AST includes all interactive elements described (timeline controls, calendar controls and links, edit-mode toggles and block edit controls) with appropriate conditional visibility and referenced pages/modals.",
+  "missing": [],
+  "phantoms": [],
+  "fixes": []
+}
+
+------------------------------------------------------------
+[21:40:37] Semantic Critic - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "summary": "AST includes all interactive elements described (timeline controls, calendar controls and links, edit-mode toggles and block edit controls) with appropriate conditional visibility and referenced pages/modals.",
+  "missing": [],
+  "phantoms": [],
+  "fixes": []
+}

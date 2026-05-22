@@ -1,0 +1,465 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-05-22T21:39:05.866119
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:39:29] Semantic Critic - SYSTEM PROMPT
+------------------------------------------------------------
+You are a UI-AST Semantic Critic. You receive (1) a raw functional description and (2) a generated UI-AST JSON.
+
+Your single job: decide whether this AST is good enough to use, or whether it should be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the JSON. You DO NOT generate a new JSON. You ONLY audit.
+
+---
+
+**INPUT:**
+
+<description>
+{Raw functional description text}
+</description>
+
+<ast>
+{Generated UI-AST JSON}
+</ast>
+
+---
+
+**WHAT COUNTS AS INTERACTIVE (in scope):**
+- Form fields, checkboxes, file uploads, search inputs (user inputs a value)
+- Buttons, links, row actions, bulk actions, submit actions (user triggers something)
+- Tabs, sub-tabs, wizard steps (user navigates)
+- Action consequences (`on_success`), preconditions, validation constraints
+- States in a state_bound_action_bar (Pending/Active/Closed are routing keys)
+
+**WHAT IS OUT OF SCOPE (do NOT expect these in the AST):**
+- Passive display labels — "the page displays the client name, account number, status badge, activation date, office" produces ZERO expected items. The AST is correct to omit them.
+- Chip colors, badge styles, decorative icons, visual styling
+
+---
+
+**METHOD:**
+
+**Step 1 — Walk the description and list every interactive element.**
+Apply the scope rules above. A passive display sentence produces zero expected items.
+If the description names a tab or step but gives zero fields for it, the correct AST has
+`fields: {}` for that tab/step — do NOT expect fields there.
+
+**Step 2 — Walk the AST and verify each expected element is present at the right path.**
+Note any expected items that are MISSING.
+
+**Step 3 — Walk the AST and check for PHANTOMS.**
+A phantom is anything in the AST that isn't traceable to explicit text in the description:
+- Buttons not named in the description (e.g., a "Start Import" button when description only says "uploading a file")
+- Fields invented inside generic-name tabs (e.g., an Add_Note field in a Notes tab, an Upload_Document field in a Documents tab) when the description only names the tab and gives no field details
+- Constraints inferred from UX intuition, not stated in the description text
+- Passive display fields (Client_Name, Status_Badge in a display_fields block)
+
+A reasonable inference with no textual anchor is still a phantom. Flag it.
+
+**Step 4 — Check conditional logic.**
+Count a conditional ONLY if the description has explicit trigger language:
+"when X is selected", "if X then", "required if", "Y is enabled when X", "selecting X reveals Y".
+Do NOT infer conditionals from field relationships. If no trigger phrase exists, expected = 0.
+
+**Step 5 — Decide the verdict.**
+
+```
+yes   →  Missing items: 0–2 minor (optional fields, non-critical)
+          AND Phantoms: 0–2 minor
+          AND no critical structural errors
+
+retry →  Missing items: 3+, OR
+          Phantoms: 3+, OR
+          Any required field missing, OR
+          Any state in state_bound_action_bar missing, OR
+          Recursive nesting (sub-tabs/sub-steps) missing when description names them, OR
+          Constraint placed at wrong level (floating instead of nested)
+```
+
+There is no third option. Don't agonize over edge cases — when in doubt, retry. A single regeneration is cheap.
+
+---
+
+**OUTPUT FORMAT — JSON only, no prose, no markdown fencing:**
+
+{
+  "verdict": "yes | retry",
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    "<dotted path of expected element absent from AST — e.g., 'Create_Client_Wizard.steps[3].fields.Document_Type'>"
+  ],
+  "phantoms": [
+    "<dotted path of AST element not in description — e.g., 'Bulk_Import_Page.submit_actions[0] (Start_Import button not in description)'>"
+  ],
+  "fixes": [
+    "<actionable instruction for regeneration — only populated when verdict is retry>",
+    "<each fix references a JSON path and the exact change needed>"
+  ]
+}
+
+If verdict is "yes", `fixes` must be an empty array.
+
+Output ONLY the JSON object. No explanation, no markdown fencing, no preamble.
+
+
+------------------------------------------------------------
+[21:39:29] Semantic Critic - USER PROMPT
+------------------------------------------------------------
+<description>
+
+The Assignment page displays the assignment's Opened date, Due date, and full Description. A "Add submission" button opens the submission form, which may include an online text editor, a file upload area, or both, depending on the assignment's configuration. The Submission status section shows a summary table with rows for Submission status (e.g., No submissions have been made yet, Submitted for grading), Grading status (e.g., Not graded, Graded), Time remaining, Last modified, and Submission comments. After submitting, the student may view or edit their submission if the due date has not passed and the teacher permits resubmission. Once graded, the earned grade and written feedback appear on this page.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Assignment",
+  "components": {
+    "Submission_Form": {
+      "type": "form",
+      "fields": {
+        "Online_Text": {
+          "type": "unspecified",
+          "visible_when": "assignment_config.includes_online_text"
+        },
+        "File_Uploads": {
+          "type": "file_upload",
+          "visible_when": "assignment_config.includes_file_upload"
+        }
+      },
+      "submit_actions": [
+        {
+          "element_name": "Submit",
+          "on_success": "creates submission in Submitted for grading"
+        }
+      ]
+    },
+    "Assignment_Action_Bar": {
+      "type": "state_bound_action_bar",
+      "states": {
+        "No submissions have been made yet": {
+          "available_actions": [
+            {
+              "action_name": "Add submission",
+              "fields": {
+                "Online_Text": {
+                  "type": "unspecified",
+                  "visible_when": "assignment_config.includes_online_text"
+                },
+                "File_Uploads": {
+                  "type": "file_upload",
+                  "visible_when": "assignment_config.includes_file_upload"
+                }
+              },
+              "on_success": "creates submission in Submitted for grading"
+            }
+          ]
+        },
+        "Submitted for grading": {
+          "available_actions": [
+            {
+              "action_name": "View submission",
+              "on_success": "opens submission viewer"
+            },
+            {
+              "action_name": "Edit submission",
+              "preconditions": [
+                "due date not passed",
+                "teacher permits resubmission"
+              ],
+              "fields": {
+                "Online_Text": {
+                  "type": "unspecified",
+                  "visible_when": "assignment_config.includes_online_text"
+                },
+                "File_Uploads": {
+                  "type": "file_upload",
+                  "visible_when": "assignment_config.includes_file_upload"
+                }
+              },
+              "on_success": "updates existing submission"
+            }
+          ]
+        },
+        "Graded": {
+          "available_actions": [
+            {
+              "action_name": "View submission",
+              "on_success": "opens submission viewer"
+            },
+            {
+              "action_name": "View feedback",
+              "on_success": "displays earned grade and written feedback"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:39:54] Semantic Critic - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "summary": "The AST mostly covers the interactive flows but misses an explicit conditional on the 'View submission' action and contains a few inferred actions/buttons not named in the description.",
+  "missing": [
+    "Assignment_Action_Bar.states[\"Submitted for grading\"].available_actions[0].preconditions (preconditions applying to 'View submission' are missing: 'due date not passed' and 'teacher permits resubmission')"
+  ],
+  "phantoms": [
+    "Submission_Form.submit_actions[0] (Submit button not specified in the description)",
+    "Assignment_Action_Bar.states[\"Graded\"].available_actions[1] (View feedback action is not named in the description; feedback is described as appearing on the page)"
+  ],
+  "fixes": [
+    "Add preconditions to the 'View submission' action under Submitted for grading: set Assignment_Action_Bar.states[\"Submitted for grading\"].available_actions[0].preconditions = [\"due date not passed\", \"teacher permits resubmission\"] so that both viewing and editing reflect the description's conditional.",
+    "Remove or convert the explicit Submit action from the submission form: either delete Submission_Form.submit_actions[0] entirely or change it to a generic form submission consequence without a named UI element, since the description only names the 'Add submission' button that opens the form and does not specify a 'Submit' button label.",
+    "Remove the 'View feedback' action under Graded and instead represent feedback as passive display: delete Assignment_Action_Bar.states[\"Graded\"].available_actions[1] (or replace it with a non-interactive display node), because the description states feedback \"appears on this page\" rather than being an explicit action."
+  ]
+}
+
+------------------------------------------------------------
+[21:39:54] Semantic Critic - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "summary": "The AST mostly covers the interactive flows but misses an explicit conditional on the 'View submission' action and contains a few inferred actions/buttons not named in the description.",
+  "missing": [
+    "Assignment_Action_Bar.states[\"Submitted for grading\"].available_actions[0].preconditions (preconditions applying to 'View submission' are missing: 'due date not passed' and 'teacher permits resubmission')"
+  ],
+  "phantoms": [
+    "Submission_Form.submit_actions[0] (Submit button not specified in the description)",
+    "Assignment_Action_Bar.states[\"Graded\"].available_actions[1] (View feedback action is not named in the description; feedback is described as appearing on the page)"
+  ],
+  "fixes": [
+    "Add preconditions to the 'View submission' action under Submitted for grading: set Assignment_Action_Bar.states[\"Submitted for grading\"].available_actions[0].preconditions = [\"due date not passed\", \"teacher permits resubmission\"] so that both viewing and editing reflect the description's conditional.",
+    "Remove or convert the explicit Submit action from the submission form: either delete Submission_Form.submit_actions[0] entirely or change it to a generic form submission consequence without a named UI element, since the description only names the 'Add submission' button that opens the form and does not specify a 'Submit' button label.",
+    "Remove the 'View feedback' action under Graded and instead represent feedback as passive display: delete Assignment_Action_Bar.states[\"Graded\"].available_actions[1] (or replace it with a non-interactive display node), because the description states feedback \"appears on this page\" rather than being an explicit action."
+  ]
+}
+
+------------------------------------------------------------
+[21:40:17] Semantic Critic - USER PROMPT
+------------------------------------------------------------
+<description>
+
+The Assignment page displays the assignment's Opened date, Due date, and full Description. A "Add submission" button opens the submission form, which may include an online text editor, a file upload area, or both, depending on the assignment's configuration. The Submission status section shows a summary table with rows for Submission status (e.g., No submissions have been made yet, Submitted for grading), Grading status (e.g., Not graded, Graded), Time remaining, Last modified, and Submission comments. After submitting, the student may view or edit their submission if the due date has not passed and the teacher permits resubmission. Once graded, the earned grade and written feedback appear on this page.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Assignment",
+  "components": {
+    "Submission_Form": {
+      "type": "form",
+      "fields": {
+        "Online_Text_Editor": {
+          "type": "unspecified",
+          "visible_when": "Assignment_allows_online_text == true"
+        },
+        "File_Upload": {
+          "type": "file_upload",
+          "visible_when": "Assignment_allows_file_upload == true"
+        }
+      },
+      "on_submit": "creates submission with status Submitted for grading"
+    },
+    "Assignment_Action_Bar": {
+      "type": "state_bound_action_bar",
+      "states": {
+        "No submissions": {
+          "available_actions": [
+            {
+              "action_name": "Add submission",
+              "opens_form": "Submission_Form"
+            }
+          ]
+        },
+        "Submitted for grading": {
+          "available_actions": [
+            {
+              "action_name": "View submission",
+              "preconditions": [
+                "due date not passed",
+                "teacher permits resubmission"
+              ]
+            },
+            {
+              "action_name": "Edit submission",
+              "opens_form": "Submission_Form",
+              "preconditions": [
+                "due date not passed",
+                "teacher permits resubmission"
+              ]
+            }
+          ]
+        },
+        "Graded": {
+          "available_actions": []
+        }
+      }
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:40:31] Semantic Critic - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "summary": "The AST captures the form fields and stateful actions but is missing an explicit submit action/button for the Submission_Form (and thus a clear user-triggered submit control); otherwise there are no major phantoms.",
+  "missing": [
+    "components.Submission_Form.submit_action (explicit Submit button/action for the form that triggers on_submit)"
+  ],
+  "phantoms": []
+}
+
+------------------------------------------------------------
+[21:40:31] Semantic Critic - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "summary": "The AST captures the form fields and stateful actions but is missing an explicit submit action/button for the Submission_Form (and thus a clear user-triggered submit control); otherwise there are no major phantoms.",
+  "missing": [
+    "components.Submission_Form.submit_action (explicit Submit button/action for the form that triggers on_submit)"
+  ],
+  "phantoms": []
+}
+
+------------------------------------------------------------
+[21:41:00] Semantic Critic - USER PROMPT
+------------------------------------------------------------
+<description>
+
+The Assignment page displays the assignment's Opened date, Due date, and full Description. A "Add submission" button opens the submission form, which may include an online text editor, a file upload area, or both, depending on the assignment's configuration. The Submission status section shows a summary table with rows for Submission status (e.g., No submissions have been made yet, Submitted for grading), Grading status (e.g., Not graded, Graded), Time remaining, Last modified, and Submission comments. After submitting, the student may view or edit their submission if the due date has not passed and the teacher permits resubmission. Once graded, the earned grade and written feedback appear on this page.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Assignment",
+  "components": {
+    "Assignment_Page": {
+      "type": "page",
+      "fields": {}
+    },
+    "Submission_Form": {
+      "type": "form",
+      "description": "Used for Add submission and Edit submission (prefilled when editing). Visible when opened by an action.",
+      "fields": {
+        "Online_Text_Editor": {
+          "type": "unspecified",
+          "visible_when": "Assignment.allows_online_text == true",
+          "required": false
+        },
+        "File_Upload_Area": {
+          "type": "file_upload",
+          "visible_when": "Assignment.allows_file_upload == true",
+          "required": false
+        }
+      },
+      "submit_actions": [
+        {
+          "element_name": "Submit",
+          "on_success": "creates submission with Submission status == Submitted for grading"
+        },
+        {
+          "element_name": "Cancel",
+          "on_success": "closes submission form without saving"
+        }
+      ]
+    },
+    "Submission_State_Action_Bar": {
+      "type": "state_bound_action_bar",
+      "states": {
+        "No submissions have been made yet": {
+          "available_actions": [
+            {
+              "action_name": "Add submission",
+              "opens_form": "Submission_Form",
+              "on_success": "creates submission with Submission status == Submitted for grading"
+            }
+          ]
+        },
+        "Submitted for grading": {
+          "available_actions": [
+            {
+              "action_name": "View submission",
+              "type": "link",
+              "on_success": "opens read-only view of the submitted content"
+            },
+            {
+              "action_name": "Edit submission",
+              "opens_form": "Submission_Form",
+              "preconditions": [
+                "due date not passed",
+                "teacher permits resubmission",
+                "grading status == Not graded"
+              ],
+              "on_success": "updates existing submission (keeps Submission status == Submitted for grading)"
+            }
+          ]
+        },
+        "Graded": {
+          "available_actions": [
+            {
+              "action_name": "View submission",
+              "type": "link",
+              "on_success": "opens read-only view including earned grade and written feedback"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:41:13] Semantic Critic - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "summary": "AST matches the interactive elements in the description (Add submission button, submission form with optional online text and file upload, view/edit actions with preconditions, and graded view); two minor inferred items (a Cancel action and an extra 'grading status == Not graded' precondition) are present but non-critical.",
+  "missing": [],
+  "phantoms": [
+    "Submission_Form.submit_actions[1] (Cancel button not mentioned in the description)",
+    "Submission_State_Action_Bar.states['Submitted for grading'].available_actions[1].preconditions[2] (precondition 'grading status == Not graded' not stated in the description)"
+  ],
+  "fixes": []
+}
+
+------------------------------------------------------------
+[21:41:13] Semantic Critic - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "summary": "AST matches the interactive elements in the description (Add submission button, submission form with optional online text and file upload, view/edit actions with preconditions, and graded view); two minor inferred items (a Cancel action and an extra 'grading status == Not graded' precondition) are present but non-critical.",
+  "missing": [],
+  "phantoms": [
+    "Submission_Form.submit_actions[1] (Cancel button not mentioned in the description)",
+    "Submission_State_Action_Bar.states['Submitted for grading'].available_actions[1].preconditions[2] (precondition 'grading status == Not graded' not stated in the description)"
+  ],
+  "fixes": []
+}

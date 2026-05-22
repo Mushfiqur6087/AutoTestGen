@@ -1,0 +1,547 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-05-22T21:41:13.070801
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:41:13] Test-Edge - SYSTEM PROMPT
+------------------------------------------------------------
+You are an Edge Case and Boundary Test Generator. You receive (1) a UI-AST JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
+
+You are NOT producing happy paths (positive prompt) or standard validation failures (negative prompt). You are finding the cracks between valid and invalid, and the unusual paths real users take.
+
+---
+
+**INPUT:**
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module UI-AST JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+---
+
+**UI-AST REFERENCE — How to Read the AST for Edge Testing:**
+
+| AST node / field | What to look for |
+|---|---|
+| `constraints: []` with numeric/date/count threshold | The boundary values — test AT and JUST PAST each limit |
+| `repeating_group` with `max` | Test adding exactly `max` entries (should succeed) then one more (should block) |
+| `visible_when` / `required_when` | Edge: trigger condition, fill revealed field with boundary value |
+| `state_bound_action_bar` | State edges: rapid consecutive state transitions, transition from a boundary state |
+
+| `type: "date"` fields | Data edges: today, yesterday, far future, Feb 29 leap year |
+| `type: "file_upload"` | Edge: file exactly at size limit, file at 1 byte over limit |
+
+> If the module has no `constraints`, no `repeating_group`, no `date` or `number` fields, and no `state_bound_action_bar` — it has minimal edge surface. Produce 1–3 generic input edge cases (long text, special characters) and stop. Do not invent boundary tests where no boundary exists.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — State clearly whether the boundary value should PASS or FAIL.**
+Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+- ❌ `"System handles the input"` — ambiguous
+- ✅ `"Form submits successfully; entity is created with the <minimum value>"`
+- ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
+
+**Rule B — For edge cases, describe the precise visible outcome.**
+Same rule as the positive/negative prompts — name the UI element that changes.
+- ❌ `"Edge case handled correctly"`
+- ✅ `"Second submission attempt is blocked; only one record appears in the table"`
+- ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
+
+**Rule C — Quote exact error text when the spec provides it.**
+If the description states a specific error string for a boundary violation, use it verbatim.
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Express boundary values relative to the constraint.
+
+- ✅ `"Enter <minimum allowed value> in the <field>"`
+- ✅ `"Enter <one unit below minimum> in the <field>"`
+- ✅ `"Enter <maximum length string> in the <text field>"`
+- ✅ `"Add <maximum allowed entries + 1> rows to the repeating group"`
+- ❌ `"Enter '$25' in the Amount field"`
+- ❌ `"Enter 'aaaaaaaaaa' (10 chars) in the field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic action — one field, one click, one navigation. No grouping.
+- ✅ `"1. Enter <minimum allowed value> in the <Amount> field"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill the form with minimum value and submit"`
+
+---
+
+**SCOPE GATE:**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
+2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
+3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Boundary Tests (from AST constraints):**
+
+Scan every `constraints: []` array and every numeric/date/count threshold mentioned in the description. For each threshold:
+
+| Constraint | Boundary (should PASS) | Past-boundary (should FAIL) |
+|---|---|---|
+| `"minimum <X>"` | Enter exactly `<minimum value>` | Enter `<one unit below minimum>` |
+| `"maximum <N> entries"` | Add exactly `<N>` entries | Attempt to add `<N+1>` entry |
+| `"<date A> must not be before <date B>"` | `<date A>` = `<date B>` (same day) | `<date A>` = `<date B>` minus 1 day |
+| `"<X>–<Y> range"` | Enter `<X>` → pass; enter `<Y>` → pass | Enter `<X-1>` → fail; enter `<Y+1>` → fail |
+| `"at least <N> characters"` | Enter exactly `<N>` characters | Enter `<N-1>` characters |
+| `"must be ≥ <P>% of <reference>"` | Enter exactly `<P>%` | Enter `<P minus small delta>%` |
+
+Rules:
+- If a constraint has both a minimum AND maximum, test both ends (up to 4 tests total for that constraint).
+- If a constraint has no numeric/date/count threshold (e.g., "must be unique", "cannot transition while children exist") → **skip it** — it belongs in negative tests, not boundary tests.
+- Generate zero boundary tests if zero thresholds exist — do not invent them.
+
+**Cross-field boundary tests** (only if the description/AST shows a field ordering constraint — e.g., date A must not be before date B, closing date must be after opening date):
+- ONE test where field A equals field B exactly (same-day / same-value boundary) → assert this **succeeds** per spec
+- ONE test where field A is one unit before field B → assert **blocked with a visible error**
+
+**2. Input Edge Cases:**
+
+Pick only the ones that apply to field types present in this module's AST:
+
+- **Long text** (any `text/unspecified` or `textarea` field): enter a very long string (200+ characters) → assert it is either accepted or truncated/rejected with a visible indicator
+- **Special characters / emoji / unicode** (free-text fields): enter special chars → assert accepted or a specific error shown
+- **Leading/trailing whitespace** (text inputs): enter value with leading/trailing spaces → assert trimmed in saved output shown on the detail page, or an inline error shown
+- **Zero as numeric input** (number fields where zero is ambiguous): if the spec states a minimum > 0, assert `0` is blocked with a visible error; if the spec permits zero, assert the form submits successfully and the saved record displays `0`
+- **Decimal precision** (financial/numeric fields): enter a value with more decimal places than the field supports → assert rounding behavior is visible in the saved output, or an inline error is shown
+
+**3. Interaction Edge Cases:**
+
+Pick only the ones that match component types in this module's AST:
+
+- **Rapid re-submission after redirect** (any form that redirects to a detail page on success): after a successful submit, press the browser back button → assert the creation form is shown blank (not pre-filled) OR the user is redirected to the detail page without a second entity being created
+- **Wizard step skip — enforced navigation** (wizard where steps must be completed sequentially): attempt to click a later step tab directly without completing earlier steps → assert navigation is blocked and the earlier step remains active
+- **Wizard step skip — free navigation** (wizard that allows free tab navigation): navigate to a later step without filling earlier steps → assert the later step displays and returning to the earlier step shows fields blank (no data was lost from the later step)
+- **Repeating group: add then remove all** (any `repeating_group`): add entries → remove all entries → submit → assert behavior: if spec states no minimum, form submits successfully; if spec requires at least one entry, a visible error is shown
+
+**4. State / Data Edge Cases:**
+
+Pick only what applies to this module:
+
+- **Rapid consecutive state transitions** (`state_bound_action_bar`): complete one transition → immediately attempt the next → assert the action succeeds or the expected blocking message is shown per spec
+- **Date edges** (`date` fields): test today's date, yesterday, and a far future date — assert which are accepted per spec and describe the visible outcome for each
+- **Leap year date** (`date` fields, free-text entry only): enter February 29 on a non-leap year → assert error; on a leap year → assert accepted. *Skip this test if the field uses a calendar date picker — pickers remove February 29 from non-leap years at the UI level and the test is not UI-executable.*
+- **File at exact size limit** (`file_upload`): upload a file exactly at the stated size limit → assert accepted with a visible success indicator; upload a file one unit over the limit → assert a visible error naming the size constraint
+
+**RELEVANCE RULE:** Only generate edge cases that match component types present in this module's AST. A login form does not need repeating-group edge cases. A data table does not need wizard-step-skip tests.
+
+**`visible_when` fields:** If the spec reveals a conditional field via a toggle/dropdown, test a boundary value in that revealed field. If the revealed field has no numeric or date constraint, generate one `input_edge` test using a long-text or special-character value instead.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (form with numeric/date constraints): **4–8 tests**
+- Complex module (state machine, wizard, repeating groups): **6–10 tests**
+
+If you exceed these, you are generating generic edges that don't apply to this module. Apply the relevance rule and scope gate again.
+
+---
+
+**MINIMUM OUTPUT RULE:**
+
+If the module has any numeric/date/count threshold in the AST or description, produce at least 2 boundary tests. Zero boundary tests when thresholds exist is a generation failure.
+
+---
+
+**PRIORITY:**
+
+- **High:** None — edge tests are secondary to core functionality
+- **Medium:** Boundary tests at thresholds (financial amounts, date ordering, count limits, file size limits)
+- **Low:** Input edge cases (long text, special chars, whitespace, decimal precision), interaction edge cases (browser back, wizard skip)
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "subcategory": "boundary | input_edge | interaction_edge | state_edge | data_edge",
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "Precise visible outcome — state pass or fail explicitly for boundary tests",
+      "priority": "medium | low"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "boundary": 0,
+    "input_edge": 0,
+    "interaction_edge": 0,
+    "state_edge": 0,
+    "data_edge": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[21:41:13] Test-Edge - USER PROMPT
+------------------------------------------------------------
+<module_name>Dashboard</module_name>
+
+<ast>
+{
+  "module_name": "Dashboard",
+  "components": {
+    "Dashboard_Page": {
+      "type": "page",
+      "fields": {
+        "Edit_Mode": {
+          "type": "checkbox",
+          "required": false,
+          "description": "Toggle to enter/exit Edit mode"
+        },
+        "Reset_Page_To_Default": {
+          "type": "button",
+          "visible_when": "Edit_Mode == true"
+        },
+        "Add_Block_Button": {
+          "type": "button",
+          "element_name": "+ Add a block",
+          "visible_when": "Edit_Mode == true",
+          "opens": "Block_Library_Page"
+        }
+      }
+    },
+    "Timeline_Block": {
+      "type": "block",
+      "fields": {
+        "Time_Range": {
+          "type": "dropdown",
+          "required": false,
+          "options": [
+            "Next 7 days"
+          ]
+        },
+        "Sort_Order": {
+          "type": "dropdown",
+          "required": false
+        },
+        "Search_Activities": {
+          "type": "search",
+          "required": false,
+          "description": "Search activities by name or type"
+        },
+        "Empty_State": {
+          "type": "empty_state",
+          "visible_when": "Timeline_Block.items_in_range == 0"
+        }
+      },
+      "edit_controls": {
+        "visible_when": "Edit_Mode == true",
+        "move_handle": {
+          "type": "button",
+          "element_name": "Move"
+        },
+        "options_menu": {
+          "type": "menu",
+          "menu_actions": [
+            {
+              "action_name": "Configure"
+            },
+            {
+              "action_name": "Move"
+            },
+            {
+              "action_name": "Delete"
+            }
+          ]
+        }
+      }
+    },
+    "Calendar_Block": {
+      "type": "block",
+      "fields": {
+        "All_Courses_Filter": {
+          "type": "dropdown",
+          "required": false
+        },
+        "New_Event_Button": {
+          "type": "button",
+          "element_name": "New event",
+          "opens": "New_Event_Form"
+        },
+        "Prev_Month": {
+          "type": "button",
+          "element_name": "Previous month"
+        },
+        "Next_Month": {
+          "type": "button",
+          "element_name": "Next month"
+        },
+        "Full_Calendar_Link": {
+          "type": "link",
+          "element_name": "Full calendar",
+          "opens": "Full_Calendar_View"
+        },
+        "Import_or_Export_Calendars_Link": {
+          "type": "link",
+          "element_name": "Import or export calendars",
+          "opens": "Calendar_Data_Management"
+        }
+      },
+      "edit_controls": {
+        "visible_when": "Edit_Mode == true",
+        "move_handle": {
+          "type": "button",
+          "element_name": "Move"
+        },
+        "options_menu": {
+          "type": "menu",
+          "menu_actions": [
+            {
+              "action_name": "Configure"
+            },
+            {
+              "action_name": "Move"
+            },
+            {
+              "action_name": "Delete"
+            }
+          ]
+        }
+      }
+    },
+    "Block_Library_Page": {
+      "type": "page",
+      "fields": {}
+    },
+    "New_Event_Form": {
+      "type": "modal",
+      "fields": {}
+    },
+    "Full_Calendar_View": {
+      "type": "page",
+      "fields": {}
+    },
+    "Calendar_Data_Management": {
+      "type": "page",
+      "fields": {}
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Dashboard displays a personalized greeting at the top. The main content area contains two blocks side by side: the Timeline block and the Calendar block. The Timeline block shows upcoming activities and deadlines across all enrolled courses. It includes a time range dropdown (e.g., "Next 7 days"), a sort order dropdown, and a search field to find activities by name or type. When no items exist within the selected range, an empty state is shown. The Calendar block shows a monthly view with the current month and year as a heading. It includes an "All courses" dropdown to filter events by course, a "New event" button to create personal calendar entries, and left/right arrows to navigate between months. The current date is highlighted, and dates with events display their names inline. Two links at the bottom — "Full calendar" and "Import or export calendars" — open the dedicated calendar view and calendar data management respectively. When Edit mode is toggled on, a "Reset page to default" button appears at the top right and a "+ Add a block" button appears below the Dashboard heading, opening a page listing all available block types. In Edit mode, each existing block shows a move icon and a three-dot menu for configure, move, and delete actions.
+
+---
+
+
+</description>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:41:44] Test-Edge - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Dashboard",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "subcategory": "boundary",
+      "test_case": "Timeline empty state shown when there are zero items in the selected time range",
+      "preconditions": [
+        "Dashboard is loaded",
+        "Timeline block is visible on the Dashboard",
+        "There are NO activities within the selected time range (test data/state has 0 items_in_range)"
+      ],
+      "steps": [
+        "1. Click the Time_Range dropdown in the Timeline block",
+        "2. Select the \"Next 7 days\" option",
+        "3. Wait for the Timeline block to refresh",
+        "4. Observe the Timeline block content area"
+      ],
+      "expected_result": "The Timeline block displays the Empty_State element (empty state panel is visible) and the timeline item list shows zero entries — this succeeds.",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-002",
+      "subcategory": "boundary",
+      "test_case": "Timeline shows a single activity when exactly one item exists in the selected time range (empty state hidden)",
+      "preconditions": [
+        "Dashboard is loaded",
+        "Timeline block is visible on the Dashboard",
+        "Exactly ONE activity exists within the selected time range (test data/state has items_in_range == 1)"
+      ],
+      "steps": [
+        "1. Click the Time_Range dropdown in the Timeline block",
+        "2. Select the \"Next 7 days\" option",
+        "3. Wait for the Timeline block to refresh",
+        "4. Observe the Timeline block content area"
+      ],
+      "expected_result": "The Timeline block displays exactly one activity entry in the timeline item list and the Empty_State element is not visible — this succeeds.",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-003",
+      "subcategory": "input_edge",
+      "test_case": "Search_Activities accepts a very long search string (200+ characters) and handles it without UI failure",
+      "preconditions": [
+        "Dashboard is loaded",
+        "Timeline block is visible on the Dashboard"
+      ],
+      "steps": [
+        "1. Focus the Search_Activities field in the Timeline block",
+        "2. Type a string of 200+ characters into Search_Activities",
+        "3. Press Enter (or trigger the search action)",
+        "4. Observe the Search_Activities field value and the Timeline block content area"
+      ],
+      "expected_result": "The Search_Activities field displays the entered long string and the search executes without UI error or crash; the UI either shows matching results or displays the Empty_State if there are no matches — the search action succeeds.",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-004",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid toggle of Edit_Mode: options menu interaction blocked when Edit_Mode is turned off before menu click",
+      "preconditions": [
+        "Dashboard is loaded",
+        "Timeline block (or another block with edit_controls) is present",
+        "Edit_Mode is initially OFF"
+      ],
+      "steps": [
+        "1. Click the Edit_Mode checkbox to toggle it ON",
+        "2. Immediately (within 1 second) click the Edit_Mode checkbox again to toggle it OFF",
+        "3. Attempt to click the Timeline_Block.options_menu (three-dot menu) on the Timeline block",
+        "4. Observe whether the options menu opens"
+      ],
+      "expected_result": "Because Edit_Mode was toggled OFF before interacting, the options_menu is not visible and the attempt to open it is blocked; no menu appears and no UI error is shown — the action is blocked.",
+      "priority": "medium"
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "boundary": 2,
+    "input_edge": 1,
+    "interaction_edge": 1,
+    "state_edge": 0,
+    "data_edge": 0,
+    "medium_priority": 3,
+    "low_priority": 1
+  }
+}
+
+------------------------------------------------------------
+[21:41:44] Test-Edge - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Dashboard",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "subcategory": "boundary",
+      "test_case": "Timeline empty state shown when there are zero items in the selected time range",
+      "preconditions": [
+        "Dashboard is loaded",
+        "Timeline block is visible on the Dashboard",
+        "There are NO activities within the selected time range (test data/state has 0 items_in_range)"
+      ],
+      "steps": [
+        "1. Click the Time_Range dropdown in the Timeline block",
+        "2. Select the \"Next 7 days\" option",
+        "3. Wait for the Timeline block to refresh",
+        "4. Observe the Timeline block content area"
+      ],
+      "expected_result": "The Timeline block displays the Empty_State element (empty state panel is visible) and the timeline item list shows zero entries \u2014 this succeeds.",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-002",
+      "subcategory": "boundary",
+      "test_case": "Timeline shows a single activity when exactly one item exists in the selected time range (empty state hidden)",
+      "preconditions": [
+        "Dashboard is loaded",
+        "Timeline block is visible on the Dashboard",
+        "Exactly ONE activity exists within the selected time range (test data/state has items_in_range == 1)"
+      ],
+      "steps": [
+        "1. Click the Time_Range dropdown in the Timeline block",
+        "2. Select the \"Next 7 days\" option",
+        "3. Wait for the Timeline block to refresh",
+        "4. Observe the Timeline block content area"
+      ],
+      "expected_result": "The Timeline block displays exactly one activity entry in the timeline item list and the Empty_State element is not visible \u2014 this succeeds.",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-003",
+      "subcategory": "input_edge",
+      "test_case": "Search_Activities accepts a very long search string (200+ characters) and handles it without UI failure",
+      "preconditions": [
+        "Dashboard is loaded",
+        "Timeline block is visible on the Dashboard"
+      ],
+      "steps": [
+        "1. Focus the Search_Activities field in the Timeline block",
+        "2. Type a string of 200+ characters into Search_Activities",
+        "3. Press Enter (or trigger the search action)",
+        "4. Observe the Search_Activities field value and the Timeline block content area"
+      ],
+      "expected_result": "The Search_Activities field displays the entered long string and the search executes without UI error or crash; the UI either shows matching results or displays the Empty_State if there are no matches \u2014 the search action succeeds.",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-004",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid toggle of Edit_Mode: options menu interaction blocked when Edit_Mode is turned off before menu click",
+      "preconditions": [
+        "Dashboard is loaded",
+        "Timeline block (or another block with edit_controls) is present",
+        "Edit_Mode is initially OFF"
+      ],
+      "steps": [
+        "1. Click the Edit_Mode checkbox to toggle it ON",
+        "2. Immediately (within 1 second) click the Edit_Mode checkbox again to toggle it OFF",
+        "3. Attempt to click the Timeline_Block.options_menu (three-dot menu) on the Timeline block",
+        "4. Observe whether the options menu opens"
+      ],
+      "expected_result": "Because Edit_Mode was toggled OFF before interacting, the options_menu is not visible and the attempt to open it is blocked; no menu appears and no UI error is shown \u2014 the action is blocked.",
+      "priority": "medium"
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "boundary": 2,
+    "input_edge": 1,
+    "interaction_edge": 1,
+    "state_edge": 0,
+    "data_edge": 0,
+    "medium_priority": 3,
+    "low_priority": 1
+  }
+}

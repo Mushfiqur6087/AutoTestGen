@@ -1,0 +1,471 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-05-22T21:39:05.867564
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:39:25] Semantic Critic - SYSTEM PROMPT
+------------------------------------------------------------
+You are a UI-AST Semantic Critic. You receive (1) a raw functional description and (2) a generated UI-AST JSON.
+
+Your single job: decide whether this AST is good enough to use, or whether it should be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the JSON. You DO NOT generate a new JSON. You ONLY audit.
+
+---
+
+**INPUT:**
+
+<description>
+{Raw functional description text}
+</description>
+
+<ast>
+{Generated UI-AST JSON}
+</ast>
+
+---
+
+**WHAT COUNTS AS INTERACTIVE (in scope):**
+- Form fields, checkboxes, file uploads, search inputs (user inputs a value)
+- Buttons, links, row actions, bulk actions, submit actions (user triggers something)
+- Tabs, sub-tabs, wizard steps (user navigates)
+- Action consequences (`on_success`), preconditions, validation constraints
+- States in a state_bound_action_bar (Pending/Active/Closed are routing keys)
+
+**WHAT IS OUT OF SCOPE (do NOT expect these in the AST):**
+- Passive display labels — "the page displays the client name, account number, status badge, activation date, office" produces ZERO expected items. The AST is correct to omit them.
+- Chip colors, badge styles, decorative icons, visual styling
+
+---
+
+**METHOD:**
+
+**Step 1 — Walk the description and list every interactive element.**
+Apply the scope rules above. A passive display sentence produces zero expected items.
+If the description names a tab or step but gives zero fields for it, the correct AST has
+`fields: {}` for that tab/step — do NOT expect fields there.
+
+**Step 2 — Walk the AST and verify each expected element is present at the right path.**
+Note any expected items that are MISSING.
+
+**Step 3 — Walk the AST and check for PHANTOMS.**
+A phantom is anything in the AST that isn't traceable to explicit text in the description:
+- Buttons not named in the description (e.g., a "Start Import" button when description only says "uploading a file")
+- Fields invented inside generic-name tabs (e.g., an Add_Note field in a Notes tab, an Upload_Document field in a Documents tab) when the description only names the tab and gives no field details
+- Constraints inferred from UX intuition, not stated in the description text
+- Passive display fields (Client_Name, Status_Badge in a display_fields block)
+
+A reasonable inference with no textual anchor is still a phantom. Flag it.
+
+**Step 4 — Check conditional logic.**
+Count a conditional ONLY if the description has explicit trigger language:
+"when X is selected", "if X then", "required if", "Y is enabled when X", "selecting X reveals Y".
+Do NOT infer conditionals from field relationships. If no trigger phrase exists, expected = 0.
+
+**Step 5 — Decide the verdict.**
+
+```
+yes   →  Missing items: 0–2 minor (optional fields, non-critical)
+          AND Phantoms: 0–2 minor
+          AND no critical structural errors
+
+retry →  Missing items: 3+, OR
+          Phantoms: 3+, OR
+          Any required field missing, OR
+          Any state in state_bound_action_bar missing, OR
+          Recursive nesting (sub-tabs/sub-steps) missing when description names them, OR
+          Constraint placed at wrong level (floating instead of nested)
+```
+
+There is no third option. Don't agonize over edge cases — when in doubt, retry. A single regeneration is cheap.
+
+---
+
+**OUTPUT FORMAT — JSON only, no prose, no markdown fencing:**
+
+{
+  "verdict": "yes | retry",
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    "<dotted path of expected element absent from AST — e.g., 'Create_Client_Wizard.steps[3].fields.Document_Type'>"
+  ],
+  "phantoms": [
+    "<dotted path of AST element not in description — e.g., 'Bulk_Import_Page.submit_actions[0] (Start_Import button not in description)'>"
+  ],
+  "fixes": [
+    "<actionable instruction for regeneration — only populated when verdict is retry>",
+    "<each fix references a JSON path and the exact change needed>"
+  ]
+}
+
+If verdict is "yes", `fixes` must be an empty array.
+
+Output ONLY the JSON object. No explanation, no markdown fencing, no preamble.
+
+
+------------------------------------------------------------
+[21:39:25] Semantic Critic - USER PROMPT
+------------------------------------------------------------
+<description>
+
+The Activities page provides a consolidated overview of every activity in the course, grouped by type. The Assignments section is expanded by default and displays a table with columns for Name (clickable link with parent section shown below), Due date, and Submission status. The Forums section and Resources section are collapsed by default and expandable via an arrow. Additional activity types appear as their own collapsible sections. Clicking any activity name navigates directly to that activity's page.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Activities",
+  "components": {
+    "Activities_Accordion": {
+      "type": "accordion",
+      "sections": [
+        {
+          "section_name": "Assignments",
+          "type": "collapsible_section",
+          "default_expanded": true,
+          "toggle_action": {
+            "action_name": "Toggle Expand/Collapse"
+          },
+          "content": {
+            "type": "data_table",
+            "columns": [
+              {
+                "name": "Name",
+                "type": "link",
+                "link_action": {
+                  "action_name": "Open Activity",
+                  "on_success": "navigates to activity page (parent section shown below)"
+                }
+              },
+              {
+                "name": "Due date",
+                "type": "date"
+              },
+              {
+                "name": "Submission status",
+                "type": "unspecified"
+              }
+            ],
+            "row_actions": [
+              {
+                "action_name": "Open Activity",
+                "on_success": "navigates to activity page (parent section shown below)"
+              }
+            ]
+          }
+        },
+        {
+          "section_name": "Forums",
+          "type": "collapsible_section",
+          "default_expanded": false,
+          "toggle_action": {
+            "action_name": "Toggle Expand/Collapse"
+          },
+          "content": {
+            "fields": {}
+          }
+        },
+        {
+          "section_name": "Resources",
+          "type": "collapsible_section",
+          "default_expanded": false,
+          "toggle_action": {
+            "action_name": "Toggle Expand/Collapse"
+          },
+          "content": {
+            "fields": {}
+          }
+        },
+        {
+          "section_name": "Additional_Activity_Types",
+          "type": "repeating_group",
+          "min": 0,
+          "item_fields": {
+            "Section_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Section_Collapsible": {
+              "type": "collapsible_section",
+              "default_expanded": false,
+              "toggle_action": {
+                "action_name": "Toggle Expand/Collapse"
+              },
+              "content": {
+                "fields": {}
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:39:50] Semantic Critic - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "summary": "AST invents structural details (row actions and explicit item fields for additional activity types) and does not assert the explicit global rule that clicking any activity name navigates to the activity page.",
+  "missing": [
+    "Activities_Accordion.click_action_for_activity_names (global rule that clicking any activity name navigates to that activity's page)"
+  ],
+  "phantoms": [
+    "Activities_Accordion.sections[0].content.row_actions[0] (Open Activity row action — description only specified clicking the Name link)",
+    "Activities_Accordion.sections[3].item_fields.Section_Name (invented required field for additional activity type entries — not specified in description)",
+    "Activities_Accordion.sections[3].item_fields.Section_Collapsible (nested collapsible_section inside repeating_group — description only said additional types appear as their own collapsible sections, not that each needs an invented internal field structure)"
+  ],
+  "fixes": [
+    "Remove Activities_Accordion.sections[0].content.row_actions (Delete the row_actions array); the description only states that the Name column is a clickable link that navigates, so keep the link on the Name column but remove separate row actions.",
+    "Replace Activities_Accordion.sections[3] repeating_group.item_fields with a simpler repeating collapsible section representation: Activities_Accordion.sections[3] should be an array of collapsible_section objects (one per additional activity type) each with default_expanded: false and content: { fields: {} } — do not invent a required Section_Name field or nested Section_Collapsible field.",
+    "Add a global interaction rule at Activities_Accordion (or annotate each section's activity name field) to capture the explicit behavior: Activities_Accordion.click_action_for_activity_names = { action: 'Open Activity', target: 'activity page', applies_to: 'any activity name link in any section' } — or ensure every section that lists activity names has a Name column/field of type 'link' with that navigation action."
+  ]
+}
+
+------------------------------------------------------------
+[21:39:50] Semantic Critic - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "summary": "AST invents structural details (row actions and explicit item fields for additional activity types) and does not assert the explicit global rule that clicking any activity name navigates to the activity page.",
+  "missing": [
+    "Activities_Accordion.click_action_for_activity_names (global rule that clicking any activity name navigates to that activity's page)"
+  ],
+  "phantoms": [
+    "Activities_Accordion.sections[0].content.row_actions[0] (Open Activity row action \u2014 description only specified clicking the Name link)",
+    "Activities_Accordion.sections[3].item_fields.Section_Name (invented required field for additional activity type entries \u2014 not specified in description)",
+    "Activities_Accordion.sections[3].item_fields.Section_Collapsible (nested collapsible_section inside repeating_group \u2014 description only said additional types appear as their own collapsible sections, not that each needs an invented internal field structure)"
+  ],
+  "fixes": [
+    "Remove Activities_Accordion.sections[0].content.row_actions (Delete the row_actions array); the description only states that the Name column is a clickable link that navigates, so keep the link on the Name column but remove separate row actions.",
+    "Replace Activities_Accordion.sections[3] repeating_group.item_fields with a simpler repeating collapsible section representation: Activities_Accordion.sections[3] should be an array of collapsible_section objects (one per additional activity type) each with default_expanded: false and content: { fields: {} } \u2014 do not invent a required Section_Name field or nested Section_Collapsible field.",
+    "Add a global interaction rule at Activities_Accordion (or annotate each section's activity name field) to capture the explicit behavior: Activities_Accordion.click_action_for_activity_names = { action: 'Open Activity', target: 'activity page', applies_to: 'any activity name link in any section' } \u2014 or ensure every section that lists activity names has a Name column/field of type 'link' with that navigation action."
+  ]
+}
+
+------------------------------------------------------------
+[21:40:12] Semantic Critic - USER PROMPT
+------------------------------------------------------------
+<description>
+
+The Activities page provides a consolidated overview of every activity in the course, grouped by type. The Assignments section is expanded by default and displays a table with columns for Name (clickable link with parent section shown below), Due date, and Submission status. The Forums section and Resources section are collapsed by default and expandable via an arrow. Additional activity types appear as their own collapsible sections. Clicking any activity name navigates directly to that activity's page.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Activities",
+  "components": {
+    "Activities_Accordion": {
+      "type": "accordion",
+      "click_action_for_activity_names": {
+        "action": "Open Activity",
+        "target": "activity page",
+        "applies_to": "any activity name link in any section"
+      },
+      "sections": [
+        {
+          "section_name": "Assignments",
+          "default_expanded": true,
+          "content": {
+            "fields": {
+              "Assignments_Table": {
+                "type": "data_table",
+                "columns": {
+                  "Name": {
+                    "type": "link",
+                    "action": "Open Activity",
+                    "action_target": "activity page"
+                  },
+                  "Due_Date": {
+                    "type": "date"
+                  },
+                  "Submission_Status": {
+                    "type": "unspecified"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "section_name": "Forums",
+          "default_expanded": false,
+          "content": {
+            "fields": {}
+          }
+        },
+        {
+          "section_name": "Resources",
+          "default_expanded": false,
+          "content": {
+            "fields": {}
+          }
+        },
+        []
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:40:30] Semantic Critic - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "summary": "AST is missing representation for additional activity-type sections and the 'parent section shown below' detail for the Assignment Name column, and it contains a stray/phantom empty array in the sections list.",
+  "missing": [
+    "components.Activities_Accordion (representation for additional activity types — a template or placeholder indicating additional collapsible sections are supported)",
+    "components.Activities_Accordion.sections[0].content.fields.Assignments_Table.columns.Name.show_parent_section_below"
+  ],
+  "phantoms": [
+    "components.Activities_Accordion.sections[3] (unexpected empty array entry)"
+  ],
+  "fixes": [
+    "Remove the stray empty array at components.Activities_Accordion.sections[3]; sections should be an array of objects only.",
+    "Add an explicit placeholder/template for additional activity sections under components.Activities_Accordion, e.g. components.Activities_Accordion.additional_section_template = { \"collapsible\": true, \"default_expanded\": false, \"content\": { \"fields\": {} } } (or append objects to sections for each additional type instead of an empty array) so the AST captures 'Additional activity types appear as their own collapsible sections'.",
+    "Add a property under the Assignments table Name column to capture the 'parent section shown below' requirement: components.Activities_Accordion.sections[0].content.fields.Assignments_Table.columns.Name.show_parent_section_below = true (or add a sublabel field: columns.Name.sublabel = { \"type\": \"parent_section\", \"position\": \"below\" }).",
+    "Optional but recommended: set a concrete type for Submission_Status (e.g. components.Activities_Accordion.sections[0].content.fields.Assignments_Table.columns.Submission_Status.type = \"status\" or \"text\") instead of \"unspecified\"."
+  ]
+}
+
+------------------------------------------------------------
+[21:40:30] Semantic Critic - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "summary": "AST is missing representation for additional activity-type sections and the 'parent section shown below' detail for the Assignment Name column, and it contains a stray/phantom empty array in the sections list.",
+  "missing": [
+    "components.Activities_Accordion (representation for additional activity types \u2014 a template or placeholder indicating additional collapsible sections are supported)",
+    "components.Activities_Accordion.sections[0].content.fields.Assignments_Table.columns.Name.show_parent_section_below"
+  ],
+  "phantoms": [
+    "components.Activities_Accordion.sections[3] (unexpected empty array entry)"
+  ],
+  "fixes": [
+    "Remove the stray empty array at components.Activities_Accordion.sections[3]; sections should be an array of objects only.",
+    "Add an explicit placeholder/template for additional activity sections under components.Activities_Accordion, e.g. components.Activities_Accordion.additional_section_template = { \"collapsible\": true, \"default_expanded\": false, \"content\": { \"fields\": {} } } (or append objects to sections for each additional type instead of an empty array) so the AST captures 'Additional activity types appear as their own collapsible sections'.",
+    "Add a property under the Assignments table Name column to capture the 'parent section shown below' requirement: components.Activities_Accordion.sections[0].content.fields.Assignments_Table.columns.Name.show_parent_section_below = true (or add a sublabel field: columns.Name.sublabel = { \"type\": \"parent_section\", \"position\": \"below\" }).",
+    "Optional but recommended: set a concrete type for Submission_Status (e.g. components.Activities_Accordion.sections[0].content.fields.Assignments_Table.columns.Submission_Status.type = \"status\" or \"text\") instead of \"unspecified\"."
+  ]
+}
+
+------------------------------------------------------------
+[21:40:55] Semantic Critic - USER PROMPT
+------------------------------------------------------------
+<description>
+
+The Activities page provides a consolidated overview of every activity in the course, grouped by type. The Assignments section is expanded by default and displays a table with columns for Name (clickable link with parent section shown below), Due date, and Submission status. The Forums section and Resources section are collapsed by default and expandable via an arrow. Additional activity types appear as their own collapsible sections. Clicking any activity name navigates directly to that activity's page.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Activities",
+  "components": {
+    "Activities_Accordion": {
+      "type": "accordion",
+      "sections": [
+        {
+          "section_name": "Assignments",
+          "collapsible": true,
+          "default_expanded": true,
+          "content": {
+            "fields": {
+              "Assignments_Table": {
+                "type": "data_table",
+                "columns": {
+                  "Name": {
+                    "type": "link",
+                    "show_parent_section_below": true,
+                    "on_click": "navigates to activity page"
+                  },
+                  "Due_Date": {
+                    "type": "date"
+                  },
+                  "Submission_Status": {
+                    "type": "status"
+                  }
+                },
+                "row_actions": [],
+                "bulk_actions": []
+              }
+            }
+          }
+        },
+        {
+          "section_name": "Forums",
+          "collapsible": true,
+          "default_expanded": false,
+          "content": {
+            "fields": {}
+          }
+        },
+        {
+          "section_name": "Resources",
+          "collapsible": true,
+          "default_expanded": false,
+          "content": {
+            "fields": {}
+          }
+        }
+      ],
+      "additional_section_template": {
+        "collapsible": true,
+        "default_expanded": false,
+        "content": {
+          "fields": {}
+        }
+      }
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:41:04] Semantic Critic - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "summary": "AST accurately represents the accordion sections, default expansion states, and the Assignments table with clickable Name links; only two minor phantom properties (empty action arrays) are present.",
+  "missing": [],
+  "phantoms": [
+    "components.Activities_Accordion.sections[0].content.fields.Assignments_Table.row_actions",
+    "components.Activities_Accordion.sections[0].content.fields.Assignments_Table.bulk_actions"
+  ],
+  "fixes": []
+}
+
+------------------------------------------------------------
+[21:41:04] Semantic Critic - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "summary": "AST accurately represents the accordion sections, default expansion states, and the Assignments table with clickable Name links; only two minor phantom properties (empty action arrays) are present.",
+  "missing": [],
+  "phantoms": [
+    "components.Activities_Accordion.sections[0].content.fields.Assignments_Table.row_actions",
+    "components.Activities_Accordion.sections[0].content.fields.Assignments_Table.bulk_actions"
+  ],
+  "fixes": []
+}
