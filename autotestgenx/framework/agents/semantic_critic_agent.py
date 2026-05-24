@@ -4,9 +4,9 @@ import json
 from importlib import resources
 from typing import Any, Dict
 
-from autospectest.framework.agents.base import BaseAgent
+from autotestgenx.framework.agents.base import BaseAgent
 
-_PROMPT = resources.files("autospectest.prompts").joinpath("semantic_critic.md").read_text(encoding="utf-8")
+_PROMPT = resources.files("autotestgenx.prompts").joinpath("semantic_critic.md").read_text(encoding="utf-8")
 
 
 class SemanticCriticAgent(BaseAgent):

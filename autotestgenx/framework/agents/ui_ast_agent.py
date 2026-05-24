@@ -3,9 +3,9 @@
 from importlib import resources
 from typing import Any, Dict, List, Optional
 
-from autospectest.framework.agents.base import BaseAgent
+from autotestgenx.framework.agents.base import BaseAgent
 
-_PROMPT = resources.files("autospectest.prompts").joinpath("ui_ast.md").read_text(encoding="utf-8")
+_PROMPT = resources.files("autotestgenx.prompts").joinpath("ui_ast.md").read_text(encoding="utf-8")
 
 
 class UIASTAgent(BaseAgent):

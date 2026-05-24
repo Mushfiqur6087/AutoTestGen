@@ -3,10 +3,10 @@ from typing import Any, Dict, Optional, Set
 
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-from autospectest.framework.agents.base import BaseAgent
-from autospectest.framework.orchestrator.graph import build_graph
-from autospectest.framework.orchestrator.runs import CHECKPOINT_DB
-from autospectest.framework.orchestrator.state import PipelineState
+from autotestgenx.framework.agents.base import BaseAgent
+from autotestgenx.framework.orchestrator.graph import build_graph
+from autotestgenx.framework.orchestrator.runs import CHECKPOINT_DB
+from autotestgenx.framework.orchestrator.state import PipelineState
 
 
 class UIASTGenerator:
@@ -34,7 +34,7 @@ class UIASTGenerator:
         test_types: Optional[Set[str]] = None,
     ) -> Optional[Dict[str, Any]]:
         print("=" * 60)
-        print("AUTOSPECTEST  (UI-AST Pipeline)")
+        print("AUTOTESTGENX  (UI-AST Pipeline)")
         print("=" * 60)
         if self.run_id:
             print(f"run_id: {self.run_id}{'  (resuming)' if resume else ''}")

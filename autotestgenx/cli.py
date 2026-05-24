@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-AutoSpecTest CLI — UI-AST generation from functional specifications.
+AutoTestGenX CLI — UI-AST generation from functional specifications.
 
 Usage:
-    autospectest --generate --input spec.md --api-key "sk-..." --model openai/gpt-4o-mini
+    autotestgenx --generate --input spec.md --api-key "sk-..." --model openai/gpt-4o-mini
 """
 
 import argparse
@@ -12,10 +12,10 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-import autospectest
-from autospectest.framework.agents.base import set_max_concurrency
-from autospectest.framework.orchestrator.generator import UIASTGenerator
-from autospectest.framework.orchestrator.runs import (
+import autotestgenx
+from autotestgenx.framework.agents.base import set_max_concurrency
+from autotestgenx.framework.orchestrator.generator import UIASTGenerator
+from autotestgenx.framework.orchestrator.runs import (
     make_run_id,
     make_run_metadata,
     read_sidecar,
@@ -25,9 +25,9 @@ from autospectest.framework.orchestrator.runs import (
 
 def main():
     parser = argparse.ArgumentParser(
-        description="AutoSpecTest — UI-AST generation from functional specifications"
+        description="AutoTestGenX — UI-AST generation from functional specifications"
     )
-    parser.add_argument("--version", action="version", version=f"autospectest {autospectest.__version__}")
+    parser.add_argument("--version", action="version", version=f"autotestgenx {autotestgenx.__version__}")
     parser.add_argument("--generate", action="store_true", help="Generate UI-AST from spec")
     parser.add_argument("--input", "-i", help="Path to functional specification markdown file")
     parser.add_argument("--api-key", help="API key for LLM provider")
@@ -36,7 +36,16 @@ def main():
         default="openai/gpt-4o",
         help="LiteLLM model string with provider prefix (default: openai/gpt-4o)",
     )
-    parser.add_argument("--output", "-o", default="output", help="Output directory (default: output)")
+    parser.add_argument(
+        "--output",
+        "-o",
+        help="Output directory (default: outputs/autotestgenx/<project>/<model>/)",
+    )
+    parser.add_argument(
+        "--baseline",
+        choices=["zero_shot", "few_shot"],
+        help="Write outputs under outputs/baselines/<baseline>/<project>/<model>/",
+    )
     parser.add_argument(
         "--resume",
         metavar="RUN_ID",
@@ -117,12 +126,15 @@ def _generate(args):
     functional_desc = _load_from_markdown_file(md_path=input_path)
 
     if not resume:
-        if args.output != "output":
+        if args.output:
             output_dir = args.output
         else:
             project_slug = functional_desc.get("project_name", "output").replace(" ", "_")
             model_slug = model.replace("/", "-")
-            output_dir = str(Path("outputs") / "autospectest" / project_slug / model_slug)
+            if args.baseline:
+                output_dir = str(Path("outputs") / "baselines" / args.baseline / project_slug / model_slug)
+            else:
+                output_dir = str(Path("outputs") / "autotestgenx" / project_slug / model_slug)
 
         run_id = make_run_id(functional_desc.get("project_name", "run"))
         sidecar = write_sidecar(make_run_metadata(

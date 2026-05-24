@@ -114,8 +114,8 @@ class BaseAgent(ABC):
         """OpenRouter is polite about attribution headers; pass them through."""
         if self.model.startswith("openrouter/"):
             return {
-                "HTTP-Referer": "https://github.com/AutoSpecTest",
-                "X-Title": "AutoSpecTest",
+                "HTTP-Referer": "https://github.com/AutoTestGenX",
+                "X-Title": "AutoTestGenX",
             }
         return None
 

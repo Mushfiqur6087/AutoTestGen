@@ -1,4 +1,4 @@
-# Single-Prompt Baseline (stub)
+# Zero-Shot Baseline (stub)
 
 Zero-shot baseline: one LLM call, full functional specification in the prompt,
 JSON test cases out. No agents, no decomposition, no graph.
@@ -6,18 +6,18 @@ JSON test cases out. No agents, no decomposition, no graph.
 ## Planned interface
 
 ```bash
-python -m baselines.single_prompt \
-  --input dataset/raw_specifications/Parabank/Parabank.md \
+python -m baselines.zero_shot \
+  --input dataset/functional_descriptions/Parabank/Parabank.md \
   --api-key "$OPENAI_API_KEY" \
   --provider openai \
   --model gpt-4o
 ```
 
-Writes to `outputs/single_prompt/<project>/<model>/test-cases.json`.
+Writes to `outputs/zero_shot/<project>/<model>/test-cases.json`.
 
 ## Implementation notes
 
-- Reuse `autospectest.framework.agents.base.BaseAgent` for the HTTP call so
+- Reuse `autotestgenx.framework.agents.base.BaseAgent` for the HTTP call so
   provider/model handling stays consistent across systems.
 - The prompt should ask the LLM for the same `TestSuiteOutput` schema the
   framework emits, so existing exporters round-trip without modification.

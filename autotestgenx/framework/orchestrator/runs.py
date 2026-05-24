@@ -6,7 +6,7 @@ checkpoint, and is the key the user passes to ``--resume`` to continue an
 interrupted run from the last completed node.
 
 Layout under ``outputs/.checkpoints/``:
-    autospectest.sqlite       single shared LangGraph checkpoint DB
+    autotestgenx.sqlite       single shared LangGraph checkpoint DB
     <run_id>.json             per-run metadata sidecar (input path, model, ...)
 """
 
@@ -22,7 +22,7 @@ from typing import Optional
 
 
 CHECKPOINT_DIR = Path("outputs") / ".checkpoints"
-CHECKPOINT_DB = CHECKPOINT_DIR / "autospectest.sqlite"
+CHECKPOINT_DB = CHECKPOINT_DIR / "autotestgenx.sqlite"
 
 
 @dataclass

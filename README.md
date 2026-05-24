@@ -1,19 +1,25 @@
-# AutoSpecTest
+# AutoTestGenX
 
-Convert natural-language functional specifications into structured, machine-readable UI Abstract Syntax Trees (UI-AST). The UI-AST captures every interactive element — forms, buttons, tabs, wizards, data tables, conditional logic, and state-bound actions — in a deterministic JSON schema ready for test generation or automated validation.
+![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 
----
+AutoTestGenX converts natural-language functional specifications into a deterministic UI Abstract Syntax Tree (UI-AST) and a structured test suite. It captures interactive elements only and produces machine-readable JSON for automated validation, coverage analysis, and test generation workflows.
 
-## How it works
+## Highlights
 
-A functional spec markdown file goes in; two JSON files come out.
+- Deterministic UI-AST schema focused on interactive elements
+- Critic-guided retries to reduce omissions and hallucinations
+- Parallelized test generation for positive, negative, and edge cases
+- Resumable runs with checkpointing and optional debug logs
+- Provider-agnostic LLM routing via LiteLLM
 
-```
+## Architecture overview
+
+```text
 spec.md (## Module sections)
     │
     ▼
 ┌──────────────────────────────────────────────────────────┐
-│  AutoSpecTest Pipeline                                   │
+│  AutoTestGenX Pipeline                                   │
 │                                                          │
 │  ┌─────────────────────────────────────────────────┐     │
 │  │  [1/3] generate_and_critique (parallel)         │     │
@@ -55,40 +61,33 @@ Modules run concurrently across all stages.
 
 ## Installation
 
-**Requirements:** Python 3.9+
-
 ```bash
-git clone https://github.com/your-org/AutoSpecTest
-cd AutoSpecTest
+git clone https://github.com/your-org/AutoTestGenX
+cd AutoTestGenX
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
 ```
 
-After installation, the `autospectest` command is available in the venv.
-
----
-
 ## Quick start
 
 ```bash
-autospectest --generate \
-  --input dataset/raw_specifications/my-app-spec.md \
+autotestgenx --generate \
+  --input dataset/functional_descriptions/my-app-spec.md \
   --api-key "sk-..." \
   --model "openai/gpt-4o" \
   --output outputs/my-run
 ```
 
-This writes three files to `outputs/my-run/`:
-- `ui-ast.json` — the generated UI-AST
-- `semantic-critique.json` — the critic's final verdict and audit for each module
-- `test-cases.json` — merged positive/negative/edge test cases for each module
+Outputs are written to `outputs/my-run/`:
 
----
+- `ui-ast.json`
+- `semantic-critique.json`
+- `test-cases.json`
 
 ## Input format
 
-The input is a markdown file. Each `## ` heading becomes one module. A `## Navigation` section is extracted as metadata and not processed as a module.
+The input is a markdown file. Each `##` heading becomes one module. A `## Navigation` section is extracted as metadata and not processed as a module.
 
 ```markdown
 # My Application
@@ -110,27 +109,24 @@ Step 3 is read-only review. Submit creates the client in Pending status.
 
 The file stem (e.g. `my-app-spec`) becomes the project name in the output.
 
----
-
 ## CLI reference
 
-```
-autospectest --generate --input SPEC --api-key KEY [options]
-autospectest --resume RUN_ID --api-key KEY
+```bash
+autotestgenx --generate --input SPEC --api-key KEY [options]
+autotestgenx --resume RUN_ID --api-key KEY
 ```
 
 | Flag | Default | Description |
-|------|---------|-------------|
-| `--input` / `-i` | — | Path to `.md` spec file (required for `--generate`) |
-| `--api-key` | — | API key for the LLM provider |
-| `--model` | `openai/gpt-4o` | LiteLLM model string (must include provider prefix) |
-| `--output` / `-o` | `outputs/autospectest/<project>/<model>/` | Output directory |
+| --- | --- | --- |
+| `--input` / `-i` | - | Path to `.md` spec file (required for `--generate`) |
+| `--api-key` | - | API key for the LLM provider |
+| `--model` | `openai/gpt-4o` | LiteLLM model string with provider prefix |
+| `--output` / `-o` | `outputs/autotestgenx/<project>/<model>/` | Output directory |
+| `--baseline` | - | Write outputs to `outputs/baselines/<baseline>/<project>/<model>/` (`zero_shot` or `few_shot`) |
 | `--max-concurrency` | `10` | Max concurrent in-flight LLM calls |
 | `--debug` | off | Write per-stage debug logs to `<output>/debug/` |
-| `--resume RUN_ID` | — | Resume an interrupted run from its checkpoint |
-| `--version` | — | Print version and exit |
-
----
+| `--resume RUN_ID` | - | Resume an interrupted run from its checkpoint |
+| `--version` | - | Print version and exit |
 
 ## LLM providers
 
@@ -144,7 +140,7 @@ All LLM calls go through [LiteLLM](https://github.com/BerriAI/litellm). The `--m
 # Anthropic
 --model anthropic/claude-3-5-sonnet-20241022
 
-# OpenRouter (proxies 100+ models)
+# OpenRouter
 --model openrouter/anthropic/claude-3.5-sonnet
 --model openrouter/openai/gpt-4o
 
@@ -152,15 +148,11 @@ All LLM calls go through [LiteLLM](https://github.com/BerriAI/litellm). The `--m
 --model github/gpt-4o
 ```
 
-The `--api-key` value is passed directly to LiteLLM and must match the provider (OpenAI key for OpenAI models, Anthropic key for Anthropic, OpenRouter key for OpenRouter, etc.).
-
-Parameters unsupported by a given model (e.g. `temperature` on o-series models) are silently dropped — no manual per-model configuration needed.
-
----
+The `--api-key` value is passed directly to LiteLLM and must match the provider.
 
 ## Output files
 
-### `ui-ast.json`
+### ui-ast.json
 
 ```json
 {
@@ -190,7 +182,7 @@ Parameters unsupported by a given model (e.g. `temperature` on o-series models) 
 }
 ```
 
-### `semantic-critique.json`
+### semantic-critique.json
 
 ```json
 {
@@ -213,11 +205,9 @@ Parameters unsupported by a given model (e.g. `temperature` on o-series models) 
 }
 ```
 
-**`forced_ship: true`** means the module hit the 3-attempt cap — the final attempt's output was shipped regardless of the critic's verdict. Check `critique.missing` and `critique.fixes` to understand what to fix in the spec or prompt.
+`forced_ship: true` means the module hit the 3-attempt cap and the final attempt was emitted. Check `critique.missing` and `critique.fixes` to guide prompt or spec refinements.
 
----
-
-### `test-cases.json`
+### test-cases.json
 
 ```json
 {
@@ -292,7 +282,7 @@ Each test case has `category` (`positive | negative | edge`) set automatically d
 The AST captures **interactive elements only**. The critic enforces this — passive display labels ("the page shows the client name") produce zero expected items and are not emitted.
 
 | Component type | Used for |
-|---|---|
+| --- | --- |
 | `form` | Single-page forms with `fields` |
 | `wizard` | Multi-step forms with `steps[]`, each step has `fields` |
 | `tab_container` | Pages with `tabs[]`, each tab has `fields` and can nest more `tabs[]` |
@@ -308,64 +298,63 @@ Action-level attributes: `on_success`, `preconditions[]`, `fields{}` (for modal/
 
 ## Resumability
 
-Every run gets a unique run ID (`<project>-YYYYMMDD-HHmmss-<6char>`). If a run is interrupted mid-pipeline, resume it with:
+Every run gets a unique run ID (`<project>-YYYYMMDD-HHmmss-<6char>`). If a run is interrupted, resume it with:
 
 ```bash
-autospectest --resume my-app-20260503-120000-abc123 --api-key "sk-..."
+autotestgenx --resume my-app-20260503-120000-abc123 --api-key "sk-..."
 ```
 
-The run ID is printed at the start of every `--generate` invocation. Checkpoints are stored in `outputs/.checkpoints/autospectest.sqlite`; sidecar metadata (original inputs) lives in `outputs/.checkpoints/<run-id>.json`.
+Checkpoints are stored in `outputs/.checkpoints/autotestgenx.sqlite`, with a sidecar file at `outputs/.checkpoints/<run-id>.json`.
 
----
-
-## Debug mode
+## Debug logging
 
 ```bash
-autospectest --generate --input spec.md --api-key "..." --model openai/gpt-4o \
+autotestgenx --generate --input spec.md --api-key "..." --model openai/gpt-4o \
   --output outputs/debug-run --debug
 ```
 
-With `--debug`, two log files are written to `outputs/debug-run/debug/`:
+Log files are written to `<output>/debug/`:
 
 | File | Contents |
-|------|----------|
-| `01_ui_ast.log` | System prompt, user prompt, and raw LLM response for every UIASTAgent call |
-| `02_semantic_critic.log` | Same for every SemanticCriticAgent call |
-
-Useful for diagnosing why the critic keeps retrying or why a particular field is missing.
-
----
+| --- | --- |
+| `01_ui_ast.log` | UIASTAgent prompt and raw response per call |
+| `02_semantic_critic.log` | SemanticCriticAgent prompt and raw response per call |
 
 ## Docker
 
 ```bash
-docker build -t autospectest .
+docker build -t autotestgenx .
 
-# Mount a host directory for outputs
 docker run --rm \
   -v $(pwd)/outputs:/app/outputs \
   -v $(pwd)/dataset:/app/dataset \
-  autospectest \
+  autotestgenx \
   --generate \
-  --input dataset/raw_specifications/my-spec.md \
+  --input dataset/functional_descriptions/my-spec.md \
   --api-key "sk-..." \
   --model openai/gpt-4o
 ```
 
-The Docker image installs dependencies in a separate layer so source-only changes rebuild in seconds. Runs as a non-root user to avoid root-owned output files on bind mounts.
+## Project layout
 
----
+```text
+autotestgenx/
+  cli.py
+  framework/
+    agents/
+    orchestrator/
+  prompts/
+dataset/
+outputs/
+baselines/
+```
 
-## Dataset and baselines
+## Datasets and baselines
 
-- `dataset/raw_specifications/` — Input markdown specs
-- `dataset/ground_truth/` — Reference UI-AST outputs for evaluation
-- `baselines/` — Single-prompt and few-shot reference implementations for ablation studies; see `baselines/README.md`
-
----
+- `dataset/functional_descriptions/` - Input markdown specs
+- `dataset/ground_truth_test_cases/` - Reference UI-AST outputs for evaluation
+- `baselines/` - Single-prompt and few-shot reference implementations
 
 ## Concurrency tuning
 
-`--max-concurrency` controls how many LLM calls can be in-flight simultaneously across all modules. The default of 10 is safe for most providers. Lower it if you hit rate limits; raise it for providers with high per-minute token quotas.
-
-The retry loop means a single module can make up to 6 LLM calls (3 generator + 3 critic). With 10 modules and `--max-concurrency 10`, peak concurrency is bounded at 10 regardless of how many modules are retrying simultaneously.
+`--max-concurrency` controls how many LLM calls can be in-flight simultaneously. The default of 10 is safe for most providers. Lower it if you hit rate limits; raise it for providers with higher quotas. A single module can make up to 6 LLM calls (3 generator and 3 critic), but the concurrency cap bounds total in-flight requests.

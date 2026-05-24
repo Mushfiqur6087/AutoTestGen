@@ -1,17 +1,18 @@
 import asyncio
 import json
 import os
+import re
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from autospectest.framework.agents.base import BaseAgent
-from autospectest.framework.agents.semantic_critic_agent import SemanticCriticAgent
-from autospectest.framework.agents.test_edge_agent import TestEdgeAgent
-from autospectest.framework.agents.test_negative_agent import TestNegativeAgent
-from autospectest.framework.agents.test_positive_agent import TestPositiveAgent
-from autospectest.framework.agents.ui_ast_agent import UIASTAgent
-from autospectest.framework.orchestrator.state import PipelineState
+from autotestgenx.framework.agents.base import BaseAgent
+from autotestgenx.framework.agents.semantic_critic_agent import SemanticCriticAgent
+from autotestgenx.framework.agents.test_edge_agent import TestEdgeAgent
+from autotestgenx.framework.agents.test_negative_agent import TestNegativeAgent
+from autotestgenx.framework.agents.test_positive_agent import TestPositiveAgent
+from autotestgenx.framework.agents.ui_ast_agent import UIASTAgent
+from autotestgenx.framework.orchestrator.state import PipelineState
 
 MAX_ATTEMPTS = 3
 
@@ -22,7 +23,7 @@ def _module_debug_dir(state: PipelineState, module_title: str) -> str:
     debug_dir: str = state.get("debug_dir", "")
     if not (debug and debug_dir):
         return ""
-    slug = module_title.replace(" ", "_")
+    slug = re.sub(r"[^A-Za-z0-9_-]", "_", module_title.strip().replace(" ", "_"))
     path = os.path.join(debug_dir, slug)
     os.makedirs(path, exist_ok=True)
     return path

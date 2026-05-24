@@ -3,8 +3,8 @@ from typing import Optional
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, StateGraph
 
-from autospectest.framework.orchestrator.nodes import finalize_node, generate_and_critique_node, generate_tests_node
-from autospectest.framework.orchestrator.state import PipelineState
+from autotestgenx.framework.orchestrator.nodes import finalize_node, generate_and_critique_node, generate_tests_node
+from autotestgenx.framework.orchestrator.state import PipelineState
 
 
 def build_graph(checkpointer: Optional[BaseCheckpointSaver] = None):
