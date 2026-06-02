@@ -32,10 +32,6 @@ The overview step shows an order summary of cart items and a totals section (Ite
 
 The confirmation page displays a success message (for example: "Thank you for your order!") and provides a "Back Home" button that returns to Product Inventory and clears the cart.
 
-## Navigation Menu
-
-The hamburger menu opens a side panel with navigation actions: All Items, About, Logout, and Reset App State. The menu can be closed using the X button.
-
 ## Logout
 
 Logout ends the session and returns the user to the login page. After logout, protected pages (inventory, detail, cart, checkout) are not accessible without logging in again.
