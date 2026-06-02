@@ -21,6 +21,7 @@ from autospectest.framework.orchestrator.runs import (
     read_sidecar,
     write_sidecar,
 )
+from autospectest.framework.orchestrator.post_verification_generator import PostVerificationGenerator
 
 
 def main():
@@ -29,7 +30,9 @@ def main():
     )
     parser.add_argument("--version", action="version", version=f"autospectest {autospectest.__version__}")
     parser.add_argument("--generate", action="store_true", help="Generate UI-AST from spec")
-    parser.add_argument("--input", "-i", help="Path to functional specification markdown file")
+    parser.add_argument("--post-verify", action="store_true", help="Run the post-verification pipeline")
+    parser.add_argument("--test-cases", help="Path to generated test-cases.json (for post-verify)")
+    parser.add_argument("--input", "-i", help="Path to functional specification markdown file (or merged description for post-verify)")
     parser.add_argument("--api-key", help="API key for LLM provider")
     parser.add_argument(
         "--model",
@@ -62,6 +65,8 @@ def main():
 
     if args.generate or args.resume:
         return _generate(args)
+    if args.post_verify:
+        return _post_verify(args)
 
     parser.print_help()
     return 1
@@ -164,6 +169,71 @@ def _generate(args):
         print(f"  UI-AST:     {output_dir}/ui-ast.json")
         print(f"  Critique:   {output_dir}/semantic-critique.json")
         print(f"  Tests:      {output_dir}/test-cases.json")
+    return 0
+
+def _post_verify(args):
+    if not args.api_key:
+        print("Error: --api-key is required")
+        return 1
+    if not args.input:
+        print("Error: --input (description markdown) is required")
+        return 1
+    if not args.test_cases:
+        print("Error: --test-cases (json file) is required")
+        return 1
+
+    input_path = Path(args.input)
+    tc_path = Path(args.test_cases)
+    
+    if not input_path.exists():
+        print(f"Error: Input file not found: {input_path}")
+        return 1
+    if not tc_path.exists():
+        print(f"Error: Test cases file not found: {tc_path}")
+        return 1
+
+    import json
+    
+    try:
+        with open(tc_path, "r", encoding="utf-8") as f:
+            test_cases_data = json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"Error: Invalid test-cases JSON: {e}")
+        return 1
+
+    description_text = input_path.read_text(encoding="utf-8")
+    
+    # test_cases_data might be a list of modules, or a dict with "modules".
+    # Assuming it's the final output of test-cases.json:
+    # { "modules": [ { "test_cases": [ ... ] } ] }
+    all_test_cases = []
+    if isinstance(test_cases_data, dict) and "modules" in test_cases_data:
+        for mod in test_cases_data["modules"]:
+            all_test_cases.extend(mod.get("test_cases", []))
+    elif isinstance(test_cases_data, list):
+        all_test_cases = test_cases_data
+    else:
+        print("Error: Unknown test-cases JSON structure")
+        return 1
+        
+    if not all_test_cases:
+        print("No test cases found to process.")
+        return 0
+
+    set_max_concurrency(args.max_concurrency)
+    
+    generator = PostVerificationGenerator(
+        api_key=args.api_key,
+        model=args.model,
+        debug=args.debug,
+        debug_file=args.debug_file
+    )
+    
+    asyncio.run(generator.generate(
+        merged_description=description_text,
+        test_cases=all_test_cases,
+        output_dir=args.output
+    ))
     return 0
 
 

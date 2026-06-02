@@ -1,10 +1,14 @@
 # AutoSpecTest
 
-Convert natural-language functional specifications into structured, machine-readable UI Abstract Syntax Trees (UI-AST), enumerate every executable workflow path, and generate comprehensive positive, negative, and edge test cases — fully automatically.
+Convert natural-language functional specifications into structured, machine-readable UI Abstract Syntax Trees (UI-AST), enumerate every executable workflow path, generate comprehensive positive, negative, and edge test cases — and optionally generate **Post-Verification schemas** that prove each state-mutating test case actually changed the system — fully automatically.
 
 ---
 
 ## How it works
+
+AutoSpecTest has **two independent pipelines**. Run them in sequence, or run post-verification standalone against any existing test-cases.json.
+
+### Pipeline 1 — Test Generation
 
 A functional spec markdown file goes in; structured JSON and markdown reports come out.
 
@@ -13,7 +17,7 @@ spec.md (## Module sections)
     │
     ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  AutoSpecTest Pipeline                                      │
+│  AutoSpecTest Pipeline  (--generate)                        │
 │                                                             │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │  [1/3] generate_and_critique  (parallel per module)  │   │
@@ -50,7 +54,7 @@ spec.md (## Module sections)
 │  └──────────────────────────────────────────────────────┘   │
 │                           ↓                                 │
 │  ┌──────────────────────┐                                   │
-│  │  [3/3] finalize      │ → ui-ast.json                    │
+│  │  [3/3] finalize      │ → ui-ast.json                     │
 │  │                      │ → semantic-critique.json          │
 │  │                      │ → workflows.json                  │
 │  │                      │ → workflow-critique.json          │
@@ -70,6 +74,54 @@ spec.md (## Module sections)
 **Stage 2 — Three test agents** — For each module, three agents run in parallel against both the approved AST and the workflow list: positive tests (must cover every workflow), negative tests (workflow-aware failure injection), and edge/boundary tests (workflow-aware boundary scoping). Each test case carries a `wf_ref` linking it back to the workflow it covers. Results are merged into a single per-module test suite with sequential TC IDs.
 
 All modules run concurrently across all stages.
+
+---
+
+### Pipeline 2 — Post-Verification (Separate)
+
+Post-verification is an **independent pipeline** that runs after test generation. It reads the generated `test-cases.json` and a **merged functional description** (e.g. Teacher + Student spec concatenated for Moodle), then generates `pre_check` / `post_check` schemas that prove state-mutating tests actually changed the system.
+
+> **Why a merged description?** When two roles (e.g. Teacher and Student) have separate spec files, cross-actor verification (Teacher creates → Student observes) requires the LLM to understand both actors simultaneously. Concatenate the relevant specs before passing to `--post-verify`.
+
+```
+test-cases.json  +  merged-description.md
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Post-Verification Pipeline  (--post-verify)                │
+│                                                             │
+│  For each positive test case (concurrent):                  │
+│                                                             │
+│  ┌────────────────────────────────────────────────────┐     │
+│  │  [Gate] StateMutationGateAgent                     │     │
+│  │                                                    │     │
+│  │  requires_post_verification=false ──► skip         │     │
+│  │  requires_post_verification=true  ──► continue     │     │
+│  └────────────────────────────────────────────────────┘     │
+│                           ↓ (only state-mutating TCs)       │
+│  ┌────────────────────────────────────────────────────┐     │
+│  │  PostVerificationAgent                             │     │
+│  │                                                    │     │
+│  │  Determines verification_type:                     │     │
+│  │    same_actor_navigation — actor navigates to      │     │
+│  │      another page to observe the state change      │     │
+│  │    cross_actor — Actor B (different role/session)  │     │
+│  │      verifies what Actor A did                     │     │
+│  │    other — effect is outside the app (partial)     │     │
+│  │                                                    │     │
+│  │  Emits pre_check + post_check (or actor_a/b)       │     │
+│  │  Inherits tc_id from the source test case          │     │
+│  └────────────────────────────────────────────────────┘     │
+│                           ↓                                 │
+│  ┌──────────────────────┐                                   │
+│  │  finalize            │ → post-verifications.json         │
+│  └──────────────────────┘                                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Gate — StateMutationGateAgent** — Classifies each positive test case as requiring post-verification or not. Only tests that create, update, delete, or execute financial/transactional operations pass through. Read-only, navigational, form-validation, and negative test cases are skipped automatically, saving LLM tokens.
+
+**PostVerificationAgent** — For each test case that passes the gate, generates a structured schema containing a `pre_check` (what to observe before running the test) and a `post_check` (what to observe after, and the expected change). The output `test_case_id` always matches the source `tc_id`, ensuring a perfect 1-to-1 link between the execution steps and the verification wrapper.
 
 ---
 
@@ -142,6 +194,8 @@ The file stem (e.g. `my-app-spec`) becomes the project name in the output.
 
 ## CLI reference
 
+### Test Generation
+
 ```
 autospectest --generate --input SPEC --api-key KEY [options]
 autospectest --resume RUN_ID --api-key KEY
@@ -153,10 +207,27 @@ autospectest --resume RUN_ID --api-key KEY
 | `--api-key` | — | API key for the LLM provider |
 | `--model` | `openai/gpt-4o` | LiteLLM model string (must include provider prefix) |
 | `--output` / `-o` | `outputs/autospectest/<project>/<model>/` | Output directory |
+| `--type` | all | Subset of test types: `positive`, `negative`, `edge` |
 | `--max-concurrency` | `10` | Max concurrent in-flight LLM calls |
 | `--debug` | off | Write per-stage debug logs to `<output>/debug/` |
 | `--resume RUN_ID` | — | Resume an interrupted run from its checkpoint |
 | `--version` | — | Print version and exit |
+
+### Post-Verification
+
+```
+autospectest --post-verify --input MERGED_DESC --test-cases TC_JSON --api-key KEY [options]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--input` / `-i` | — | Path to merged `.md` description file (all relevant actor specs combined) |
+| `--test-cases` | — | Path to `test-cases.json` produced by `--generate` |
+| `--api-key` | — | API key for the LLM provider |
+| `--model` | `openai/gpt-4o` | LiteLLM model string (must include provider prefix) |
+| `--output` / `-o` | `output` | Output directory for `post-verifications.json` |
+| `--max-concurrency` | `10` | Max concurrent in-flight LLM calls |
+| `--debug` | off | Enable debug logging |
 
 ---
 
@@ -367,6 +438,69 @@ TC IDs are renumbered sequentially across all categories within each module.
 
 ---
 
+### `post-verifications.json`
+
+Produced by `--post-verify`. Each entry maps directly to a source test case via `test_case_id`.
+
+```json
+[
+  {
+    "test_case_id": "TC-001",
+    "verification_type": "same_actor_navigation",
+    "coverage": "verifiable",
+    "body": {
+      "pre_check": {
+        "navigate_to": "Accounts Overview",
+        "observe": ["balance of source account", "balance of destination account"]
+      },
+      "post_check": {
+        "navigate_to": "Accounts Overview",
+        "observe": ["balance of source account", "balance of destination account"],
+        "expected_change": "Source account balance decreased by transfer amount; destination account balance increased by the same amount."
+      }
+    }
+  },
+  {
+    "test_case_id": "TC-015",
+    "verification_type": "cross_actor",
+    "coverage": "verifiable",
+    "body": {
+      "actor_a": {
+        "role": "teacher",
+        "action": "Execute the steps from the core test case."
+      },
+      "actor_b": {
+        "role": "student",
+        "session": "new_session",
+        "navigate_to": "Course X -> Activities tab -> Assignments section",
+        "observe": ["assignment name", "due date", "submission status column"],
+        "expected_change": "Assignment appears with correct due date and submission status 'No submission'."
+      }
+    }
+  }
+]
+```
+
+**Verification types:**
+
+| Type | When used |
+|---|---|
+| `same_actor_navigation` | The same user can navigate elsewhere in the app to observe the state change |
+| `cross_actor` | The change is performed by Actor A but must be verified by Actor B in a separate session |
+| `other` | The effect is outside the app boundary (e.g. external bank, external email inbox); `coverage` is set to `partial` |
+
+**Coverage values:**
+
+| Value | Meaning |
+|---|---|
+| `verifiable` | The full state change is observable within the app |
+| `partial` | Only part of the state change is observable (e.g. source side of an external transfer) |
+| `unverifiable` | The state change cannot be confirmed from any in-app page |
+
+> **Note:** Test cases that are read-only, navigational, form-validation-only, or negative are automatically excluded by the Gate. Only state-mutating positive tests appear in `post-verifications.json`.
+
+---
+
 ## Workflow extraction
 
 The workflow extractor enumerates distinct paths based on AST node type:
@@ -482,9 +616,15 @@ The Docker image installs dependencies in a separate layer so source-only change
 
 `--max-concurrency` controls how many LLM calls can be in-flight simultaneously across all modules and stages. The default of 10 is safe for most providers. Lower it if you hit rate limits; raise it for providers with high per-minute token quotas.
 
-With the workflow stage added, a single module can now make up to **10 LLM calls** at peak:
+### Test Generation pipeline
+
+A single module can make up to **10 LLM calls** at peak:
 - Stage 1: up to 3 UIASTAgent + 3 SemanticCriticAgent calls (if all retries are used)
 - Stage 1.5: up to 3 WorkflowExtractorAgent + 3 WorkflowCriticAgent calls
 - Stage 2: 3 test agent calls (positive, negative, edge) in parallel
 
 With `--max-concurrency 10` and 5 modules, peak concurrency is bounded at 10 regardless of how many modules are retrying simultaneously.
+
+### Post-Verification pipeline
+
+Each test case that passes the Gate generates **2 LLM calls** (Gate + PostVerifier). All test cases are processed concurrently, bounded by `--max-concurrency`. For a typical suite of 80 test cases where 30 pass the gate, peak concurrency stays well within the default limit of 10.
