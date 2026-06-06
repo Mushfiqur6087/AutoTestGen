@@ -1,12 +1,12 @@
-# AutoSpecTest
+# Test Case Generation
 
-Convert natural-language functional specifications into structured, machine-readable UI Abstract Syntax Trees (UI-AST), enumerate every executable workflow path, generate comprehensive positive, negative, and edge test cases — and optionally generate **Post-Verification schemas** that prove each state-mutating test case actually changed the system — fully automatically.
+Convert natural-language functional specifications into structured, machine-readable Structural Models, enumerate every executable workflow path, generate comprehensive positive, negative, and edge test cases — and optionally generate **Post-Verification schemas** that prove each state-mutating test case actually changed the system — fully automatically.
 
 ---
 
 ## How it works
 
-AutoSpecTest has **two independent pipelines**. Run them in sequence, or run post-verification standalone against any existing test-cases.json.
+Test Case Generation has **two independent pipelines**. Run them in sequence, or run post-verification standalone against any existing test-cases.json.
 
 ### Pipeline 1 — Test Generation
 
@@ -17,47 +17,47 @@ spec.md (## Module sections)
     │
     ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  AutoSpecTest Pipeline  (--generate)                        │
+│  Test Case Generation Pipeline  (--generate)                        │
 │                                                             │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │  [1/3] generate_and_critique  (parallel per module)  │   │
+│  │  [1/4] generate_and_critique  (parallel per module)  │   │
 │  │                                                      │   │
 │  │  For each module (concurrent):                       │   │
-│  │    attempt 1: UIASTAgent → SemanticCriticAgent       │   │
+│  │    attempt 1: StructuralModelGeneratorAgent → StructuralModelValidatorAgent       │   │
 │  │      verdict=yes  ──────────────────────► done       │   │
 │  │      verdict=retry → fixes[] fed back                │   │
-│  │    attempt 2: UIASTAgent(fixes) → Critic             │   │
+│  │    attempt 2: StructuralModelGeneratorAgent(fixes) → Critic             │   │
 │  │      verdict=yes  ──────────────────────► done       │   │
 │  │      verdict=retry → fixes[] fed back                │   │
-│  │    attempt 3: UIASTAgent(fixes) → ship as-is         │   │
+│  │    attempt 3: StructuralModelGeneratorAgent(fixes) → ship as-is         │   │
 │  └──────────────────────────────────────────────────────┘   │
 │                           ↓                                 │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │  [1.5/3] extract_workflows  (parallel per module)    │   │
+│  │  [2/4] extract_workflows  (parallel per module)    │   │
 │  │                                                      │   │
 │  │  For each module (concurrent):                       │   │
 │  │    attempt 1: WorkflowExtractorAgent                 │   │
-│  │               → WorkflowCriticAgent                  │   │
+│  │               → WorkflowValidatorAgent                  │   │
 │  │      verdict=yes  ──────────────────────► done       │   │
 │  │      verdict=retry → fixes[] fed back                │   │
 │  │    attempt 2/3: same retry loop (max 3)              │   │
 │  └──────────────────────────────────────────────────────┘   │
 │                           ↓                                 │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │  [2/3] generate_tests  (parallel per module)         │   │
+│  │  [3/4] generate_tests  (parallel per module)         │   │
 │  │                                                      │   │
 │  │  For each module (concurrent):                       │   │
-│  │    TestPositiveAgent  ┐                              │   │
-│  │    TestNegativeAgent  ├── parallel → merge           │   │
-│  │    TestEdgeAgent      ┘                              │   │
+│  │    PositiveTestCaseGeneratorAgent  ┐                              │   │
+│  │    NegativeTestCaseGeneratorAgent  ├── parallel → merge           │   │
+│  │    EdgeTestCaseGeneratorAgent      ┘                              │   │
 │  │    (each receives the approved workflow list)        │   │
 │  └──────────────────────────────────────────────────────┘   │
 │                           ↓                                 │
 │  ┌──────────────────────┐                                   │
-│  │  [3/3] finalize      │ → ui-ast.json                     │
-│  │                      │ → semantic-critique.json          │
+│  │  [4/4] finalize      │ → structural-model.json                     │
+│  │                      │ → structural-model-critique.json          │
 │  │                      │ → workflows.json                  │
-│  │                      │ → workflow-critique.json          │
+│  │                      │ → workflow-validator-critique.json          │
 │  │                      │ → test-cases.json                 │
 │  │                      │ → {project}-{model}-critique.md   │
 │  │                      │ → {project}-{model}-workflow-     │
@@ -67,11 +67,11 @@ spec.md (## Module sections)
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Stage 1 — UIASTAgent + SemanticCriticAgent** — For each module, the generator emits a UI component tree and the critic audits it with a binary `yes/retry` verdict. On retry, the critic's `fixes[]` array is fed directly back to the generator. Maximum 3 attempts per module.
+**Stage 1 — StructuralModelGeneratorAgent + StructuralModelValidatorAgent** — For each module, the generator emits a UI component tree and the critic audits it with a binary `yes/retry` verdict. On retry, the critic's `fixes[]` array is fed directly back to the generator. Maximum 3 attempts per module.
 
-**Stage 1.5 — WorkflowExtractorAgent + WorkflowCriticAgent** — For each module, the extractor enumerates every distinct executable path through the module (one workflow per submit action, per state × action pair, per table row/bulk action, per conditional branch). The critic then audits the list for missing paths, phantom workflows, and wrong terminal actions — with the same 3-attempt retry loop. The approved workflow list is passed directly into Stage 2.
+**Stage 2 — WorkflowExtractorAgent + WorkflowValidatorAgent** — For each module, the extractor enumerates every distinct executable path through the module (one workflow per submit action, per state × action pair, per table row/bulk action, per conditional branch). The critic then audits the list for missing paths, phantom workflows, and wrong terminal actions — with the same 3-attempt retry loop. The approved workflow list is passed directly into Stage 2.
 
-**Stage 2 — Three test agents** — For each module, three agents run in parallel against both the approved AST and the workflow list: positive tests (must cover every workflow), negative tests (workflow-aware failure injection), and edge/boundary tests (workflow-aware boundary scoping). Each test case carries a `wf_ref` linking it back to the workflow it covers. Results are merged into a single per-module test suite with sequential TC IDs.
+**Stage 3 — Three test agents** — For each module, three agents run in parallel against both the approved AST and the workflow list: positive tests (must cover every workflow), negative tests (workflow-aware failure injection), and edge/boundary tests (workflow-aware boundary scoping). Each test case carries a `wf_ref` linking it back to the workflow it covers. Results are merged into a single per-module test suite with sequential TC IDs.
 
 All modules run concurrently across all stages.
 
@@ -93,7 +93,7 @@ test-cases.json  +  merged-description.md
 │  For each positive test case (concurrent):                  │
 │                                                             │
 │  ┌────────────────────────────────────────────────────┐     │
-│  │  [Gate] StateMutationGateAgent                     │     │
+│  │  [Gate] StateChangeAgent                     │     │
 │  │                                                    │     │
 │  │  requires_post_verification=false ──► skip         │     │
 │  │  requires_post_verification=true  ──► continue     │     │
@@ -119,7 +119,7 @@ test-cases.json  +  merged-description.md
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Gate — StateMutationGateAgent** — Classifies each positive test case as requiring post-verification or not. Only tests that create, update, delete, or execute financial/transactional operations pass through. Read-only, navigational, form-validation, and negative test cases are skipped automatically, saving LLM tokens.
+**Gate — StateChangeAgent** — Classifies each positive test case as requiring post-verification or not. Only tests that create, update, delete, or execute financial/transactional operations pass through. Read-only, navigational, form-validation, and negative test cases are skipped automatically, saving LLM tokens.
 
 **PostVerificationAgent** — For each test case that passes the gate, generates a structured schema containing a `pre_check` (what to observe before running the test) and a `post_check` (what to observe after, and the expected change). The output `test_case_id` always matches the source `tc_id`, ensuring a perfect 1-to-1 link between the execution steps and the verification wrapper.
 
@@ -130,8 +130,8 @@ test-cases.json  +  merged-description.md
 **Requirements:** Python 3.9+
 
 ```bash
-git clone https://github.com/Mushfiqur6087/AutoSpecTest
-cd AutoSpecTest
+git clone https://github.com/Mushfiqur6087/Test Case Generation
+cd Test Case Generation
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
@@ -144,7 +144,7 @@ After installation, the `autospectest` command is available in the venv.
 ## Quick start
 
 ```bash
-autospectest --generate \
+test-case-generation --generate \
   --input dataset/my-app-spec.md \
   --api-key "sk-..." \
   --model "openai/gpt-4o" \
@@ -155,10 +155,10 @@ This writes the following files to `outputs/my-run/`:
 
 | File | Contents |
 |------|----------|
-| `ui-ast.json` | Generated UI-AST for every module |
-| `semantic-critique.json` | Critic verdict and audit for every module (Stage 1) |
-| `workflows.json` | Enumerated workflow list for every module (Stage 1.5) |
-| `workflow-critique.json` | Workflow critic verdict and audit for every module (Stage 1.5) |
+| `structural-model.json` | Generated Structural Model for every module |
+| `structural-model-critique.json` | Critic verdict and audit for every module (Stage 1) |
+| `workflows.json` | Enumerated workflow list for every module (Stage 2) |
+| `workflow-validator-critique.json` | Workflow critic verdict and audit for every module (Stage 2) |
 | `test-cases.json` | Merged positive/negative/edge test cases with `wf_ref` per TC |
 | `{project}-{model}-critique.md` | Human-readable semantic critique report |
 | `{project}-{model}-workflow-critique.md` | Human-readable workflow critique report |
@@ -197,8 +197,8 @@ The file stem (e.g. `my-app-spec`) becomes the project name in the output.
 ### Test Generation
 
 ```
-autospectest --generate --input SPEC --api-key KEY [options]
-autospectest --resume RUN_ID --api-key KEY
+test-case-generation --generate --input SPEC --api-key KEY [options]
+test-case-generation --resume RUN_ID --api-key KEY
 ```
 
 | Flag | Default | Description |
@@ -216,7 +216,7 @@ autospectest --resume RUN_ID --api-key KEY
 ### Post-Verification
 
 ```
-autospectest --post-verify --input MERGED_DESC --test-cases TC_JSON --api-key KEY [options]
+test-case-generation --post-verify --input MERGED_DESC --test-cases TC_JSON --api-key KEY [options]
 ```
 
 | Flag | Default | Description |
@@ -259,7 +259,7 @@ Parameters unsupported by a given model (e.g. `temperature` on o-series models) 
 
 ## Output files
 
-### `ui-ast.json`
+### `structural-model.json`
 
 ```json
 {
@@ -289,7 +289,7 @@ Parameters unsupported by a given model (e.g. `temperature` on o-series models) 
 }
 ```
 
-### `semantic-critique.json`
+### `structural-model-critique.json`
 
 ```json
 {
@@ -354,9 +354,9 @@ Each workflow represents one distinct, complete interaction path. `conditional_b
 
 ---
 
-### `workflow-critique.json`
+### `workflow-validator-critique.json`
 
-Same structure as `semantic-critique.json`. The `critique` object contains `verdict`, `summary`, `missing` (missing workflow paths), `phantoms` (invented workflows not traceable to the AST), and `fixes`.
+Same structure as `structural-model-critique.json`. The `critique` object contains `verdict`, `summary`, `missing` (missing workflow paths), `phantoms` (invented workflows not traceable to the AST), and `fixes`.
 
 ---
 
@@ -515,7 +515,7 @@ The workflow extractor enumerates distinct paths based on AST node type:
 | `tab_container` | One workflow per tab containing a form with a submit action |
 | `repeating_group` | Not a standalone source — part of the form workflow that activates it |
 
-The `WorkflowCriticAgent` checks for: missing form submit paths, missing state × action pairs, missing table row/bulk actions, phantom workflows, wrong terminal action names, bad conditional field references, and zero-workflow failures.
+The `WorkflowValidatorAgent` checks for: missing form submit paths, missing state × action pairs, missing table row/bulk actions, phantom workflows, wrong terminal action names, bad conditional field references, and zero-workflow failures.
 
 ---
 
@@ -523,15 +523,15 @@ The `WorkflowCriticAgent` checks for: missing form submit paths, missing state �
 
 Each Stage 2 agent receives the approved workflow list as a compact `<workflows>` block appended to its prompt.
 
-**TestPositiveAgent** — must collectively cover every workflow: at least one TC per `wf_id` that activates its `conditional_branch` and asserts its `on_success`.
+**PositiveTestCaseGeneratorAgent** — must collectively cover every workflow: at least one TC per `wf_id` that activates its `conditional_branch` and asserts its `on_success`.
 
-**TestNegativeAgent** — for each workflow with a form interaction, identifies the most critical blocking failure for that workflow's branch. Adds one negative TC only when it catches a bug not covered by any other workflow's negative test.
+**NegativeTestCaseGeneratorAgent** — for each workflow with a form interaction, identifies the most critical blocking failure for that workflow's branch. Adds one negative TC only when it catches a bug not covered by any other workflow's negative test.
 
-**TestEdgeAgent** — for each workflow where `conditional_branch` activates a numeric or date field with a boundary, generates or confirms a boundary edge TC for it.
+**EdgeTestCaseGeneratorAgent** — for each workflow where `conditional_branch` activates a numeric or date field with a boundary, generates or confirms a boundary edge TC for it.
 
 ---
 
-## UI-AST schema
+## Structural Model schema
 
 The AST captures **interactive elements only**. The critic enforces this — passive display labels ("the page shows the client name") produce zero expected items and are not emitted.
 
@@ -555,7 +555,7 @@ Action-level attributes: `on_success`, `preconditions[]`, `fields{}` (for modal/
 Every run gets a unique run ID (`<project>-YYYYMMDD-HHmmss-<6char>`). If a run is interrupted mid-pipeline, resume it with:
 
 ```bash
-autospectest --resume my-app-20260503-120000-abc123 --api-key "sk-..."
+test-case-generation --resume my-app-20260503-120000-abc123 --api-key "sk-..."
 ```
 
 The run ID is printed at the start of every `--generate` invocation. Checkpoints are stored in `outputs/.checkpoints/autospectest.sqlite`; sidecar metadata (original inputs) lives in `outputs/.checkpoints/<run-id>.json`.
@@ -565,7 +565,7 @@ The run ID is printed at the start of every `--generate` invocation. Checkpoints
 ## Debug mode
 
 ```bash
-autospectest --generate --input spec.md --api-key "..." --model openai/gpt-4o \
+test-case-generation --generate --input spec.md --api-key "..." --model openai/gpt-4o \
   --output outputs/debug-run --debug
 ```
 
@@ -573,35 +573,15 @@ With `--debug`, per-module log files are written to `outputs/debug-run/debug/<Mo
 
 | File | Contents |
 |------|----------|
-| `01_ui_ast.log` | System prompt, user prompt, and raw LLM response for every UIASTAgent call |
-| `02_semantic_critic.log` | Same for every SemanticCriticAgent call |
+| `01_ui_ast.log` | System prompt, user prompt, and raw LLM response for every StructuralModelGeneratorAgent call |
+| `02_semantic_critic.log` | Same for every StructuralModelValidatorAgent call |
 | `02b_workflow_extractor.log` | Same for every WorkflowExtractorAgent call |
-| `02c_workflow_critic.log` | Same for every WorkflowCriticAgent call |
-| `03_test_positive.log` | Same for every TestPositiveAgent call |
-| `04_test_negative.log` | Same for every TestNegativeAgent call |
-| `05_test_edge.log` | Same for every TestEdgeAgent call |
+| `02c_workflow_critic.log` | Same for every WorkflowValidatorAgent call |
+| `03_test_positive.log` | Same for every PositiveTestCaseGeneratorAgent call |
+| `04_test_negative.log` | Same for every NegativeTestCaseGeneratorAgent call |
+| `05_test_edge.log` | Same for every EdgeTestCaseGeneratorAgent call |
 
 Useful for diagnosing why a critic keeps retrying, why a workflow is missing, or why a test case lacks a `wf_ref`.
-
----
-
-## Docker
-
-```bash
-docker build -t autospectest .
-
-# Mount a host directory for outputs
-docker run --rm \
-  -v $(pwd)/outputs:/app/outputs \
-  -v $(pwd)/dataset:/app/dataset \
-  autospectest \
-  --generate \
-  --input dataset/my-spec.md \
-  --api-key "sk-..." \
-  --model openai/gpt-4o
-```
-
-The Docker image installs dependencies in a separate layer so source-only changes rebuild in seconds. Runs as a non-root user to avoid root-owned output files on bind mounts.
 
 ---
 
@@ -619,8 +599,8 @@ The Docker image installs dependencies in a separate layer so source-only change
 ### Test Generation pipeline
 
 A single module can make up to **10 LLM calls** at peak:
-- Stage 1: up to 3 UIASTAgent + 3 SemanticCriticAgent calls (if all retries are used)
-- Stage 1.5: up to 3 WorkflowExtractorAgent + 3 WorkflowCriticAgent calls
+- Stage 1: up to 3 StructuralModelGeneratorAgent + 3 StructuralModelValidatorAgent calls (if all retries are used)
+- Stage 2: up to 3 WorkflowExtractorAgent + 3 WorkflowValidatorAgent calls
 - Stage 2: 3 test agent calls (positive, negative, edge) in parallel
 
 With `--max-concurrency 10` and 5 modules, peak concurrency is bounded at 10 regardless of how many modules are retrying simultaneously.
