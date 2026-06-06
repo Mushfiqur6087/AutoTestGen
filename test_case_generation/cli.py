@@ -8,9 +8,13 @@ Usage:
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 from typing import Optional
+from dotenv import load_dotenv
+
+load_dotenv()
 
 import test_case_generation
 from test_case_generation.framework.agents.base import set_max_concurrency
@@ -82,10 +86,6 @@ def _validate_model_string(model: str) -> Optional[str]:
 
 
 def _generate(args):
-    if not args.api_key:
-        print("Error: --api-key is required")
-        return 1
-
     if args.resume:
         try:
             metadata = read_sidecar(args.resume)
@@ -172,9 +172,6 @@ def _generate(args):
     return 0
 
 def _post_verify(args):
-    if not args.api_key:
-        print("Error: --api-key is required")
-        return 1
     if not args.input:
         print("Error: --input (description markdown) is required")
         return 1

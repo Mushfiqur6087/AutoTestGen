@@ -13,7 +13,7 @@ from test_case_generation.framework.agents.negative_test_case_generator import N
 from test_case_generation.framework.agents.positive_test_case_generator import PositiveTestCaseGeneratorAgent
 from test_case_generation.framework.agents.structural_model_generator import StructuralModelGeneratorAgent
 from test_case_generation.framework.agents.workflow_validator import WorkflowValidatorAgent
-from test_case_generation.framework.agents.workflow_extractor_agent import WorkflowExtractorAgent
+from test_case_generation.framework.agents.workflow_extractor import WorkflowExtractorAgent
 from test_case_generation.framework.orchestrator.state import PipelineState
 
 MAX_ATTEMPTS = 3

@@ -5,7 +5,7 @@ from importlib import resources
 from typing import Any, Dict, List, Optional
 
 from test_case_generation.framework.agents.base import BaseAgent
-from test_case_generation.framework.agents.workflow_extractor_agent import WorkflowExtractorAgent
+from test_case_generation.framework.agents.workflow_extractor import WorkflowExtractorAgent
 
 _PROMPT = resources.files("test_case_generation.prompts").joinpath("negative_test_case_generator.md").read_text(encoding="utf-8")
 

@@ -43,6 +43,8 @@ class PostVerificationGenerator:
         # Process each test case concurrently (with limited concurrency handled by BaseAgent)
         tasks = []
         for tc in test_cases:
+            if tc.get("category") in ["negative", "edge"]:
+                continue
             tasks.append(self._process_single_test_case(merged_description, tc))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)

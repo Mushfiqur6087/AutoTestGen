@@ -25,7 +25,7 @@ class StateChangeAgent(BaseAgent):
         return await self.acall_llm_json(
             user_prompt=prompt,
             temperature=0.0,
-            max_tokens=256
+            max_tokens=4096
         )
 
     def run(self, test_case: Dict[str, Any]) -> Dict[str, Any]:
@@ -52,7 +52,7 @@ class PostVerificationAgent(BaseAgent):
         return await self.acall_llm_json(
             user_prompt=prompt,
             temperature=0.2,
-            max_tokens=1024
+            max_tokens=4096
         )
 
     def run(self, description: str, test_case: Dict[str, Any]) -> Dict[str, Any]:
