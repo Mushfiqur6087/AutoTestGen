@@ -16,20 +16,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard`
+- **Navigate To**: `Dashboard (with Edit mode enabled)`
 - **Observe**:
-  - Edit mode is enabled (Edit mode toggle on; '+ Add a block' button visible)
-  - Current layout of dashboard blocks listed in visual order (e.g., left column: <block names and positions>, right column: <block names and positions>)
-  - Any user-added or relocated blocks are present and identifiable by name/position (record names and positions for comparison)
+  - Edit mode is enabled
+  - Dashboard shows a user-customized layout (for example: a user-added block titled 'Latest announcements' or one or more blocks placed in non-default positions)
+  - The current block order differs from the known default arrangement for this user
 
 **Post-Check**
-- **Navigate To**: `Dashboard`
+- **Navigate To**: `Dashboard (refresh the page after clicking 'Reset page to default')`
 - **Observe**:
-  - Edit mode state (toggle) and availability of '+ Add a block' button
-  - Visible dashboard blocks and their visual order (left-to-right / top-to-bottom)
-  - Absence of previously recorded user-added blocks (they should no longer appear)
+  - Dashboard displays the system default block arrangement/order for the teacher
+  - Any user-added blocks that were not part of the default layout are removed or returned to their default positions (e.g., 'Latest announcements' no longer appears as a custom-added block or appears in its default location)
+  - The default layout remains the same after a full page reload
 
-**Expected Change**: The dashboard layout is restored to the per-user default: only the default blocks are present in the default order/positions (e.g., Timeline block and Calendar block side-by-side in their default columns); any user-added blocks or user-moved blocks recorded in the pre_check are removed or returned to their default positions.
+**Expected Change**: The user's Dashboard layout is reverted to the system default: customizations (added blocks or moved blocks) are removed or restored to default positions and the default block order is persisted across page reloads.
 
 ---
 
@@ -47,23 +47,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (Edit Mode enabled)`
+- **Navigate To**: `Dashboard (Edit mode enabled)`
 - **Observe**:
-  - Dashboard shows existing blocks in the main blocks area (titles of visible blocks)
-  - No block titled 'Comments' is present in the blocks list or page
-  - '+ Add a block' button is visible
-  - 'Reset page to default' button is visible (indicating Edit Mode)
+  - 'Comments' block is not present on the Dashboard
+  - Edit mode controls are visible (e.g. '+ Add a block' button, block move icons, block menus)
 
 **Post-Check**
-- **Navigate To**: `Dashboard (reload page and toggle Edit Mode off then on; or navigate away and return)`
+- **Navigate To**: `Dashboard (after closing Add Block page) -> Refresh the page`
 - **Observe**:
-  - Add Block page is closed
-  - A block titled 'Comments' appears in the Dashboard blocks area
-  - In Edit Mode the 'Comments' block shows a move icon and a three-dot options menu (configure/move/delete)
-  - In normal (non-Edit) view the 'Comments' block title or its content is visible on the Dashboard
-  - After a full page reload or navigating away and returning, the 'Comments' block remains present
+  - 'Comments' block is present in the teacher's Dashboard layout
+  - The block title reads 'Comments' and the block shows normal block controls (move/configure) while in Edit mode
+  - The Add Block page/modal is closed and no add-block dialog is visible
 
-**Expected Change**: The 'Comments' block has been added to and persisted in the user's Dashboard layout: the Add Block page is closed, the 'Comments' block is visible in Edit Mode with move/options controls and is also visible in normal view, and the block remains present after a page reload or navigating away and back.
+**Expected Change**: A new 'Comments' block is created in the teacher's Dashboard layout (previously absent) and remains visible and intact after a full page refresh; the Add Block page is closed.
 
 ---
 
@@ -81,21 +77,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (Edit mode enabled)`
+- **Navigate To**: `Dashboard (teacher) with Edit mode enabled`
 - **Observe**:
-  - list of blocks currently on the Dashboard (by name)
-  - absence or presence of 'Course overview' block (expected: absent before adding)
+  - 'Course overview' block is not present on the Dashboard
 
 **Post-Check**
-- **Navigate To**: `Dashboard (verify immediately after Add Block, after refreshing page, and after logout/login)`
+- **Navigate To**: `Dashboard (teacher)`
 - **Observe**:
-  - list of blocks currently on the Dashboard (by name)
-  - presence of 'Course overview' block
-  - block rendering (block title and expected controls when Edit mode is on/off)
-  - persistence of block after page refresh
-  - persistence of block after logging out and logging back in as the same user
+  - 'Course overview' block is present on the Dashboard
+  - Add a block page/modal is closed (no add-block UI visible)
+  - Block-specific controls (move, configure, delete) are visible on the 'Course overview' block
+  - Layout persists after a full page refresh and the 'Course overview' block remains visible
 
-**Expected Change**: The 'Course overview' block appears in the Dashboard's block list immediately after adding; it renders with its title and expected controls; it remains present after refreshing the page and after logging out and back in (indicating the layout change was persisted for the user).
+**Expected Change**: A new 'Course overview' block is added to the teacher's Dashboard, the Add a block page/modal is closed, and the block remains present (with authoring controls) after refreshing the page.
 
 ---
 
@@ -112,20 +106,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard`
+- **Navigate To**: `Dashboard (teacher view) with Edit mode enabled`
 - **Observe**:
-  - list of blocks currently present on the Dashboard (e.g., 'Timeline', 'Calendar')
-  - absence of a 'Latest announcements' block in the Dashboard blocks area
-  - Edit Mode is enabled and '+ Add a block' control is visible
+  - The 'Add a block' control is visible
+  - The 'Latest announcements' block is NOT present on the Dashboard
 
 **Post-Check**
-- **Navigate To**: `Dashboard (after the Add Block flow completes; then reload the page or navigate away and return to verify persistence)`
+- **Navigate To**: `Dashboard (teacher view) — close Add Block page if open and refresh the page`
 - **Observe**:
-  - presence of a 'Latest announcements' block in the Dashboard blocks area
-  - the new block displays Edit Mode controls (move icon and three-dot menu with configure/move/delete options)
-  - Add Block page/modal is closed
+  - The 'Latest announcements' block is present on the Dashboard
+  - The block displays the title 'Latest announcements'
+  - Block-level controls (move/configure/delete) are visible when Edit mode is enabled
+  - After a full page refresh the 'Latest announcements' block remains present in the layout
 
-**Expected Change**: A 'Latest announcements' block is added to the user's Dashboard layout and is visible with Edit Mode controls; the Add Block page is closed; the block remains present after reloading the Dashboard or navigating away and returning, demonstrating the layout change was persisted.
+**Expected Change**: A new 'Latest announcements' block is added to the teacher's Dashboard layout, the Add Block page is closed, and the block remains visible and persisted after refreshing the Dashboard.
 
 ---
 
@@ -143,21 +137,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (Edit mode enabled)`
+- **Navigate To**: `User Dashboard (teacher1)`
 - **Observe**:
-  - Edit mode toggle state = On
-  - '+ Add a block' button visible
-  - existing blocks list (e.g., Timeline block, Calendar block)
-  - absence of 'Latest badges' block
+  - Dashboard does not contain a 'Latest badges' block
+  - Add a block page/modal is not open
 
 **Post-Check**
-- **Navigate To**: `Dashboard`
+- **Navigate To**: `User Dashboard (teacher1) — refresh the page if needed`
 - **Observe**:
-  - presence of 'Latest badges' block in the Dashboard blocks area with title 'Latest badges'
-  - 'Latest badges' block shows Edit-mode controls (move icon and three-dot options menu) while Edit mode is enabled
-  - Add Block page/modal is closed (no Add Block UI visible)
+  - Dashboard contains a 'Latest badges' block (block title or header reads 'Latest badges')
+  - Block action menu (configure/move/delete) and move handle icons are present on the new block
+  - Add a block page/modal is closed and no add-block overlay is visible
 
-**Expected Change**: The Dashboard now contains the 'Latest badges' block in the blocks area (it was absent before); the Add Block page is closed; while Edit mode is enabled the new block shows move and options controls; the block persists in the user's layout after a full page refresh and after toggling Edit mode off and back on.
+**Expected Change**: A 'Latest badges' block is created in the teacher's Dashboard layout, is visible with its title and authoring controls, the Add Block page/modal is closed, and the block placement persists after a full page refresh.
 
 ---
 
@@ -177,18 +169,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (Edit mode enabled)`
+- **Navigate To**: `User Dashboard`
 - **Observe**:
-  - list of block titles currently present on the Dashboard
-  - confirmation that 'Learning plans' block is NOT present
+  - Edit mode is enabled (Edit mode toggle is on)
+  - '+ Add a block' control is visible
+  - 'Learning plans' block is not present in the Dashboard block region
+  - Add Block page/modal is not open
 
 **Post-Check**
-- **Navigate To**: `Dashboard (exit Edit mode; navigate to another page such as Home; then return to Dashboard)`
+- **Navigate To**: `User Dashboard`
 - **Observe**:
-  - list of block titles currently present on the Dashboard
-  - confirmation that 'Learning plans' block IS present
+  - 'Learning plans' block is present in the Dashboard block region
+  - Add Block page/modal is closed
+  - Block shows expected title 'Learning plans' and standard block chrome (move/configure/delete icons) for the teacher
+  - After browser refresh, 'Learning plans' block remains visible in the same Dashboard location
 
-**Expected Change**: A 'Learning plans' block appears in the Dashboard block list after adding it in Edit mode and remains present after exiting Edit mode, navigating away, and returning to the Dashboard, demonstrating the block was persisted in the user's layout.
+**Expected Change**: The 'Learning plans' block is added to the teacher's Dashboard layout and remains visible after a full page refresh; the Add Block page/modal is closed following the add action.
 
 ---
 
@@ -209,19 +205,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (before adding block)`
+- **Navigate To**: `Dashboard (teacher view)`
 - **Observe**:
-  - list of blocks currently present on the Dashboard (e.g., 'Timeline', 'Calendar', etc.)
-  - presence of 'Logged in user' block (expect: absent)
+  - Edit mode is enabled
+  - + Add a block button is visible
+  - 'Logged in user' block is not present in the dashboard block list/visual layout
 
 **Post-Check**
-- **Navigate To**: `Dashboard (reload the page or return to Dashboard after the Add a block flow to confirm persistence)`
+- **Navigate To**: `Dashboard (teacher view) — refresh the page or navigate away and return`
 - **Observe**:
-  - list of blocks currently present on the Dashboard (names and positions)
-  - presence of 'Logged in user' block
-  - when in Edit mode, the 'Logged in user' block shows move icon and three-dot options menu (configure, move, delete)
+  - 'Logged in user' block is present in the dashboard block list/visual layout
+  - New block shows block chrome (title/header), move icons or block menu for configuration
+  - Add Block page/modal is closed and no longer visible
+  - 'Logged in user' block remains visible after a full page refresh
 
-**Expected Change**: The 'Logged in user' block is added to the Dashboard block list and is visible after the Add a block flow completes; the block remains present after a page reload or returning to the Dashboard (layout change persisted).
+**Expected Change**: The 'Logged in user' block is added to the teacher's Dashboard layout, the Add Block page is closed, and the block persists after page refresh indicating the layout change was saved for the acting user.
 
 ---
 
@@ -238,20 +236,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (Edit mode enabled, before adding block)`
+- **Navigate To**: `Dashboard (teacher1) with Edit mode enabled`
 - **Observe**:
-  - 'Mentees' block is not present in the dashboard blocks list
-  - record number of dashboard blocks (N)
-  - Add a block modal/page is not open
+  - 'Mentees' block is not present on the Dashboard
+  - Edit mode controls are visible
+  - + Add a block button is visible
 
 **Post-Check**
-- **Navigate To**: `Dashboard (after adding block; verify after closing Add Block page, optionally toggle Edit mode off/on or navigate away and return)`
+- **Navigate To**: `Dashboard (teacher1) — refresh the page; optionally toggle Edit mode off and on`
 - **Observe**:
-  - 'Mentees' block is present in the dashboard blocks list with title 'Mentees'
-  - number of dashboard blocks is N+1 compared to pre-check
-  - Add a block modal/page is closed
+  - 'Mentees' block is present on the Dashboard
+  - 'Mentees' block remains present after page refresh
+  - Add a block page/modal is closed and normal Dashboard layout is visible
 
-**Expected Change**: The 'Mentees' block has been added to the user's Dashboard layout (visible with title 'Mentees') and the total block count increased by one; the Add Block page/modal is closed; the block remains present after navigating away from the Dashboard and returning, demonstrating the layout change was persisted.
+**Expected Change**: A new 'Mentees' block is added to the teacher's Dashboard layout, the Add Block page is closed, and the block persists after page refresh and edit-mode toggles.
 
 ---
 
@@ -270,19 +268,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard`
+- **Navigate To**: `Dashboard (Edit mode ON)`
 - **Observe**:
-  - Presence of 'Online users' block in Dashboard blocks area (should be absent before adding)
-  - State of Edit Mode toggle (should be enabled per preconditions)
+  - Dashboard does not contain an 'Online users' block
+  - '+ Add a block' button is visible and usable
 
 **Post-Check**
-- **Navigate To**: `Dashboard (refresh page and/or navigate away and return; also toggle Edit Mode off then on)`
+- **Navigate To**: `Dashboard (after Add a block selection and after a full page refresh)`
 - **Observe**:
-  - 'Online users' block present in the Dashboard blocks area
-  - New block shows standard block controls (move icon and three-dot options menu) when Edit Mode is enabled
-  - Add a block modal/page is closed
+  - An 'Online users' block is present on the Dashboard
+  - 'Online users' block shows its title and expected UI (e.g., list or user count) indicating it rendered correctly
+  - The Add Block page/modal is closed and no longer visible
+  - After refreshing the page, the 'Online users' block remains present in the same location (layout persisted)
 
-**Expected Change**: The 'Online users' block is present in the Dashboard where it was previously absent; the Add Block page is closed; the block remains present after a page refresh, after navigating away and returning to the Dashboard, and after toggling Edit Mode off and back on, demonstrating the layout change was persisted.
+**Expected Change**: A new 'Online users' block has been added to the teacher's Dashboard layout (it was absent before); the Add Block page closed after selection, and the added block persists after a page reload.
 
 ---
 
@@ -301,21 +300,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (Edit mode enabled)`
+- **Navigate To**: `Dashboard (Edit Mode enabled)`
 - **Observe**:
-  - Edit mode is enabled (Reset page to default and '+ Add a block' visible)
-  - Default blocks present: Timeline block, Calendar block
-  - No 'Private files' block is present in the current block layout
+  - The Dashboard does not contain a block titled 'Private files'
 
 **Post-Check**
-- **Navigate To**: `Dashboard (remain in Edit mode to confirm immediate effect; then reload page and/or navigate away and back to Dashboard to confirm persistence)`
+- **Navigate To**: `Dashboard (close Add Block page if open, then refresh the page to confirm persistence)`
 - **Observe**:
-  - 'Private files' block is present in the Dashboard blocks list/layout
-  - 'Private files' block displays Edit-mode controls (move icon and three-dot menu with configure/move/delete actions)
-  - Add a block page/modal is closed and not visible after selection
-  - After page reload or returning to Dashboard, 'Private files' block remains present
+  - A block titled 'Private files' is present on the Dashboard
+  - The added block shows block controls (menu or move icons) indicating it is persisted in the layout
+  - The Add Block page or modal is closed
 
-**Expected Change**: The 'Private files' block is added to the user's Dashboard layout and is visible in the blocks list; it shows Edit-mode controls. The block remains present after reloading the Dashboard and after toggling Edit mode off and on, demonstrating the layout change was persisted.
+**Expected Change**: A 'Private files' block has been added to the teacher's Dashboard layout; the Add Block page is closed, the block is visible with block controls, and the block remains present after a full page refresh.
 
 ---
 
@@ -335,19 +331,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (with Edit mode enabled)`
+- **Navigate To**: `User Dashboard (Edit mode enabled)`
 - **Observe**:
-  - List of blocks present on the Dashboard (e.g., Timeline, Calendar)
-  - Absence of a block titled 'Random glossary entry' in the blocks area
+  - Edit mode toggle is ON
+  - 'Random glossary entry' block is not present on the Dashboard
+  - Add a block page/modal is not open
 
 **Post-Check**
-- **Navigate To**: `Dashboard (reload page or navigate away and return)`
+- **Navigate To**: `User Dashboard (exit Add a block flow, refresh page)`
 - **Observe**:
-  - Block titled 'Random glossary entry' is present in the Dashboard blocks area
-  - When Edit mode is enabled, the 'Random glossary entry' block shows Edit-mode controls (move icon and three-dot options menu)
-  - Add Block page is closed and not visible
+  - 'Random glossary entry' block is present on the Dashboard for the teacher
+  - Add a block page/modal is closed
+  - 'Random glossary entry' block remains visible after a full page refresh
 
-**Expected Change**: The Dashboard now includes a 'Random glossary entry' block where it was previously absent; the Add Block page is closed; the added block is persisted across a page reload or navigating away and returning (i.e., layout change is saved).
+**Expected Change**: A new 'Random glossary entry' block is added to the teacher's Dashboard, the Add a block page/modal is closed, and the block persists on the Dashboard after page refresh.
 
 ---
 
@@ -367,23 +364,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (Edit Mode enabled)`
+- **Navigate To**: `User Dashboard (Edit mode enabled)`
 - **Observe**:
-  - Edit Mode indicator is ON
-  - '+ Add a block' button is visible below the Dashboard heading
-  - Current blocks listed on the page (e.g., Timeline block, Calendar block)
-  - No block titled 'Recently accessed courses' is present in the Dashboard blocks area
+  - The dashboard does not contain a block titled 'Recently accessed courses'
+  - Add a block page is not currently open
 
 **Post-Check**
-- **Navigate To**: `Dashboard (complete steps, perform full page reload and re-open Edit Mode)`
+- **Navigate To**: `User Dashboard (after adding block, refresh page, and toggle Edit mode off/on)`
 - **Observe**:
-  - Add a block page/modal is closed
-  - 'Recently accessed courses' block is present in the Dashboard blocks area (visible as a block tile with that title)
-  - Edit Mode controls (move icon, three-dot menu) are present on the new block
-  - Block persists after full page reload
-  - Block remains present after toggling Edit Mode off and then on again
+  - Dashboard contains a block titled 'Recently accessed courses'
+  - The block shows its block menu and move/drag icons (authoring controls) when Edit mode is enabled
+  - After a full page refresh the 'Recently accessed courses' block remains visible
+  - After toggling Edit mode off and returning to the Dashboard, the block remains visible for the teacher
 
-**Expected Change**: A 'Recently accessed courses' block is added to the Dashboard blocks area; the Add a block page/modal closes; the new block shows Edit Mode controls and remains present after a full page reload and after toggling Edit Mode off and back on (layout persisted).
+**Expected Change**: A new dashboard block titled 'Recently accessed courses' is created on the teacher's Dashboard; it is visible immediately after creation and persists after a page refresh and after toggling Edit mode off, confirming the layout change was saved for the user.
 
 ---
 
@@ -403,21 +397,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (Edit mode enabled)`
+- **Navigate To**: `Dashboard (Edit mode)`
 - **Observe**:
-  - No 'Starred courses' block is present in the Dashboard blocks list
-  - Current number and order of dashboard blocks (record for comparison)
-  - Edit mode indicator is visible
+  - '+ Add a block' button is visible
+  - 'Starred courses' block is not present on the Dashboard
+  - Add Block page/modal is not open
 
 **Post-Check**
-- **Navigate To**: `Dashboard (after Add a block dialog closes) — verify both while still in Edit mode and again after exiting Edit mode and reloading the Dashboard`
+- **Navigate To**: `Dashboard`
 - **Observe**:
-  - 'Starred courses' block is present in the Dashboard blocks list with the title 'Starred courses'
-  - 'Starred courses' block displays its expected content area (e.g., list of starred courses or empty-state message)
-  - The Add a block page/dialog is closed
-  - 'Starred courses' block remains present after exiting Edit mode and after a full page reload
+  - 'Starred courses' block is visible on the Dashboard layout for the logged-in teacher
+  - Add Block page/modal is closed after selection
+  - After a full page refresh the 'Starred courses' block remains visible in the same teacher Dashboard
 
-**Expected Change**: A new 'Starred courses' block has been added to the user's Dashboard layout (where none existed in pre-check); the Add a block dialog is closed; the block persists in the layout after exiting Edit mode and after reloading the Dashboard.
+**Expected Change**: A new 'Starred courses' block is added to the teacher's Dashboard layout, the Add Block page/modal is closed after adding, and the new block persists after a full page refresh.
 
 ---
 
@@ -438,20 +431,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (Edit mode enabled)`
+- **Navigate To**: `User Dashboard (Edit mode enabled)`
 - **Observe**:
-  - List of blocks currently on the Dashboard (block names visible)
-  - Absence or presence of 'Tags' block (record that 'Tags' block is not present before adding)
-  - Edit mode UI indicators (e.g., 'Reset page to default' button, '+ Add a block' button)
+  - "+ Add a block" control is visible
+  - "Tags" block is not present in the dashboard blocks/layout
 
 **Post-Check**
-- **Navigate To**: `Dashboard -> Exit Edit mode -> Navigate to Home -> Navigate back to Dashboard (or reload Dashboard in a new session view)`
+- **Navigate To**: `User Dashboard`
 - **Observe**:
-  - List of blocks currently on the Dashboard (block names visible)
-  - Presence of 'Tags' block in the Dashboard block list (visible in the same location as added)
-  - Dashboard layout unchanged after navigation/reload (no revert to previous layout)
+  - "Tags" block is present in the dashboard layout for the logged-in teacher
+  - Add a block page/modal is closed (no Add a block dialog visible)
+  - "Tags" block remains visible after refreshing the Dashboard page
 
-**Expected Change**: The 'Tags' block appears in the Dashboard blocks list after being added and remains present after exiting Edit mode, navigating away and returning (or reloading), demonstrating the new block was persisted to the user's layout.
+**Expected Change**: The Dashboard layout now includes a persistent 'Tags' block for the teacher; the Add a block page/modal is closed after selection and the 'Tags' block remains present after a page refresh.
 
 ---
 
@@ -470,20 +462,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard`
+- **Navigate To**: `User Dashboard (Edit mode enabled)`
 - **Observe**:
-  - Edit Mode is enabled (Edit controls visible, e.g., 'Reset page to default' and move icons)
-  - Presence of a 'Text' block on the Dashboard (should be absent before adding)
+  - Dashboard blocks do not include a 'Text' block
+  - '+ Add a block' control is visible
+  - Add Block page/modal is not open
 
 **Post-Check**
-- **Navigate To**: `Dashboard (then reload the page or navigate to Home and return to Dashboard to confirm persistence)`
+- **Navigate To**: `User Dashboard (refresh the page to confirm persistence)`
 - **Observe**:
-  - A 'Text' block is present in the Dashboard blocks area
-  - The Add a block page/modal is closed
-  - Edit Mode remains enabled and block shows move/options controls (three-dot menu) for the new 'Text' block
-  - The 'Text' block remains present and in the same location after a full page reload or after navigating away and back
+  - Dashboard blocks contain a new 'Text' block visible in the layout
+  - Add Block page/modal is closed and not visible
+  - The 'Text' block remains visible after page refresh
 
-**Expected Change**: A new 'Text' block has been added to the user's Dashboard layout, the Add Block page/modal is closed, and the block persists (remains present in the same location) after navigation or page reload.
+**Expected Change**: A new 'Text' block has been added to the teacher's Dashboard layout, the Add Block page is closed, and the block's presence persists after a page refresh.
 
 ---
 
@@ -503,20 +495,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (Edit Mode enabled)`
+- **Navigate To**: `Dashboard (Edit mode is ON)`
 - **Observe**:
-  - presence of 'Upcoming events' block
-  - list of visible dashboard blocks (names and positions)
-  - Edit Mode toggle state = enabled
+  - No 'Upcoming events' block is present on the dashboard
+  - '+ Add a block' control is visible and Add Block page/modal is not open
 
 **Post-Check**
-- **Navigate To**: `Dashboard (after closing Add Block page) -> then reload page and navigate away to Home and back to Dashboard`
+- **Navigate To**: `Dashboard (stay on page, then perform a full page refresh)`
 - **Observe**:
-  - presence of 'Upcoming events' block in the dashboard blocks area (both Edit Mode and normal view)
-  - position of 'Upcoming events' block in the blocks list
-  - list of visible dashboard blocks (names and positions) after reload and after navigation away/return
+  - 'Upcoming events' block is visible in the dashboard layout immediately after adding
+  - The Add Block page/modal is closed and not visible
+  - 'Upcoming events' block remains visible after full page refresh (layout persisted)
 
-**Expected Change**: The 'Upcoming events' block is present in the Dashboard blocks area immediately after adding, is visible in both Edit Mode and normal view, and remains present in the same (or expected) position after a full page reload and after navigating away and returning to the Dashboard, demonstrating the block was added and the layout change persisted.
+**Expected Change**: An 'Upcoming events' block is added to the teacher's Dashboard layout, the Add a block page/modal is closed, and the block remains visible after a full page refresh indicating the layout change was persisted for the user.
 
 ---
 
@@ -539,20 +530,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (Edit Mode enabled)`
+- **Navigate To**: `Dashboard (Edit mode enabled)`
 - **Observe**:
-  - ordered list of blocks in the Blocks Layout (capture the sequence top-to-bottom / left-to-right)
-  - position index of <target block> within the Blocks Layout (e.g., position 1, 2, 3...)
-  - visual presence of Move icon on each block
+  - capture the current blocks layout order (record block titles in visual order: top-to-bottom / left-to-right)
+  - record the current index/position of <target block> within the captured layout
 
 **Post-Check**
-- **Navigate To**: `Dashboard -> reload page, then toggle Edit Mode off and back on`
+- **Navigate To**: `Dashboard (after performing the drag-and-drop and dropping <target block>)`
 - **Observe**:
-  - ordered list of blocks in the Blocks Layout (top-to-bottom / left-to-right)
-  - position index of <target block> within the Blocks Layout (e.g., position 1, 2, 3...)
-  - visual presence of Move icon on each block
+  - <target block> appears at the intended new position within the blocks layout (compare against the pre_check recorded order)
+  - the overall blocks order reflects the drag-and-drop change (neighbouring blocks moved accordingly)
+  - the new layout remains unchanged after a full page refresh and after toggling Edit mode off and on
 
-**Expected Change**: The <target block> appears at the new position in the Blocks Layout (its position index equals the position it was dropped into). The overall ordering of blocks reflects the drag-and-drop move. This ordering persists after a page reload and after toggling Edit Mode off and on, demonstrating the layout change is persisted per user.
+**Expected Change**: The blocks layout order is updated so that <target block> is moved from its original recorded index to the new index; this updated order persists for the teacher after refresh and edit-mode toggles.
 
 ---
 
@@ -572,18 +562,17 @@
 **Pre-Check**
 - **Navigate To**: `Dashboard (Edit mode enabled)`
 - **Observe**:
-  - ordered list of block names/ids as displayed on the Dashboard (record order top-to-bottom, left-to-right)
-  - current position/index of '<target block>' within that ordered list
-  - Edit mode indicator is visible
+  - the block titled '<target block>' is present in the dashboard layout at its current position (record its column and ordinal position)
+  - the ordered list of block titles in the affected column/region (e.g., ['Block A', '<target block>', 'Block B', ...]) is visible
 
 **Post-Check**
-- **Navigate To**: `Dashboard after page reload and after navigating away and returning (Edit mode enabled)`
+- **Navigate To**: `Dashboard (refresh page and/or toggle Edit mode off then on)`
 - **Observe**:
-  - ordered list of block names/ids as displayed on the Dashboard (record order top-to-bottom, left-to-right)
-  - current position/index of '<target block>' within that ordered list
-  - Edit mode indicator is visible
+  - the block titled '<target block>' appears at the new position specified by the Move action (recorded column and ordinal position)
+  - the ordered list of block titles in the affected column/region reflects the new ordering (e.g., ['Block A', 'Block B', '<target block>', ...])
+  - move controls and block menus remain functional and the layout persists for the logged-in teacher after refresh
 
-**Expected Change**: The '<target block>' appears at the new position/index chosen via the Options → Move action; the overall ordering of blocks reflects the move and remains the same after a full page reload and after navigating away from and back to the Dashboard, demonstrating the layout persisted for this user.
+**Expected Change**: The block titled '<target block>' has moved from its previous position to the new position chosen via the Options -> Move action, and the new block ordering persists after a page refresh and when Edit mode is toggled.
 
 ---
 
@@ -608,18 +597,47 @@
 **Pre-Check**
 - **Navigate To**: `Dashboard (Edit mode enabled)`
 - **Observe**:
-  - Edit mode is enabled (Edit controls visible)
-  - list of visible blocks on the Dashboard (e.g., Timeline block, Calendar block, <target block>)
-  - presence of the <target block> in the blocks list / its options menu is available
+  - the specified target block is present on the Dashboard (e.g., 'Latest announcements')
+  - the block's Options menu (containing 'Delete') is visible for that block
 
 **Post-Check**
-- **Navigate To**: `Navigate away (e.g., Home) then return to Dashboard; reload the Dashboard page; toggle Edit mode off and on`
+- **Navigate To**: `Dashboard (refresh the page; confirm Edit mode state both on and after toggling Edit mode off)`
 - **Observe**:
-  - list of visible blocks on the Dashboard
-  - absence or presence of the <target block>
-  - Edit mode controls still function
+  - the specified target block is not present on the Dashboard
+  - no duplicate or ghost block with the same title appears
+  - the Dashboard layout persists for the teacher (other blocks remain visible and in expected positions)
 
-**Expected Change**: The <target block> is no longer present in the Dashboard blocks list; the total number of blocks on the Dashboard is reduced by one compared to pre_check; the deletion persists after navigating away and returning, after a full page reload, and after toggling Edit mode off and on.
+**Expected Change**: The specified target block has been removed from the teacher's Dashboard and remains absent after a full page refresh and after toggling Edit mode off, indicating the deletion persisted for the user.
+
+---
+
+### [TC-004] Direct access to the Logout endpoint while unauthenticated is blocked/redirects to login
+**Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+
+**Original Steps:**
+1. 1. Open a browser while not authenticated
+2. 2. Enter the application's Logout endpoint URL (<logout endpoint URL>) in the address bar and navigate there
+
+**Original Expected Result:** The application redirects the anonymous user to the Login page instead of performing a logout; no session termination occurs and no protected content is exposed.
+
+---
+
+#### Verification Plan
+
+**Pre-Check**
+- **Navigate To**: `My Courses`
+- **Observe**:
+  - Layout dropdown shows the current layout selection (e.g., 'Card', 'List', or 'Summary')
+  - Course listing is rendered according to the current layout (visual cues: card tiles vs. list rows vs. compact summary rows)
+
+**Post-Check**
+- **Navigate To**: `My Courses (after selecting layout and refreshing the page)`
+- **Observe**:
+  - Layout dropdown shows the newly selected layout option
+  - Course listing is rendered using the newly selected layout (visual cues: card tiles when 'Card' selected; list rows when 'List' selected; compact summary rows when 'Summary' selected)
+  - Layout persists after a full page refresh (the same dropdown selection and rendering remain)
+
+**Expected Change**: The My Courses page renders the course listing using the selected layout option and the Layout dropdown reflects that selection; this layout choice persists after refreshing the My Courses page.
 
 ---
 
@@ -637,21 +655,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `My Courses page`
+- **Navigate To**: `My Courses -> All (default My Courses view)`
 - **Observe**:
-  - position/index of the target course card within the list/grid (e.g., 1-based index)
-  - starred state of the target course card (star indicator present or absent)
-  - top 5 course cards order (identify course names shown in top positions)
+  - course card for 'QA Automation 101' is visible
+  - the star icon on the 'QA Automation 101' course card is not active/filled
+  - 'QA Automation 101' is not listed in My Courses -> Starred filter results
 
 **Post-Check**
-- **Navigate To**: `My Courses page`
+- **Navigate To**: `My Courses -> Starred filter, then My Courses -> All and refresh the page`
 - **Observe**:
-  - position/index of the target course card within the list/grid (e.g., 1-based index)
-  - starred state of the target course card (star indicator present or absent)
-  - top 5 course cards order (identify course names shown in top positions)
-  - card menu option for the target course (e.g., 'Unstar this course' should be present)
+  - 'QA Automation 101' appears in the Starred filter results
+  - the course card for 'QA Automation 101' shows an active/filled star icon
+  - 'QA Automation 101' is pinned to the top position of the My Courses listing when viewing All
+  - the Starred state (active star icon) and pinning remain after a full page refresh
 
-**Expected Change**: The target course card is pinned to the top (position 1) and shows a Starred indicator; it was not starred and not at position 1 in the pre-check. Other courses previously above it have moved down accordingly. The card menu for the course now presents the opposite action (e.g., 'Unstar this course').
+**Expected Change**: The course 'QA Automation 101' is marked as Starred (star icon becomes active), is present in the Starred list, and is pinned to the top of the My Courses listing; this starred/pinned state persists after refreshing the page.
 
 ---
 
@@ -668,20 +686,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `My Courses (Teacher view) - default status filter (All)`
+- **Navigate To**: `My Courses (default view / All courses)`
 - **Observe**:
-  - presence of the target course card in the grid (identify by course name used in the test)
-  - target course card is visible (not hidden) in the current list
-  - target course card shows a three-dot card menu containing 'Remove from view'
+  - the target course card (the course acted on in the core test steps) is present and visible in the course list
+  - the target course is NOT present under the Hidden filter
 
 **Post-Check**
-- **Navigate To**: `My Courses (Teacher view)`
+- **Navigate To**: `My Courses -> Hidden filter (or select Hidden from status filter)`
 - **Observe**:
-  - absence of the target course card from the default course grid
-  - status filter control available above the grid
-  - after setting status filter to 'Hidden', the target course card appears in the filtered list
+  - the target course card appears in the Hidden list
+  - the target course no longer appears in the default/All course list after refresh
 
-**Expected Change**: The target course card is no longer visible in the My Courses default view and is present when filtering by status 'Hidden', indicating the course has been marked Hidden for this teacher (removed from view).
+**Expected Change**: The selected course is removed from the teacher's default course list and is listed under the Hidden filter for that teacher; the hidden state persists after a page refresh.
 
 ---
 
@@ -700,22 +716,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course page (ensure Edit mode is ON)`
+- **Navigate To**: `Course page (Edit mode is ON) - the course section to be renamed is visible`
 - **Observe**:
-  - Edit mode toggle is ON
-  - inline edit icon present for the target section
-  - current section header name is '<Old section name>' (visible in the section header)
-  - section appears with the same name in the Course Index sidebar
+  - Edit mode toggle shows 'On' or edit controls are present
+  - inline edit icon (pencil) is visible for the target section
+  - section header displays the current section name (not '<New section name>')
 
 **Post-Check**
-- **Navigate To**: `Course page (perform a full page reload or navigate away then return to the course)`
+- **Navigate To**: `Course page -> Refresh the page (ensure a full reload) while Edit mode remains ON or after toggling Edit mode off and back on`
 - **Observe**:
-  - section header name displays '<New section name>' inline on the course page
-  - Course Index sidebar lists the section with name '<New section name>'
-  - the inline edit icon is still present for that section (confirming Edit mode persisted)
-  - the renamed section remains '<New section name>' after reload/navigation
+  - section header displays '<New section name>' for the renamed section
+  - section retains its original position and contained activities/resources
+  - inline edit icon remains present for the section (if Edit mode is ON) or the renamed title is visible to the teacher when Edit mode is re-enabled
 
-**Expected Change**: The section header name has been changed from '<Old section name>' to '<New section name>' and this new name is reflected both inline on the Course page and in the Course Index sidebar; the change persists after a page reload or navigating away and back.
+**Expected Change**: The section header text has been updated to '<New section name>' and this renamed title persists after a full page refresh (the section remains in the same position and its contents are unchanged).
 
 ---
 
@@ -733,18 +747,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course page (Edit mode)`
+- **Navigate To**: `QA Automation 101 course page with Edit mode ON (Course content list visible)`
 - **Observe**:
-  - list of section titles in the course content area (capture the exact title of the section to be duplicated)
-  - total number of sections visible in the course
+  - Record the exact title of the section to be duplicated (store as ORIGINAL_TITLE)
+  - Record the current total number of sections (store as ORIGINAL_COUNT)
+  - Confirm there is exactly one section row with the title ORIGINAL_TITLE
 
 **Post-Check**
-- **Navigate To**: `Course page (Edit mode)`
+- **Navigate To**: `QA Automation 101 course page (refresh the page to confirm persistence)`
 - **Observe**:
-  - list of section titles in the course content area
-  - total number of sections visible in the course
+  - Section list contains an additional row whose title equals ORIGINAL_TITLE
+  - Total number of sections equals ORIGINAL_COUNT + 1
+  - The new section row is rendered in the course content list and is selectable/editable in Edit mode
 
-**Expected Change**: A new section row exists with the same title text as the original section that was duplicated; the total number of sections has increased by one; the original section remains unchanged and the duplicate appears adjacent to the original (typically immediately after it).
+**Expected Change**: A new section row is created that has the exact same title as the selected original section (ORIGINAL_TITLE); the total section count increases by one and the duplicate persists after a page reload.
 
 ---
 
@@ -761,19 +777,18 @@
 
 #### Verification Plan
 
-**Actor A (Role: `teacher`)**
-- **Action**: Execute the steps from the core test case: while logged in as the teacher with Edit mode ON on the target course page, open the target section's three-dot menu and select 'Hide'. Confirm the teacher UI shows the section marked as Hidden (e.g., 'Hidden' indicator or dimmed styling).
+**Actor A (Role: `teacher (teacher1)`)**
+- **Action**: Execute the core test case: open the Course page for QA Automation 101 in Edit mode, open the target section's action menu and select 'Hide'. After hiding, refresh the Course page and confirm the section shows a Hidden indicator (or other teacher-facing hidden visual state) in the teacher view.
 
-**Actor B (Role: `student`)**
+**Actor B (Role: `student (student1)`)**
 - **Session**: `new_session`
-- **Navigate To**: `Course page for the same course -> Course content (sections list)`
+- **Navigate To**: `Course page -> QA Automation 101`
 - **Action**: 
 - **Observe**:
-  - presence or absence of the target section's title in the course sections list
-  - visibility indicator for the section (e.g., 'Hidden from students' label, dimmed/strikethrough styling)
-  - access to activities/resources within that section (activity links should be inaccessible or not shown)
+  - the hidden section is not present in the student's list of course sections (no section row or heading for the hidden section)
+  - activities that were in the hidden section are not visible or accessible to the student (no activity links rendered)
 
-**Expected Change**: The section is hidden from students: the section and its activities are either not visible in the student's course content list or are displayed with a clear 'Hidden' indicator and their links are not accessible.
+**Expected Change**: After the teacher hides the section, the student view no longer shows the section or its contained activities; the section is absent or inaccessible to student1 while the teacher's refreshed view shows the section marked with a Hidden indicator.
 
 ---
 
@@ -791,24 +806,23 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course Page (ensure Edit mode is ON) -> Sections list`
+- **Navigate To**: `Course page (Edit mode ON) -> Course content area`
 - **Observe**:
-  - full list of section rows with their index/position and titles
-  - total number of sections
-  - verify and note the exact title (or index) of the section intended for deletion
+  - The targeted section row is present (record the section title or section number/identifier before deletion)
+  - Record the current number of sections listed in the course
 
 **Post-Check**
-- **Navigate To**: `Refresh Course Page (remain in Edit mode) -> Sections list`
+- **Navigate To**: `Course page (Edit mode ON) -> Refresh the page (full reload) and inspect Course content area`
 - **Observe**:
-  - full list of section rows with their index/position and titles
-  - total number of sections
+  - The previously recorded targeted section row (by title or section number/identifier) is no longer present in the sections list
+  - The total number of sections is one less than the number recorded in pre_check
 
-**Expected Change**: The section that was targeted for deletion (as recorded in pre_check by title or index) is no longer present in the sections list; the total number of sections has decreased by one; remaining sections have updated indices/positions as appropriate (i.e., subsequent sections have shifted up to fill the gap).
+**Expected Change**: The targeted section (the same title/identifier noted in pre_check) has been removed from the course content list and the removal persists after a full page reload.
 
 ---
 
 ### [TC-009] Enter an invalid email format and attempt to save
-**Category**: `negative` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
+**Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Enter <invalid email format> into the Email_Address field
@@ -822,25 +836,27 @@
 
 #### Verification Plan
 
-**Actor A (Role: `teacher`)**
-- **Action**: Execute the steps from the core test case (enable Edit mode, perform inline rename of the target activity to <New activity name>, press Enter to save).
-
-**Actor B (Role: `student`)**
-- **Session**: `new_session`
-- **Navigate To**: `Course page (open the same course where the activity was renamed)`
-- **Action**: 
+**Pre-Check**
+- **Navigate To**: `Course page (Edit mode ON) for the target course (e.g., QA Automation 101)`
 - **Observe**:
-  - activity name as listed in the course section content (the activity row label)
-  - activity link label used to navigate to the activity
-  - Course Index sidebar item for the activity
-  - activity page header/title after clicking the activity link
+  - Locate the target activity row and record its current title as '<Original activity name>'
+  - Verify the inline edit icon/control is visible for that activity
 
-**Expected Change**: The activity previously showing its old title now displays '<New activity name>' in the course section list and in the Course Index sidebar; clicking the activity navigates to the activity page whose header/title also shows '<New activity name>'.
+**Post-Check**
+- **Navigate To**: `Course page for the same course -> Reload the page (hard refresh). Additionally, open the same activity's Settings page and open the Course Index/sidebar.`
+- **Observe**:
+  - The activity row displays the new title exactly as '<New activity name>'
+  - The activity Settings page shows the Name field and page heading reflecting '<New activity name>'
+  - Course Index/sidebar lists the activity with the title '<New activity name>'
+
+**Expected Change**: The activity title has changed from the previously recorded '<Original activity name>' to '<New activity name>' and this new title persists after a page reload; it is consistently shown on the course page, in the Course Index/sidebar, and inside the activity's Settings page.
 
 ---
 
 ### [TC-012] Upload file exactly at the site's maximum allowed upload size and save
-**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `partial`
+
+**Coverage Note**: *The UI can verify that a new activity row was created and persisted, but Moodle may alter the duplicated activity title (for example appending 'copy' or similar). If the core test expects an identical title, that exact string match may not be verifiable purely via the standard course UI.*
 
 **Original Steps:**
 1. 1. Expand the 'User picture' collapsible section
@@ -854,27 +870,25 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course page (specific course where duplication will occur) with Edit mode ON`
+- **Navigate To**: `Course Page (Edit mode ON)`
 - **Observe**:
-  - location of the original activity (section and position)
-  - original activity title
-  - count of activities in that section
+  - the activity list includes exactly one row for the selected activity title (the original activity)
+  - no other activity row exists with the same title or a 'copy' suffix
 
 **Post-Check**
-- **Navigate To**: `Course page (same course) — first with Edit mode ON, then with Edit mode OFF (student view)`
+- **Navigate To**: `Course Page (refresh while Edit mode ON)`
 - **Observe**:
-  - presence of an additional activity row in the same section
-  - activity titles in that section (original title should appear twice)
-  - count of activities in that section (should be previous count + 1)
-  - that the duplicated row has its own three-dot menu / action controls
-  - open the duplicated activity's settings or view page and confirm it loads a distinct URL/module id and shows the same title
+  - the activity list contains an additional row representing the duplicated activity
+  - the course section's activity count has increased by one
+  - the duplicate activity appears in the same section as the original
+  - the duplicate's title is either identical to the original title or contains a 'copy'/'(copy)' suffix
 
-**Expected Change**: A new activity row with the exact same title as the original appears in the same section; the section's activity count has increased by one; the duplicate is a distinct activity instance (has its own action menu and settings/view page with a different URL/module id).
+**Expected Change**: A new activity row is created for the duplicated activity in the same course section; the section's activity count increases by one and the duplicate row remains visible after page refresh.
 
 ---
 
 ### [TC-013] Upload file one unit over the site's maximum allowed upload size and attempt to save
-**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+**Category**: `edge` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Expand the 'User picture' collapsible section
@@ -887,21 +901,18 @@
 
 #### Verification Plan
 
-**Pre-Check**
-- **Navigate To**: `Course page (Edit mode ON) -> section containing the target activity`
-- **Observe**:
-  - the target activity listed in its section (identify by activity name)
-  - activity visibility indicator shows it is Visible (no 'Hidden' label or dimmed styling)
-  - activity three-dot menu contains the 'Hide' action
+**Actor A (Role: `teacher`)**
+- **Action**: Execute the core test steps: on the course page with Edit mode ON, open the target activity's three-dot action menu and select 'Hide'. Refresh the course page and confirm the activity shows a hidden/restricted indicator in the teacher view.
 
-**Post-Check**
-- **Navigate To**: `Course page (Edit mode ON) -> same section containing the target activity`
+**Actor B (Role: `student`)**
+- **Session**: `new_session`
+- **Navigate To**: `QA Automation 101 course page (student view)`
+- **Action**: 
 - **Observe**:
-  - the target activity is still listed in the section (identify by activity name)
-  - a 'Hidden' indicator is present OR the activity is visually marked as hidden (e.g., dimmed, greyed-out, or annotated as Hidden)
-  - the activity three-dot menu now contains the 'Show' action instead of 'Hide'
+  - the hidden activity row/link is absent from the course content list
+  - attempting to open the activity's direct URL shows an access-restricted message or a page indicating the activity is not available
 
-**Expected Change**: The targeted activity's visibility changed from Visible to Hidden: the activity now displays a 'Hidden' indicator or hidden visual styling, and the activity menu offers 'Show' (reveal) instead of 'Hide'.
+**Expected Change**: The activity is not visible or accessible to students: it no longer appears in the student's course content listing and direct navigation to the activity yields an access-restricted or not-available message.
 
 ---
 
@@ -921,23 +932,25 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course page -> the section containing the target activity (ensure Edit mode is ON)`
+- **Navigate To**: `Course page (the section containing the target activity) with Edit mode ON`
 - **Observe**:
-  - activity name (the specific activity targeted for deletion)
-  - count of activities listed in that section
+  - Edit mode controls are visible (Edit mode toggle is ON)
+  - three-dot action menu (activity actions) is present for the target activity row
+  - the activity row for the target activity is present in the section's activity list
 
 **Post-Check**
-- **Navigate To**: `Course page -> the same section containing the target activity (refresh the page or toggle Edit mode OFF then ON to ensure backend state is loaded)`
+- **Navigate To**: `Course page -> the same section (after confirming deletion and refreshing the page)`
 - **Observe**:
-  - activity name (the specific activity targeted for deletion)
-  - count of activities listed in that section
+  - the activity row for the previously deleted activity is NOT present in the section's activity list
+  - Course Index/sidebar does not list the deleted activity
+  - no action menu or links exist that navigate to the deleted activity
 
-**Expected Change**: The targeted activity name is no longer present in the section's activity list and the section's activity count has decreased by one compared to the pre-check.
+**Expected Change**: The selected activity is removed from the course section and course index. After confirming deletion and refreshing the course page, the activity row no longer appears and any links/menus that referenced it are absent (the section's activity count, if shown, reflects the removal).
 
 ---
 
 ### [TC-017] Add an Additional Name, remove it, then save (repeating group add-then-remove all)
-**Category**: `edge` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
+**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Expand the 'Additional names' collapsible section
@@ -952,19 +965,19 @@
 
 #### Verification Plan
 
-**Actor A (Role: `teacher`)**
-- **Action**: Execute the steps from the core test case to add a subsection under a chosen parent section with the title '<Subsection_Title>'.
-
-**Actor B (Role: `student`)**
-- **Session**: `new_session`
-- **Navigate To**: `Course page -> locate the parent section where the subsection was added`
-- **Action**: 
+**Pre-Check**
+- **Navigate To**: `Course page -> parent section (where '+ Add a subsection' will be used)`
 - **Observe**:
-  - a subsection row with the title '<Subsection_Title>' is present
-  - the subsection is displayed nested/indented under the specified parent section (shows hierarchy or nested indicator)
-  - the parent's subsection count (or list) has increased by one relative to the prior state
+  - subsection rows directly under the parent section do not include the title '<Subsection_Title>'
+  - current list of subsections under the parent section (baseline) is visible
 
-**Expected Change**: A new subsection appears in the course content nested under the parent section with the entered title '<Subsection_Title>'; it is shown as a child row (indented or with a nested indicator) immediately under the parent section and the parent's subsection count increases by one.
+**Post-Check**
+- **Navigate To**: `Course page -> parent section (refresh the page after save)`
+- **Observe**:
+  - a new subsection row with the title '<Subsection_Title>' is present directly under the parent section
+  - the new subsection row remains visible after a full page refresh
+
+**Expected Change**: A new nested subsection with the entered title '<Subsection_Title>' is created under the selected parent section and persists after page refresh.
 
 ---
 
@@ -985,19 +998,18 @@
 **Pre-Check**
 - **Navigate To**: `Course page (Edit mode ON)`
 - **Observe**:
-  - ordered list of section titles (record full sequence)
-  - index/position of the specific section to be moved (record numeric position and section title/ID)
-  - visual indicator that Edit mode is ON (e.g., Edit mode toggle/state)
+  - the section to be moved is present in the sections list and its current index/position is recorded (identify by the section title used in the test)
+  - the section's Drag/Move handle is visible and actionable
+  - the surrounding section order (titles and positions of neighboring sections) is noted for comparison
 
 **Post-Check**
-- **Navigate To**: `Course page (after performing the drag-and-drop), then refresh page and toggle Edit mode OFF and revisit the course page`
+- **Navigate To**: `Course page (Edit mode ON) after performing the drag-and-drop and after a full page refresh`
 - **Observe**:
-  - ordered list of section titles (record full sequence after move)
-  - index/position of the moved section (record numeric position and section title/ID)
-  - positions of other sections relative to pre_check (verify they shifted as expected)
-  - Edit mode indicator (confirm state when checked with Edit mode OFF and after page reload)
+  - the moved section now appears at the new index/position in the sections list (identified by the same section title)
+  - neighboring sections have shifted positions consistently with the move
+  - the Drag/Move handle remains visible on the moved section (indicating persisted authoring controls)
 
-**Expected Change**: The moved section appears at the new position in the sections list (its recorded index changes from the pre_check value to the new index). Other sections' positions update accordingly. The new ordering persists after a full page refresh and when Edit mode is turned OFF and the course page is revisited, demonstrating the backend state was updated.
+**Expected Change**: The target section is relocated to the new position in the course sections list and the new ordering persists after a page refresh; neighboring sections' positions have updated accordingly.
 
 ---
 
@@ -1017,22 +1029,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course page (ensure Edit mode is ON) -> Relevant section containing the activities`
+- **Navigate To**: `Course page (Edit mode ON) — navigate to the section containing the activities you will target`
 - **Observe**:
-  - names/identifiers of the activities that are selected for the bulk action
-  - current visibility/status badges or icons for each selected activity (e.g., Visible, Hidden)
-  - current section location or position index for each selected activity
-  - total activity count in the source section
+  - Record the exact titles of the targeted activities and their current ordinal positions within the section (e.g., position indices or visually adjacent items).
+  - Record current visibility/status indicators for each targeted activity (e.g., presence/absence of hidden/visible badge or eye icon).
+  - Confirm there are no existing duplicate copies of the targeted activity titles (so duplication can be detected).
 
 **Post-Check**
-- **Navigate To**: `Course page (refresh the page and remain in Edit mode) -> Same section(s) as pre-check and any target section(s) if applicable`
+- **Navigate To**: `Course page (Edit mode ON) — refresh the page and return to the same section(s) where the targeted activities were located`
 - **Observe**:
-  - names/identifiers of the previously selected activities
-  - visibility/status badges or icons for those activities
-  - section location or position index for those activities
-  - activity count in the source section and in the target section (if move/duplicate was applied)
+  - Each previously recorded targeted activity title is present and shows the UI change corresponding to the applied bulk operation (for example: visibility badge now shows 'Hidden' if 'Hide' was applied).
+  - If the bulk operation was a Move, the recorded activities appear in the destination section and in the expected new order; the source section no longer contains those items in their previous positions.
+  - If the bulk operation was Duplicate, a new activity row exists for each duplicated item with a distinguishable copy marker in the title (e.g., 'copy') while the original remains.
+  - No unexpected additional duplicates or missing activities are observed (except those expected from the chosen operation).
+  - All observed changes persist after the page refresh.
 
-**Expected Change**: The previously selected activities persistently reflect the chosen bulk operation: for example, if 'Hide' was applied their visibility badge changes from Visible to Hidden; if 'Show' was applied the badge changes to Visible; if 'Move to section X' the activities no longer appear in the original section and appear under section X at the expected position; if 'Duplicate' additional copies appear (n+number_of_duplicates) with identifiable names/markers; if 'Delete' the activities are no longer present; for status/configuration operations the corresponding indicator or setting for each affected activity is updated. These changes remain visible after a page refresh.
+**Expected Change**: The selected activities now visibly reflect the chosen bulk operation (visibility/status badges updated for Hide/Show, items relocated for Move, new duplicate rows created for Duplicate, etc.), and these changes persist after refreshing the Course page while Edit mode is on.
 
 ---
 
@@ -1050,19 +1062,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course page (with Edit mode ON) -> click '+ Add an activity or resource' to open the Activity Chooser modal`
+- **Navigate To**: `Course page (Edit mode On) -> Click '+ Add an activity or resource' to open Activity Chooser modal`
 - **Observe**:
-  - identify the target activity tile by label and type (e.g., 'Assignment')
-  - target tile star/favorite icon state (record as 'favorited' if filled/active, or 'not favorited' if outline/inactive)
+  - Activity Chooser modal is open
+  - Target tile to be toggled is visible in the chooser
+  - Target tile's star/favorite icon current visual state is recorded (e.g. 'outlined' for not-favorited or 'filled' for favorited)
 
 **Post-Check**
-- **Navigate To**: `From the course page, close the Activity Chooser, navigate elsewhere on the course page (e.g., a different section) then click '+ Add an activity or resource' again to re-open the Activity Chooser modal`
+- **Navigate To**: `After toggling: Close Activity Chooser (if open) -> Reopen Course page (ensure Edit mode On) -> Click '+ Add an activity or resource' to open Activity Chooser modal again`
 - **Observe**:
-  - the same target activity tile by label and type (must match pre_check identification)
-  - target tile star/favorite icon state (filled/active vs outline/inactive)
-  - any change in tile placement or visual highlighting associated with favorited tiles (if applicable)
+  - Activity Chooser modal is open
+  - Target tile is visible in the chooser
+  - Target tile's star/favorite icon shows the opposite visual state compared to the recorded pre-check state (e.g. previously 'outlined' now 'filled' or vice versa)
 
-**Expected Change**: The target tile's star/favorite icon state is the opposite of what was recorded in pre_check (if pre_check recorded 'not favorited', post_check shows 'favorited', and vice versa). The toggled favorite state persists when the Activity Chooser is closed and reopened in the same user session.
+**Expected Change**: The target Activity Chooser tile's star/favorite state is inverted from the pre-check: the star icon visually reflects the toggled favorite state and the change persists when the Activity Chooser is closed and reopened.
 
 ---
 
@@ -1079,26 +1092,26 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course page -> Activities / Assignments section (Course main page)`
+- **Navigate To**: `Course page (QA Automation 101) -> target section where the assignment will be created`
 - **Observe**:
-  - No assignment with name <assignment name> exists in the Assignments list
+  - The course section does not contain an assignment with the Assignment Name used in the test (i.e., the new assignment is not already present)
 
 **Post-Check**
-- **Navigate To**: `Course page -> Assignments list; open the newly created <assignment name> to view its settings`
+- **Navigate To**: `Course page (QA Automation 101) -> the same section -> open the new assignment's Settings (Edit settings) page`
 - **Observe**:
-  - Assignment appears in the Assignments list with name <assignment name>
-  - Assignment settings / Submission types shows 'File submissions' enabled
-  - Max number of uploaded files equals <integer>
-  - Maximum submission size equals <number> MB
-  - Accepted file types displays <accepted file types>
-  - Group submission settings shows 'Group submissions' enabled
-  - Require all group members to submit is checked
-  - Grouping selection shows <grouping> selected
-  - Access restrictions list contains the configured <restriction type>
-  - Linked competencies includes <competency type>
-  - Browser was redirected to the course page after clicking 'Save and return to course'
+  - Course section contains an assignment row with the specified Assignment Name
+  - Assignment settings panel shows 'File submissions' enabled
+  - Maximum number of uploaded files equals the <integer> value entered during creation
+  - Maximum submission size displays the <number> MB value entered during creation
+  - Accepted file types field contains the <accepted file types> value entered
+  - Group submission is enabled in assignment settings
+  - 'Require all group members to submit' option is checked
+  - Grouping selection shows the chosen <grouping>
+  - Restrict access list includes an entry for the selected <restriction type>
+  - Competencies/Linked competencies section includes the selected <competency type>
+  - After a full page refresh, the assignment row and all above settings remain present and unchanged
 
-**Expected Change**: A new assignment named <assignment name> exists in the course. Its submission type is configured to allow File submissions with max files = <integer>, maximum submission size = <number> MB, and accepted file types = <accepted file types>. Group submissions are enabled with 'Require all group members to submit' checked and grouping = <grouping>. The specified access restriction (<restriction type>) is present and the selected competency (<competency type>) is linked. The teacher was returned to the course page after saving.
+**Expected Change**: A new Assignment with the specified Assignment Name is created in the selected course section and persisted. The assignment's submission settings reflect File submissions enabled, Maximum number of uploaded files set to the provided <integer>, Maximum submission size set to the provided <number> MB, Accepted file types set as entered; Group submissions is enabled with 'Require all group members to submit' checked and the selected <grouping> applied; the chosen <restriction type> appears in the Restrict access list; and the selected <competency type> is linked. All of these settings remain present after a page refresh.
 
 ---
 
@@ -1117,22 +1130,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course page -> Activities tab -> Assignments section`
+- **Navigate To**: `Course page (QA Automation 101) -> Course content / section where assignment will be created`
 - **Observe**:
-  - no activity with name '<assignment name>' present in the Assignments list
+  - No activity or assignment row with the title '<assignment name>' is present in the selected section
 
 **Post-Check**
-- **Navigate To**: `New assignment page (opened after 'Save and display') and Course page -> Activities tab -> Assignments section`
+- **Navigate To**: `New Assignment page -> Edit settings (open the assignment's settings from the assignment page)`
 - **Observe**:
-  - assignment name '<assignment name>' displayed as the page heading and present in the course Assignments list
+  - Assignment title equals '<assignment name>'
   - Submission types shows 'File submissions' enabled
-  - Max number of uploaded files equals '<integer>'
-  - Maximum submission size equals '<number>' MB
-  - Accepted file types equals '<accepted file types>'
-  - Group submission settings shows 'Group submissions' enabled
-  - Selected grouping equals '<grouping>'
+  - Maximum number of uploaded files equals '<integer>'
+  - Maximum submission size displays '<number> MB'
+  - Accepted file types field contains '<accepted file types>'
+  - Group submissions is enabled
+  - Selected grouping equals '<grouping>' or the grouping name is visible in Group submission settings
 
-**Expected Change**: A new assignment named '<assignment name>' has been created and is visible; File submissions are enabled with the configured max files, maximum submission size (MB), and accepted file types; Group submissions are enabled and the specified grouping is assigned.
+**Expected Change**: A new assignment titled '<assignment name>' is created and its persisted settings show File submissions enabled, Maximum number of uploaded files = <integer>, Maximum submission size = <number> MB, Accepted file types = '<accepted file types>', and Group submissions enabled with the selected grouping '<grouping>'.
 
 ---
 
@@ -1150,27 +1163,26 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course page -> target section where the assignment will be added`
+- **Navigate To**: `Course page (QA Automation 101) -> target section where the assignment will be created`
 - **Observe**:
-  - No activity or resource with name '<assignment name>' is listed in the section activity list
+  - assignment list does not contain the assignment with the test assignment name
 
 **Post-Check**
-- **Navigate To**: `Course page -> target section where the assignment was added; then click the '<assignment name>' link to open the Assignment page and open the Settings tab`
+- **Navigate To**: `Course page (QA Automation 101) -> locate the newly created assignment entry -> open the assignment Settings (or Edit settings) page`
 - **Observe**:
-  - Assignment name displayed as '<assignment name>' in the section activity list
-  - Assignment page opens for '<assignment name>'
-  - Settings tab shows Submission types: 'File submissions' is enabled/checked
-  - Settings tab shows 'Max number of uploaded files' = <integer>
-  - Settings tab shows 'Maximum submission size' = <number> MB
-  - Settings tab shows 'Accepted file types' contains '<accepted file types>'
-  - Settings tab shows Group submission settings: Group submissions is unchecked/disabled
+  - assignment list contains an entry with the assignment name entered in the test
+  - Assignment Settings - Submission types shows 'File submissions' enabled
+  - Assignment Settings - Submission types shows 'Maximum number of uploaded files' equals the integer entered in the test
+  - Assignment Settings - Submission types shows 'Maximum submission size' equals the MB value entered in the test
+  - Assignment Settings - Submission types shows 'Accepted file types' contains the file type string entered in the test
+  - Group submission settings shows 'Group submissions' is unchecked (disabled)
 
-**Expected Change**: The newly created assignment '<assignment name>' appears in the course section list and its saved configuration reflects File submissions enabled with Max number of uploaded files = <integer>, Maximum submission size = <number> MB, Accepted file types = '<accepted file types>', and Group submissions disabled.
+**Expected Change**: A new assignment with the specified assignment name is present on the course page. Opening its settings confirms File submissions are enabled, Group submissions is disabled, and the Maximum number of uploaded files, Maximum submission size (MB), and Accepted file types match the values entered during creation.
 
 ---
 
 ### [TC-005] Rapid double-click the Log out button
-**Category**: `edge` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
+**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Click the 'Log out' button once
@@ -1182,22 +1194,24 @@
 
 #### Verification Plan
 
-**Actor A (Role: `teacher`)**
-- **Action**: Execute the steps from the core test case to create the assignment (Save and display) with File submissions enabled and Group submissions disabled.
-
-**Actor B (Role: `student`)**
-- **Session**: `new_session`
-- **Navigate To**: `Course X -> Activities tab -> Assignments section (or Course page where the assignment was added)`
-- **Action**: 
+**Pre-Check**
+- **Navigate To**: `Course page (QA Automation 101) -> the target section where the assignment will be created`
 - **Observe**:
-  - assignment name present in the Assignments list
-  - clicking the assignment name opens the assignment page
-  - on the assignment page: 'Add submission' button is visible
-  - submission form contains a file upload area / file picker (drag-and-drop or choose files)
-  - submission UI indicates or enforces the configured maximum number of uploaded files and maximum file size and accepts configured file types
-  - no requirement or prompt forcing a group submission (individual submission is possible)
+  - course section does not contain an activity titled '<assignment name>'
+  - no existing assignment page for '<assignment name>' is accessible (optional: verify by attempting to open the assignment URL used by previous runs)
 
-**Expected Change**: The assignment created by the teacher appears in the course's Assignments list and, when opened by the student, the submission interface provides a file upload area that reflects the configured file-submission constraints (max files, max size, accepted types) and allows individual (non-group) submission.
+**Post-Check**
+- **Navigate To**: `1) The assignment page opened by the Save and display action; 2) Course page (QA Automation 101) -> the same section (refresh the page)`
+- **Observe**:
+  - assignment page displays the title '<assignment name>' in the page heading
+  - on the assignment page or in its Settings: 'File submissions' is enabled/checked
+  - on the assignment settings: 'Maximum number of uploaded files' shows the value entered during creation
+  - on the assignment settings: 'Maximum submission size' shows the MB value entered during creation
+  - on the assignment settings: 'Accepted file types' contains the types entered during creation
+  - 'Group submissions' toggle/option is unchecked/disabled for the assignment
+  - the assignment appears as a row/item in the course section after a full page refresh
+
+**Expected Change**: A new assignment titled '<assignment name>' is created in the selected course section and persists after refresh; its submission settings reflect that File submissions are enabled with the configured maximum number of uploaded files, maximum submission size, and accepted file types, and Group submissions remains disabled.
 
 ---
 
@@ -1214,25 +1228,25 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course page -> Activities tab -> Assignments section`
+- **Navigate To**: `Course page (QA Automation 101) -> target section where assignment will be created`
 - **Observe**:
-  - List of assignment names in the Assignments section (confirm <assignment name> is NOT present prior to creation)
+  - assignment list does not contain the assignment named <assignment name>
+  - no assignment link or tile exists with the title <assignment name>
 
 **Post-Check**
-- **Navigate To**: `Course page -> Activities tab -> Assignments section -> Click <assignment name> -> Settings tab`
+- **Navigate To**: `Course page (QA Automation 101) -> click the newly created assignment <assignment name> -> Edit settings (or Settings tab) for that assignment`
 - **Observe**:
-  - Assignment name: <assignment name> is present in the Assignments section
-  - Assignment Settings panel is visible
-  - Submission types panel: 'File submissions' checkbox is unchecked/disabled
-  - Group submission settings panel: 'Group submissions' checkbox is checked/enabled
-  - Group submission settings panel: selected grouping == <grouping>
+  - course page contains an entry/link titled <assignment name> in the expected section
+  - assignment settings page shows Submission types section with 'File submissions' unchecked/disabled
+  - assignment settings page shows Group submission enabled/checked
+  - assignment settings page shows the selected grouping set to <grouping> (or the chosen grouping label is visible)
 
-**Expected Change**: A new assignment named <assignment name> appears in the course. Its persisted settings show File submissions disabled (unchecked) and Group submissions enabled with the grouping set to <grouping>.
+**Expected Change**: A new assignment titled <assignment name> is created in the course. Its persisted settings show that File submissions are disabled while Group submissions are enabled and the selected grouping is set to <grouping>.
 
 ---
 
 ### [TC-008] Use browser Back after successful logout
-**Category**: `edge` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
+**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Click the 'Log out' button
@@ -1244,22 +1258,22 @@
 
 #### Verification Plan
 
-**Actor A (Role: `teacher`)**
-- **Action**: Execute the steps from the core test case to create the assignment with File submissions OFF and Group submissions ON.
-
-**Actor B (Role: `student`)**
-- **Session**: `new_session`
-- **Navigate To**: `Course -> Activities tab -> Assignments section, then open the assignment named <assignment name>`
-- **Action**: 
+**Pre-Check**
+- **Navigate To**: `Course page (QA Automation 101) -> target section where the assignment will be added`
 - **Observe**:
-  - Assignment appears in the Assignments list with the name <assignment name>
-  - On the assignment page: metadata (Opened date, Due date, Description) is visible
-  - Submission area does NOT show any file upload controls or 'File submissions' links/fields
-  - Submission area shows a group-submission indicator (e.g., 'Group submission: Yes', 'Submit in groups', or displays group name/ <grouping>)
-  - If the submission form permits submitting, the available submission types do not include file uploads (e.g., only online text editor is present if enabled)
-  - Submission status table or summary indicates submissions are by group or references the student's group membership
+  - assignment list does not contain an entry with title '<assignment name>'
+  - no existing assignment row shows Group submissions enabled for title '<assignment name>'
 
-**Expected Change**: The new assignment <assignment name> appears in the course Assignments list and on its assignment page; group submissions are enabled (students see a clear group-submission indicator or group name) and file-upload submission controls are absent from the submission area.
+**Post-Check**
+- **Navigate To**: `New Assignment page (the assignment view) and Course page -> same section (refresh if necessary)`
+- **Observe**:
+  - assignment page displays title '<assignment name>'
+  - submission types/settings indicate File submissions is disabled/unchecked
+  - submission settings indicate Group submissions is enabled/checked
+  - grouping field shows the selected grouping '<grouping>' (or the grouping name is visible in the Group submission settings)
+  - on the course section the new assignment '<assignment name>' appears in the activity list
+
+**Expected Change**: A new assignment titled '<assignment name>' is created and persisted: its File submissions option is disabled, Group submissions is enabled with the selected grouping '<grouping>', and the assignment entry appears in the course section after refresh.
 
 ---
 
@@ -1280,19 +1294,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course page (target course) -> Activities / Section listing`
+- **Navigate To**: `Course page for 'QA Automation 101' (course content area / selected section)`
 - **Observe**:
-  - list of activity/resource names in the target section
-  - absence of an activity with name '<assignment name>'
+  - Assignment titled '<assignment name>' is NOT present in the course content
 
 **Post-Check**
-- **Navigate To**: `Course page (target course) -> Activities / Section listing; then click the activity link '<assignment name>' to open its Assignment page`
+- **Navigate To**: `Course page for 'QA Automation 101' -> Open the assignment titled '<assignment name>' -> Click 'Edit settings' (or Settings tab) for that assignment`
 - **Observe**:
-  - '<assignment name>' is present in the section activity list as an Assignment activity (clickable link)
-  - Assignment page shows Submission types or settings indicating File submissions are disabled
-  - Assignment page shows Group submission settings indicating Group submissions are disabled
+  - Assignment titled '<assignment name>' is present in the selected course section
+  - 'File submissions' option is unchecked/disabled in the Assignment settings (no file upload submission allowed)
+  - 'Group submissions' is disabled / assignment configured as 'No groups' (not set to require group submissions)
 
-**Expected Change**: An Assignment named '<assignment name>' exists on the course page where none existed before; opening the assignment confirms File submissions are disabled and Group submissions are disabled.
+**Expected Change**: A new assignment named '<assignment name>' exists on the course page and its persisted settings show File submissions disabled and Group submissions disabled.
 
 ---
 
@@ -1309,20 +1322,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course page (Course X) -> Activities list / Course content`
+- **Navigate To**: `Course page (QA Automation 101) -> target section where the assignment will be created`
 - **Observe**:
-  - No activity with the title '<assignment name>' is present in the course content
-  - No existing assignment entry with title '<assignment name>' in Activities/Assignments list
+  - Course content does not contain an assignment with the title '<assignment name>'
+  - No assignment link or card exists for '<assignment name>' in the section
 
 **Post-Check**
-- **Navigate To**: `New assignment page (click the assignment link titled '<assignment name>' in course content) or Course page -> Activities list -> open the assignment`
+- **Navigate To**: `Assignment page for '<assignment name>' (opened after Save and display) -> Edit settings (open the assignment configuration) and refresh both the assignment page and the parent Course page`
 - **Observe**:
-  - Assignment title equals '<assignment name>'
-  - Submission types section shows File submissions unchecked/absent and Online text (if present) as the enabled submission type
-  - Group submission settings show 'Group submissions' = Off / 'No' (no group submission enabled)
-  - Page displays assignment metadata (Opened date / Due date / Description) confirming persisted record
+  - Assignment title equals '<assignment name>' on the assignment view header
+  - Assignment appears in the course content listing in the expected section after page refresh
+  - Submission types: Online text submissions control is present and enabled
+  - File submissions checkbox/toggle is unchecked (File submissions OFF)
+  - Group submissions setting is set to 'No groups' or the Group submissions checkbox/toggle is unchecked (Group submissions OFF)
 
-**Expected Change**: An assignment titled '<assignment name>' has been created and persisted in the course. Its settings show File submissions disabled and Group submissions disabled, and the assignment page is accessible (Save and display persisted and navigable).
+**Expected Change**: A new assignment titled '<assignment name>' exists and is persisted: the assignment page is reachable, the assignment appears in the course content after refresh, File submissions remains disabled, and Group submissions remains disabled.
 
 ---
 
@@ -1339,30 +1353,27 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course Settings page (teacher view) — form is open`
+- **Navigate To**: `Course Settings (for the target course)`
 - **Observe**:
-  - Course full name field (current value)
-  - Course short name field (current value)
-  - Course category dropdown (current selection)
-  - Course end date Enable toggle (checked/unchecked)
-  - Course format dropdown (current selection)
-  - Layout controls region (visibility for selected format)
-  - Groups -> Group mode setting (current selection)
-  - Save and display button is present
+  - Course Settings form is displayed and editable
+  - Course Full Name input is present
+  - Course Short Name input is present
+  - Course Category dropdown is present
+  - Enable Course end date checkbox control is present
+  - Course Format dropdown is present
+  - Group mode dropdown is present
 
 **Post-Check**
-- **Navigate To**: `Course page -> Click 'Settings' tab -> Open 'Course settings' (teacher view)`
+- **Navigate To**: `Course Settings (reopen after 'Save and display')`
 - **Observe**:
-  - Course page heading shows the saved Course full name
-  - Course full name field value
-  - Course short name field value
-  - Course category dropdown selection
-  - Course end date Enable toggle state
-  - Course format dropdown selection
-  - Layout controls region visibility for Topics format
-  - Groups -> Group mode selection
+  - Course Full Name equals the entered <valid course full name>
+  - Course Short Name equals the entered <valid course short name>
+  - Course Category equals the selected <valid category>
+  - Enable Course end date checkbox is unchecked (End Date disabled)
+  - Course Format is set to 'Topics format'
+  - Group mode is set to 'No groups'
 
-**Expected Change**: After saving, the app returned to the course page and the Course Settings persist the entered values: Course full name and short name match the submitted values; Course category is the selected category; Course End Date remains disabled (Enable unchecked); Course format is set to 'Topics format' and the Topics-specific layout controls are visible; Groups group mode is set to 'No groups'.
+**Expected Change**: The course settings persist the entered full/short names and category, the End Date toggle remains disabled, the Course Format is saved as Topics format, and the Group mode is saved as No groups; these values remain after saving and reopening the Course Settings.
 
 ---
 
@@ -1381,30 +1392,29 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course Settings page (edit form)`
+- **Navigate To**: `Course Settings page for the target course (QA Automation 101)`
 - **Observe**:
-  - Course full name (current value)
-  - Course short name (current value)
-  - Course category (current selection)
-  - Course end date Enable toggle state
-  - Course format (current selection)
-  - Presence of layout controls for the selected format
-  - Groups -> Group mode (current selection)
-  - Groups -> Grouping (current selection or 'None')
+  - Course Full Name field value (record current value before change)
+  - Course Short Name field value (record current value before change)
+  - Course Category selected value (record current value before change)
+  - Enable Course end date checkbox state (should be unchecked as ensured by the test steps)
+  - Course Format current selection (record current selection before change)
+  - Groups Group Mode current selection (record current selection before change)
+  - Groups Grouping dropdown visibility and selected value (if visible)
 
 **Post-Check**
-- **Navigate To**: `Course page, then reopen Course Settings page (edit form)`
+- **Navigate To**: `Course page (to confirm heading) and then Course Settings page (to confirm persisted settings)`
 - **Observe**:
-  - Course full name (saved value)
-  - Course short name (saved value)
-  - Course category (saved selection)
-  - Course end date Enable toggle state
-  - Course format (saved selection)
-  - Presence of layout controls for Topics format
-  - Groups -> Group mode (saved selection)
-  - Groups -> Grouping (saved selection)
+  - Course page heading displays the new Course Full Name entered in the test
+  - Course Settings: Course Full Name field equals the new Course Full Name entered
+  - Course Settings: Course Short Name field equals the new Course Short Name entered
+  - Course Settings: Course Category equals the selected <valid category>
+  - Course Settings: Enable Course end date checkbox is unchecked (End Date disabled)
+  - Course Settings: Course Format is 'Topics format' and Layout controls for Topics are visible
+  - Course Settings: Groups Group Mode is set to the chosen non-'No groups' option
+  - Course Settings: Groups Grouping dropdown is visible and the chosen <valid grouping> is selected
 
-**Expected Change**: After clicking 'Save and display' the user is returned to the course page and the persisted Course Settings reflect the inputs: Course full name and short name match the entered values; Course category matches the selected category; the Course End Date Enable toggle is unchecked (End Date disabled); Course Format is set to 'Topics format' and Topics-specific layout controls are visible; Groups Group Mode is set to the selected non-'No groups' value; Groups Grouping is set to the selected grouping.
+**Expected Change**: After saving and returning to the course, the Course page heading shows the new Course Full Name and the Course Settings persist the provided configuration: End Date remains disabled, Format is set to Topics format (with Topics layout controls visible), Group Mode is the selected non-'No groups' option and the chosen Grouping remains selected, and the Course Short Name and Category reflect the submitted values.
 
 ---
 
@@ -1424,28 +1434,29 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course Settings (Edit course settings form for the target course)`
+- **Navigate To**: `Course Settings page for QA Automation 101`
 - **Observe**:
-  - Course full name (current value)
-  - Course short name (current value)
-  - Course category (current selection)
-  - Course end date enabled toggle (checked/unchecked)
-  - Course format (current selection)
-  - Layout controls visibility for Weekly format (visible/hidden)
-  - Groups group mode (current selection)
+  - Course Full Name field value (record current value before change)
+  - Course Short Name field value (record current value before change)
+  - Course Category dropdown current selection (record current category)
+  - End date toggle control is present and its current state is noted
+  - Course Format dropdown current selection (record current format)
+  - Weekly layout-specific controls are visible only if Weekly format is currently selected (note their visibility)
+  - Group mode dropdown current selection (record current group mode)
 
 **Post-Check**
-- **Navigate To**: `Course Settings (re-open Edit course settings form for the same course after saving)`
+- **Navigate To**: `QA Automation 101 course page, then open Course Settings`
 - **Observe**:
-  - Course full name
-  - Course short name
-  - Course category
-  - Course end date enabled toggle
-  - Course format
-  - Layout controls visibility for Weekly format
-  - Groups group mode
+  - Course page heading shows the updated Course Full Name entered in the test
+  - Course Settings: Course Full Name field equals the entered <valid course full name>
+  - Course Settings: Course Short Name field equals the entered <valid course short name>
+  - Course Settings: Course Category equals the selected <valid category>
+  - Course Settings: End date toggle is unchecked (disabled)
+  - Course Settings: Course Format is set to 'Weekly format'
+  - Course Settings: Weekly layout-specific controls are visible (e.g., weekly layout options shown)
+  - Course Settings: Group mode dropdown is set to 'No groups'
 
-**Expected Change**: Course full name matches the entered value; Course short name matches the entered value; Course category matches the selected category; Course end date enabled toggle remains unchecked (End Date disabled); Course format is set to 'Weekly format' and the weekly layout controls are visible; Groups group mode is set to 'No groups'.
+**Expected Change**: After saving, the application returns to the course page and the Course Settings persist: the Course Full Name and Short Name reflect the entered values, the selected Course Category is saved, the End Date toggle remains disabled, the Course Format is set to Weekly with weekly layout controls visible, and Group mode is set to No groups.
 
 ---
 
@@ -1463,30 +1474,28 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course Settings page (for the course) - current state before making changes`
+- **Navigate To**: `Course Settings page (Edit course settings) for the target course`
 - **Observe**:
-  - Course full name
-  - Course short name
-  - Course category
-  - Course end date enabled state (checked/unchecked)
-  - Course format
-  - Visibility of layout controls for current format
-  - Groups Group mode
-  - Groups Grouping selection
+  - Course Settings form is rendered
+  - Enable Course End Date checkbox control is present (record current checked state)
+  - Course Format dropdown is present (record current selected format)
+  - Groups Group mode dropdown is present (record current selected group mode)
+  - Groups Grouping control presence/selection is recorded (may be visible or hidden depending on current Group mode)
 
 **Post-Check**
-- **Navigate To**: `Course Settings page (for the course) - after clicking 'Save and display' and returning to Course Settings to confirm persistence`
+- **Navigate To**: `Course page (after Save and display) -> reopen Course Settings (Edit course settings)`
 - **Observe**:
-  - Course full name
-  - Course short name
-  - Course category
-  - Course end date enabled state (checked/unchecked)
-  - Course format
-  - Visibility of layout controls for Weekly format
-  - Groups Group mode
-  - Groups Grouping selection
+  - Course page is displayed after save (course heading visible)
+  - Course Full Name field equals the value entered during the test
+  - Course Short Name field equals the value entered during the test
+  - Course Category field equals the category selected during the test
+  - Enable Course End Date checkbox is unchecked
+  - Course Format dropdown is set to 'Weekly format'
+  - Weekly layout controls are visible in the form (layout-specific controls for Weekly format rendered)
+  - Groups Group mode dropdown is set to the chosen non-'No groups' value
+  - Groups Grouping dropdown is visible and its selection equals the grouping chosen during the test
 
-**Expected Change**: Course settings persist the saved values: Course full name and Course short name match the entered values; Course category matches the selected category; Course End Date remains disabled (unchecked) so no end date is configured; Course Format is set to 'Weekly' and Weekly-specific layout controls are visible; Groups Group mode is set to the selected non-'No groups' option and the Groups Grouping dropdown shows the chosen grouping. Additionally, the 'Save and display' action returned the user to the course page before re-opening Course Settings to verify persistence.
+**Expected Change**: The Course Settings persist the submitted values: the course page is shown after save and, when reopening Course Settings, the Full Name, Short Name and Category match the inputs; 'Enable Course End Date' remains disabled; Course Format is saved as 'Weekly format' with its weekly layout controls visible; Group mode is saved as the selected non-'No groups' option and the chosen Grouping is preserved.
 
 ---
 
@@ -1504,32 +1513,25 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course Settings page (current state before changes)`
+- **Navigate To**: `QA Automation 101 -> Course Settings (before change)`
 - **Observe**:
-  - Course full name
-  - Course short name
-  - Course category
-  - Course start date
-  - Course end date enabled (true/false)
-  - Course end date value (if enabled)
-  - Course format
-  - Layout controls visibility for Topics format
-  - Groups -> Group mode
+  - End date toggle is currently off or Course End Date field is empty
+  - Course Format is not set to 'Topics format' or Topics layout controls are not visible
+  - Group mode is not set to 'No groups'
 
 **Post-Check**
-- **Navigate To**: `Course Settings page (open after Save and display)`
+- **Navigate To**: `QA Automation 101 course page -> Course Settings (reopen after Save and display)`
 - **Observe**:
-  - Course full name
-  - Course short name
-  - Course category
-  - Course start date
-  - Course end date enabled (true/false)
-  - Course end date value (if enabled)
-  - Course format
-  - Layout controls visibility for Topics format
-  - Groups -> Group mode
+  - Course full name equals <valid course full name>
+  - Course short name equals <valid course short name>
+  - Course category equals <valid category>
+  - Start date equals <valid start date>
+  - End date toggle is enabled and Course End Date equals <valid end date>
+  - Course Format equals 'Topics format'
+  - Topics layout controls (topics layout selector/section controls) are visible
+  - Group mode equals 'No groups'
 
-**Expected Change**: All Course Settings reflect the values entered in the test steps: Course full name and Course short name match the entered values; Course category matches the selected category; Course start date matches the entered start date; Course End Date toggle is enabled and the end date equals the entered end date (which is >= start date); Course format is set to 'Topics format' and the Topics-specific layout controls are visible; Group mode is set to 'No groups'. Additionally, the action redirected to the course main page after saving (Save and display).
+**Expected Change**: The Course Settings persist the entered values: the End Date is enabled with the provided end date, the Course Format is set to 'Topics format' (and Topics layout controls are visible), Group mode is set to 'No groups', and the full name, short name, category and start date retain the entered values after save and reopening settings.
 
 ---
 
@@ -1547,32 +1549,32 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course page -> Settings -> Edit course settings (Course Settings form)`
+- **Navigate To**: `Course Settings for 'QA Automation 101'`
 - **Observe**:
-  - Course full name
-  - Course short name
-  - Course category
-  - Course start date
-  - Course end date enabled toggle state and Course end date value
-  - Course format
-  - Visibility of Topics layout controls
-  - Groups Group mode
-  - Groups Grouping
+  - Course Full Name field (current value)
+  - Course Short Name field (current value)
+  - Course Category field (current value)
+  - Course Start Date field (current value)
+  - Course End Date toggle state (enabled/disabled) and End Date field value if enabled
+  - Course Format value
+  - Visibility of Layout Controls for Topics (if Course Format is Topics)
+  - Groups Group Mode value
+  - Presence and selected value of Groups Grouping dropdown (if Group Mode != No groups)
 
 **Post-Check**
-- **Navigate To**: `Course page -> Settings -> Edit course settings (Course Settings form)`
+- **Navigate To**: `Course page for 'QA Automation 101', then reopen Course Settings`
 - **Observe**:
-  - Course full name
-  - Course short name
-  - Course category
-  - Course start date
-  - Course end date enabled toggle state and Course end date value
-  - Course format
-  - Visibility of Topics layout controls
-  - Groups Group mode
-  - Groups Grouping
+  - Course page heading shows the saved Course Full Name entered during the test
+  - Course Settings: Course Full Name equals the value entered during the test
+  - Course Settings: Course Short Name equals the value entered during the test
+  - Course Settings: Course Category equals the value selected during the test
+  - Course Settings: Course Start Date equals the value entered during the test
+  - Course Settings: Course End Date toggle is enabled and End Date equals the value entered during the test
+  - Course Settings: Course Format is 'Topics format' and Layout Controls for Topics are visible
+  - Course Settings: Groups Group Mode equals the non-'No groups' option selected during the test
+  - Course Settings: Groups Grouping dropdown is visible and selected grouping equals the value chosen during the test
 
-**Expected Change**: The Course Settings persist the entered values: Course Full Name and Course Short Name match the inputs; Course Category matches selection; Course Start Date equals the entered start date; Course End Date toggle is enabled and the Course End Date equals the entered end date; Course Format is set to 'Topics' and Topics-specific layout controls are visible; Groups Group mode is set to the selected non-'No groups' option and Groups Grouping equals the chosen grouping. The application has returned to the course page after saving.
+**Expected Change**: The Course Settings persist the entered configuration: full name, short name, category, start date, end date (enabled and set), format set to Topics with its layout controls visible, and groups configured to the chosen non-'No groups' mode with the selected grouping; the course page heading reflects the saved Course Full Name.
 
 ---
 
@@ -1589,32 +1591,29 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course Settings page (Edit course settings) for the target course`
+- **Navigate To**: `Course Settings page for the target course (before making changes)`
 - **Observe**:
-  - Course full name (current value)
-  - Course short name (current value)
-  - Course category (current selection)
-  - Course start date (current value)
-  - Course end date toggle state (enabled/disabled) and end date value if enabled
-  - Course format selection (current value)
-  - Presence/visibility of Weekly-format specific layout controls
-  - Groups -> Group mode selection (current value)
+  - Course Full Name is NOT the intended new value
+  - Course Short Name is NOT the intended new value
+  - Course Category is NOT the intended category value
+  - Course End Date toggle is disabled OR the End Date value differs from the intended end date
+  - Course Format is NOT set to 'Weekly format' OR Weekly layout controls are not visible
+  - Group mode is NOT set to 'No groups'
 
 **Post-Check**
-- **Navigate To**: `Course page -> open Course Settings page (Edit course settings) for the same course`
+- **Navigate To**: `1) Course page (after save) -> verify heading; 2) Reopen Course Settings and refresh the page`
 - **Observe**:
-  - Course full name equals the entered Course Full Name
-  - Course short name equals the entered Course Short Name
-  - Course category equals the selected Course Category
-  - Course start date equals the entered Course Start Date
-  - Course end date toggle is enabled
-  - Course end date equals the entered Course End Date
-  - Course format is set to 'Weekly format'
-  - Weekly-format layout controls are visible
-  - Groups -> Group mode is set to 'No groups'
-  - Course page heading (after Save and display) matches the entered Course Full Name
+  - Course page heading displays the intended Course Full Name
+  - Course Settings shows Course Full Name equal to the intended new value
+  - Course Settings shows Course Short Name equal to the intended new value
+  - Course Settings shows Course Category equal to the intended category
+  - Course Settings shows Course Start Date equal to the entered start date
+  - Course Settings shows End Date toggle enabled and Course End Date equals the entered end date (or is the same date/time)
+  - Course Settings shows Course Format = 'Weekly format' and Weekly-specific layout controls are visible
+  - Course Settings shows Group mode = 'No groups'
+  - After a full page refresh, all of the above persisted values remain unchanged
 
-**Expected Change**: Course settings were persisted: the Course full name and short name reflect the entered values; Course category and start date match the selections; Course End Date toggle is enabled and the End Date equals the entered date; Course format is set to 'Weekly format' and weekly-specific layout controls are visible; Group mode is set to 'No groups'. The user is returned to the course page whose heading matches the saved Course full name.
+**Expected Change**: The course configuration is saved and persisted: the Course Full Name/Short Name/Category and Start/End dates are updated, Course Format is set to Weekly with the Weekly layout controls visible, and Group mode is set to No groups; the course page heading reflects the new Course Full Name and all settings remain after refresh.
 
 ---
 
@@ -1632,40 +1631,33 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course settings (Edit course settings)`
+- **Navigate To**: `Course Settings (current course)`
 - **Observe**:
-  - Course full name field (current value)
-  - Course short name field (current value)
-  - Course category dropdown (selected value)
-  - Course start date field (current value)
-  - Course end date Enable toggle state
-  - Course end date field value (if enabled)
-  - Course format selector (current selection)
-  - Weekly-format specific layout controls visibility
-  - Groups -> Group mode selector (current selection)
-  - Groups -> Grouping dropdown (selected value)
+  - Course Full Name field does not show the intended new course full name
+  - Course Short Name field does not show the intended new course short name
+  - Course Category is not set to the intended category
+  - Course End Date toggle is disabled OR End Date field value does not equal the intended end date
+  - Course Format is not 'Weekly format' OR Weekly layout controls are not visible
+  - Groups Group Mode is 'No groups' OR Groups Grouping dropdown is not populated with the intended grouping
 
 **Post-Check**
-- **Navigate To**: `Course page (verify heading) -> Course settings (Edit course settings)`
+- **Navigate To**: `Course page -> open Course Settings for the same course (after Save and display)`
 - **Observe**:
-  - Course page heading (course full name)
-  - Course full name field (value after save)
-  - Course short name field (value after save)
-  - Course category dropdown (selected value after save)
-  - Course start date field (value after save)
-  - Course end date Enable toggle state after save
-  - Course end date field value after save (if enabled)
-  - Course format selector (value after save)
-  - Weekly-format specific layout controls visibility after save
-  - Groups -> Group mode selector (value after save)
-  - Groups -> Grouping dropdown (selected value after save)
+  - Course Full Name field shows the saved course full name that was entered during the test
+  - Course Short Name field shows the saved course short name that was entered during the test
+  - Course Category shows the selected category that was saved
+  - Course End Date toggle is enabled and End Date field equals the configured end date (greater than or equal to the start date)
+  - Course Format is set to 'Weekly format' and the Weekly layout controls are visible in the UI
+  - Groups Group Mode is set to a mode other than 'No groups' and the Groups Grouping dropdown is visible
+  - Groups Grouping dropdown shows the selected grouping value that was saved
+  - After saving, the app returned to the course page (Course heading is visible)
 
-**Expected Change**: After saving and returning to the course then reopening Edit course settings, all entered values persist: the Course full name and short name equal the entered values and the course page heading shows the full name; Course category equals the selected category; Start date equals the entered start date; the Course End Date toggle remains enabled and the End Date matches the entered date; Course Format is set to 'Weekly format' and the weekly-specific layout controls are visible; Groups Group mode is set to the chosen non-'No groups' option and the Groups Grouping dropdown shows the selected grouping.
+**Expected Change**: The Course Settings persist: the course full/short name and category are saved; the End Date toggle is enabled with the configured end date; Course Format is set to Weekly and weekly layout controls are rendered; Group mode is set to a non-'No groups' value and the chosen Grouping is populated. The system returns to the course page after Save and display.
 
 ---
 
 ### [TC-005] Rapid double-click the Log out button
-**Category**: `edge` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
+**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Click the 'Log out' button once
@@ -1677,19 +1669,21 @@
 
 #### Verification Plan
 
-**Actor A (Role: `teacher`)**
-- **Action**: Execute the steps from the core test case.
-
-**Actor B (Role: `student`)**
-- **Session**: `new_session`
-- **Navigate To**: `My Courses page; then open the enrolled Course -> Participants page`
-- **Action**: 
+**Pre-Check**
+- **Navigate To**: `Course (QA Automation 101) -> Participants`
 - **Observe**:
-  - course card for <course> present on My Courses
-  - participants list contains a row for <matching result>
-  - role column for <matching result>'s row shows <role>
+  - participants table does not contain a row for <matching result> (no matching username or full name)
+  - no active enrollment row exists for <matching result>
 
-**Expected Change**: The user <matching result> now appears in My Courses as a card for <course>, and on the Course's Participants page their entry exists with the role set to <role>.
+**Post-Check**
+- **Navigate To**: `Course (QA Automation 101) -> Participants`
+- **Observe**:
+  - participants table contains a row for <matching result>
+  - role column shows '<role>' for the new row
+  - enrolment status or active indicator is visible for the new row
+  - enrollment duration column/tooltip shows '<enrollment duration>' when an enrollment duration was provided
+
+**Expected Change**: The selected user is added to the course Participants list with the chosen role and an active enrollment entry; if an enrollment duration was entered it is displayed on the user's enrollment row, and the addition persists after a page refresh.
 
 ---
 
@@ -1709,21 +1703,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Assignment Submissions page (the assignment used in the test)`
+- **Navigate To**: `Course -> Assignment -> Submissions tab (Assignment Submissions page)`
 - **Observe**:
-  - Quick Grading checkbox is checked/enabled
-  - At least one submission row contains an inline grade input field (editable input) in the grade column
-  - Quick Grading 'Save changes' control or related quick-grading UI is visible
+  - 'Quick grading' checkbox is checked
+  - inline grade input fields are visible in grade cells (editable inputs)
+  - at least one submission row is present
 
 **Post-Check**
-- **Navigate To**: `Assignment Submissions page (refresh the page or navigate away and back to ensure persisted state)`
+- **Navigate To**: `Assignment Submissions page (after unchecking 'Quick grading' and refreshing the page)`
 - **Observe**:
-  - Quick Grading checkbox is unchecked/disabled
-  - No inline grade input fields exist in the submissions table; grade cells render as static, non-editable text
-  - Clicking a grade cell does not open an inline editor or input field
-  - Quick Grading 'Save changes' control is hidden or disabled
+  - 'Quick grading' checkbox is unchecked
+  - grade cells no longer render inline editable input fields and display read-only grade text
+  - clicking a grade cell does not open an inline input or editor
 
-**Expected Change**: Quick Grading is turned off (checkbox unchecked) and inline grade entry inputs are removed from the submissions table; grades are displayed as non-editable static text and clicking grade cells does not open an inline editor.
+**Expected Change**: The 'Quick grading' control is unchecked and inline grade entry is disabled: grade cells stop rendering editable input fields and become read-only, preventing inline grading even after a page refresh.
 
 ---
 
@@ -1740,20 +1733,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Gradebook -> Grader report`
+- **Navigate To**: `Grades -> Grader report`
 - **Observe**:
-  - Locate the target activity's column header in the grades table (the same activity being edited in the test)
-  - Note the displayed grade range or max-points indicator in the column header (e.g., '/ 100' or scale name)
-  - Open the column header action menu and open 'Edit activity grade settings' to view the current maximum grade / grade scale value in the dialog (record the value)
+  - the target activity's column header displays the current grading range or scale (e.g., '0 - 100' or the current scale name)
+  - no transient confirmation text 'updates activity grade settings' is visible prior to performing the edit
 
 **Post-Check**
-- **Navigate To**: `Gradebook -> Grader report (refresh the page or reopen the report after saving)`
+- **Navigate To**: `Grades -> Grader report (refresh the page after saving)`
 - **Observe**:
-  - Target activity's column header displays the updated grade range or updated max-points indicator consistent with the saved settings
-  - Open the column header action menu and open 'Edit activity grade settings' — the dialog shows the updated maximum grade / grade scale and other changed settings
-  - Any transient confirmation message has disappeared but the updated values persist in the UI (header and settings dialog)
+  - the target activity's column header displays the updated grading range or updated grading scale name that was entered in the Edit Activity Grade Settings dialog
+  - the updated header value persists after a full page refresh (proves persistence)
+  - a transient confirmation with the text 'updates activity grade settings' was displayed immediately after saving (if the UI shows transient messages)
 
-**Expected Change**: After saving, the activity's grade settings persist: the column header now shows the updated grade range/max-points or grading scale, and reopening 'Edit activity grade settings' displays the new maximum grade and settings entered in the test.
+**Expected Change**: The activity's column header now shows the new grade settings (updated min/max or grading scale) and this updated display remains visible after refreshing the Grader report; a transient confirmation 'updates activity grade settings' appears immediately after save if the application surfaces such messages.
 
 ---
 
@@ -1772,18 +1764,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Gradebook -> Grader report`
+- **Navigate To**: `Grades -> Grader report`
 - **Observe**:
-  - Target student's grade cell for the selected activity (identify by student name/row and activity column) — record current value as prior_grade
-  - No recent transient confirmation message about grade updates visible
+  - Locate the grade cell for student 'student1' and the target activity (e.g., 'Essay Draft') and record its current numeric value as the previous value
+  - Confirm there is no outstanding transient success banner relating to editing this grade before the test action
 
 **Post-Check**
-- **Navigate To**: `Gradebook -> Grader report (refresh the page or navigate away and return to ensure persistence)`
+- **Navigate To**: `Grades -> Grader report (reload the page to ensure persisted state)`
 - **Observe**:
-  - Target student's grade cell for the selected activity (value should match the grade entered in the Edit Grade Entry dialog)
-  - Optional transient confirmation message indicating the grade was updated (e.g., 'updates single grade entry') may appear once
+  - The grade cell for student 'student1' and activity 'Essay Draft' displays the newly entered numeric grade value
+  - Any transient confirmation message shown immediately after saving was consistent with the update (optional) and the updated grade remains after the message disappears
+  - After a full page refresh the updated grade value remains visible in the same grade cell
 
-**Expected Change**: The target student's grade cell value is updated from the prior value to the newly entered grade (<entered grade>) and remains updated after a page refresh or after navigating away and back to the Grader report; an optional transient confirmation message may be shown once.
+**Expected Change**: The student's grade cell for 'student1' and activity 'Essay Draft' is changed from the previously recorded value to the new grade entered in the Edit Grade Entry dialog, and the updated value persists after a page reload (demonstrating backend persistence).
 
 ---
 
@@ -1803,18 +1796,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Gradebook — Grader report page (Course -> Grades -> Grader report)`
+- **Navigate To**: `Grades -> Grader report (Gradebook)`
 - **Observe**:
-  - current value(s) of the grade cell(s) for the student row(s) that will be edited in the selected activity column(s)
-  - class average value shown in the Overall average row for the affected activity column(s)
+  - Identify and note the target activity column(s) you plan to edit (by activity name)
+  - Record the current grade cell values for the specific student rows you will edit (save these original values)
+  - Record the current numeric value shown in the activity column's average/overall row (class average) for each target activity
 
 **Post-Check**
-- **Navigate To**: `Gradebook — Grader report page (refresh the page or navigate away and back to ensure server-side persistence)`
+- **Navigate To**: `Grades -> Grader report (Gradebook) and refresh the page`
 - **Observe**:
-  - edited value(s) of the grade cell(s) for the same student row(s) in the affected activity column(s)
-  - class average value shown in the Overall average row for the affected activity column(s)
+  - Edited student grade cell values show the newly entered grades for each target student
+  - The activity column's average/overall row shows a different numeric value consistent with the updated grades
+  - The updated grade cell values and the new average persist after a full page refresh
 
-**Expected Change**: The edited grade cell(s) display the new entered value(s); the class average in the Overall average row for each affected activity column reflects the recalculated average based on the new grade values (displayed value should match the recalculated average within the site's rounding/display rules).
+**Expected Change**: The grade cells edited in Edit Mode now display the entered valid grades and the activity column's class average value updates to reflect those changes; both the individual grades and the revised average persist after saving and refreshing the Grader report.
 
 ---
 
@@ -1833,20 +1828,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Edit profile page (Profile -> Edit profile)`
+- **Navigate To**: `Edit profile page for the logged-in user`
 - **Observe**:
-  - First name field value
-  - Last name field value
-  - Email address field value
+  - Edit profile form is visible
+  - First name field is populated (record current value)
+  - Last name field is populated (record current value)
+  - Email address field is populated (record current value)
 
 **Post-Check**
-- **Navigate To**: `Profile page (view mode)`
+- **Navigate To**: `User Profile page (view mode) for the logged-in user; refresh the page or reopen after save`
 - **Observe**:
-  - Profile full name (displayed on page header)
-  - Email address in User details card
-  - Optional: Open Edit profile to confirm persisted field values
+  - Profile header/full-name displays '<first name> <last name>'
+  - Profile details or contact card shows Email as '<valid email>'
+  - Edit profile link/button is present
 
-**Expected Change**: The Profile page shows the updated first name and last name combined as the full name and the updated email address in the User details card; opening Edit profile should show the same values in the First name, Last name, and Email address fields, confirming the changes were persisted.
+**Expected Change**: After clicking 'Update profile' and reloading the profile page, the user's First name, Last name, and Email address are updated to the submitted values and the new values persist across page refreshes.
 
 ---
 
@@ -1866,22 +1862,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Profile page (view mode)`
+- **Navigate To**: `User menu -> Profile (view teacher1) before editing`
 - **Observe**:
-  - user picture thumbnail (current avatar image or filename/alt text)
-  - picture description field value (if shown on profile)
-  - list of interests/tags shown on profile
-  - profile description card content (rich text)
+  - profile picture is not the uploaded <valid image file>
+  - picture description does not contain <picture description>
+  - interests/tags list does not include <interest tag>
+  - profile Description field does not contain <description content>
 
 **Post-Check**
-- **Navigate To**: `Profile page (view mode) after saving Edit profile`
+- **Navigate To**: `User menu -> Profile (view teacher1) — refresh the page after saving`
 - **Observe**:
-  - user picture thumbnail (should reflect newly uploaded image or filename/alt text)
-  - picture description shown on profile
-  - list of interests/tags shown on profile
-  - profile description card content (rich text)
+  - profile picture visually matches the uploaded <valid image file> or filename is present
+  - picture description displays <picture description>
+  - interests/tags list contains <interest tag>
+  - profile Description contains <description content>
 
-**Expected Change**: The profile page refreshes and shows the newly uploaded image as the user picture thumbnail (different from the pre-check image and matching the uploaded file), the picture description updated to the entered <picture description>, the interests list contains the newly added <interest tag>, and the profile Description displays the entered <description content>.
+**Expected Change**: After saving and refreshing, the teacher1 profile shows the newly uploaded picture, the Picture description equals <picture description>, the Interests list includes <interest tag>, and the profile Description contains <description content>.
 
 ---
 
@@ -1899,18 +1895,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Profile -> Edit profile -> Additional names section`
+- **Navigate To**: `Edit profile -> Additional names section`
 - **Observe**:
-  - number of Additional names rows (could be 0)
-  - existing Alternative Name values listed in Additional names rows
+  - Additional names list does not contain a row with Alternative Name = <alternative name>
 
 **Post-Check**
-- **Navigate To**: `Profile page (view) and Edit profile -> Additional names section`
+- **Navigate To**: `Profile -> Edit profile -> Additional names section (after saving and page refresh)`
 - **Observe**:
-  - presence of an Additional names row with Alternative Name = <alternative name>
-  - number of Additional names rows increased by 1 compared to pre-check
+  - Additional names list contains a row with Alternative Name = <alternative name>
 
-**Expected Change**: A new Additional names row appears with Alternative Name exactly equal to <alternative name>, and the total count of Additional names rows has increased by one from the pre-check value.
+**Expected Change**: A new Additional name row is persisted and the Alternative Name field shows the entered <alternative name> when the Edit profile page is reopened or refreshed.
 
 ---
 
@@ -1927,20 +1921,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (or any authenticated protected page)`
+- **Navigate To**: `Dashboard (while authenticated as teacher1)`
 - **Observe**:
-  - personalized greeting at top of Dashboard
-  - user initials icon / user menu visible
-  - Dashboard main content (Timeline and Calendar blocks) accessible
+  - Dashboard page loads successfully
+  - user menu displays the teacher name/initials
+  - 'Log out' button is visible in the application header
+  - protected course links (e.g., QA Automation 101) open without redirect
 
 **Post-Check**
-- **Navigate To**: `Attempt to open Dashboard (or refresh / navigate to any previously accessible protected URL)`
+- **Navigate To**: `Login page (after clicking 'Log out'), then attempt to open Dashboard (or refresh a protected page)`
 - **Observe**:
-  - Login page displayed
-  - Login form fields: Username and Password
-  - Log in button visible
-  - Authenticated-only UI elements absent (no personalized greeting, no Dashboard blocks, no user menu)
+  - Login page is displayed with the login form prompting for credentials
+  - user menu / authenticated header controls (teacher name/initials, 'Log out') are not present
+  - Attempting to open Dashboard or refreshing a previously protected page redirects to the Login page
 
-**Expected Change**: After clicking 'Log out', access to authenticated pages is denied: the user is redirected to the Login page and the login form is shown; previously visible authenticated-only UI (personalized greeting, user menu, Dashboard content) is no longer accessible.
+**Expected Change**: The authenticated session is terminated: the UI shows the Login page and login form, authenticated header controls are removed, and attempts to access protected pages (Dashboard/course pages) redirect to the Login page.
 
 ---

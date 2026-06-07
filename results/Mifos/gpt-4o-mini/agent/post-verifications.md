@@ -15,16 +15,15 @@
 **Pre-Check**
 - **Navigate To**: `Clients page`
 - **Observe**:
-  - list of clients
-  - status of clients
+  - client list does not contain the new client with the unique external ID
 
 **Post-Check**
 - **Navigate To**: `Clients page`
 - **Observe**:
-  - list of clients
-  - status of clients
+  - client list contains the new client with the unique external ID
+  - status is 'Pending'
 
-**Expected Change**: New client appears in the list with Pending status.
+**Expected Change**: A new client entry is created with the correct details and is in Pending status.
 
 ---
 
@@ -44,16 +43,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `Client Management -> Client Detail`
 - **Observe**:
-  - status badge
+  - status badge is 'Pending'
 
 **Post-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `Client Management -> Client Detail`
 - **Observe**:
-  - status badge
+  - status badge is 'Active'
 
-**Expected Change**: Status badge changes from 'Pending' to 'Active'.
+**Expected Change**: The client status changes from 'Pending' to 'Active' after the activation process.
 
 ---
 
@@ -70,20 +69,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `Client Management -> Clients List`
 - **Observe**:
-  - client name
-  - client status
-  - <field> with old value
+  - client status is 'Pending'
+  - client details do not reflect the new value for <field>
 
 **Post-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `Client Management -> Clients List`
 - **Observe**:
-  - client name
-  - client status
-  - <field> with new value
+  - client status remains 'Pending'
+  - client details reflect the updated value for <field>
 
-**Expected Change**: The <field> value has been updated to <new value>.
+**Expected Change**: The client details are updated with the new value for <field> while the status remains 'Pending'.
 
 ---
 
@@ -100,18 +97,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Clients`
+- **Navigate To**: `Client Management -> Client List`
 - **Observe**:
-  - client name
-  - status badge
+  - client status is 'Pending'
 
 **Post-Check**
-- **Navigate To**: `Clients`
+- **Navigate To**: `Client Management -> Client List`
 - **Observe**:
-  - client name
-  - status badge
+  - client status is 'Rejected'
 
-**Expected Change**: Client status badge changes from 'Pending' to 'Rejected'.
+**Expected Change**: The client's status changes from 'Pending' to 'Rejected' after the rejection action is confirmed.
 
 ---
 
@@ -128,23 +123,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `Client Management -> Client List`
 - **Observe**:
-  - client name
-  - status badge
+  - client status is 'Pending'
 
 **Post-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `Client Management -> Client List`
 - **Observe**:
-  - client name
-  - status badge
+  - client status is 'Withdrawn'
 
-**Expected Change**: Client status badge should change from 'Pending' to 'Withdrawn'.
+**Expected Change**: The client's status changes from 'Pending' to 'Withdrawn' after the withdrawal action.
 
 ---
 
 ### [TC-008] Add maximum allowed entries to Column Definitions
-**Category**: `edge` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
+**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Enter a valid Data Table Name in the Data_Table_Name field
@@ -157,18 +150,19 @@
 
 #### Verification Plan
 
-**Actor A (Role: `user`)**
-- **Action**: Transfer the client to a new office.
-
-**Actor B (Role: `staff`)**
-- **Session**: `new_session`
-- **Navigate To**: `Clients -> Search for the transferred client`
-- **Action**: 
+**Pre-Check**
+- **Navigate To**: `Client Management -> Client List`
 - **Observe**:
-  - client's office location
-  - client's status
+  - client status is 'Active'
+  - client is listed under current office
 
-**Expected Change**: Client's office location is updated to the new destination office; status remains 'Active'.
+**Post-Check**
+- **Navigate To**: `Client Management -> Client List`
+- **Observe**:
+  - client status is 'Active'
+  - client is listed under new destination office
+
+**Expected Change**: The client is successfully transferred to the new destination office and remains in 'Active' status.
 
 ---
 
@@ -188,18 +182,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Clients`
+- **Navigate To**: `Client Management -> Active Clients`
 - **Observe**:
-  - client name
-  - status badge
+  - client status is 'Active'
 
 **Post-Check**
-- **Navigate To**: `Clients`
+- **Navigate To**: `Client Management -> Closed Clients`
 - **Observe**:
-  - client name
-  - status badge
+  - client status is 'Closed'
 
-**Expected Change**: Client status badge changes from 'Active' to 'Closed'.
+**Expected Change**: The client status changes from 'Active' to 'Closed' and is no longer visible in the Active Clients list.
 
 ---
 
@@ -219,25 +211,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `Client Detail Page`
 - **Observe**:
-  - client name
-  - status badge
-  - charges section
+  - charges list does not contain the new charge
 
 **Post-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `Client Detail Page`
 - **Observe**:
-  - client name
-  - status badge
-  - charges section
+  - charges list contains the new charge
+  - charge details are correct
 
-**Expected Change**: The charges section now includes the newly added charge with the correct details.
+**Expected Change**: A new charge entry is created for the client with the correct details.
 
 ---
 
 ### [TC-011] Enter one character less than maximum length for Name in Column Definitions
-**Category**: `edge` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
+**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Enter a valid Data Table Name in the Data_Table_Name field
@@ -251,20 +240,18 @@
 
 #### Verification Plan
 
-**Actor A (Role: `loan officer`)**
-- **Action**: Create a new loan for an active client.
-
-**Actor B (Role: `client`)**
-- **Session**: `new_session`
-- **Navigate To**: `Client Detail page`
-- **Action**: 
+**Pre-Check**
+- **Navigate To**: `Client Profile -> Loans`
 - **Observe**:
-  - loan account number
-  - loan product name
-  - status badge
-  - loan balance
+  - loan list does not contain the new loan entry
 
-**Expected Change**: A new loan account appears with the correct product name and status badge indicating 'Active'.
+**Post-Check**
+- **Navigate To**: `Client Profile -> Loans`
+- **Observe**:
+  - loan list contains the new loan entry
+  - loan status is 'Pending Approval'
+
+**Expected Change**: A new loan entry is created for the client with the correct details and status.
 
 ---
 
@@ -281,18 +268,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `Client Profile -> Savings Accounts`
 - **Observe**:
-  - status badge
-  - total approved savings accounts
+  - savings accounts list does not contain the new savings account
 
 **Post-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `Client Profile -> Savings Accounts`
 - **Observe**:
-  - status badge
-  - total approved savings accounts
+  - savings accounts list contains the new savings account
+  - status is 'Active'
 
-**Expected Change**: Total approved savings accounts increased by one.
+**Expected Change**: A new savings account is created for the active client with the correct details.
 
 ---
 
@@ -309,22 +295,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `Client Profile -> Share Accounts`
 - **Observe**:
-  - client name
-  - status badge
-  - total approved shares
-  - total pending shares
+  - list does not contain the new share account
 
 **Post-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `Client Profile -> Share Accounts`
 - **Observe**:
-  - client name
-  - status badge
-  - total approved shares
-  - total pending shares
+  - list contains the new share account
+  - account status is 'Active'
 
-**Expected Change**: Total approved shares increased by the number of shares in the new share account; total pending shares remains unchanged.
+**Expected Change**: A new share account is created for the active client with the correct details.
 
 ---
 
@@ -341,18 +322,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Clients`
+- **Navigate To**: `Client Management -> Closed Clients`
 - **Observe**:
-  - client status
-  - client name
+  - client status is 'Closed'
 
 **Post-Check**
-- **Navigate To**: `Clients`
+- **Navigate To**: `Client Management -> Active Clients`
 - **Observe**:
-  - client status
-  - client name
+  - client status is 'Active'
 
-**Expected Change**: Client status changed from 'Closed' to 'Active'.
+**Expected Change**: The client status changes from 'Closed' to 'Active' after reactivation.
 
 ---
 
@@ -372,15 +351,16 @@
 **Pre-Check**
 - **Navigate To**: `Groups page`
 - **Observe**:
-  - list of existing groups
+  - group list does not contain the new group
 
 **Post-Check**
 - **Navigate To**: `Groups page`
 - **Observe**:
-  - list of existing groups
-  - new group name
+  - group list contains the new group
+  - group name is '<valid group name>'
+  - status is 'Pending'
 
-**Expected Change**: The new group appears in the list of existing groups.
+**Expected Change**: A new group entry is created with the specified name and office.
 
 ---
 
@@ -398,23 +378,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Groups Overview`
+- **Navigate To**: `Groups Management -> Groups List`
 - **Observe**:
-  - list of groups
-  - total number of groups
+  - list does not contain the newly imported groups
 
 **Post-Check**
-- **Navigate To**: `Groups Overview`
+- **Navigate To**: `Groups Management -> Groups List`
 - **Observe**:
-  - list of groups
-  - total number of groups
+  - list contains the newly imported groups
+  - status badge indicates 'Active'
 
-**Expected Change**: Total number of groups increased by the number of groups in the uploaded file.
+**Expected Change**: The groups imported from the file are now visible in the groups list with the correct status.
 
 ---
 
 ### [TC-003] Attempt to access an authenticated page after logout
-**Category**: `negative` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
+**Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Attempt to navigate to an authenticated page
@@ -425,18 +404,17 @@
 
 #### Verification Plan
 
-**Actor A (Role: `user`)**
-- **Action**: Click Activate button on the group.
-
-**Actor B (Role: `admin`)**
-- **Session**: `new_session`
-- **Navigate To**: `Groups page`
-- **Action**: 
+**Pre-Check**
+- **Navigate To**: `Group Management -> Group List`
 - **Observe**:
-  - Group Name
-  - Status
+  - group status is 'Pending'
 
-**Expected Change**: Group status changes from 'Pending' to 'Active'.
+**Post-Check**
+- **Navigate To**: `Group Management -> Group List`
+- **Observe**:
+  - group status is 'Active'
+
+**Expected Change**: The group status changes from 'Pending' to 'Active' after activation.
 
 ---
 
@@ -456,20 +434,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Groups -> Group Detail Page`
+- **Navigate To**: `Group Management -> View Group Details`
 - **Observe**:
   - group name
-  - group status
-  - group office
+  - group description
+  - group members
 
 **Post-Check**
-- **Navigate To**: `Groups -> Group Detail Page`
+- **Navigate To**: `Group Management -> View Group Details`
 - **Observe**:
-  - group name
-  - group status
-  - group office
+  - updated group name
+  - updated group description
+  - group members
 
-**Expected Change**: The updated field in the group details reflects the new value.
+**Expected Change**: The group details reflect the updated information as submitted.
 
 ---
 
@@ -486,23 +464,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Groups Overview`
+- **Navigate To**: `Groups page`
 - **Observe**:
-  - group status
-  - group name
+  - group status is 'Active'
 
 **Post-Check**
-- **Navigate To**: `Groups Overview`
+- **Navigate To**: `Groups page`
 - **Observe**:
-  - group status
-  - group name
+  - group status is 'Closed'
 
-**Expected Change**: Group status changed from 'Active' to 'Closed'.
+**Expected Change**: The group status changes from 'Active' to 'Closed' after the closure action.
 
 ---
 
 ### [TC-006] Attempt to start all jobs when none are scheduled
-**Category**: `negative` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
+**Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Click Start All
@@ -513,23 +489,23 @@
 
 #### Verification Plan
 
-**Actor A (Role: `admin`)**
-- **Action**: Execute the steps from the core test case.
-
-**Actor B (Role: `group_member`)**
-- **Session**: `new_session`
-- **Navigate To**: `Groups -> Group Detail page`
-- **Action**: 
+**Pre-Check**
+- **Navigate To**: `Group Management -> Group Details`
 - **Observe**:
-  - staff assigned to the group
-  - staff list updated
+  - staff list does not include the newly assigned staff
 
-**Expected Change**: The selected staff appears in the group members list, confirming the assignment.
+**Post-Check**
+- **Navigate To**: `Group Management -> Group Details`
+- **Observe**:
+  - staff list includes the newly assigned staff
+  - status message confirms assignment
+
+**Expected Change**: The staff member is now listed as assigned to the group.
 
 ---
 
 ### [TC-007] Attempt to stop all jobs when none are running
-**Category**: `negative` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
+**Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Click Stop All
@@ -540,18 +516,19 @@
 
 #### Verification Plan
 
-**Actor A (Role: `<Role>`)**
-- **Action**: Execute the steps from the core test case.
-
-**Actor B (Role: `admin`)**
-- **Session**: `new_session`
-- **Navigate To**: `Groups -> Group Detail -> Members tab`
-- **Action**: 
+**Pre-Check**
+- **Navigate To**: `Group Management -> Group Details`
 - **Observe**:
-  - list of group members
-  - status of transferred clients
+  - list of clients in the group
+  - Transfer Clients button is visible
 
-**Expected Change**: Transferred clients no longer appear in the group members list.
+**Post-Check**
+- **Navigate To**: `Group Management -> Group Details`
+- **Observe**:
+  - list of clients no longer includes the transferred clients
+  - status of transferred clients is updated in their respective profiles
+
+**Expected Change**: The selected clients are no longer listed in the group, confirming they have been successfully transferred.
 
 ---
 
@@ -569,20 +546,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Centers Overview`
+- **Navigate To**: `Centers page`
 - **Observe**:
-  - list of centers
-  - center name
-  - status
+  - list of centers does not contain the new center name
 
 **Post-Check**
-- **Navigate To**: `Centers Overview`
+- **Navigate To**: `Centers page`
 - **Observe**:
-  - list of centers
-  - new center name
-  - status
+  - list of centers contains the new center name
+  - status is 'Active'
 
-**Expected Change**: The new center appears in the Centers Overview with an Active status.
+**Expected Change**: A new center entry is created with the specified name and is visible in the centers list.
 
 ---
 
@@ -600,20 +574,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Centers Overview`
+- **Navigate To**: `Centers page`
 - **Observe**:
-  - list of centers
-  - center status
-  - total number of centers
+  - list of centers is empty or does not contain the newly imported centers
 
 **Post-Check**
-- **Navigate To**: `Centers Overview`
+- **Navigate To**: `Centers page`
 - **Observe**:
-  - list of centers
-  - center status
-  - total number of centers
+  - list of centers contains the newly imported centers
+  - success notification is displayed
 
-**Expected Change**: The total number of centers has increased by the number of centers imported from the uploaded file.
+**Expected Change**: The centers list is updated to include the newly imported centers from the uploaded file.
 
 ---
 
@@ -633,18 +604,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Center Detail page`
+- **Navigate To**: `Center Management -> Center Detail`
 - **Observe**:
-  - status badge
-  - action buttons
+  - status badge is 'Inactive'
 
 **Post-Check**
-- **Navigate To**: `Center Detail page`
+- **Navigate To**: `Center Management -> Center Detail`
 - **Observe**:
-  - status badge
-  - action buttons
+  - status badge is 'Active'
 
-**Expected Change**: Status badge changes to 'Active' and the Activate button is no longer available.
+**Expected Change**: The center status changes from 'Inactive' to 'Active' after activation.
 
 ---
 
@@ -661,20 +630,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Center Detail page`
+- **Navigate To**: `Center Management -> Center Detail`
 - **Observe**:
   - center name
-  - status
-  - modified field value
+  - center status
+  - center details
 
 **Post-Check**
-- **Navigate To**: `Center Detail page`
+- **Navigate To**: `Center Management -> Center Detail`
 - **Observe**:
-  - center name
-  - status
-  - modified field value
+  - center name updated to <new value>
+  - status badge is 'Active'
 
-**Expected Change**: The modified field value reflects the new value entered during the edit.
+**Expected Change**: The center details reflect the updated information with the new value for the modified field.
 
 ---
 
@@ -691,23 +659,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Center Detail page`
+- **Navigate To**: `Centers page`
 - **Observe**:
-  - status badge
-  - action buttons
+  - Center status is 'Active'
 
 **Post-Check**
-- **Navigate To**: `Center Detail page`
+- **Navigate To**: `Centers page`
 - **Observe**:
-  - status badge
-  - action buttons
+  - Center status is 'Closed'
 
-**Expected Change**: Status badge changes to 'Closed'; action buttons are updated to reflect the closed state.
+**Expected Change**: The center status changes from 'Active' to 'Closed' after the closure action is confirmed.
 
 ---
 
 ### [TC-007] Attempt to stop all jobs when none are running
-**Category**: `negative` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
+**Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Click Stop All
@@ -718,18 +684,17 @@
 
 #### Verification Plan
 
-**Actor A (Role: `admin`)**
-- **Action**: Assign staff to a center.
-
-**Actor B (Role: `staff`)**
-- **Session**: `new_session`
+**Pre-Check**
 - **Navigate To**: `Center Detail page`
-- **Action**: 
 - **Observe**:
-  - assigned staff member
-  - center status
+  - staff assignment list does not contain the newly assigned staff member
 
-**Expected Change**: The assigned staff member appears in the staff list for the center, confirming the assignment.
+**Post-Check**
+- **Navigate To**: `Center Detail page`
+- **Observe**:
+  - staff assignment list contains the newly assigned staff member
+
+**Expected Change**: The staff member is successfully assigned to the center and appears in the staff assignment list.
 
 ---
 
@@ -749,19 +714,16 @@
 **Pre-Check**
 - **Navigate To**: `Loan Products page`
 - **Observe**:
-  - list of loan products
-  - Edit option for selected loan product
+  - data table displays existing loan products
+  - Edit option is available for the selected loan product
 
 **Post-Check**
-- **Navigate To**: `Loan Product Detail page`
+- **Navigate To**: `Loan Product detail view`
 - **Observe**:
-  - Product Name
-  - Short Name
-  - Expiry Date
-  - Status
-  - Edit option
+  - loan product details are displayed
+  - Edit fields are populated with existing data
 
-**Expected Change**: The Loan Product Detail page displays the selected loan product's details for editing.
+**Expected Change**: The detail view of the loan product opens, showing all relevant information for editing.
 
 ---
 
@@ -780,15 +742,14 @@
 **Pre-Check**
 - **Navigate To**: `Loan Products page`
 - **Observe**:
-  - list of existing loan products
+  - no new loan product entry in the list
 
 **Post-Check**
 - **Navigate To**: `Loan Products page`
 - **Observe**:
-  - list of existing loan products
-  - new loan product creation wizard
+  - new loan product entry is not yet visible until Step 2 is completed
 
-**Expected Change**: User is now on Step 2 of the Loan Product creation wizard.
+**Expected Change**: The user is still on the Loan Products page, and the new loan product has not been created until Step 2 is completed.
 
 ---
 
@@ -808,22 +769,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Create Loan Product - Step 3`
+- **Navigate To**: `Loan Products page`
 - **Observe**:
-  - Principal Amount
-  - Currency
-  - Decimal Places
-  - Multiples of Rounding
+  - no new loan product entry in the list
 
 **Post-Check**
-- **Navigate To**: `Create Loan Product - Step 3`
+- **Navigate To**: `Loan Products page`
 - **Observe**:
-  - Principal Amount
-  - Currency
-  - Decimal Places
-  - Multiples of Rounding
+  - new loan product entry appears in the list
+  - status is 'Pending'
 
-**Expected Change**: The values entered in Step 2 are retained and displayed correctly in Step 3.
+**Expected Change**: A new loan product entry is created with the selected currency and specified parameters.
 
 ---
 
@@ -840,20 +796,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Create Loan Product - Step 3`
+- **Navigate To**: `Loan Products -> Create Loan Product -> Step 4`
 - **Observe**:
-  - Repayment Strategy dropdown
-  - Grace Period field
-  - Arrears Tolerance field
+  - Step 4 is not displayed
+  - User is still on Step 3
 
 **Post-Check**
-- **Navigate To**: `Create Loan Product - Step 4`
+- **Navigate To**: `Loan Products -> Create Loan Product -> Step 4`
 - **Observe**:
-  - Repayment Strategy dropdown
-  - Grace Period field
-  - Arrears Tolerance field
+  - Step 4 is displayed
+  - Repayment Strategy is set to <Repayment Strategy>
+  - Grace Period is <Grace Period>
+  - Arrears Tolerance is <Arrears Tolerance>
 
-**Expected Change**: User successfully navigates to Step 4 of the Create Loan Product stepper.
+**Expected Change**: The user successfully proceeds to Step 4 of the Create Loan Product process with the selected repayment strategy and entered values.
 
 ---
 
@@ -870,17 +826,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Products page`
+- **Navigate To**: `Loan Products -> Create Loan Product -> Step 5`
 - **Observe**:
-  - list of existing loan products
+  - Step 5 is not displayed
+  - User remains on Step 4
 
 **Post-Check**
-- **Navigate To**: `Loan Products page`
+- **Navigate To**: `Loan Products -> Create Loan Product -> Step 5`
 - **Observe**:
-  - list of existing loan products
-  - new loan product entry
+  - Step 5 is displayed
+  - All entered values are retained
 
-**Expected Change**: A new loan product should appear in the list of existing loan products after submission.
+**Expected Change**: The user successfully proceeds to Step 5 of the Create Loan Product process.
 
 ---
 
@@ -899,18 +856,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Products page`
+- **Navigate To**: `Loan Products List`
 - **Observe**:
-  - list of loan products
-  - total number of loan products
+  - loan product does not appear in the list
 
 **Post-Check**
-- **Navigate To**: `Loan Products page`
+- **Navigate To**: `Loan Products List`
 - **Observe**:
-  - list of loan products
-  - total number of loan products
+  - loan product appears in the list
+  - success message displayed
 
-**Expected Change**: Total number of loan products increased by one; new loan product appears in the list.
+**Expected Change**: A new loan product is created and displayed in the loan products list.
 
 ---
 
@@ -930,15 +886,16 @@
 **Pre-Check**
 - **Navigate To**: `Savings Products page`
 - **Observe**:
-  - list of existing savings products
+  - list does not contain the new savings product
 
 **Post-Check**
 - **Navigate To**: `Savings Products page`
 - **Observe**:
-  - list of existing savings products
-  - newly created savings product name
+  - list contains the new savings product
+  - product name matches <valid product name>
+  - short name matches <valid short name>
 
-**Expected Change**: The newly created savings product appears in the list of savings products.
+**Expected Change**: A new savings product is created and displayed in the list with the correct name and details.
 
 ---
 
@@ -956,17 +913,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Products page`
+- **Navigate To**: `Savings Products page`
 - **Observe**:
-  - list of existing loan products
+  - list does not contain the new fixed deposit product
 
 **Post-Check**
-- **Navigate To**: `Loan Products page`
+- **Navigate To**: `Savings Products page`
 - **Observe**:
-  - list of existing loan products
-  - new fixed deposit product name
+  - list contains the new fixed deposit product
+  - product name is <valid product name>
+  - status is 'Active'
 
-**Expected Change**: The new fixed deposit product appears in the list of loan products.
+**Expected Change**: A new fixed deposit product is created and displayed in the savings products list with the correct name and status.
 
 ---
 
@@ -985,15 +943,15 @@
 **Pre-Check**
 - **Navigate To**: `Savings Products page`
 - **Observe**:
-  - list of existing savings products
+  - list does not contain the new recurring deposit product
 
 **Post-Check**
 - **Navigate To**: `Savings Products page`
 - **Observe**:
-  - list of existing savings products
-  - new recurring deposit product name
+  - list contains the new recurring deposit product
+  - status is 'Active'
 
-**Expected Change**: The new recurring deposit product appears in the list of savings products.
+**Expected Change**: A new recurring deposit product is created and displayed in the list with the correct status.
 
 ---
 
@@ -1013,15 +971,16 @@
 **Pre-Check**
 - **Navigate To**: `Share Products page`
 - **Observe**:
-  - list of existing share products
+  - list of existing share products does not contain the new product
 
 **Post-Check**
 - **Navigate To**: `Share Products page`
 - **Observe**:
-  - list of existing share products
-  - new share product name
+  - list of existing share products contains the new product
+  - product name is <valid product name>
+  - status is 'Active'
 
-**Expected Change**: The new share product appears in the list of existing share products.
+**Expected Change**: A new share product entry is created with the specified details and is visible in the share products list.
 
 ---
 
@@ -1039,20 +998,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Share Products`
+- **Navigate To**: `Share Products page`
 - **Observe**:
-  - Product Name
-  - Short Name
-  - Description
+  - existing product name
+  - existing short name
+  - existing description
 
 **Post-Check**
-- **Navigate To**: `Share Products`
+- **Navigate To**: `Share Products page`
 - **Observe**:
-  - Product Name
-  - Short Name
-  - Description
+  - updated product name
+  - updated short name
+  - updated description
 
-**Expected Change**: Product Name, Short Name, and Description fields reflect the updated values.
+**Expected Change**: The share product details are updated with the new product name, short name, and description.
 
 ---
 
@@ -1069,17 +1028,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Share Products`
+- **Navigate To**: `Share Products page`
 - **Observe**:
-  - list of share products
-  - Product Name of the share product to be deleted
+  - list of share products includes the deleted product
 
 **Post-Check**
-- **Navigate To**: `Share Products`
+- **Navigate To**: `Share Products page`
 - **Observe**:
-  - list of share products
+  - list of share products does not include the deleted product
+  - success message displayed
 
-**Expected Change**: The deleted share product no longer appears in the list of share products.
+**Expected Change**: The deleted share product is no longer listed on the Share Products page.
 
 ---
 
@@ -1097,17 +1056,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Charges Overview`
+- **Navigate To**: `Charges List`
 - **Observe**:
-  - list of charge definitions
+  - Charge Name <Charge Name> not present in the list
 
 **Post-Check**
-- **Navigate To**: `Charges Overview`
+- **Navigate To**: `Charges List`
 - **Observe**:
-  - list of charge definitions
-  - <Charge Name>
+  - Charge Name <Charge Name> present in the list
+  - Charge status is 'Active'
 
-**Expected Change**: The charge definition for <Charge Name> appears in the list of charge definitions.
+**Expected Change**: A new charge definition is created and displayed in the charges list with the correct details.
 
 ---
 
@@ -1125,20 +1084,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Charges`
+- **Navigate To**: `Charges Table`
 - **Observe**:
-  - Charge Name
-  - Charge Applies To
-  - Is Active
+  - Charge Name field displays the original charge name
 
 **Post-Check**
-- **Navigate To**: `Charges`
+- **Navigate To**: `Charges Table`
 - **Observe**:
-  - Charge Name
-  - Charge Applies To
-  - Is Active
+  - Charge Name field displays the updated charge name
 
-**Expected Change**: Charge Name reflects the updated value; other attributes remain unchanged.
+**Expected Change**: The charge definition is updated with the new charge name.
 
 ---
 
@@ -1155,16 +1110,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Charges`
+- **Navigate To**: `Charges page`
 - **Observe**:
-  - list of charges in the Charges Table
+  - charge entry in the Charges Table
 
 **Post-Check**
-- **Navigate To**: `Charges`
+- **Navigate To**: `Charges page`
 - **Observe**:
-  - list of charges in the Charges Table
+  - charge entry is no longer present in the Charges Table
 
-**Expected Change**: The deleted charge no longer appears in the Charges Table.
+**Expected Change**: The charge is successfully deleted and does not appear in the Charges Table.
 
 ---
 
@@ -1182,17 +1137,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Accounting -> Floating Rates`
+- **Navigate To**: `Floating Rates page`
 - **Observe**:
-  - list of existing floating rates
+  - list of existing floating rates does not include the new rate
 
 **Post-Check**
-- **Navigate To**: `Accounting -> Floating Rates`
+- **Navigate To**: `Floating Rates page`
 - **Observe**:
-  - list of existing floating rates
-  - <Floating Rate Name>
+  - list of existing floating rates includes the new rate
+  - new rate name is '<Floating Rate Name>'
+  - interest rate is '<Interest Rate>'
 
-**Expected Change**: The new floating rate '<Floating Rate Name>' appears in the list of existing floating rates.
+**Expected Change**: A new floating rate entry is created with the specified name and interest rate.
 
 ---
 
@@ -1209,20 +1165,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Floating Rates`
+- **Navigate To**: `Floating Rates List`
 - **Observe**:
-  - Floating Rate Name
-  - Is Base Lending Rate
-  - Is Active
+  - <Floating Rate Name> in the list
 
 **Post-Check**
-- **Navigate To**: `Floating Rates`
+- **Navigate To**: `Floating Rates List`
 - **Observe**:
-  - Floating Rate Name
-  - Is Base Lending Rate
-  - Is Active
+  - <Modified Floating Rate Name> in the list
 
-**Expected Change**: The Floating Rate Name has been updated to the new value entered in the edit form.
+**Expected Change**: The floating rate name is updated to the modified value in the list.
 
 ---
 
@@ -1240,17 +1192,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Delinquency Ranges`
+- **Navigate To**: `Delinquency Management -> Delinquency Ranges`
 - **Observe**:
-  - list of delinquency ranges
+  - list of delinquency ranges does not contain the new range
 
 **Post-Check**
-- **Navigate To**: `Delinquency Ranges`
+- **Navigate To**: `Delinquency Management -> Delinquency Ranges`
 - **Observe**:
-  - list of delinquency ranges
-  - <valid classification>
+  - list of delinquency ranges contains the new range
+  - classification is <valid classification>
+  - minimum age days is <valid minimum age days>
+  - maximum age days is <valid maximum age days>
 
-**Expected Change**: The new delinquency range with classification <valid classification> appears in the list of delinquency ranges.
+**Expected Change**: A new delinquency range is created with the specified classification and age days.
 
 ---
 
@@ -1268,17 +1222,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Delinquency Buckets page`
+- **Navigate To**: `Delinquency Management -> Delinquency Buckets`
 - **Observe**:
-  - list of delinquency buckets
+  - list of delinquency buckets does not contain the new bucket
 
 **Post-Check**
-- **Navigate To**: `Delinquency Buckets page`
+- **Navigate To**: `Delinquency Management -> Delinquency Buckets`
 - **Observe**:
-  - list of delinquency buckets
-  - <valid bucket name>
+  - list of delinquency buckets contains the new bucket
+  - bucket name is '<valid bucket name>'
+  - minimum age days is '<valid minimum age days>'
+  - maximum age days is '<valid maximum age days>'
 
-**Expected Change**: The new delinquency bucket with the name <valid bucket name> appears in the list of delinquency buckets.
+**Expected Change**: A new delinquency bucket is created with the specified name and age range.
 
 ---
 
@@ -1296,18 +1252,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `Loan Dashboard`
 - **Observe**:
-  - loan application status
-  - loan account number
+  - loan application list does not contain the new loan application
 
 **Post-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `Loan Dashboard`
 - **Observe**:
-  - loan application status
-  - loan account number
+  - loan application list contains the new loan application
+  - status is 'Submitted'
 
-**Expected Change**: Loan application status changes to 'Submitted and Pending Approval' and a new loan account number is generated.
+**Expected Change**: A new loan application entry is created with the correct details and status.
 
 ---
 
@@ -1325,19 +1280,19 @@
 #### Verification Plan
 
 **Actor A (Role: `loan officer`)**
-- **Action**: Approve Loan Application as per the core test case.
+- **Action**: Approve the loan application as per the core test case steps.
 
-**Actor B (Role: `client`)**
+**Actor B (Role: `loan manager`)**
 - **Session**: `new_session`
-- **Navigate To**: `Client Detail page -> Loan Accounts tab`
+- **Navigate To**: `Loan Management -> Approved Loans`
 - **Action**: 
 - **Observe**:
-  - loan account status badge
-  - loan balance
+  - loan application status
   - approved amount
+  - approved on date
   - expected disbursement date
 
-**Expected Change**: Loan account status changes to 'Approved' with the correct approved amount and expected disbursement date.
+**Expected Change**: The loan application status changes to 'Approved' with the correct approved amount and dates displayed.
 
 ---
 
@@ -1354,75 +1309,72 @@
 #### Verification Plan
 
 **Actor A (Role: `loan officer`)**
-- **Action**: Reject the loan application as per the test case steps.
+- **Action**: Reject the loan application from the Loan Detail page.
 
-**Actor B (Role: `client`)**
+**Actor B (Role: `loan manager`)**
 - **Session**: `new_session`
-- **Navigate To**: `Client Detail page -> Loan Accounts tab`
+- **Navigate To**: `Loan Management -> Rejected Applications`
 - **Action**: 
-- **Observe**:
-  - loan application status
-  - reason for rejection
-
-**Expected Change**: Loan application status is updated to 'Rejected' with a reason displayed.
-
----
-
-### [TC-004] Rapid logout attempts
-**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
-
-**Original Steps:**
-1. 1. Click on the User Profile Icon
-2. 2. Click on 'Log Out'
-3. 3. Immediately click on the User Profile Icon again
-4. 4. Click on 'Log Out' again
-
-**Original Expected Result:** Second logout attempt is blocked; user remains on the login page without a second session being created.
-
----
-
-#### Verification Plan
-
-**Pre-Check**
-- **Navigate To**: `Loan Detail page`
-- **Observe**:
-  - status badge
-  - loan account number
-
-**Post-Check**
-- **Navigate To**: `Loan Detail page`
-- **Observe**:
-  - status badge
-
-**Expected Change**: Status badge should change to 'Withdrawn'.
-
----
-
-### [TC-005] Navigate to authenticated page after logout
-**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
-
-**Original Steps:**
-1. 1. Attempt to navigate to an authenticated page
-
-**Original Expected Result:** User is redirected to the login page.
-
----
-
-#### Verification Plan
-
-**Pre-Check**
-- **Navigate To**: `Loan Detail page`
 - **Observe**:
   - loan application status
   - loan application details
 
-**Post-Check**
-- **Navigate To**: `Loan Detail page`
-- **Observe**:
-  - message indicating loan application deleted
-  - loan application not found
+**Expected Change**: The loan application is listed under Rejected Applications with the status updated to 'Rejected'.
 
-**Expected Change**: Loan application no longer appears on the Loan Detail page and is confirmed deleted.
+---
+
+### [TC-004] Rapid logout attempts
+**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+
+**Original Steps:**
+1. 1. Click on the User Profile Icon
+2. 2. Click on 'Log Out'
+3. 3. Immediately click on the User Profile Icon again
+4. 4. Click on 'Log Out' again
+
+**Original Expected Result:** Second logout attempt is blocked; user remains on the login page without a second session being created.
+
+---
+
+#### Verification Plan
+
+**Pre-Check**
+- **Navigate To**: `User Dashboard -> My Loan Applications`
+- **Observe**:
+  - loan application status is 'Pending Approval'
+
+**Post-Check**
+- **Navigate To**: `User Dashboard -> My Loan Applications`
+- **Observe**:
+  - loan application status is 'Withdrawn'
+
+**Expected Change**: The loan application status changes from 'Pending Approval' to 'Withdrawn' after the withdrawal action.
+
+---
+
+### [TC-005] Navigate to authenticated page after logout
+**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+
+**Original Steps:**
+1. 1. Attempt to navigate to an authenticated page
+
+**Original Expected Result:** User is redirected to the login page.
+
+---
+
+#### Verification Plan
+
+**Pre-Check**
+- **Navigate To**: `Loan Management -> Pending Applications`
+- **Observe**:
+  - loan application is listed with status 'Pending Approval'
+
+**Post-Check**
+- **Navigate To**: `Loan Management -> Pending Applications`
+- **Observe**:
+  - loan application is no longer listed
+
+**Expected Change**: The loan application is successfully deleted and does not appear in the pending applications list.
 
 ---
 
@@ -1439,20 +1391,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Detail page`
+- **Navigate To**: `Loan Dashboard`
 - **Observe**:
-  - loan status
-  - loan balance
-  - disbursement details
+  - loan application status is 'Approved'
+  - loan disbursement history is empty
 
 **Post-Check**
-- **Navigate To**: `Loan Detail page`
+- **Navigate To**: `Loan Dashboard`
 - **Observe**:
-  - loan status
-  - loan balance
-  - disbursement details
+  - loan application status is 'Active'
+  - loan disbursement history shows new entry with correct amount and date
 
-**Expected Change**: Loan status changed to 'Active'; loan balance reflects the disbursed amount.
+**Expected Change**: The loan application status changes to 'Active' and a new disbursement entry is recorded in the loan disbursement history.
 
 ---
 
@@ -1471,18 +1421,15 @@
 **Pre-Check**
 - **Navigate To**: `Loan Detail page`
 - **Observe**:
-  - loan balance
-  - total paid
-  - total outstanding
+  - transaction history does not contain the new repayment entry
 
 **Post-Check**
 - **Navigate To**: `Loan Detail page`
 - **Observe**:
-  - loan balance
-  - total paid
-  - total outstanding
+  - transaction history contains the new repayment entry
+  - outstanding balance is updated accordingly
 
-**Expected Change**: Total paid amount increased by the repayment amount; total outstanding amount decreased by the same amount.
+**Expected Change**: A new repayment entry is created in the transaction history with the correct transaction date and amount, and the outstanding balance is reduced.
 
 ---
 
@@ -1503,16 +1450,16 @@
 **Pre-Check**
 - **Navigate To**: `Loan Detail page`
 - **Observe**:
-  - loan balance
-  - interest amount due
+  - interest amount displayed
+  - interest waiver option is available
 
 **Post-Check**
 - **Navigate To**: `Loan Detail page`
 - **Observe**:
-  - loan balance
-  - interest amount due
+  - interest amount is updated to reflect waived interest
+  - interest waiver confirmation message is displayed
 
-**Expected Change**: Interest amount due is decreased by the waived interest amount.
+**Expected Change**: The interest amount is reduced to reflect the waived interest, and a confirmation message is shown indicating the successful waiver.
 
 ---
 
@@ -1534,16 +1481,15 @@
 **Pre-Check**
 - **Navigate To**: `Loan Detail page`
 - **Observe**:
-  - loan status badge
-  - loan balance
+  - loan status is 'Active'
 
 **Post-Check**
 - **Navigate To**: `Loan Detail page`
 - **Observe**:
-  - loan status badge
-  - loan balance
+  - loan status is 'Written Off'
+  - write-off reason is displayed
 
-**Expected Change**: Loan status badge should indicate 'Written Off' and loan balance should be zero.
+**Expected Change**: The loan status changes from 'Active' to 'Written Off', indicating the loan has been successfully written off.
 
 ---
 
@@ -1565,16 +1511,14 @@
 **Pre-Check**
 - **Navigate To**: `Loan Detail page`
 - **Observe**:
-  - loan status badge
-  - loan balance
+  - status badge shows 'Active'
 
 **Post-Check**
 - **Navigate To**: `Loan Detail page`
 - **Observe**:
-  - loan status badge
-  - loan balance
+  - status badge shows 'Closed'
 
-**Expected Change**: Loan status badge should change to 'Closed' and loan balance should be zero.
+**Expected Change**: The loan status changes from 'Active' to 'Closed' after the closure action is confirmed.
 
 ---
 
@@ -1596,18 +1540,16 @@
 **Pre-Check**
 - **Navigate To**: `Loan Detail page`
 - **Observe**:
-  - status badge
-  - due date
-  - repayment schedule
+  - current due date
+  - status is 'Active'
 
 **Post-Check**
 - **Navigate To**: `Loan Detail page`
 - **Observe**:
-  - status badge
-  - adjusted due date
-  - repayment schedule
+  - new adjusted due date
+  - status reflects rescheduled state
 
-**Expected Change**: The due date has been updated to the new adjusted due date, and the status remains Active.
+**Expected Change**: The loan's adjusted due date is updated to the new date provided, and the status indicates that the loan has been rescheduled.
 
 ---
 
@@ -1626,16 +1568,16 @@
 **Pre-Check**
 - **Navigate To**: `Loan Detail page`
 - **Observe**:
-  - loan balance
-  - status badge
+  - outstanding balance shows the original loan amount
+  - no prepayment transaction listed
 
 **Post-Check**
 - **Navigate To**: `Loan Detail page`
 - **Observe**:
-  - loan balance
-  - status badge
+  - outstanding balance reflects the new amount after prepayment
+  - prepayment transaction listed in transaction history
 
-**Expected Change**: Loan balance decreased by the prepaid amount; status badge remains 'Active'.
+**Expected Change**: The outstanding balance is reduced by the prepayment amount, and a new transaction entry for the prepayment is visible in the transaction history.
 
 ---
 
@@ -1654,16 +1596,14 @@
 **Pre-Check**
 - **Navigate To**: `Loan Detail page`
 - **Observe**:
-  - loan account number
-  - status badge
+  - Loan status is 'Active'
 
 **Post-Check**
 - **Navigate To**: `Loan Detail page`
 - **Observe**:
-  - loan account number
-  - status badge
+  - Loan status is 'Foreclosed'
 
-**Expected Change**: Status badge changes to 'Written Off' indicating the loan has been foreclosed.
+**Expected Change**: The loan status changes from 'Active' to 'Foreclosed' after the foreclosure action is confirmed.
 
 ---
 
@@ -1682,21 +1622,20 @@
 **Pre-Check**
 - **Navigate To**: `Loan Detail page`
 - **Observe**:
-  - loan account number
-  - status badge
+  - loan status is 'Active'
 
 **Post-Check**
 - **Navigate To**: `Loan Detail page`
 - **Observe**:
-  - loan account number
-  - status badge
+  - loan status is 'Charged Off'
+  - charge off reason is displayed
 
-**Expected Change**: Loan status badge changed to 'Charged Off'.
+**Expected Change**: The loan status changes from 'Active' to 'Charged Off' after the charge off action is confirmed.
 
 ---
 
 ### [TC-015] Create Holiday with From_Date one day before To_Date
-**Category**: `edge` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
+**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Click + Create Holiday
@@ -1711,18 +1650,17 @@
 
 #### Verification Plan
 
-**Actor A (Role: `loan officer`)**
-- **Action**: Execute the steps from the core test case.
-
-**Actor B (Role: `another loan officer or admin`)**
-- **Session**: `new_session`
-- **Navigate To**: `Loan Detail page of the assigned loan`
-- **Action**: 
+**Pre-Check**
+- **Navigate To**: `Loan Detail page`
 - **Observe**:
-  - Loan Officer name
-  - Loan Officer status
+  - current loan officer is not <new loan officer>
 
-**Expected Change**: The Loan Officer name reflects the newly assigned officer.
+**Post-Check**
+- **Navigate To**: `Loan Detail page`
+- **Observe**:
+  - current loan officer is <new loan officer>
+
+**Expected Change**: The loan officer assigned to the loan application has changed to <new loan officer>.
 
 ---
 
@@ -1740,18 +1678,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `Client Detail page -> Savings Accounts`
 - **Observe**:
-  - status of savings accounts
-  - list of existing accounts
+  - savings account list does not contain the new account
 
 **Post-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `Client Detail page -> Savings Accounts`
 - **Observe**:
-  - status of savings accounts
-  - new savings account in 'Submitted and Pending Approval' status
+  - savings account list contains the new account
+  - status is 'Submitted and Pending Approval'
 
-**Expected Change**: A new savings account appears in the list with 'Submitted and Pending Approval' status.
+**Expected Change**: A new savings account entry is created with the correct details and status.
 
 ---
 
@@ -1769,16 +1706,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail -> Savings Account`
+- **Navigate To**: `Savings Account Detail`
 - **Observe**:
-  - account balance
+  - current balance before deposit
 
 **Post-Check**
-- **Navigate To**: `Client Detail -> Savings Account`
+- **Navigate To**: `Savings Account Detail`
 - **Observe**:
-  - account balance
+  - current balance after deposit
+  - transaction history shows new deposit entry
 
-**Expected Change**: Account balance increased by the deposit amount.
+**Expected Change**: The current balance reflects the deposit amount added to the previous balance.
 
 ---
 
@@ -1797,16 +1735,16 @@
 **Pre-Check**
 - **Navigate To**: `Savings Account Detail`
 - **Observe**:
-  - account balance
-  - transaction history
+  - current balance is greater than or equal to the withdrawal amount
+  - transaction history does not show the recent withdrawal
 
 **Post-Check**
 - **Navigate To**: `Savings Account Detail`
 - **Observe**:
-  - account balance
-  - transaction history
+  - current balance is decreased by the withdrawal amount
+  - transaction history shows the recent withdrawal transaction
 
-**Expected Change**: Account balance decreased by the withdrawal amount; transaction history includes the new withdrawal entry.
+**Expected Change**: The current balance reflects the withdrawal amount deducted, and the transaction history includes the new withdrawal entry.
 
 ---
 
@@ -1826,18 +1764,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Savings Account Detail`
+- **Navigate To**: `Savings Account Details`
 - **Observe**:
-  - account balance
-  - interest postings
+  - current balance
+  - interest not yet posted
 
 **Post-Check**
-- **Navigate To**: `Savings Account Detail`
+- **Navigate To**: `Savings Account Details`
 - **Observe**:
-  - account balance
-  - interest postings
+  - current balance reflects interest posted
+  - interest transaction in transaction history
 
-**Expected Change**: Account balance increased by the posted interest amount, and a new entry appears in the interest postings section.
+**Expected Change**: The savings account balance increases by the amount of interest posted, and a new transaction entry for the interest posting is visible in the transaction history.
 
 ---
 
@@ -1854,18 +1792,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail -> Savings Accounts`
+- **Navigate To**: `Savings Account Details`
 - **Observe**:
-  - account number
-  - status badge
+  - account status is 'Active'
 
 **Post-Check**
-- **Navigate To**: `Client Detail -> Savings Accounts`
+- **Navigate To**: `Savings Account List`
 - **Observe**:
-  - account number
-  - status badge
+  - account status is 'Closed'
+  - account is no longer listed in active accounts
 
-**Expected Change**: Savings account status badge should change from 'Active' to 'Closed'.
+**Expected Change**: The savings account is successfully closed and no longer appears in the active accounts list.
 
 ---
 
@@ -1883,20 +1820,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `Client Dashboard -> My Share Accounts`
 - **Observe**:
-  - status badge of Share Account
-  - total approved shares
-  - total pending shares
+  - list does not contain the new share account application
 
 **Post-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `Client Dashboard -> My Share Accounts`
 - **Observe**:
-  - status badge of Share Account
-  - total approved shares
-  - total pending shares
+  - list contains the new share account application
+  - status is 'Pending Approval'
 
-**Expected Change**: A new Share Account appears with status 'Submitted and Pending Approval' and the total pending shares reflects the number of shares requested.
+**Expected Change**: A new share account application is created with the correct status and details.
 
 ---
 
@@ -1914,23 +1848,23 @@
 #### Verification Plan
 
 **Actor A (Role: `approver`)**
-- **Action**: Approve Share Account with valid data.
+- **Action**: Approve Share Account with valid data
 
 **Actor B (Role: `client`)**
 - **Session**: `new_session`
-- **Navigate To**: `Client Detail -> Share Account`
+- **Navigate To**: `Client Profile -> Share Accounts`
 - **Action**: 
 - **Observe**:
-  - status badge
-  - total approved shares
-  - total pending shares
+  - share account status
+  - approved shares count
+  - approval date
 
-**Expected Change**: Share account status changes to 'Approved' with the correct number of approved shares reflected.
+**Expected Change**: The share account status changes to 'Active' with the correct number of approved shares and the approval date.
 
 ---
 
 ### [TC-003] Attempt to access an authenticated page after logout
-**Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+**Category**: `negative` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Attempt to navigate to an authenticated page
@@ -1941,17 +1875,18 @@
 
 #### Verification Plan
 
-**Pre-Check**
-- **Navigate To**: `Share Account Detail`
-- **Observe**:
-  - status badge
+**Actor A (Role: `approver`)**
+- **Action**: Reject the share account that is in Pending status.
 
-**Post-Check**
-- **Navigate To**: `Share Account Detail`
+**Actor B (Role: `user`)**
+- **Session**: `new_session`
+- **Navigate To**: `My Accounts -> Share Accounts`
+- **Action**: 
 - **Observe**:
-  - status badge
+  - account status is 'Rejected'
+  - account is no longer in the Pending list
 
-**Expected Change**: Status badge should change to 'Rejected' after the account is rejected.
+**Expected Change**: The share account status changes to 'Rejected' and it is removed from the list of Pending accounts.
 
 ---
 
@@ -1971,20 +1906,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Share Account Detail page`
+- **Navigate To**: `Share Account Detail`
 - **Observe**:
-  - status badge
-  - total approved shares
-  - total pending shares
+  - status badge is 'Approved'
 
 **Post-Check**
-- **Navigate To**: `Share Account Detail page`
+- **Navigate To**: `Share Account Detail`
 - **Observe**:
-  - status badge
-  - total approved shares
-  - total pending shares
+  - status badge is 'Active'
 
-**Expected Change**: Status badge changes to 'Active'; total approved shares remains the same; total pending shares becomes zero.
+**Expected Change**: The share account status changes from 'Approved' to 'Active' after activation.
 
 ---
 
@@ -2001,18 +1932,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Share Account Detail`
+- **Navigate To**: `Share Accounts`
 - **Observe**:
-  - status badge
-  - total approved shares
+  - account status is 'Approved'
 
 **Post-Check**
-- **Navigate To**: `Share Account Detail`
+- **Navigate To**: `Share Accounts`
 - **Observe**:
-  - status badge
-  - total approved shares
+  - account status is 'Pending'
 
-**Expected Change**: Status badge changes to 'Pending' and total approved shares is reset to zero.
+**Expected Change**: The account status changes from 'Approved' to 'Pending' after the undo approval action.
 
 ---
 
@@ -2029,20 +1958,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Share Account Detail page`
+- **Navigate To**: `Share Account`
 - **Observe**:
-  - total approved shares
-  - total pending shares
-  - unit price
+  - current shares count is <initial count>
 
 **Post-Check**
-- **Navigate To**: `Share Account Detail page`
+- **Navigate To**: `Share Account`
 - **Observe**:
-  - total approved shares
-  - total pending shares
-  - unit price
+  - current shares count is <initial count + valid number of additional shares>
 
-**Expected Change**: Total approved shares increased by the number of additional shares applied; total pending shares remains unchanged.
+**Expected Change**: The total number of shares in the account increases by the valid number of additional shares applied.
 
 ---
 
@@ -2059,19 +1984,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Share Account Detail`
+- **Navigate To**: `Client Dashboard -> Share Account`
 - **Observe**:
-  - total approved shares
-  - total pending shares
-  - account balance
+  - current share balance
+  - current unit price
 
 **Post-Check**
-- **Navigate To**: `Savings Account Detail`
+- **Navigate To**: `Client Dashboard -> Savings Account`
 - **Observe**:
-  - account balance
-  - transaction history
+  - savings account balance reflects the redemption amount
 
-**Expected Change**: Savings account balance increased by the redemption amount calculated from the shares redeemed.
+**Expected Change**: The savings account balance increases by the calculated redemption amount based on the shares redeemed and the current unit price.
 
 ---
 
@@ -2090,20 +2013,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail -> Share Account`
+- **Navigate To**: `Client Dashboard -> My Share Accounts`
 - **Observe**:
-  - status badge
-  - total approved shares
-  - total pending shares
+  - share account status is 'Active'
 
 **Post-Check**
-- **Navigate To**: `Client Detail -> Share Account`
+- **Navigate To**: `Client Dashboard -> My Share Accounts`
 - **Observe**:
-  - status badge
-  - total approved shares
-  - total pending shares
+  - share account status is 'Closed'
 
-**Expected Change**: Status badge changes to 'Closed'; total approved shares and total pending shares remain unchanged.
+**Expected Change**: The share account status changes from 'Active' to 'Closed' after the closure action.
 
 ---
 
@@ -2121,23 +2040,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `User Dashboard -> My Accounts`
 - **Observe**:
-  - list of accounts
-  - status of Fixed Deposit accounts
+  - FD account list does not contain the new Fixed Deposit account
 
 **Post-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `User Dashboard -> My Accounts`
 - **Observe**:
-  - list of accounts
-  - status of Fixed Deposit accounts
+  - FD account list contains the new Fixed Deposit account
+  - status is 'Active'
 
-**Expected Change**: A new Fixed Deposit account appears in the accounts list with status 'Submitted and Pending Approval'.
+**Expected Change**: A new Fixed Deposit account is created with the correct deposit amount and period.
 
 ---
 
 ### [TC-002] Attempt to log out without being authenticated
-**Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+**Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `unverifiable`
 
 **Original Steps:**
 1. 1. Click on the User Profile Icon
@@ -2150,18 +2068,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `RD Account Creation Form`
 - **Observe**:
-  - list of accounts
-  - status of accounts
+  - Deposit Frequency field is empty
 
 **Post-Check**
-- **Navigate To**: `Client Detail page`
+- **Navigate To**: `RD Account Summary or Dashboard`
 - **Observe**:
-  - list of accounts
-  - status of accounts
+  - No new RD account entry is visible
+  - Error message displayed for missing deposit frequency
 
-**Expected Change**: A new Recurring Deposit account appears in the list of accounts with status 'Submitted and Pending Approval'.
+**Expected Change**: The system should display an error message indicating that the Deposit Frequency is a required field, and no RD account should be created.
 
 ---
 
@@ -2178,18 +2095,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `RD Account Detail page`
+- **Navigate To**: `User Dashboard -> Recurring Deposit Accounts`
 - **Observe**:
-  - status badge
-  - account balance
+  - account status is 'Draft'
 
 **Post-Check**
-- **Navigate To**: `RD Account Detail page`
+- **Navigate To**: `User Dashboard -> Recurring Deposit Accounts`
 - **Observe**:
-  - status badge
-  - account balance
+  - account status is 'Active'
 
-**Expected Change**: Status badge changes from 'Draft' to 'Active'; account balance remains unchanged.
+**Expected Change**: The Recurring Deposit account status changes from 'Draft' to 'Active' after activation.
 
 ---
 
@@ -2209,18 +2124,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `RD Account Detail page`
+- **Navigate To**: `User Dashboard -> My Accounts`
 - **Observe**:
-  - status badge
-  - account balance
+  - RD account status is 'Active'
 
 **Post-Check**
-- **Navigate To**: `RD Account Detail page`
+- **Navigate To**: `User Dashboard -> My Accounts`
 - **Observe**:
-  - status badge
-  - account balance
+  - RD account status is 'Closed'
+  - RD account closure date is displayed
 
-**Expected Change**: Status badge changes to 'Closed' and account balance is updated to reflect the closure.
+**Expected Change**: The Recurring Deposit account is successfully closed on maturity and its status is updated to 'Closed'.
 
 ---
 
@@ -2239,16 +2153,14 @@
 **Pre-Check**
 - **Navigate To**: `FD Account Detail page`
 - **Observe**:
-  - status badge
-  - account balance
+  - status badge shows 'Pending'
 
 **Post-Check**
 - **Navigate To**: `FD Account Detail page`
 - **Observe**:
-  - status badge
-  - account balance
+  - status badge shows 'Approved'
 
-**Expected Change**: Status badge changes to 'Approved' and account balance remains unchanged.
+**Expected Change**: The FD Account status changes from 'Pending' to 'Approved' after the approval action.
 
 ---
 
@@ -2267,16 +2179,14 @@
 **Pre-Check**
 - **Navigate To**: `FD Account Detail page`
 - **Observe**:
-  - status badge
-  - account balance
+  - status badge is 'Pending'
 
 **Post-Check**
 - **Navigate To**: `FD Account Detail page`
 - **Observe**:
-  - status badge
-  - account balance
+  - status badge is 'Active'
 
-**Expected Change**: Status badge changes to 'Active' and account balance remains unchanged.
+**Expected Change**: The FD Account status changes from 'Pending' to 'Active' after activation.
 
 ---
 
@@ -2295,20 +2205,17 @@
 **Pre-Check**
 - **Navigate To**: `FD Account Detail page`
 - **Observe**:
-  - account number
-  - status badge
-  - total approved shares
-  - total pending shares
+  - account status is 'Active'
+  - closure options are available
 
 **Post-Check**
 - **Navigate To**: `FD Account Detail page`
 - **Observe**:
-  - account number
-  - status badge
-  - total approved shares
-  - total pending shares
+  - account status is 'Closed'
+  - closure date is recorded
+  - closure reason is displayed
 
-**Expected Change**: Status badge changes to 'Closed' and no pending transactions are displayed.
+**Expected Change**: The FD Account status changes from 'Active' to 'Closed' after the premature closure action.
 
 ---
 
@@ -2329,21 +2236,21 @@
 **Pre-Check**
 - **Navigate To**: `FD Account Detail page`
 - **Observe**:
-  - status badge
-  - account balance
+  - status badge is 'Active'
+  - closure options are available
 
 **Post-Check**
 - **Navigate To**: `FD Account Detail page`
 - **Observe**:
-  - status badge
-  - account balance
+  - status badge is 'Closed'
+  - closure date is displayed
 
-**Expected Change**: Status badge changes to 'Closed' and account balance is updated to reflect closure.
+**Expected Change**: The FD Account status changes from 'Active' to 'Closed' upon successful closure on maturity.
 
 ---
 
 ### [TC-009] Attempt to add one more entry to Column Definitions
-**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+**Category**: `edge` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Enter a valid Data Table Name in the Data_Table_Name field
@@ -2357,19 +2264,18 @@
 
 #### Verification Plan
 
-**Pre-Check**
-- **Navigate To**: `RD Account Detail page`
-- **Observe**:
-  - status badge
-  - account balance
+**Actor A (Role: `approver`)**
+- **Action**: Approve the RD Account from the detail page.
 
-**Post-Check**
-- **Navigate To**: `RD Account Detail page`
+**Actor B (Role: `client`)**
+- **Session**: `new_session`
+- **Navigate To**: `Client Dashboard -> My Accounts`
+- **Action**: 
 - **Observe**:
-  - status badge
-  - account balance
+  - RD Account status is 'Active'
+  - RD Account approval date is displayed
 
-**Expected Change**: Status badge changes to 'Approved' and account balance remains unchanged.
+**Expected Change**: The RD Account status changes to 'Active' indicating successful approval.
 
 ---
 
@@ -2391,16 +2297,14 @@
 **Pre-Check**
 - **Navigate To**: `RD Account Detail page`
 - **Observe**:
-  - status badge
-  - account balance
+  - status badge is 'Pending'
 
 **Post-Check**
 - **Navigate To**: `RD Account Detail page`
 - **Observe**:
-  - status badge
-  - account balance
+  - status badge is 'Active'
 
-**Expected Change**: Status badge changes to 'Active' indicating the RD Account is now activated.
+**Expected Change**: The RD Account status changes from 'Pending' to 'Active' after activation.
 
 ---
 
@@ -2422,16 +2326,14 @@
 **Pre-Check**
 - **Navigate To**: `RD Account Detail page`
 - **Observe**:
-  - account balance
-  - total deposits made
+  - current balance before deposit
 
 **Post-Check**
 - **Navigate To**: `RD Account Detail page`
 - **Observe**:
-  - account balance
-  - total deposits made
+  - updated balance after deposit
 
-**Expected Change**: Account balance increased by the deposit amount; total deposits made increased by one.
+**Expected Change**: The balance of the RD Account reflects the deposit amount added to the previous balance.
 
 ---
 
@@ -2450,16 +2352,16 @@
 **Pre-Check**
 - **Navigate To**: `RD Account Detail page`
 - **Observe**:
-  - account number
-  - status badge
+  - account status is 'Active'
+  - account balance is displayed
 
 **Post-Check**
 - **Navigate To**: `RD Account Detail page`
 - **Observe**:
-  - account number
-  - status badge
+  - account status is 'Closed'
+  - account balance reflects any penalties or adjustments
 
-**Expected Change**: Status badge should change to 'Closed' indicating the RD Account has been closed prematurely.
+**Expected Change**: The RD Account status changes from 'Active' to 'Closed' after the premature closure action.
 
 ---
 
@@ -2478,16 +2380,17 @@
 **Pre-Check**
 - **Navigate To**: `RD Account Detail page`
 - **Observe**:
-  - status badge
-  - account balance
+  - account status is 'Active'
+  - maturity date is displayed
 
 **Post-Check**
 - **Navigate To**: `RD Account Detail page`
 - **Observe**:
-  - status badge
-  - account balance
+  - account status is 'Closed'
+  - closure date is displayed
+  - final balance reflects closure adjustments
 
-**Expected Change**: Status badge changes to 'Closed' and account balance is updated to reflect closure.
+**Expected Change**: The RD Account status changes from 'Active' to 'Closed' upon successful closure on maturity.
 
 ---
 
@@ -2505,17 +2408,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Chart of Accounts`
+- **Navigate To**: `Accounting -> Chart of Accounts`
 - **Observe**:
-  - list of GL accounts
+  - list of GL accounts does not contain the new account with <unique GL code>
 
 **Post-Check**
-- **Navigate To**: `Chart of Accounts`
+- **Navigate To**: `Accounting -> Chart of Accounts`
 - **Observe**:
-  - list of GL accounts
-  - <account name>
+  - list of GL accounts contains the new account with <unique GL code>
+  - account name is <account name>
+  - account type is <account type>
 
-**Expected Change**: The new GL Account with the name '<account name>' appears in the list of GL accounts.
+**Expected Change**: A new GL Account is created successfully with the specified GL code and account name.
 
 ---
 
@@ -2533,16 +2437,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Chart of Accounts`
+- **Navigate To**: `Accounting -> Chart of Accounts`
 - **Observe**:
-  - <field> with old value
+  - <field> displays old value
 
 **Post-Check**
-- **Navigate To**: `Chart of Accounts`
+- **Navigate To**: `Accounting -> Chart of Accounts`
 - **Observe**:
-  - <field> with new value
+  - <field> displays new value
 
-**Expected Change**: The GL Account field has been updated from <old value> to <new value>.
+**Expected Change**: The GL Account details are updated with the new value.
 
 ---
 
@@ -2561,14 +2465,14 @@
 **Pre-Check**
 - **Navigate To**: `Chart of Accounts`
 - **Observe**:
-  - <account name>
+  - <account name> is displayed in the list of GL Accounts
 
 **Post-Check**
 - **Navigate To**: `Chart of Accounts`
 - **Observe**:
-  - <account name>
+  - <account name> is not displayed in the list of GL Accounts
 
-**Expected Change**: <account name> should no longer be displayed in the Chart of Accounts.
+**Expected Change**: The GL Account is removed from the Chart of Accounts after deletion.
 
 ---
 
@@ -2586,26 +2490,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Journal Entries`
+- **Navigate To**: `Journal Entries page`
 - **Observe**:
-  - Entry ID
-  - Office
-  - Transaction Date
-  - Type
-  - GL Account
-  - Amount
+  - list of journal entries does not contain the new entry
 
 **Post-Check**
-- **Navigate To**: `Journal Entries`
+- **Navigate To**: `Journal Entries page`
 - **Observe**:
-  - Entry ID
-  - Office
-  - Transaction Date
-  - Type
-  - GL Account
-  - Amount
+  - list of journal entries contains the new entry
+  - entry shows correct office, currency, transaction date, and amount
 
-**Expected Change**: A new journal entry appears in the Journal Entries table with the correct details matching the submitted entry.
+**Expected Change**: A new journal entry is created with the correct details, and the total debits equal total credits.
 
 ---
 
@@ -2623,20 +2518,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Journal Entries`
+- **Navigate To**: `Accounting Closures`
 - **Observe**:
-  - Entry ID
-  - Transaction Date
-  - Amount
+  - no closures listed for the selected office
+  - no journal entries posted for the closing date
 
 **Post-Check**
-- **Navigate To**: `Journal Entries`
+- **Navigate To**: `Accounting Closures`
 - **Observe**:
-  - Entry ID
-  - Transaction Date
-  - Amount
+  - new closure listed for the selected office
+  - no journal entries posted for dates on or before the closing date
 
-**Expected Change**: No new journal entries can be posted for dates on or before the created closing date.
+**Expected Change**: A new closure entry is created for the selected office with the correct closing date, preventing any journal entries from being posted for dates on or before the closing date.
 
 ---
 
@@ -2654,17 +2547,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Accounting Rules`
+- **Navigate To**: `Accounting Rules page`
 - **Observe**:
-  - list of accounting rules
+  - list of accounting rules does not contain the new rule
 
 **Post-Check**
-- **Navigate To**: `Accounting Rules`
+- **Navigate To**: `Accounting Rules page`
 - **Observe**:
-  - list of accounting rules
-  - <valid rule name>
+  - list of accounting rules contains the new rule
+  - new rule name is <valid rule name>
 
-**Expected Change**: The new accounting rule appears in the Accounting Rules Table.
+**Expected Change**: The new accounting rule is successfully created and displayed in the Accounting Rules Table.
 
 ---
 
@@ -2684,15 +2577,15 @@
 **Pre-Check**
 - **Navigate To**: `Financial Activity Mappings`
 - **Observe**:
-  - list of existing financial activity mappings
+  - list does not contain the new mapping
 
 **Post-Check**
 - **Navigate To**: `Financial Activity Mappings`
 - **Observe**:
-  - list of existing financial activity mappings
-  - newly created financial activity mapping
+  - list contains the new mapping
+  - mapping details match the created values
 
-**Expected Change**: The new financial activity mapping appears in the Financial Activity Mappings Table.
+**Expected Change**: The new financial activity mapping is successfully created and displayed in the mappings table.
 
 ---
 
@@ -2709,16 +2602,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Accounting Rules`
+- **Navigate To**: `Accounting -> Accounting Rules`
 - **Observe**:
-  - Rule Name of the existing accounting rule
+  - existing rule name in the table
 
 **Post-Check**
-- **Navigate To**: `Accounting Rules`
+- **Navigate To**: `Accounting -> Accounting Rules`
 - **Observe**:
-  - Rule Name of the updated accounting rule
+  - updated rule name in the table
 
-**Expected Change**: The accounting rule details are updated; the Accounting Rules Table displays the new rule name.
+**Expected Change**: The accounting rule details are updated, and the Accounting Rules Table displays the new rule name.
 
 ---
 
@@ -2738,17 +2631,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Accounting Rules`
+- **Navigate To**: `Accounting -> Accounting Rules`
 - **Observe**:
-  - list of accounting rules
-  - Rule Name of the existing accounting rule
+  - existing accounting rule in the table
 
 **Post-Check**
-- **Navigate To**: `Accounting Rules`
+- **Navigate To**: `Accounting -> Accounting Rules`
 - **Observe**:
-  - list of accounting rules
+  - accounting rule no longer present in the table
 
-**Expected Change**: The accounting rule is no longer present in the Accounting Rules Table.
+**Expected Change**: The accounting rule has been successfully deleted and is no longer visible in the Accounting Rules Table.
 
 ---
 
@@ -2766,20 +2658,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Provisioning Criteria`
+- **Navigate To**: `Provisioning Criteria List`
 - **Observe**:
-  - list of criteria names
-  - creation date
-  - provisioning percentage
+  - criteria list does not contain the new criteria name
 
 **Post-Check**
-- **Navigate To**: `Provisioning Criteria`
+- **Navigate To**: `Provisioning Criteria List`
 - **Observe**:
-  - list of criteria names
-  - creation date
-  - provisioning percentage
+  - criteria list contains the new criteria name
+  - criteria details match the submitted values
 
-**Expected Change**: New criteria name appears in the list with the correct provisioning percentage and creation date.
+**Expected Change**: A new provisioning criteria entry is created with the specified name, age range, and provisioning percentage.
 
 ---
 
@@ -2796,17 +2685,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Provisioning Entries`
+- **Navigate To**: `Provisioning Entries page`
 - **Observe**:
-  - list of existing provisioning entries
+  - no recent provisioning entries listed
 
 **Post-Check**
-- **Navigate To**: `Provisioning Entries`
+- **Navigate To**: `Provisioning Entries page`
 - **Observe**:
-  - list of existing provisioning entries
-  - new provisioning entry
+  - new provisioning entries listed
+  - entries reflect current loan portfolio status
 
-**Expected Change**: A new provisioning entry appears in the list based on the current loan portfolio status.
+**Expected Change**: New provisioning entries are generated and displayed based on the current loan portfolio status.
 
 ---
 
@@ -2825,18 +2714,16 @@
 **Pre-Check**
 - **Navigate To**: `Provisioning Entries`
 - **Observe**:
-  - Entry Date
-  - Journal Entry Created
-  - Created By
+  - list of provisioning entries
+  - status of the entry to be recreated
 
 **Post-Check**
 - **Navigate To**: `Provisioning Entries`
 - **Observe**:
-  - Entry Date
-  - Journal Entry Created
-  - Created By
+  - newly recreated provisioning entry
+  - status of the entry reflects the correct state
 
-**Expected Change**: A new provisioning entry is created with the current date and reflects the updated provisioning amount based on the current loan portfolio status.
+**Expected Change**: A new provisioning entry is created with the same parameters as the original entry.
 
 ---
 
@@ -2853,17 +2740,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Offices`
+- **Navigate To**: `Offices page`
 - **Observe**:
-  - list of offices
+  - offices list does not contain the new office name
 
 **Post-Check**
-- **Navigate To**: `Offices`
+- **Navigate To**: `Offices page`
 - **Observe**:
-  - list of offices
-  - new office name
+  - offices list contains the new office name
+  - status is 'Active'
 
-**Expected Change**: The new office appears in the Offices table.
+**Expected Change**: A new office entry is created with the correct name and status.
 
 ---
 
@@ -2881,18 +2768,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Employees`
+- **Navigate To**: `Employees page`
 - **Observe**:
-  - Employee Name
-  - Employee Status
+  - employee details are displayed
+  - edit action is available
 
 **Post-Check**
-- **Navigate To**: `Employees`
+- **Navigate To**: `Employees page`
 - **Observe**:
-  - Employee Name
-  - Employee Status
+  - employee edit form is displayed
+  - employee details can be modified
 
-**Expected Change**: Employee details are updated as per the changes made in the edit form.
+**Expected Change**: The employee edit form is displayed, allowing for modifications to employee details.
 
 ---
 
@@ -2911,16 +2798,15 @@
 **Pre-Check**
 - **Navigate To**: `Employees page`
 - **Observe**:
-  - list of employees
-  - employee count
+  - employee list does not contain the new employee
 
 **Post-Check**
 - **Navigate To**: `Employees page`
 - **Observe**:
-  - list of employees
-  - employee count
+  - employee list contains the new employee with the correct first and last name
+  - status is 'Active'
 
-**Expected Change**: Employee count increased by one; new employee appears in the list with correct details.
+**Expected Change**: A new employee entry is created with the specified first name and last name, and is listed as active.
 
 ---
 
@@ -2940,16 +2826,16 @@
 **Pre-Check**
 - **Navigate To**: `Tellers page`
 - **Observe**:
-  - list of tellers
-  - total number of tellers
+  - teller list does not contain the new teller
 
 **Post-Check**
 - **Navigate To**: `Tellers page`
 - **Observe**:
-  - list of tellers
-  - total number of tellers
+  - teller list contains the new teller
+  - teller name is '<valid teller name>'
+  - office is '<valid office>'
 
-**Expected Change**: Total number of tellers increased by one; new teller appears in the list with correct details.
+**Expected Change**: A new teller entry is created with the specified name and office.
 
 ---
 
@@ -2967,18 +2853,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Tellers`
+- **Navigate To**: `Teller Management`
 - **Observe**:
-  - Teller Name
-  - Cashiers section
+  - cashier list does not contain the newly allocated cashier
 
 **Post-Check**
-- **Navigate To**: `Tellers`
+- **Navigate To**: `Teller Management`
 - **Observe**:
-  - Teller Name
-  - Cashiers section
+  - cashier list contains the newly allocated cashier
+  - cashier status is 'Active'
 
-**Expected Change**: The Cashiers section now includes the newly allocated cashier with the correct start date.
+**Expected Change**: A new cashier entry is created for the selected staff with the correct start date.
 
 ---
 
@@ -2995,18 +2880,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Tellers`
+- **Navigate To**: `Tellers list`
 - **Observe**:
-  - Teller Name
-  - Office
+  - teller details show old office information
 
 **Post-Check**
-- **Navigate To**: `Tellers`
+- **Navigate To**: `Tellers list`
 - **Observe**:
-  - Teller Name
-  - Office
+  - teller details show updated office information
+  - success message displayed
 
-**Expected Change**: The Office field for the teller is updated to the new valid office.
+**Expected Change**: The teller's office information is updated to the new valid office.
 
 ---
 
@@ -3028,16 +2912,16 @@
 **Pre-Check**
 - **Navigate To**: `Cashier Detail page`
 - **Observe**:
-  - Opening Balance
-  - Cash In Hand
+  - cash balance is unchanged
+  - no recent allocation transactions
 
 **Post-Check**
 - **Navigate To**: `Cashier Detail page`
 - **Observe**:
-  - Opening Balance
-  - Cash In Hand
+  - cash balance reflects allocated amount
+  - recent allocation transaction is listed
 
-**Expected Change**: Cash In Hand increased by the allocated amount.
+**Expected Change**: The cash balance is increased by the allocated amount, and a new transaction entry for the cash allocation is visible.
 
 ---
 
@@ -3056,16 +2940,16 @@
 **Pre-Check**
 - **Navigate To**: `Cashier Detail page`
 - **Observe**:
-  - Opening Balance
-  - Cash In Hand
+  - current cash balance
+  - settlement history is empty
 
 **Post-Check**
 - **Navigate To**: `Cashier Detail page`
 - **Observe**:
-  - Opening Balance
-  - Cash In Hand
+  - current cash balance reflects the settled amount
+  - settlement history includes the new transaction
 
-**Expected Change**: Cash In Hand increased by the settled amount; Opening Balance remains unchanged.
+**Expected Change**: The cash balance is updated to include the settled amount, and the settlement history shows the new transaction with the correct details.
 
 ---
 
@@ -3083,18 +2967,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Users`
+- **Navigate To**: `Users Management`
 - **Observe**:
-  - list of users
-  - username of <unique username>
+  - <unique username> not present in users list
 
 **Post-Check**
-- **Navigate To**: `Users`
+- **Navigate To**: `Users Management`
 - **Observe**:
-  - list of users
-  - username of <unique username>
+  - <unique username> present in users list
+  - success message displayed
 
-**Expected Change**: The new user with username <unique username> appears in the user list.
+**Expected Change**: A new user entry is created with the specified username and details.
 
 ---
 
@@ -3111,17 +2994,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Users -> Roles`
+- **Navigate To**: `Roles Management`
 - **Observe**:
-  - list of roles
+  - list of roles does not contain the new role
 
 **Post-Check**
-- **Navigate To**: `Users -> Roles`
+- **Navigate To**: `Roles Management`
 - **Observe**:
-  - list of roles
-  - <role name>
+  - list of roles contains the new role
+  - role name is '<role name>'
+  - description is '<description>'
 
-**Expected Change**: The new role '<role name>' appears in the list of roles.
+**Expected Change**: A new role is created with the specified name and description.
 
 ---
 
@@ -3141,16 +3025,16 @@
 **Pre-Check**
 - **Navigate To**: `Account Overview`
 - **Observe**:
-  - balance of From Account
-  - balance of To Account
+  - <valid From Account> balance before transfer
+  - <valid To Account> balance before transfer
 
 **Post-Check**
 - **Navigate To**: `Account Overview`
 - **Observe**:
-  - balance of From Account
-  - balance of To Account
+  - <valid From Account> balance after transfer
+  - <valid To Account> balance after transfer
 
-**Expected Change**: From Account balance decreased by Transfer Amount; To Account balance increased by the same amount.
+**Expected Change**: <valid From Account> balance should be decreased by <valid Transfer Amount> and <valid To Account> balance should be increased by <valid Transfer Amount>.
 
 ---
 
@@ -3168,17 +3052,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Charges -> Tax Components`
+- **Navigate To**: `Tax Management -> Tax Components`
 - **Observe**:
-  - list of existing tax components
+  - list does not contain the new tax component
 
 **Post-Check**
-- **Navigate To**: `Charges -> Tax Components`
+- **Navigate To**: `Tax Management -> Tax Components`
 - **Observe**:
-  - list of existing tax components
-  - new tax component with <valid name>
+  - list contains the new tax component
+  - tax component name is '<valid name>'
+  - tax percentage is '<valid percentage>'
 
-**Expected Change**: The new tax component appears in the list with the correct details including name, percentage, debit account, credit account, and start date.
+**Expected Change**: A new tax component is created with the specified name and percentage, and it appears in the tax components list.
 
 ---
 
@@ -3198,15 +3083,15 @@
 **Pre-Check**
 - **Navigate To**: `Tax Management -> Tax Groups`
 - **Observe**:
-  - list of existing tax groups
+  - tax group list does not contain the new tax group with the entered name
 
 **Post-Check**
 - **Navigate To**: `Tax Management -> Tax Groups`
 - **Observe**:
-  - list of existing tax groups
-  - new tax group with entered values
+  - tax group list contains the new tax group with the entered name
+  - tax group details show the entered values
 
-**Expected Change**: The new tax group appears in the list with the correct name and associated components.
+**Expected Change**: A new tax group is created with the specified name and associated components.
 
 ---
 
@@ -3226,20 +3111,16 @@
 **Pre-Check**
 - **Navigate To**: `Holidays Management`
 - **Observe**:
-  - list of holidays
-  - holiday name
-  - start date
-  - end date
+  - holiday list does not contain the new holiday entry
 
 **Post-Check**
 - **Navigate To**: `Holidays Management`
 - **Observe**:
-  - list of holidays
-  - holiday name
-  - start date
-  - end date
+  - holiday list contains the new holiday entry
+  - holiday name is '<valid holiday name>'
+  - holiday dates are '<valid start date>' to '<valid end date>'
 
-**Expected Change**: The new holiday appears in the list with the correct name, start date, and end date.
+**Expected Change**: A new holiday entry is created that affects loan repayment schedules.
 
 ---
 
@@ -3258,16 +3139,16 @@
 **Pre-Check**
 - **Navigate To**: `Organization Settings -> Working Days`
 - **Observe**:
-  - Monday checkbox status
-  - Tuesday checkbox status
+  - Monday checkbox is unchecked
+  - Tuesday checkbox is unchecked
 
 **Post-Check**
 - **Navigate To**: `Organization Settings -> Working Days`
 - **Observe**:
-  - Monday checkbox status
-  - Tuesday checkbox status
+  - Monday checkbox is checked
+  - Tuesday checkbox is checked
 
-**Expected Change**: Monday and Tuesday checkboxes are checked, indicating they are now configured as working days.
+**Expected Change**: The working days configuration now includes Monday and Tuesday as selected days.
 
 ---
 
@@ -3284,20 +3165,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Accounting -> Chart of Accounts`
+- **Navigate To**: `Funds Management -> Fund List`
 - **Observe**:
-  - list of funds
-  - Fund Name
-  - External ID
+  - fund list does not contain the new fund entry
 
 **Post-Check**
-- **Navigate To**: `Accounting -> Chart of Accounts`
+- **Navigate To**: `Funds Management -> Fund List`
 - **Observe**:
-  - list of funds
-  - Fund Name
-  - External ID
+  - fund list contains the new fund entry
+  - fund name matches <valid fund name>
+  - external ID matches <valid external ID>
 
-**Expected Change**: The new fund appears in the list with the correct Fund Name and External ID.
+**Expected Change**: A new fund entry is created with the specified fund name and external ID.
 
 ---
 
@@ -3314,17 +3193,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Payment Types`
+- **Navigate To**: `Payment Types page`
 - **Observe**:
-  - list of payment types
+  - list of existing payment types does not include the new payment type
 
 **Post-Check**
-- **Navigate To**: `Payment Types`
+- **Navigate To**: `Payment Types page`
 - **Observe**:
-  - list of payment types
-  - <valid payment type name>
+  - list of existing payment types includes the new payment type
+  - new payment type name is displayed
+  - new payment type description is displayed
 
-**Expected Change**: The new payment type '<valid payment type name>' appears in the list of payment types.
+**Expected Change**: A new payment type is added to the list with the correct name and description.
 
 ---
 
@@ -3345,20 +3225,16 @@
 **Pre-Check**
 - **Navigate To**: `Bulk Import page`
 - **Observe**:
-  - import history table
-  - total records count
-  - success count
-  - failure count
+  - data import history is empty
+  - no recent uploads listed
 
 **Post-Check**
 - **Navigate To**: `Bulk Import page`
 - **Observe**:
-  - import history table
-  - total records count
-  - success count
-  - failure count
+  - data import history shows the new upload entry
+  - status indicates 'Pending' or 'Processing'
 
-**Expected Change**: Total records count increased by the number of records in the uploaded file; success count reflects the number of successfully imported records.
+**Expected Change**: A new entry is created in the data import history reflecting the uploaded file, indicating that the upload process has started.
 
 ---
 
@@ -3376,17 +3252,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Manage Scheduler Jobs`
+- **Navigate To**: `System Administration -> Scheduled Jobs`
 - **Observe**:
-  - Is Active (toggle) for each job
-  - Next Run Time for each job
+  - list of scheduled jobs
+  - status is 'Inactive'
 
 **Post-Check**
-- **Navigate To**: `Manage Scheduler Jobs`
+- **Navigate To**: `System Administration -> Scheduled Jobs`
 - **Observe**:
-  - Is Active (toggle) for each job
+  - list of scheduled jobs
+  - status is 'Active'
 
-**Expected Change**: All scheduled jobs are now active and have their next run times updated accordingly.
+**Expected Change**: All scheduled jobs are now active and running.
 
 ---
 
@@ -3404,20 +3281,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Manage Scheduler Jobs`
+- **Navigate To**: `Scheduled Jobs Management`
 - **Observe**:
-  - Job Name
-  - Is Active
-  - Next Run Time
+  - list of active scheduled jobs
 
 **Post-Check**
-- **Navigate To**: `Manage Scheduler Jobs`
+- **Navigate To**: `Scheduled Jobs Management`
 - **Observe**:
-  - Job Name
-  - Is Active
-  - Next Run Time
+  - no active scheduled jobs listed
+  - status indicator shows 'Stopped' for all jobs
 
-**Expected Change**: All scheduled jobs show 'Is Active' as inactive and 'Next Run Time' is no longer scheduled.
+**Expected Change**: All scheduled jobs are no longer active and the status reflects that they have been stopped.
 
 ---
 
@@ -3436,14 +3310,15 @@
 **Pre-Check**
 - **Navigate To**: `Manage Data Tables`
 - **Observe**:
-  - list of existing data tables
+  - Data Table Name field is empty
+  - No custom data tables listed
 
 **Post-Check**
 - **Navigate To**: `Manage Data Tables`
 - **Observe**:
-  - list of existing data tables
-  - <Data Table Name>
+  - Custom data table with <Data Table Name> appears in the list
+  - Column definitions include <Column Name>
 
-**Expected Change**: The new custom data table named '<Data Table Name>' appears in the list of existing data tables.
+**Expected Change**: A new custom data table is created and displayed in the list with the specified column definitions.
 
 ---

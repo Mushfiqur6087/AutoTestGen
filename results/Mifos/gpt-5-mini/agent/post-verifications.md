@@ -14,21 +14,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Clients page`
+- **Navigate To**: `Clients page -> Clients list`
 - **Observe**:
-  - Search field is visible
-  - No existing client returned when searching for Document Key '<Document Key>'
-  - No existing client (or note current count) when searching for name '<First Name> <Last Name>'
+  - clients list does not contain a row for <First Name> <Last Name> with Office = <Office>
+  - no pending client exists with identifier <Document Key>
 
 **Post-Check**
-- **Navigate To**: `Clients page`
+- **Navigate To**: `Clients page -> Clients list (search for <First Name> <Last Name>) -> Open the newly created client detail`
 - **Observe**:
-  - Use search to find '<Document Key>' or '<First Name> <Last Name>' and verify a result row is returned
-  - In the result row observe columns: 'Name' (should show '<First Name> <Last Name>'), 'Account No.' (clickable link to detail), 'External ID' (if used), 'Status' (shown as a colored chip), 'Office'
-  - Click the client's Name to open Client Detail page and verify header shows client name and status badge
-  - On Client Detail page navigate to Identifiers tab and verify an identifier row with Document Type '<Document Type>' and Document Key '<Document Key>' exists
+  - clients list contains a new row for <First Name> <Last Name>
+  - status badge for the new client shows 'Pending'
+  - Office column for the new client equals <Office>
+  - In client detail, Identifiers tab contains an entry with Document Type = <Document Type> and Document Key = <Document Key>
 
-**Expected Change**: A new client with name '<First Name> <Last Name>' and identifier '<Document Key>' appears in the Clients listing for office '<Office>' with status 'Pending'; the Client Detail page shows a 'Pending' status badge and the Identifiers tab contains the Document Type '<Document Type>' and Document Key '<Document Key>'.
+**Expected Change**: A new client record for <First Name> <Last Name> is present in the Clients list with status 'Pending' associated to <Office>, and the provided identifier (<Document Type>: <Document Key>) is saved and visible on the client's Identifiers tab.
 
 ---
 
@@ -45,25 +44,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Clients -> Import Client (Bulk Import) -> Import History section`
+- **Navigate To**: `Clients -> Bulk Import / Import Jobs (Bulk Import page)`
 - **Observe**:
-  - import history entries (Name column)
-  - Import Time
-  - End Time
-  - Completed indicator
-  - Total Records, Success Count, Failure Count columns
+  - import jobs list does not contain a job referencing the uploaded file name or batch id (e.g., '<valid client import file>')
+  - no pending or running import job exists for the same filename
 
 **Post-Check**
-- **Navigate To**: `Clients -> Import Client (Bulk Import) -> Import History section`
+- **Navigate To**: `Clients -> Bulk Import / Import Jobs (Bulk Import page)`
 - **Observe**:
-  - new import history entry with Name matching the uploaded file
-  - Import Time populated (recent timestamp)
-  - End Time blank or null while job running
-  - Completed indicator = false OR status shows 'Processing'/'Queued'/'Running'
-  - Total Records populated (expected > 0) and Success Count/Failure Count present (may be 0 while running)
-  - Download/details action available for the new entry
+  - import jobs list contains a new entry referencing the uploaded file name or batch id (e.g., '<valid client import file>')
+  - status column shows 'Pending' or 'In Progress' (or similar indicating the job has started)
+  - job row displays job id or started timestamp
 
-**Expected Change**: A new row appears in the Import History with Name equal to the uploaded file and a recent Import Time; the job is marked as not completed (Completed = false or status 'Processing'/'Queued'/'Running'), Total Records is populated (> 0) and Success/Failure counts are present (initially may be zero). Over time the row may update End Time and Completed to true and show final Success/Failure counts.
+**Expected Change**: A new import job entry is created for the uploaded client import file and its status is 'Pending' or 'In Progress', indicating the import job has been started by the upload.
 
 ---
 
@@ -83,22 +76,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Clients -> Client Detail page for <target client>`
+- **Navigate To**: `Clients page (find <target client>)`
 - **Observe**:
-  - status badge showing 'Pending' (yellow chip)
-  - Submitted On date (recorded on the detail page)
-  - Activation Date is blank or not set
-  - Available actions include 'Activate'
+  - client row for <target client> exists
+  - status column for <target client> shows 'Pending'
+  - client detail (if opened) shows status 'Pending' and no Activation Date set
 
 **Post-Check**
-- **Navigate To**: `Clients -> Client Detail page for <target client>`
+- **Navigate To**: `Clients page -> Open Client Detail for <target client>`
 - **Observe**:
-  - status badge showing 'Active' (green chip)
-  - Activation Date equals <Activation Date>
-  - Available actions include 'Edit', 'Transfer Client', 'Close', 'New Loan', 'New Savings' and no longer include 'Activate'
-  - Clients listing row for <target client> shows status 'Active' (green chip) when viewing Clients page or search results
+  - client row for <target client> shows status 'Active' (green badge/chip)
+  - client detail header shows status 'Active'
+  - client detail displays Activation Date equal to <Activation Date>
+  - any actions unavailable for Pending clients (e.g., 'Activate') are no longer present
 
-**Expected Change**: Client's status changes from 'Pending' to 'Active'; the Activation Date field is set to the provided <Activation Date> (which must be on or after the Submitted On date); the 'Activate' action is removed and Active-state actions (Edit, Transfer Client, Close, New Loan, New Savings) become available; the Clients listing and client detail both reflect the Active status (green).
+**Expected Change**: The client status is updated from 'Pending' to 'Active' and the Activation Date on the client record is set to <Activation Date>; these changes are visible both on the Clients list and the Client Detail page.
 
 ---
 
@@ -117,18 +109,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Clients page -> open Client Detail for <target client>`
+- **Navigate To**: `Clients -> search for <target client> -> open Client Detail page`
 - **Observe**:
-  - Mobile Number (current value before edit)
-  - Client Status badge (should be 'Pending')
+  - Status badge is 'Pending'
+  - Mobile Number field shows the current (pre-edit) value (not <new value>)
 
 **Post-Check**
-- **Navigate To**: `Clients page -> open Client Detail for <target client>`
+- **Navigate To**: `Clients -> search for <target client> -> open Client Detail page`
 - **Observe**:
-  - Mobile Number
-  - Client Status badge
+  - Mobile Number field shows '<new value>'
+  - Client header/summary displays the updated mobile number
+  - Clients list row for <target client> (if visible) shows the updated mobile number
 
-**Expected Change**: Mobile Number is updated to <new value> on the Client Detail page and the Client Status badge remains 'Pending'.
+**Expected Change**: The client's Mobile Number is updated to '<new value>' and persisted: the Client Detail page and Clients list reflect the new mobile number while the client remains in 'Pending' status.
 
 ---
 
@@ -145,20 +138,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Clients page -> search for <target client> -> open Client Detail page for <target client>`
+- **Navigate To**: `Clients page (use search/filter to locate <target client>)`
 - **Observe**:
-  - status badge showing 'Pending'
-  - 'Reject' action/button is present on the Client Detail page
-  - Client name and account number match <target client>
+  - client row for <target client> exists
+  - status column for <target client> shows 'Pending'
 
 **Post-Check**
-- **Navigate To**: `Clients page -> search for <target client> -> open Client Detail page for <target client>; then Admin -> Audit Trails (filter by Resource ID or Action Name if needed)`
+- **Navigate To**: `Clients page (search/filter for <target client>) and open Client Detail page for <target client>`
 - **Observe**:
-  - status badge showing 'Rejected' on the Client Detail page
-  - 'Reject' action/button is no longer present on the Client Detail page (no actions available for Rejected status)
-  - Audit Trails contains an entry for the client with Action Name containing 'Reject' (or equivalent), Maker = current user, Processing Result = 'Approved' or 'Completed', and the recorded reason text equals <Reason>
+  - client row for <target client> shows status 'Rejected'
+  - client appears under Rejected/Closed filter (if filter applied)
+  - on Client Detail page the status badge reads 'Rejected'
+  - the 'Reject' action is no longer available on the Client Detail page
 
-**Expected Change**: Client status changed from 'Pending' to 'Rejected'; the Client Detail page displays a 'Rejected' status badge and no Reject action is available; an audit trail entry exists recording the rejection performed by the current user and containing the supplied <Reason>.
+**Expected Change**: The client's status changes from 'Pending' to 'Rejected'; the client appears in Rejected listings and the reject action is not available on the client detail.
 
 ---
 
@@ -175,18 +168,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Clients -> <target client> detail page`
+- **Navigate To**: `Clients -> Clients List (or open Client Detail for <target client>)`
 - **Observe**:
-  - status badge (expected: 'Pending')
-  - available action buttons (expected to include: 'Activate', 'Edit', 'Reject', 'Withdraw')
+  - clients list contains a row for <target client> with status badge 'Pending'
+  - Client Detail header (if opened) shows status badge 'Pending'
+  - Withdraw action is available on the Pending client (actions menu or detail page)
 
 **Post-Check**
-- **Navigate To**: `Clients -> <target client> detail page`
+- **Navigate To**: `Clients -> Search for <target client> and open Client Detail page`
 - **Observe**:
-  - status badge
-  - available action buttons
+  - clients list row for <target client> shows status badge 'Withdrawn'
+  - Client Detail header shows status badge 'Withdrawn'
+  - Withdraw action is no longer available in the actions menu on the Client Detail page
 
-**Expected Change**: Client status badge changed from 'Pending' to 'Withdrawn'; status-changing action buttons such as 'Activate', 'Edit', 'Reject', and 'Withdraw' are no longer available (no actions shown for Withdrawn status).
+**Expected Change**: The client's status has changed from 'Pending' to 'Withdrawn' and the Withdraw action is no longer offered; this change is visible both in the Clients list and on the Client Detail page.
 
 ---
 
@@ -204,20 +199,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Clients page -> open Client Detail for <target client>`
+- **Navigate To**: `Clients -> Search for <target client> -> Open Client Detail`
 - **Observe**:
-  - client name
-  - status badge (expect 'Active')
-  - email address (current value shown on detail page)
+  - Client status badge is 'Active'
+  - Email field does not equal '<new value>' (shows current/old email)
 
 **Post-Check**
-- **Navigate To**: `Clients page -> open Client Detail for <target client>`
+- **Navigate To**: `Clients -> Search for <target client> -> Open Client Detail (or refresh page)`
 - **Observe**:
-  - client name
-  - status badge (expect 'Active')
-  - email address (value shown on detail page)
+  - Email field equals '<new value>'
+  - Client status badge remains 'Active'
+  - Client detail audit/last-modified metadata shows recent update by the current user (if available)
 
-**Expected Change**: The client's email address is updated to <new value> on the Client Detail page; client name and status remain unchanged (status remains Active).
+**Expected Change**: The client's Email Address field on the Client Detail page is updated to '<new value>' and the change is persisted in the backend (remains true after navigation or page refresh).
 
 ---
 
@@ -235,22 +229,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail page for <target client> (opened from Clients listing filtered by <Current Office>)`
+- **Navigate To**: `Clients -> Client Detail for <target client>`
 - **Observe**:
-  - Office (shows <Current Office>)
-  - Status (shows Active)
-  - Client Account No. / Identifier
+  - status badge is 'Active'
+  - office field displays '<Current Office>'
 
 **Post-Check**
-- **Navigate To**: `1) Client Detail page for <target client>; 2) Clients page filtered by Office = <Current Office>; 3) Clients page filtered by Office = <Destination Office>`
+- **Navigate To**: `Clients -> Client Detail for <target client>`
 - **Observe**:
-  - On Client Detail: Office field
-  - On Client Detail: Status
-  - On Client Detail: Client Account No. / Identifier
-  - On Clients listing filtered by <Current Office>: absence of <target client>
-  - On Clients listing filtered by <Destination Office>: presence of <target client> (Name, Account No., Office column)
+  - office field displays '<Destination Office>'
+  - Clients list row for <target client> (if viewed) shows Office column = '<Destination Office>'
+  - client transfer/audit history contains an entry showing transfer from '<Current Office>' to '<Destination Office>'
 
-**Expected Change**: Client's Office changed from <Current Office> to <Destination Office> (Client Detail Office field shows <Destination Office>); Status remains Active; Client Account No./Identifier unchanged; client is no longer listed when filtering Clients by <Current Office> and is listed when filtering by <Destination Office>.
+**Expected Change**: The client's Office value is updated from '<Current Office>' to '<Destination Office>' and the client's transfer history/audit contains a record of the transfer.
 
 ---
 
@@ -269,23 +260,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail page for <target client>`
+- **Navigate To**: `Clients -> Client List (or open Client Detail for <target client>)`
 - **Observe**:
-  - client name
-  - status badge equals 'Active'
-  - active accounts summary (Loans, Savings, Shares) shows zero active accounts
-  - available action buttons include 'Close' (and other Active-state actions)
+  - client row for <target client> shows status 'Active'
+  - client detail page (if opened) displays status badge 'Active' and 'Close' action is available
 
 **Post-Check**
-- **Navigate To**: `Client Detail page for <target client>`
+- **Navigate To**: `Clients -> Client List (and open Client Detail for <target client>)`
 - **Observe**:
-  - client name
-  - status badge equals 'Closed'
-  - available action buttons reflect Closed state (e.g., 'Reactivate' visible; 'Close' not present)
-  - accounts tabs/summary still show no active accounts
-  - Client appears in Clients listing with status 'Closed' (optional cross-check via Clients page)
+  - client row for <target client> shows status 'Closed' (closed/gray chip) in the list
+  - client detail page displays status badge 'Closed' and the 'Close' action is no longer available
 
-**Expected Change**: Client status changed from 'Active' to 'Closed'; status badge displays 'Closed' and the set of available action buttons updates to closed-state actions (for example, 'Reactivate' is available and 'Close' is removed).
+**Expected Change**: The client's status changes from 'Active' to 'Closed': the client row and client detail page show status 'Closed', and actions requiring an active client (such as 'Close') are no longer available.
 
 ---
 
@@ -306,20 +292,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Clients -> <target client> Detail page -> Charges tab`
+- **Navigate To**: `Clients -> Open <target client> -> Charges (or Client Charges) tab`
 - **Observe**:
-  - charges table rows (list of existing charges)
-  - Charge Name, Amount, Due Date, Paid/Waived/Outstanding status columns
-  - Total outstanding charges / Charges summary
+  - charges list does not contain the charge matching the <Charge details> to be added
+  - no outstanding amount or pending charge row for the same charge type/date exists
 
 **Post-Check**
-- **Navigate To**: `Clients -> <target client> Detail page -> Charges tab`
+- **Navigate To**: `Clients -> Open <target client> -> Charges (or Client Charges) tab`
 - **Observe**:
-  - charges table rows (list of existing charges)
-  - Charge Name, Amount, Due Date, Paid/Waived/Outstanding status columns
-  - Total outstanding charges / Charges summary
+  - charges list contains a new entry for the added charge showing the charge name (as entered in <Charge details>)
+  - charge row displays the configured amount, charge type/timing, and a status indicating it is active/outstanding
+  - outstanding amount equals the entered charge amount (or shows expected outstanding balance if partial payments are supported)
 
-**Expected Change**: A new charge row appears in the Charges tab matching the charge entered in the Add Charge dialog (Charge Name equals the entered name; Amount equals the entered amount; Due Date equals the entered due date if provided). The new charge shows an unpaid/outstanding status and the client's Total outstanding charges increases by the charge amount.
+**Expected Change**: A new charge record is present in the client's Charges tab reflecting the entered charge details (name, amount, type/timing) and showing the correct outstanding amount and an active/outstanding status.
 
 ---
 
@@ -340,20 +325,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Clients page -> open Client Detail page for <target client>`
+- **Navigate To**: `Clients -> Open Client Detail page for <target client>`
 - **Observe**:
-  - status badge (expected 'Closed')
-  - client name
-  - account number
+  - status badge displays 'Closed'
+  - Client detail header shows client name and status 'Closed'
 
 **Post-Check**
-- **Navigate To**: `Clients page -> open Client Detail page for <target client>`
+- **Navigate To**: `Clients -> Open Client Detail page for <target client'> and Clients list filtered by 'Active' status`
 - **Observe**:
-  - status badge
-  - activation date
-  - available action buttons (e.g., Edit, Transfer Client, New Loan, New Savings, New Share Account)
+  - status badge displays 'Active' (green)
+  - Client detail header shows client name and status 'Active'
+  - When filtering Clients list by status 'Active', <target client> appears in the results
 
-**Expected Change**: Client status changes from 'Closed' to 'Active' (status badge shows Active/green); Activation date is populated; action buttons appropriate for an Active client appear (for example: Edit, Transfer Client, New Loan, New Savings, New Share Account).
+**Expected Change**: The client's status changes from 'Closed' to 'Active' — the Client Detail page shows 'Active' and the client appears in the Clients list when filtered by Active status.
 
 ---
 
@@ -372,20 +356,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Clients -> <target client> (Client Detail) -> Identifiers tab`
+- **Navigate To**: `Clients -> <target client> Detail -> Identifiers tab`
 - **Observe**:
-  - list of identifier rows showing Document Type and Document Key
-  - count of identifier rows
-  - verify absence of identifier with Document Type '<Document Type>' and Document Key '<Document Key>'
+  - identifiers list does not contain an entry with Document Type '<Document Type>' and Document Key '<Document Key>'
 
 **Post-Check**
-- **Navigate To**: `Clients -> <target client> (Client Detail) -> Identifiers tab`
+- **Navigate To**: `Clients -> <target client> Detail -> Identifiers tab`
 - **Observe**:
-  - list of identifier rows showing Document Type and Document Key
-  - count of identifier rows
-  - presence of identifier with Document Type '<Document Type>' and Document Key '<Document Key>'
+  - identifiers list contains an entry with Document Type '<Document Type>' and Document Key '<Document Key>'
+  - attempting to add the same Document Type and Document Key again results in a validation error or duplicate-prevention message
 
-**Expected Change**: A new identifier row appears with Document Type '<Document Type>' and Document Key '<Document Key>'; the total identifier count has increased by 1 compared to pre-check; duplicates are not added (no additional row with the same Document Type and Document Key exists).
+**Expected Change**: A new identifier with the specified Document Type and Document Key is persisted for the client and is visible in the Identifiers list; the system prevents creating a duplicate identifier when the same values are submitted again.
 
 ---
 
@@ -404,20 +385,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Clients -> <target client> -> Identifiers tab`
+- **Navigate To**: `Clients -> Open <target client> detail -> Identifiers tab`
 - **Observe**:
-  - Identifiers list/table is visible
-  - presence of the target identifier row with Document Type '<document_type>' and Document Key '<document_key>'
-  - count of identifier rows (n)
+  - Identifiers list contains the target identifier row (Document Type: <type>, Document Key: <key>)
+  - Identifier row shows expected metadata (created by, created on) if available
 
 **Post-Check**
-- **Navigate To**: `Clients -> <target client> -> Identifiers tab`
+- **Navigate To**: `Clients -> Open <target client> detail -> Identifiers tab`
 - **Observe**:
-  - Identifiers list/table is visible
-  - absence of the target identifier row with Document Type '<document_type>' and Document Key '<document_key>'
-  - count of identifier rows (n-1)
+  - Identifiers list does not contain the removed identifier (Document Type: <type>, Document Key: <key>)
+  - Total number of identifiers for the client has decreased by one compared to pre-check
+  - No error or retry state shown for the identifier removal
 
-**Expected Change**: The target identifier (Document Type '<document_type>' and Document Key '<document_key>') is no longer listed in the Identifiers tab for <target client>; the total number of identifier rows has decreased by one.
+**Expected Change**: The client's Identifiers list no longer includes the removed identifier and the total identifier count is reduced by one, confirming the removal persisted.
 
 ---
 
@@ -439,19 +419,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Clients page`
+- **Navigate To**: `Clients -> Clients list`
 - **Observe**:
-  - No client exists with name '<First Name> <Last Name>' in the Clients listing (search by name returns no results)
-  - No client exists with the same External ID (if External ID was provided on Step 1)
+  - clients list does not contain an entry for the client '<First Name> <Last Name>'
 
 **Post-Check**
-- **Navigate To**: `Clients page -> search for '<First Name> <Last Name>' -> open the created Client Detail page`
+- **Navigate To**: `Clients -> search for '<First Name> <Last Name>' and open Client Detail page`
 - **Observe**:
-  - Client Detail page 'Address' section displays 'Address line 1' with the value entered on Step 2 ('<Address line 1>')
-  - Client Detail page 'Address' section displays 'City' with the value entered on Step 2 ('<City>')
-  - Any other address fields entered on Step 2 (e.g., Address line 2, State, Postal Code) are displayed with the entered values
+  - Address section displays '<Address line 1>' in Address Line 1
+  - Address section displays '<City>' in City
 
-**Expected Change**: The newly created client appears in the Clients listing and the Client Detail page Address section shows the address fields entered on Step 2 (Address line 1: '<Address line 1>', City: '<City>', and any other provided address fields).
+**Expected Change**: A client record for '<First Name> <Last Name>' exists and the Client Detail page Address section shows the Address Line 1 and City values entered on Step 2 of the Create Client wizard.
 
 ---
 
@@ -470,19 +448,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Clients page (use search to look for the client to be created)`
+- **Navigate To**: `Clients -> Clients List (use search to locate the client)`
 - **Observe**:
-  - Search for client by name '<First Name> <Last Name>' returns no results (client does not already exist)
-  - Clients listing does not contain an entry for '<First Name> <Last Name>'
+  - Search results do not contain a client with name '<First Name> <Last Name>'
+  - No existing Client Detail record for '<First Name> <Last Name>' is open
 
 **Post-Check**
-- **Navigate To**: `Client Detail page for '<First Name> <Last Name>' (via Clients page -> search -> open client)`
+- **Navigate To**: `Clients -> search for '<First Name> <Last Name>' -> open Client Detail -> Family Members tab`
 - **Observe**:
-  - Client header shows name '<First Name> <Last Name>' and account number
-  - Family Members tab is present on the Client Detail page
-  - Within Family Members tab, a row exists with Family Member Name = '<Family Member Name>' and Relationship = '<relationship>'
+  - Family Members tab is visible on the Client Detail page
+  - Family members list contains an entry with name '<Family Member Name>'
+  - The relationship column/value for the '<Family Member Name>' entry equals '<relationship>'
 
-**Expected Change**: A new client '<First Name> <Last Name>' is present and, on their Client Detail page, the Family Members tab lists the added member with the specified name '<Family Member Name>' and relationship '<relationship>'.
+**Expected Change**: A new family member record is present on the client's Family Members tab showing the added member name '<Family Member Name>' with relationship '<relationship>', where previously no such client/family member existed.
 
 ---
 
@@ -500,20 +478,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Groups page -> Groups List`
+- **Navigate To**: `Groups page (Groups list)`
 - **Observe**:
-  - Groups list table is visible
-  - record the count of rows with Name = <group name> (existing_count)
+  - Groups list does not contain a row with Name '<group name>' and Office '<office>'
 
 **Post-Check**
-- **Navigate To**: `Groups page -> Groups List; locate the row with Name = <group name> and click it to open Group Detail`
+- **Navigate To**: `Groups page -> Click the row for '<group name>' to open Group detail`
 - **Observe**:
-  - Groups list contains a row with Name = <group name>
-  - Office column for that row equals <office>
-  - Status badge for that row (Active if Active checkbox was checked during creation; otherwise Pending)
-  - In Group Detail -> Members tab, the member list includes <client>
+  - Groups list contains a row with Name '<group name>' and Office '<office>'
+  - Group detail page lists '<client>' under Members/Selected Clients
+  - Status badge shows 'Active' if Active checkbox was checked during creation, otherwise shows 'Pending' or 'Pending Approval'
 
-**Expected Change**: A new row with Name '<group name>' and Office '<office>' appears in the Groups list (the count of rows with that name increased by 1 compared to pre_check); opening the group's detail shows <client> listed under Members; Status is 'Active' if the Active checkbox was checked during creation, otherwise the status is 'Pending'.
+**Expected Change**: A new group row for '<group name>' assigned to '<office>' appears in the Groups list and the group's detail contains the added client '<client>'; the status reflects whether the Active checkbox was selected at creation.
 
 ---
 
@@ -530,27 +506,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Groups -> Bulk Import Groups (Bulk Import page)`
+- **Navigate To**: `Bulk Import Groups page -> Import History`
 - **Observe**:
-  - Import History table rows (current count)
-  - Most recent entry file name (if any)
-  - Most recent entry Import Time and End Time
-  - Most recent entry Completed status
-  - Most recent entry Total Records, Success Count, Failure Count
-  - Presence/absence of Download action/link on most recent entry
+  - Import History table does not contain an entry for the selected file name (the file about to be uploaded)
+  - No recent success notification for that file is visible in the notifications area
 
 **Post-Check**
-- **Navigate To**: `Groups -> Bulk Import Groups (Bulk Import page)`
+- **Navigate To**: `Bulk Import Groups page -> Import History`
 - **Observe**:
-  - Import History table rows (new count)
-  - Top/most recent entry file name
-  - Top entry Import Time and End Time
-  - Top entry Completed status
-  - Top entry Total Records, Success Count, Failure Count
-  - Presence of Download action/link for the top entry
-  - Success notification/toast message displayed after upload
+  - A new row exists in the Import History table for the uploaded file name
+  - The new row shows a successful processing status (e.g., 'Success'/'Completed') in the status column
+  - The new row displays an upload timestamp consistent with the test execution time
+  - The uploader/initiator column shows the current user's username or identifier
+  - A success notification is visible in the notifications area immediately after upload
 
-**Expected Change**: A new row appears at the top of the Import History table for the uploaded file (file name matches the uploaded file); Import Time is recent, End Time is set, Completed shows a completed/processed status, Total Records equals Success Count plus Failure Count, a Download link is available for the import result, and a success notification/toast is displayed immediately after the upload.
+**Expected Change**: A new import history entry is created for the uploaded groups file: the Import History table includes a row with the uploaded file name, a success/completed status, the uploader's username, and a timestamp reflecting the upload time; additionally a success notification is displayed.
 
 ---
 
@@ -574,20 +544,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Group Detail page (for the target group)`
+- **Navigate To**: `Groups -> Group Detail page for the target group (ensure page is loaded without refresh)`
 - **Observe**:
-  - status badge showing 'Pending'
-  - Activate action/button present in the action bar
+  - status badge reads 'Pending'
+  - Activate action/button is present in the Group Action Bar
 
 **Post-Check**
-- **Navigate To**: `1) Refresh Group Detail page; 2) Navigate to Groups page and locate the group row`
+- **Navigate To**: `Groups -> Group Detail page for the same group (refresh page) and Groups -> Groups List`
 - **Observe**:
-  - status badge on Group Detail page showing 'Active'
-  - status chip color indicates Active (green) on detail page
-  - Activate action/button is no longer present in the action bar on detail page
-  - Groups listing row for the group shows Status = 'Active' with green chip
+  - status badge reads 'Active' (green) on the refreshed Group Detail page
+  - Activate action/button is no longer present in the Group Action Bar
+  - Groups list shows the group row with status 'Active'
 
-**Expected Change**: Group status changes from 'Pending' to 'Active' on the Group Detail page after confirmation; the Activate action is removed and the Groups listing reflects the group's status as 'Active'.
+**Expected Change**: The group's status has been changed from 'Pending' to 'Active' in the backend; both the refreshed Group Detail page and the Groups list reflect the Active status and activation action is removed.
 
 ---
 
@@ -607,20 +576,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Group Detail page for the target group (same group used in the core test case)`
+- **Navigate To**: `Groups -> Group Detail page for the target group`
 - **Observe**:
-  - status badge (text and color) - expected 'Pending'
-  - available action buttons in the action bar (e.g., Activate, Edit, Close)
-  - group identifier (name or account number) shown in header/breadcrumb to confirm correct entity
+  - status badge shows 'Pending'
+  - action bar contains 'Close' action
 
 **Post-Check**
-- **Navigate To**: `Group Detail page for the same group, then optionally Groups listing (to cross-check row status)`
+- **Navigate To**: `Groups -> Group Detail page for the same group (or Groups list filtered by status 'Closed')`
 - **Observe**:
-  - status badge (text and color) - expected 'Closed'
-  - available action buttons in the action bar (expect 'Close' removed and 'Reactivate' or other Closed-state actions present)
-  - Groups listing row for the group shows Status column = 'Closed' (optional cross-check)
+  - status badge shows 'Closed'
+  - 'Close' action is no longer available in the action bar
+  - group appears in Groups list when filtered by status 'Closed' (and is absent from 'Pending' filter)
 
-**Expected Change**: The group's status changed from 'Pending' to 'Closed' on the Group Detail page; the action bar no longer shows the 'Close' action and now shows actions appropriate for a Closed group (e.g., 'Reactivate'); the Groups listing (if checked) reflects the group's Status as 'Closed'.
+**Expected Change**: The group's status has changed from 'Pending' to 'Closed' on the Group Detail page; the Close action is removed from the action bar and the group is discoverable under the 'Closed' status in the Groups list.
 
 ---
 
@@ -640,18 +608,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Group Detail page for the target group (open from Groups listing or via global search)`
+- **Navigate To**: `Groups -> Group Detail page (target pending group)`
 - **Observe**:
-  - Staff field value (e.g., 'Unassigned' or current staff)
-  - Group status badge
+  - Group status is 'Pending'
+  - Staff field does not display '<staff>' (no assignment or shows previous value)
 
 **Post-Check**
-- **Navigate To**: `Groups -> search for the target group -> open Group Detail (or refresh the Group Detail page)`
+- **Navigate To**: `Groups -> Group Detail page (target pending group)`
 - **Observe**:
-  - Staff field value
-  - Group status badge
+  - Staff field displays '<staff>'
+  - Group status remains 'Pending' (unless business rules auto-change status)
 
-**Expected Change**: Staff field on the Group Detail page now displays '<staff>' instead of the pre-check value; the Group status remains 'Pending'.
+**Expected Change**: The Staff field on the Group Detail page is updated to show '<staff>' after saving the Assign Staff dialog.
 
 ---
 
@@ -670,20 +638,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Group Detail page - Source Group (Pending status)`
+- **Navigate To**: `Group Detail -> Members tab for Source Group (Pending); optionally open Group Detail -> Members tab for Target Group`
 - **Observe**:
-  - members list contains <clients> (identify by Name and Account No.)
-  - members count (number of members shown)
+  - Source group members list contains the selected client(s) to be transferred (identify by name or account number)
+  - Target group members list does NOT contain the selected client(s) prior to transfer (if target group is accessible)
 
 **Post-Check**
-- **Navigate To**: `Group Detail page - Source Group (Pending status) and Group Detail page - <target group>`
+- **Navigate To**: `Group Detail -> Members tab for Source Group (Pending) and Group Detail -> Members tab for Target Group`
 - **Observe**:
-  - source group members list does NOT contain the transferred <clients> (by Name and Account No.)
-  - source group members count decreased by the number of transferred <clients>
-  - target group members list contains the transferred <clients> (by Name and Account No.)
-  - target group members count increased by the number of transferred <clients>
+  - Source group members list does NOT contain the selected client(s) after the transfer
+  - Target group members list contains the transferred client(s) (identify by name or account number)
+  - Optional: Group activity/audit or recent history shows a Transfer Clients action with actor name and timestamp (if audit/history is available)
 
-**Expected Change**: The transferred clients are removed from the Source Group's members list (member count reduced accordingly) and appear in the Target Group's members list (member count increased by the same number).
+**Expected Change**: The selected client(s) are removed from the Pending source group's members list and appear as members of the chosen target group; the transfer action is reflected in group membership and (where available) audit/history.
 
 ---
 
@@ -700,20 +667,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Group Detail page for the target group (ensure you are on the group's detail view)`
+- **Navigate To**: `Groups -> Group Detail (target group)`
 - **Observe**:
-  - status badge showing 'Active'
-  - presence of 'Close' action button in the Group Action Bar
-  - group name and account number displayed in the header (to confirm correct group)
+  - status badge shows 'Active'
+  - group appears in Groups list when filtered by 'Active' (if filtering used)
+  - no closure entry present in group activity/audit log
 
 **Post-Check**
-- **Navigate To**: `Group Detail page for the same group; then go to Groups listing and search for the group by name or account number`
+- **Navigate To**: `Groups -> Group Detail (same target group) and Groups -> Groups list (filter by 'Closed')`
 - **Observe**:
-  - status badge showing 'Closed' on the Group Detail page
-  - absence of 'Close' action button in the Group Action Bar on the Group Detail page
-  - in Groups listing, the group's Status column shows a 'Closed' chip for the same group (matching name/account number)
+  - status badge shows 'Closed' (closed/gray chip) on the Group Detail page
+  - group appears in Groups list when filtered by 'Closed' or shows 'Closed' status column in list
+  - group activity/audit log contains a closure entry with date and user who performed the action
 
-**Expected Change**: The group's status has changed from 'Active' to 'Closed' — the Group Detail page displays a 'Closed' status badge and the 'Close' action is no longer available; the Groups listing shows the group with a 'Closed' status chip.
+**Expected Change**: The group's status has changed from 'Active' to 'Closed' and this is reflected on the Group Detail page, in the Groups list under the 'Closed' filter/status, and by a closure entry in the group's activity/audit log.
 
 ---
 
@@ -731,18 +698,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Group Detail page for the target group (status: Active)`
+- **Navigate To**: `Group Detail page for the target group (Overview/General tab)`
 - **Observe**:
-  - status badge
-  - assigned staff field (Staff) — current value (may be empty or a different staff)
+  - Group status badge is 'Active'
+  - Staff field does not display <staff> (shows previous staff or 'Unassigned')
 
 **Post-Check**
-- **Navigate To**: `Group Detail page for the target group`
+- **Navigate To**: `Group Detail page for the same group (refresh page or navigate back to ensure backend state is loaded)`
 - **Observe**:
-  - assigned staff field (Staff)
-  - status badge
+  - Staff field displays <staff>
+  - Activity/audit log or recent history contains an entry for assigning <staff> with current user's username or timestamp
 
-**Expected Change**: Assigned staff field on the Group Detail page displays '<staff>' (previous value replaced or populated); group status remains 'Active'.
+**Expected Change**: The group's Staff field now shows the selected <staff>, and an assignment entry appears in the group's activity/audit log indicating the assignment performed by the acting user.
 
 ---
 
@@ -760,20 +727,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Source Group Detail page -> Members tab`
+- **Navigate To**: `Group Detail page for the SOURCE group -> Members tab; and Group Detail page for the TARGET group -> Members tab`
 - **Observe**:
-  - presence of the selected client(s) to be transferred (by name and/or account number) in the members list
-  - member count on the Source Group members tab
+  - SOURCE group members list contains the client(s) that will be transferred (identified by name or account no.)
+  - SOURCE group members count shows the clients present prior to transfer
+  - TARGET group members list does not contain the client(s) to be transferred
 
 **Post-Check**
-- **Navigate To**: `1) Source Group Detail page -> Members tab; 2) Target Group Detail page -> Members tab`
+- **Navigate To**: `Group Detail page for the SOURCE group -> Members tab; then Group Detail page for the TARGET group -> Members tab`
 - **Observe**:
-  - absence of the transferred client(s) in the Source Group members list (by name and/or account number)
-  - updated member count on the Source Group members tab
-  - presence of the transferred client(s) in the Target Group members list (by name and/or account number)
-  - updated member count on the Target Group members tab
+  - SOURCE group members list does not contain the transferred client(s) (by name or account no.)
+  - SOURCE group members count has decreased by the number of transferred client(s)
+  - TARGET group members list contains the transferred client(s) (by name or account no.)
+  - TARGET group members count has increased by the number of transferred client(s)
 
-**Expected Change**: The selected client(s) no longer appear in the Source Group's members list and the Source Group's member count has decreased by the number of transferred clients; the same client(s) now appear in the Target Group's members list and the Target Group's member count has increased by that number.
+**Expected Change**: The selected client(s) are removed from the source group's members list and appear in the target group's members list; member counts for both groups are updated accordingly.
 
 ---
 
@@ -792,21 +760,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Group Detail page for the target group (page shows status 'Closed')`
+- **Navigate To**: `Group Detail page for the target group (currently Closed)`
 - **Observe**:
-  - status badge showing 'Closed' (gray chip)
-  - presence of 'Activate' action button in the Group Action Bar
-  - group name and account number to uniquely identify the group
+  - status badge shows 'Closed'
+  - Activate action is available in the Group Action Bar
 
 **Post-Check**
-- **Navigate To**: `Group Detail page for the same group (and optionally Groups listing with filter 'Active')`
+- **Navigate To**: `Group Detail page for the same group (refresh or reopen)`
 - **Observe**:
-  - status badge showing 'Active' (green chip)
-  - absence of 'Activate' action in the Group Action Bar
-  - presence of Active-state actions such as 'Assign Staff' or 'Close'
-  - Groups listing (with 'Active' filter applied) shows the group row with status 'Active' and matching account number
+  - status badge shows 'Active' (green/active chip)
+  - Activate action is no longer available or is disabled
+  - Group appears in Groups list when filtering by status = 'Active'
 
-**Expected Change**: The group's status is updated from 'Closed' to 'Active' on the Group Detail page; the 'Activate' action is removed and Active-specific actions appear; the group is visible under the Active filter in the Groups listing.
+**Expected Change**: The group's status is changed from 'Closed' to 'Active' in the backend; the Group Detail page shows the 'Active' status and the group is visible in the Active filter/list.
 
 ---
 
@@ -823,20 +789,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Groups -> [Group Name] Detail page (the Closed group under test)`
+- **Navigate To**: `Groups -> Open the target Group Detail page (the group with status 'Closed')`
 - **Observe**:
-  - status badge (expect 'Closed')
-  - staff field (current value or empty)
-  - presence of 'Assign Staff' action in the Group Action Bar
+  - status badge is 'Closed'
+  - staff field does not display '<staff>' (is empty or shows a different staff)
+  - if available, recent audit/history does not contain an assignment of '<staff>'
 
 **Post-Check**
-- **Navigate To**: `Groups -> [Group Name] Detail page (refresh or reopen); then Groups listing page`
+- **Navigate To**: `Groups -> Open the same Group Detail page (refresh the page or re-open the record)`
 - **Observe**:
-  - staff field on Group Detail page
-  - status badge on Group Detail page
-  - staff column for the group on the Groups listing
+  - staff field displays '<staff>'
+  - status badge remains 'Closed'
+  - if available, audit/history contains a new entry recording the staff assignment and the current user's username or ID
 
-**Expected Change**: Staff field on the Group Detail page displays <staff>; the Groups listing shows <staff> in the Staff column for this group; the group's status remains 'Closed'.
+**Expected Change**: The Group Detail record now shows the assigned staff as '<staff>' (previously not present), and the group remains in 'Closed' status; an audit/history entry for the assignment is present if the UI exposes it.
 
 ---
 
@@ -855,18 +821,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Source Group Detail page (Closed group) — the group from which clients will be transferred`
+- **Navigate To**: `Group Detail page -> Members tab for the Closed (source) group`
 - **Observe**:
-  - members list shows the selected client(s) by name and account number
-  - members count includes the selected client(s)
+  - group status is 'Closed' (closed badge/chip visible)
+  - members list contains the client(s) intended for transfer (identify by name and/or account number)
 
 **Post-Check**
-- **Navigate To**: `Source Group Detail page (Closed group) and then navigate to Target Group Detail page (destination group)`
+- **Navigate To**: `Group Detail page -> Members tab for the source group, then navigate to Group Detail page -> Members tab for the target group`
 - **Observe**:
-  - On Source Group: members list (names and account numbers) and members count
-  - On Target Group: members list (names and account numbers) and members count
+  - source group's members list does not contain the transferred client(s) (by name/account number)
+  - target group's members list contains the transferred client(s) (by name/account number)
 
-**Expected Change**: The selected client(s) no longer appear in the source group's members list and the source group's members count has decreased by the number of transferred clients; the same client(s) appear in the target group's members list and the target group's members count has increased by the same number.
+**Expected Change**: The selected client(s) have been removed from the Closed (source) group's Members list and appear in the destination (target) group's Members list after confirming the transfer.
 
 ---
 
@@ -889,19 +855,17 @@
 **Pre-Check**
 - **Navigate To**: `Group Detail -> Calendar/Meeting tab`
 - **Observe**:
-  - meeting list/calendar entries for the group (focus on <meeting date> or surrounding range)
-  - verify there is no meeting with topic '<meeting topic>' scheduled on <meeting date> at <meeting time>
+  - meetings list/calendar does not contain an entry with topic '<meeting topic>' on '<meeting date>' at '<meeting time>'
+  - no calendar event exists on '<meeting date>' matching '<meeting time>' and '<meeting topic>'
 
 **Post-Check**
 - **Navigate To**: `Group Detail -> Calendar/Meeting tab`
 - **Observe**:
-  - meeting list/calendar entries for the group (showing meetings on and around <meeting date>)
-  - a meeting entry with topic '<meeting topic>'
-  - meeting date displayed as <meeting date>
-  - meeting time displayed as <meeting time>
-  - meeting details (when opened) show the organizer as the current user and any saved notes/metadata
+  - meetings list/calendar contains a new entry with topic '<meeting topic>'
+  - the new meeting is shown on '<meeting date>' at '<meeting time>' in calendar or meeting list
+  - meeting entry displays the entered topic, scheduled date, and scheduled time
 
-**Expected Change**: A new meeting appears in the group's meeting list/calendar with the entered topic, scheduled on <meeting date> at <meeting time>; the meeting count for that date increases by one and the meeting detail shows the creator as the current user.
+**Expected Change**: A new meeting entry for the group is created and visible in the group's meeting list/calendar showing the scheduled date '<meeting date>', time '<meeting time>', and topic '<meeting topic>'.
 
 ---
 
@@ -920,25 +884,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Group Detail -> Calendar/Meeting tab (Meeting history)`
+- **Navigate To**: `Group Detail -> Calendar/Meeting tab`
 - **Observe**:
-  - number of meetings listed (meeting count)
-  - most recent meeting's notes/description
-  - most recent meeting's attendance list (names and statuses)
-  - most recent meeting's date/time
-  - most recent meeting's recorded by / creator
+  - meeting list does not contain an entry with the meeting notes and attendance values to be recorded
+  - meeting history/notes does not include an entry matching the new meeting's date, notes, or attendee list
 
 **Post-Check**
-- **Navigate To**: `Group Detail -> Calendar/Meeting tab (Meeting history) and Group Detail -> Notes tab`
+- **Navigate To**: `Group Detail -> Calendar/Meeting tab (or Group Detail -> Meetings/History)`
 - **Observe**:
-  - number of meetings listed (meeting count)
-  - most recent meeting's notes/description
-  - most recent meeting's attendance list (names and statuses)
-  - most recent meeting's date/time
-  - most recent meeting's recorded by / creator
-  - most recent note entry in Notes tab (to verify meeting note is optionally recorded in notes)
+  - meeting list contains a new entry with the meeting notes exactly as entered in the Record Meeting dialog
+  - the attendance/participant count or listed attendees match the values entered in the Record Meeting dialog
+  - the meeting row shows the meeting date matching the recorded meeting (or today's/entered date)
+  - corresponding entry appears in the group's meeting history/notes with the entered details
 
-**Expected Change**: Meeting count increased by 1 and a new top/most-recent meeting entry appears whose notes exactly match the entered <meeting notes>, whose attendance list includes the entered <attendance> with correct presence statuses, and whose date/time and 'recorded by' indicate the submitted meeting. The meeting details are also present as a corresponding entry in the Group's Notes tab (if the system records meeting notes there).
+**Expected Change**: A new meeting record is present in the group's meetings list and history containing the provided meeting notes, the recorded attendance/participant details, and the correct meeting date.
 
 ---
 
@@ -956,19 +915,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Centers page (use the page search/filter to query Name = <center name>)`
+- **Navigate To**: `Centers page (Administration -> Centers)`
 - **Observe**:
-  - absence or presence of a row with Name = <center name> and Office = <office> (record whether it exists before the test)
-  - Centers table columns visible: Name, Account #, External Id, Status, Office Name
+  - centers table does not contain a row with Name = <center name> and Office = <office>
 
 **Post-Check**
-- **Navigate To**: `Centers page (use the page search/filter to query Name = <center name>)`
+- **Navigate To**: `Centers page (Administration -> Centers)`
 - **Observe**:
-  - row with Name = <center name> and Office = <office>
-  - Status badge for that row (e.g., Active if Active checkbox was checked during creation, otherwise Pending or default initial status)
-  - Submitted On / Created Date column value for the row (should match or be consistent with the entered <date> if displayed)
+  - centers table contains a row with Name = <center name>
+  - the same row shows Office = <office>
+  - status badge reads 'Active' if Active checkbox was selected during creation, otherwise shows the default pending/status used by the application
 
-**Expected Change**: A new row appears in the Centers table with Name = <center name> and Office = <office>. The Status column shows 'Active' if the Active checkbox was selected during creation (otherwise the initial pending/default status). The row's Submitted On/Created Date, if displayed, corresponds to the entered <date>.
+**Expected Change**: A new Center entry is persisted and displayed in the Centers table with the submitted Name and Office; its status reflects the Active checkbox selection (Active) or the system's default pending state.
 
 ---
 
@@ -985,19 +943,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Organization -> Centers page`
+- **Navigate To**: `Home -> Centers (Centers list page)`
 - **Observe**:
-  - Presence or absence of a row in the Centers table with Name = '<center name>'
-  - If a row with Name = '<center name>' exists, note its Office column value and number of Member Groups listed on its detail page
+  - centers table does not contain a row with the new Center Name
+  - if a center with the same name exists, its Groups tab does not already list the Group being added
 
 **Post-Check**
-- **Navigate To**: `Admin -> Organization -> Centers page; then open the created center's detail -> Groups tab`
+- **Navigate To**: `Home -> Centers (Centers list page) -> Click the created Center Name -> Center Detail -> Groups tab`
 - **Observe**:
-  - Centers table contains a new row with Name = '<center name>'
-  - The Office column for the '<center name>' row shows '<office>'
-  - After opening the center detail and selecting the 'Groups' tab, the Member Groups table contains a row with the group name '<matching result>'
+  - centers table contains a new row with the created Center Name and the selected Office value
+  - on the Center Detail Groups tab, the Member Groups table contains a row for the added Group with the expected group name
+  - status or membership columns (if present) reflect the membership (e.g., Active or Member)
 
-**Expected Change**: A new row appears in the Centers table with Name '<center name>' and Office '<office>'; when opening that Center's Detail and viewing the Groups tab, the added group '<matching result>' is listed in the Member Groups table.
+**Expected Change**: A new Center row is present in the Centers table showing the entered Name and Office, and the Center Detail's Groups tab lists the added Group in the Member Groups table.
 
 ---
 
@@ -1023,17 +981,18 @@
 **Pre-Check**
 - **Navigate To**: `Centers page`
 - **Observe**:
-  - Centers table row count
-  - Presence/absence of center names that will be in the import file (record which of those names are currently present before import)
+  - centers table does not contain rows for the centers included in the import file (no entries matching the import file names)
+  - current count of centers (note the value to compare after import)
 
 **Post-Check**
 - **Navigate To**: `Centers page`
 - **Observe**:
-  - Centers table row count
-  - Presence of center names from the uploaded file as rows in the Centers table
-  - Import History latest entry with fields: File Name, Import Time, Completed status, Total Records, Success Count, Failure Count
+  - centers table contains rows for each center from the uploaded import file (matching center name)
+  - imported rows display expected metadata such as Office and Submitted On date
+  - status column for imported centers is present (e.g., 'Pending' or other expected import status)
+  - total count of centers has increased by the number of imported rows
 
-**Expected Change**: The Centers table contains new rows for each center in the uploaded file; the Centers table row count increases by the number of successfully imported centers; the Import History shows a completed import entry for the uploaded file where Success Count equals the number of centers imported (and Failure Count is zero or matches reported failures).
+**Expected Change**: For each center in the uploaded file, a corresponding row appears in the Centers table with matching name and expected metadata (Office, Submitted On date) and the overall centers count increases by the number of imported entries; imported centers show the expected import status.
 
 ---
 
@@ -1053,20 +1012,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Center Detail page for the target center`
+- **Navigate To**: `Centers -> Open Center Detail for the target center (before activation)`
 - **Observe**:
-  - center name (to confirm correct entity)
-  - status badge text (expected: 'Inactive')
-  - available actions in action bar (expected: 'Activate' present)
+  - status badge reads 'Inactive' on the Center Detail page
+  - center row in Centers list (if opened) shows status 'Inactive'
 
 **Post-Check**
-- **Navigate To**: `Center Detail page for the same center (refresh or reopen if necessary); then optionally navigate to Centers listing`
+- **Navigate To**: `Refresh Center Detail page for the same center; then navigate to Centers -> Centers list and locate the center row`
 - **Observe**:
-  - status badge text on Center Detail page
-  - available actions in action bar on Center Detail page
-  - Centers listing row for the center (Status column)
+  - status badge reads 'Active' on the Center Detail page
+  - center row in Centers list shows status 'Active'
 
-**Expected Change**: Status badge on the Center Detail page changes from 'Inactive' to 'Active'; the 'Activate' action is no longer presented in the action bar (replaced by actions appropriate to an active center such as 'Edit' or 'Close'); the Centers listing row for the center shows Status 'Active'.
+**Expected Change**: The center's status changes from 'Inactive' to 'Active' — the Center Detail page displays an 'Active' status badge and the Centers list reflects the same 'Active' status for that center, confirming the activation was persisted.
 
 ---
 
@@ -1086,20 +1043,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Center Detail page (for the target center)`
+- **Navigate To**: `Center Detail page for the target center (ensure page is open and showing current status)`
 - **Observe**:
-  - status badge (expected 'Active' or 'Open')
-  - available actions in the action bar (should include 'Close')
-  - center identifier (Name or Account #) to use for searching later
+  - status badge shows the center is Active (not 'Closed')
+  - center name and identifier match the expected target center
 
 **Post-Check**
-- **Navigate To**: `Centers listing -> search for the same center -> open Center Detail page (or refresh the Detail page)`
+- **Navigate To**: `Centers -> Centers List, then reopen the same Center Detail page for the target center`
 - **Observe**:
-  - status badge (should show 'Closed')
-  - available actions in the action bar (should NOT include 'Close')
-  - Centers listing row for the center shows status 'Closed' when searched
+  - Center Detail page shows status badge 'Closed'
+  - Centers list contains the center row with status column showing 'Closed'
 
-**Expected Change**: The center's status changed from 'Active'/'Open' to 'Closed' on the persisted record: the Center Detail page now shows a 'Closed' status badge, the 'Close' action is no longer available in the action bar, and the Centers listing shows the center with status 'Closed'.
+**Expected Change**: The center's status has changed from Active (or previous state) to 'Closed' and this Closed status is persisted and visible both in the Centers list and on the Center Detail page after navigation.
 
 ---
 
@@ -1116,20 +1071,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Products page`
+- **Navigate To**: `Loan Products page (Products list)`
 - **Observe**:
-  - absence of a product row with Name '<Product Name>' in the loan products listing (search for '<Product Name>' returns no results)
-  - loan products listing is accessible and searchable
+  - product list does not contain a product with name '<Product Name>'
+  - no product row exists with short name '<Short Name>'
 
 **Post-Check**
-- **Navigate To**: `Loan Products page -> search for '<Product Name>'`
+- **Navigate To**: `Loan Products page -> locate the newly created product by searching for '<Product Name>' -> open the product detail page`
 - **Observe**:
-  - product row with Name '<Product Name>' and Short Name '<Short Name>' appears in the search results
-  - click the product Name '<Product Name>' to open Product Detail page
-  - Product Detail displays Product Name '<Product Name>'
-  - Product Detail displays Short Name '<Short Name>'
+  - product list contains a new product row with Product Name '<Product Name>' and Short Name '<Short Name>'
+  - product detail page shows Product Name field/value as '<Product Name>'
+  - product detail page shows Short Name field/value as '<Short Name>'
+  - any other Details-step fields entered during creation are displayed on the product detail page (e.g., fund, currency, principal configuration) matching the values submitted
 
-**Expected Change**: A loan product with Product Name '<Product Name>' and Short Name '<Short Name>' is present in the Loan Products listing and its Product Detail page persists and displays those values.
+**Expected Change**: A new Loan Product record is persisted: it appears in the Loan Products list and its product detail page displays the Product Name '<Product Name>', Short Name '<Short Name>', and all values entered in the Details step.
 
 ---
 
@@ -1153,18 +1108,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Products page`
+- **Navigate To**: `Loan Products page (list)`
 - **Observe**:
-  - Loan Products table does not contain a product with name '<Product Name>'
+  - Loan Products list does not contain a product with the submitted name '<Product Name>'
 
 **Post-Check**
-- **Navigate To**: `Loan Products page -> Open product detail for '<Product Name>'`
+- **Navigate To**: `Loan Products page -> locate the newly created product by '<Product Name>' -> open Product Detail`
 - **Observe**:
-  - Product appears in Loan Products list with Name '<Product Name>'
-  - On Product Detail page: 'Currency' field displays '<Currency>'
-  - On Product Detail page: 'Principal Amount Default' (Principal Amount default) displays '<Principal Default>'
+  - Product detail header shows product name '<Product Name>'
+  - Currency field / label shows '<Currency>'
+  - Principal Amount Default field shows '<Principal Default>'
 
-**Expected Change**: A new product named '<Product Name>' appears in the Loan Products list and its Product Detail page shows Currency '<Currency>' and Principal Amount Default '<Principal Default>', confirming the Currency step values were persisted after submit.
+**Expected Change**: A new Loan Product record for '<Product Name>' is present and its detail page displays Currency '<Currency>' and Principal Amount Default '<Principal Default>' as entered during creation.
 
 ---
 
@@ -1184,21 +1139,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Products page`
+- **Navigate To**: `Loan Products -> Loan Products list`
 - **Observe**:
-  - Confirm no existing product with name '<Product Name>' (search/listing)
-  - If needed, note current loan products count or listing page state before creation
+  - Loan products list does not contain a product with name '<Product Name>'
 
 **Post-Check**
-- **Navigate To**: `Loan Products page -> search for '<Product Name>' -> open product detail`
+- **Navigate To**: `Loan Products -> Open product detail for '<Product Name>' (use list search or global search to locate the product)`
 - **Observe**:
-  - Product name '<Product Name>' is present in the listing and detail page is accessible
-  - Amortization Method displayed on product detail
-  - Interest Method displayed on product detail
-  - Days in Year displayed on product detail
-  - Days in Month displayed on product detail
+  - Amortization Method displayed as '<Amortization Method>'
+  - Interest Method displayed as '<Interest Method>'
+  - Days in Year displayed as '<Days in Year>'
+  - Days in Month displayed as '<Days in Month>'
 
-**Expected Change**: A new loan product named '<Product Name>' appears in Loan Products. Its product detail shows Amortization Method '<Amortization Method>', Interest Method '<Interest Method>', Days in Year set to '<Days in Year>' and Days in Month set to '<Days in Month>' as selected during the Settings step.
+**Expected Change**: The newly created Loan Product's detail page shows the selected Amortization Method and Interest Method and the configured Days in Year and Days in Month values exactly as entered in the Settings step.
 
 ---
 
@@ -1218,19 +1171,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Products page`
+- **Navigate To**: `Products -> Loan Products (list view)`
 - **Observe**:
-  - products list (searchable)
-  - absence of a product named '<Product Name>' in the list
+  - loan products list does not contain product with name '<Product Name>'
 
 **Post-Check**
-- **Navigate To**: `Loan Products page -> click product '<Product Name>' to open Product Detail`
+- **Navigate To**: `Products -> Loan Products -> Open product detail for '<Product Name>' (or use global search to locate it)`
 - **Observe**:
-  - Number of Repayments (Default) value on product detail
-  - Repaid Every display showing frequency and unit (e.g., '<Frequency> <Unit>')
-  - Nominal Interest Rate (Default) value on product detail
+  - product detail page header shows product name '<Product Name>'
+  - terms section displays 'Number of Repayments Default' as '<Number of Repayments Default>'
+  - terms section displays 'Repaid Every' as '<Frequency> <Unit>'
+  - terms section displays 'Nominal Interest Rate Default' as '<Nominal Interest Rate Default>'
 
-**Expected Change**: Product detail displays Number of Repayments Default '<Number of Repayments Default>', Repaid Every '<Frequency> <Unit>', and Nominal Interest Rate Default '<Nominal Interest Rate Default>' as entered in the Create Loan Product wizard.
+**Expected Change**: A new Loan Product record for '<Product Name>' exists and its Product Detail shows Number of Repayments Default as '<Number of Repayments Default>', Repaid Every as '<Frequency> <Unit>', and Nominal Interest Rate Default as '<Nominal Interest Rate Default>'.
 
 ---
 
@@ -1250,17 +1203,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Products page`
+- **Navigate To**: `Loan Products -> Products list`
 - **Observe**:
-  - Search for product by name '<Product Name>' (should not exist prior to creation)
+  - products list does not contain the product with name '<Product Name>' and short name '<Short Name>'
+  - no product detail exists for '<Product Name>' in the Products list
 
 **Post-Check**
-- **Navigate To**: `Loan Products page -> Click the product named '<Product Name>' to open Product Detail`
+- **Navigate To**: `Loan Products -> Products list -> Open product detail for '<Product Name>'`
 - **Observe**:
-  - Charges section is present on the Product Detail page
-  - Charges section lists charge named '<selected charge>'
+  - product detail header shows product name '<Product Name>' and short name '<Short Name>'
+  - Charges section lists '<selected charge>'
 
-**Expected Change**: A new loan product named '<Product Name>' appears in the Loan Products list; on its Product Detail page the Charges section lists the added charge '<selected charge>' (persists after reload/navigation).
+**Expected Change**: A new Loan Product record for '<Product Name>' is created and its Product Detail page shows the Charges section containing the configured charge '<selected charge>'.
 
 ---
 
@@ -1279,24 +1233,23 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Products page (use search/filter for <Product Name>)`
+- **Navigate To**: `Loan Products`
 - **Observe**:
-  - No existing product with name '<Product Name>' in the listing (search results empty)
-  - Create Loan Product button is present and enabled
+  - products list does not contain <Product Name> (or no existing product detail for <Product Name>)
 
 **Post-Check**
-- **Navigate To**: `Loan Products page -> search for '<Product Name>' -> open Product Detail page by clicking the product name`
+- **Navigate To**: `Loan Products -> Open the newly created <Product Name> detail page`
 - **Observe**:
-  - Accounting Method field on the Product Detail page
-  - Fund Source GL Account mapping value
-  - Loan Portfolio GL Account mapping value
-  - Interest on Loans GL Account mapping value
-  - Income from Fees GL Account mapping value
-  - Income from Penalties GL Account mapping value
-  - Losses Written Off GL Account mapping value
-  - Overpayment Liability GL Account mapping value
+  - Accounting Method displays '<Accounting Method other than None>'
+  - Fund Source GL Account displays '<Fund Source GL Account>'
+  - Loan Portfolio GL Account displays '<Loan Portfolio GL Account>'
+  - Interest on Loans GL Account displays '<Interest on Loans GL Account>'
+  - Income from Fees GL Account displays '<Income from Fees GL Account>'
+  - Income from Penalties GL Account displays '<Income from Penalties GL Account>'
+  - Losses Written Off GL Account displays '<Losses Written Off GL Account>'
+  - Overpayment Liability GL Account displays '<Overpayment Liability GL Account>'
 
-**Expected Change**: The created product appears in the Loan Products listing and its Product Detail page shows Accounting Method set to '<Accounting Method other than None>' and the GL account mappings persisted as: Fund Source '<Fund Source GL Account>', Loan Portfolio '<Loan Portfolio GL Account>', Interest on Loans '<Interest on Loans GL Account>', Income from Fees '<Income from Fees GL Account>', Income from Penalties '<Income from Penalties GL Account>', Losses Written Off '<Losses Written Off GL Account>', and Overpayment Liability '<Overpayment Liability GL Account>'.
+**Expected Change**: A new Loan Product entry for <Product Name> is created and its Accounting configuration persists: the Accounting Method is set to '<Accounting Method other than None>' and each GL mapping (Fund Source, Loan Portfolio, Interest on Loans, Income from Fees, Income from Penalties, Losses Written Off, Overpayment Liability) matches the selected values.
 
 ---
 
@@ -1313,24 +1266,23 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Savings Products page`
+- **Navigate To**: `Savings Products list page`
 - **Observe**:
-  - Use the page search/filter to search for the product name used in the test: '<valid product name>'
-  - Verify that no product with name '<valid product name>' and short name '<short name>' exists prior to creation
+  - Savings Products list does not contain a product with the Product Name entered during the test
+  - Savings Products list does not contain a product with the Short Name entered during the test
 
 **Post-Check**
-- **Navigate To**: `Savings Products page`
+- **Navigate To**: `Savings Products list -> refresh and open the newly created product's detail page`
 - **Observe**:
-  - Product appears in the listing with Name = '<valid product name>' and Short Name = '<short name>'
-  - Click the product name to open the Product Detail view
-  - In Details/General: Product Name equals '<valid product name>', Short Name equals '<short name>', Description (if provided) matches '<optional description>'
-  - In Currency: Currency = '<currency>', Decimal Places = '<decimal places>', Currency In Multiples Of = '<currency multiple>'
-  - In Terms: Nominal Annual Interest Rate = '<nominal annual interest rate>', Interest Compounding Period = '<compounding period>', Interest Posting Period = '<posting period>', Interest Calculated Using = '<calculation method>', Days in Year = '<days option>'
-  - In Settings: Minimum Opening Balance = '<minimum opening balance>', Enforce Minimum Required Balance is enabled and Minimum Required Balance = '<minimum required balance>', Is Overdraft Allowed is enabled with Maximum Overdraft Amount = '<max overdraft amount>' and Overdraft Interest Rate = '<overdraft interest rate>'
-  - In Charges tab: the added charge list contains the selected charge '<matching result>'
-  - In Accounting: Accounting Method = 'Cash-based' and the configured GL account mappings match the values entered ('<valid GL account>' placeholders)
+  - Savings Products list contains an entry with the Product Name entered during the test
+  - The product row displays the Short Name entered during the test
+  - Product detail page displays the Nominal Annual Interest Rate and selected Interest Compounding/Posting/Calculation/Days settings as entered
+  - Settings show Minimum Opening Balance and Minimum Required Balance values as entered
+  - Overdraft is enabled and Maximum Overdraft Amount and Overdraft Interest Rate match the values entered
+  - The added charge appears under the product's Charges section
+  - Accounting section shows Accounting Method set to 'Cash-based' and required GL account mappings are populated
 
-**Expected Change**: A new Savings Product with Name '<valid product name>' and Short Name '<short name>' is created and visible in the Savings Products listing; its detail view reflects the currency, terms, settings (including minimums and overdraft settings), added charge, and accounting method/GL mappings as submitted in the wizard.
+**Expected Change**: A new Savings Product record is created and visible: it appears in the Savings Products list and its detail page reflects the Product Name and Short Name entered, the configured interest/term settings, minimum balance and overdraft settings, the added charge, and Cash-based accounting mappings.
 
 ---
 
@@ -1347,18 +1299,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Share Products -> Share Products table`
+- **Navigate To**: `Share Products -> Share Products list`
 - **Observe**:
-  - row for <target product> exists in the table
-  - visible columns for that row include: Name, Short Name, Total Shares
+  - table contains a row with product name '<target product>'
 
 **Post-Check**
-- **Navigate To**: `Share Products -> Share Products table`
+- **Navigate To**: `Share Products -> Share Products list`
 - **Observe**:
-  - row for <target product> is not present in the table
-  - list of product names in the table does not include <target product>
+  - table does not contain a row with product name '<target product>'
+  - searching/filtering the Share Products list for '<target product>' returns no results
 
-**Expected Change**: The row for <target product> is no longer present in the Share Products table and the total count of share products in the listing has decreased by one.
+**Expected Change**: The Share Product entry for '<target product>' is removed from the Share Products table and no longer appears in list or search results.
 
 ---
 
@@ -1375,20 +1326,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Products -> Share Products page (Share Products listing)`
+- **Navigate To**: `Share Products -> Share Products List`
 - **Observe**:
-  - table contains a row with Name = <target product>
-  - Short Name and Total Shares columns are present for that row
-  - record the number of rows (total products) in the Share Products table
+  - share products list contains a row with product name '<target product>'
+  - filters are set to show active/available products (no archived/inactive filter applied)
 
 **Post-Check**
-- **Navigate To**: `Products -> Share Products page (Share Products listing)`
+- **Navigate To**: `Share Products -> Share Products List`
 - **Observe**:
-  - no row with Name = <target product> is present in the table
-  - the number of rows (total products) in the Share Products table is one less than recorded in pre_check
-  - searching for '<target product>' via the Share Products search field returns no results / shows 'No results found'
+  - share products list does not contain a row with product name '<target product>'
+  - total number of rows in the list is reduced by one compared to pre_check
 
-**Expected Change**: The row for <target product> is removed from the Share Products table; the total products count decreased by one; searching for <target product> returns no results.
+**Expected Change**: The Share Products list no longer shows an entry for '<target product>' after deletion; the product row is removed from the active products list.
 
 ---
 
@@ -1405,21 +1354,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Share Products page (Products -> Share Products)`
+- **Navigate To**: `Share Products -> Share Products list`
 - **Observe**:
-  - Share Products table rows with columns: Product Name, Short Name, Total Shares
-  - There is no existing row with Product Name = <Product Name> and Short Name = <Short Name>
+  - share products table does not contain a row with Product Name: <Product Name> and Short Name: <Short Name>
 
 **Post-Check**
-- **Navigate To**: `Share Products page -> Click the created product row to open the Share Product Detail page`
+- **Navigate To**: `Share Products -> Share Products list; then open the created product detail page for <Product Name>`
 - **Observe**:
-  - Share Products table contains a row with Product Name = <Product Name> and Short Name = <Short Name>
-  - Share Products table row shows Total Shares equals <Total Number of Shares> (if displayed in list)
-  - On the Share Product Detail page, Accounting Method is displayed as 'None'
-  - On the Share Product Detail page Accounting section: no GL mapping fields (e.g., Share Reference, Share Suspense, Equity in Shares, Income from Fees) are visible
-  - On the Terms section of the Detail page: Capital Value is displayed and equals <Total Number of Shares> × <Nominal/Unit Price> (shows computed numeric value)
+  - share products table contains a row with Product Name: <Product Name> and Short Name: <Short Name>
+  - on the created product detail page the 'Accounting Method' field/value is 'None'
+  - no GL mapping/accounting fields (e.g., Asset GL, Liability GL, Income GL, Expense GL) are visible in the Accounting section
+  - Terms section shows 'Capital Value' equal to Total Number of Shares × Nominal/Unit Price (matches entered Total Number of Shares and Nominal/Unit Price)
 
-**Expected Change**: A new share product row appears in the Share Products table with the provided Product Name and Short Name; opening the product's Detail page shows Accounting Method as 'None' with no GL mapping fields visible, and the Terms section displays Capital Value computed as Total Number of Shares multiplied by the Nominal/Unit Price.
+**Expected Change**: A new Share Product record is created and appears in the Share Products list and detail; its Accounting Method is set to 'None' and the Accounting section does not display any GL mapping fields, and the Terms section displays Capital Value computed as Total Number of Shares × Nominal/Unit Price.
 
 ---
 
@@ -1443,20 +1390,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Products -> Share Products`
+- **Navigate To**: `Share Products -> Share Products list`
 - **Observe**:
-  - list of product names and short names in the Share Products table
-  - verify that <Product Name> and <Short Name> are NOT present in the list (or record current count of rows for comparison)
+  - share products table does not contain a row with the new Product Name
+  - share products table does not contain a row with the new Short Name
 
 **Post-Check**
-- **Navigate To**: `Products -> Share Products`
+- **Navigate To**: `Share Products -> Share Products list (or open created product from list)`
 - **Observe**:
-  - presence of a row with Product Name = <Product Name> and Short Name = <Short Name> in the Share Products table
-  - open the created product's detail view by clicking the product row
-  - on the Share Product Detail page observe the Accounting Method field
-  - on the Share Product Detail page observe GL mapping fields: GL Share Reference, GL Share Suspense, GL Equity in Shares, GL Income from Fees, GL Share Equity and their displayed account values
+  - share products table contains a new row with the entered Product Name and Short Name
+  - product detail page shows Accounting Method as 'Cash-based'
+  - product detail page displays GL mapping fields populated: GL Share Reference, GL Share Suspense, GL Equity in Shares, GL Income from Fees, GL Share Equity with the selected accounts
 
-**Expected Change**: A new row exists in the Share Products table with Product Name = <Product Name> and Short Name = <Short Name>. The Share Product detail view shows Accounting Method set to 'Cash-based' and the GL mapping fields (GL Share Reference, GL Share Suspense, GL Equity in Shares, GL Income from Fees, GL Share Equity) populated with the GL accounts selected during creation.
+**Expected Change**: A new Share Product record is present in the Share Products list and its detail shows Accounting Method set to 'Cash-based' with all configured GL mapping fields populated with the selected GL accounts.
 
 ---
 
@@ -1476,18 +1422,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Share Products`
+- **Navigate To**: `Share Products -> List`
 - **Observe**:
-  - no existing product with name <Product Name> in listing (or use a unique <Product Name> for this test)
+  - share product list does not contain <Product Name>
 
 **Post-Check**
-- **Navigate To**: `Share Products -> click <Product Name> to open Product Detail page`
+- **Navigate To**: `Share Products -> Open created product detail for <Product Name>`
 - **Observe**:
-  - Currency
-  - Decimal Places
-  - Currency In Multiples Of
+  - Currency displays '<Currency>'
+  - Decimal places displays '<Decimal Places>'
+  - Currency In Multiples Of displays '<Currency In Multiples Of>'
 
-**Expected Change**: Product detail displays Currency set to <Currency>, Decimal Places set to <Decimal Places>, and Currency In Multiples Of set to <Currency In Multiples Of> as entered on the Currency (Step 2) of the Create Share Product wizard.
+**Expected Change**: The product detail page shows the Currency set to <Currency>, and the Decimal Places and Currency In Multiples Of fields reflect the values entered on the Currency (Step 2) of the Create Share Product wizard.
 
 ---
 
@@ -1507,18 +1453,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Share Products page (Products -> Share Products)`
+- **Navigate To**: `Share Products -> List`
 - **Observe**:
-  - list of share products (confirm <Product Name> is not present)
+  - No existing share product row with the same <Product Name>
+  - Create Share Product wizard not already open
 
 **Post-Check**
-- **Navigate To**: `Share Products page -> click the created product <Product Name> to open its Detail view -> Terms tab/section`
+- **Navigate To**: `Share Products -> Open the created product detail page for <Product Name> (via list or global search)`
 - **Observe**:
-  - Total Number of Shares (value equals <Total Number of Shares>)
-  - Nominal/Unit Price (value equals <Nominal/Unit Price>)
-  - Capital Value (displayed)
+  - Share Product appears in the list with name <Product Name>
+  - Terms section displays 'Total Number of Shares' equal to the value entered during creation
+  - Terms section displays 'Nominal/Unit Price' equal to the value entered during creation
+  - Terms section displays 'Capital Value' equal to Total Number of Shares × Nominal/Unit Price (numeric value and formatting match the value shown on the Terms step of the wizard)
 
-**Expected Change**: A Share Product named <Product Name> exists; in the Terms section Total Number of Shares and Nominal/Unit Price match the values entered during creation, and Capital Value equals Total Number of Shares × Nominal/Unit Price. The Capital Value displayed on the product detail page matches the Capital Value observed on Step 3 of the creation wizard.
+**Expected Change**: A new Share Product record is created and the Terms.Capital Value on the product detail page equals the calculated value (Total Number of Shares × Nominal/Unit Price) that was displayed on the Terms step during creation.
 
 ---
 
@@ -1538,21 +1486,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Share Products page`
+- **Navigate To**: `Share Products -> Share Products list`
 - **Observe**:
-  - presence of a product with name '<Product Name>' (expectation: none exists prior to creation)
-  - if a product with the same name exists, record its Settings values: 'Allow Dividends for Inactive Clients' state, Minimum Shares per Client, Maximum Shares per Client
+  - Share Products list does not contain <Product Name>
 
 **Post-Check**
-- **Navigate To**: `Share Products page -> Open '<Product Name>' detail view`
+- **Navigate To**: `Share Products -> Open created product detail for <Product Name>`
 - **Observe**:
-  - Product Name (should be '<Product Name>')
-  - Short Name (should be '<Short Name>')
-  - Settings section: 'Allow Dividends for Inactive Clients' checkbox state
-  - Settings section: Minimum Shares per Client value
-  - Settings section: Maximum Shares per Client value
+  - Settings section is visible
+  - Checkbox 'Allow Dividends for Inactive Clients' is checked
+  - Minimum Shares per Client displays value '<Minimum_Shares_per_Client>'
+  - Maximum Shares per Client displays value '<Maximum_Shares_per_Client>'
 
-**Expected Change**: A Share Product named '<Product Name>' is present and on its detail page the Settings section shows 'Allow Dividends for Inactive Clients' checked and the Minimum Shares per Client and Maximum Shares per Client match the values entered during creation ('<Minimum_Shares_per_Client>' and '<Maximum_Shares_per_Client>').
+**Expected Change**: The created Share Product's Settings section has 'Allow Dividends for Inactive Clients' enabled and shows the entered Minimum and Maximum Shares per Client values.
 
 ---
 
@@ -1571,18 +1517,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Share Products page -> Search for <Product Name>`
+- **Navigate To**: `Share Products -> Share Products list`
 - **Observe**:
-  - No existing product named <Product Name> in the listing (or note existing product if re-using a name)
-  - If product exists, note current number of Market Price rows for <Product Name> (to compare after test)
+  - Share Products list does not contain a product with name '<Product Name>'
 
 **Post-Check**
-- **Navigate To**: `Share Products page -> Click product <Product Name> to open Detail page -> Market Price tab`
+- **Navigate To**: `Share Products -> Share Product detail for '<Product Name>' (open from list if not auto-redirected)`
 - **Observe**:
-  - Market Price table lists rows with From Date and Share Value entries matching the values entered during creation (each row shows the entered From Date and corresponding Share Value)
-  - The number of Market Price rows equals the number of rows added in the wizard
+  - Share Products list contains a new product row with name '<Product Name>'
+  - On the Share Product detail page, the Market Price table lists rows with the entered From Date(s) and Share Value(s)
 
-**Expected Change**: The created Share Product's Market Price table contains the same rows that were added in the wizard: each row's From Date and Share Value match the inputs supplied in Step 5 and the total row count matches the number of rows added during creation.
+**Expected Change**: A new Share Product with name '<Product Name>' is created and its Market Price table contains the one or more rows added during the wizard, each showing the correct From Date and corresponding Share Value.
 
 ---
 
@@ -1599,19 +1544,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Share Products`
+- **Navigate To**: `Share Products -> List`
 - **Observe**:
-  - Search for product with name '<Product Name>' returns no results (product does not exist prior to test)
+  - Share Products list does not contain a product with name <Product Name>
 
 **Post-Check**
-- **Navigate To**: `Share Products -> Click product '<Product Name>' to open Detail page -> Charges tab`
+- **Navigate To**: `Share Products -> Search for <Product Name> -> Open created Product Detail`
 - **Observe**:
-  - Charges table contains a row with Charge Name matching '<charge search term>'
-  - Charge Amount shown for that row matches the amount selected when adding the charge in the wizard
-  - Charge Applies To or applicability indicator reflects that the charge applies to the Share Product
-  - The listed charge(s) count includes the charge(s) added during creation
+  - Product header shows name <Product Name>
+  - Charges section lists an entry matching <charge search term>
+  - Listed charge shows the expected charge name (matching <charge search term>) and is present in the product's Selected Charges
 
-**Expected Change**: The Share Product '<Product Name>' Charges tab lists the added charge(s) whose Charge Name matches '<charge search term>' and displays the same amount and applicability as selected during the Create Share Product wizard.
+**Expected Change**: A new Share Product with name <Product Name> is created and its Charges section includes the charge that was added in the wizard (matching <charge search term>).
 
 ---
 
@@ -1631,18 +1575,21 @@
 **Pre-Check**
 - **Navigate To**: `Charges page`
 - **Observe**:
-  - Charges table (ensure no existing row with Name '<Charge Name>')
-  - Ability to filter/search charges by Name and by 'Charge Applies To' = 'Loan' (verify '<Charge Name>' not present in filtered results)
+  - charges table does not contain a row with Name '<Charge Name>'
+  - no existing charge row with Charge Applies To = 'Loan' and Name '<Charge Name>'
 
 **Post-Check**
 - **Navigate To**: `Charges page`
 - **Observe**:
-  - Charges table row with Name '<Charge Name>' exists
-  - Charge Applies To column for that row equals 'Loan'
-  - Is Active indicator for that row reflects the selected toggle (Active/Inactive)
-  - Open the newly created charge's detail view and observe: ['Charge Name', 'Charge Applies To', 'Charge Time Type', 'Charge Calculation Type', 'Amount', 'Is Penalty', 'Payment Mode']
+  - charges table contains a row with Name '<Charge Name>'
+  - Charge Applies To column for that row is 'Loan'
+  - Charge Time Type column for that row shows '<Charge_Time_Type>' (e.g., Disbursement, Specified Due Date, Installment Fee, Overdue Fees, Tranche Disbursement)
+  - Currency column for that row shows '<Currency>'
+  - Amount column for that row shows '<Amount>'
+  - Payment Mode column for that row shows '<Payment_Mode>'
+  - Status/Active column indicates 'Active' if Is Active was toggled on
 
-**Expected Change**: A new charge record with Name '<Charge Name>' has been created: it appears in the Charges table and its Charge Applies To is 'Loan'. In the charge detail view, the Charge Time Type equals the selected loan-specific option, the Charge Calculation Type equals the selected value, the Amount equals the entered amount, the Is Penalty and Is Active flags reflect the chosen toggles, and the Payment Mode matches the selected payment mode.
+**Expected Change**: A new charge definition is persisted and appears in the Charges list: a row with the supplied Name and Charge Applies To = 'Loan', the selected Charge Time Type, currency, amount, payment mode, and active status (if Is Active was set).
 
 ---
 
@@ -1659,25 +1606,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Charges page`
+- **Navigate To**: `Charges -> Charges List`
 - **Observe**:
-  - Charges table rows
-  - absence of a row with Name = '<Charge Name>' and Charge Applies To = 'Savings Account'
+  - charges list does not contain the new charge with name '<Charge Name>'
+  - Charge Time Type dropdown (when creating a charge with 'Charge Applies To' = 'Savings Account') displays savings-specific options: 'Specified Due Date', 'Savings Activation', 'Withdrawal Fee', 'Annual Fee', 'Monthly Fee', 'Overdraft Fee'
 
 **Post-Check**
-- **Navigate To**: `Charges page -> Click the row with Name = '<Charge Name>' to open its Detail view`
+- **Navigate To**: `Charges -> Charges List`
 - **Observe**:
-  - Charges table contains a row with Name = '<Charge Name>' and Charge Applies To = 'Savings Account'
-  - Charge Detail: Charge Name
-  - Charge Detail: Charge Applies To
-  - Charge Detail: Charge Time Type
-  - Charge Detail: Charge Calculation Type
-  - Charge Detail: Amount
-  - Charge Detail: Is Penalty
-  - Charge Detail: Is Active
-  - Charge Detail: Payment Mode
+  - charges list contains a row with Name = '<Charge Name>'
+  - the 'Charge Applies To' column for the new row shows 'Savings Account'
+  - the 'Charge Time Type' column for the new row shows '<Charge_Time_Type>'
+  - the 'Amount' column for the new row shows '<Amount>' (or matches the entered amount and currency)
+  - status/active indicator reflects the 'Is Active' toggle selected during creation
+  - the new charge row is selectable/openable to view detail showing Payment Mode = '<Payment_Mode>' and Calculation Type = '<Charge_Calculation_Type>'
 
-**Expected Change**: A new row appears in the Charges table with Name '<Charge Name>' and Charge Applies To 'Savings Account'. Opening the created charge's detail view shows Charge Time Type set to the selected savings-specific option (one of: Specified Due Date, Savings Activation, Withdrawal Fee, Annual Fee, Monthly Fee, Overdraft Fee), Charge Calculation Type equals the selected value, Amount equals the submitted amount, Payment Mode equals the selected payment mode, and the Is Penalty / Is Active flags reflect the chosen toggles.
+**Expected Change**: A new Charge definition has been persisted and appears in the Charges list with the specified Name, Charge Applies To = 'Savings Account', the selected Charge Time Type, calculation type, amount/currency, payment mode, and active status.
 
 ---
 
@@ -1695,18 +1639,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Charges page (Charges listing)`
+- **Navigate To**: `Charges -> Charges list`
 - **Observe**:
-  - Charges table is visible with columns: Name, Charge Applies To, Charge Time Type, Charge Calculation Type, Amount, Currency, Payment Mode, Is Penalty, Is Active, Is Paid Derived
-  - No existing row with Name '<Charge Name>'
+  - charges table does not contain a row with Name '<Charge Name>' and Charge Applies To 'Client'
+  - optionally: use list search/filter by Name '<Charge Name>' to confirm no existing entry
 
 **Post-Check**
-- **Navigate To**: `Admin -> Charges page (Charges listing)`
+- **Navigate To**: `Charges -> Charges list`
 - **Observe**:
-  - Charges table rows including recently created entries
-  - A row with Name '<Charge Name>' showing values for: Charge Applies To, Charge Time Type, Charge Calculation Type, Amount, Currency, Payment Mode, Is Penalty, Is Active
+  - charges table contains a row with Name '<Charge Name>'
+  - the 'Charge Applies To' column for that row is 'Client'
+  - the row shows Currency '<Currency>' (if currency column visible)
+  - the row shows Amount '<Amount>' (if amount column visible)
+  - the row shows Charge Time Type '<Charge Time Type>' and Charge Calculation Type '<Charge_Calculation_Type>' or these details are visible on the charge detail drill-down
+  - Payment Mode '<Payment_Mode>' is present in the row or visible on the charge detail
 
-**Expected Change**: A new row with Name '<Charge Name>' appears in the Charges table with 'Charge Applies To' = 'Client', 'Charge Time Type' = '<Charge Time Type>', 'Charge Calculation Type' = '<Charge_Calculation_Type>', 'Currency' = '<Currency>', 'Amount' = '<Amount>', 'Payment Mode' = '<Payment_Mode>', and the 'Is Active' and 'Is Penalty' flags matching the selections made during creation.
+**Expected Change**: A new charge definition is persisted in the backend and appears in the Charges list: a new row exists with Name '<Charge Name>' and Charge Applies To set to 'Client', and associated configured attributes (Currency '<Currency>', Amount '<Amount>', Charge Time Type '<Charge Time Type>', Charge Calculation Type '<Charge_Calculation_Type>', Payment Mode '<Payment_Mode>') are displayed in the list or the charge detail view.
 
 ---
 
@@ -1726,19 +1674,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Charges (Charges listing page)`
+- **Navigate To**: `Administration -> Charges (Charges list)`
 - **Observe**:
-  - Presence of the target charge row (identify by Name and at least one unique attribute such as Charge Applies To or Amount) — record the exact Name used for deletion
-  - Total number of rows in the Charges table (or count of matching rows if a filter/search is applied)
-  - If using pagination or filters, ensure filters are cleared or search for the recorded Name so the row is visible
+  - the specific charge row to be deleted is present in the list (identifyable by Name or ID)
+  - count of charges in the visible list or matching filter that includes the target charge
 
 **Post-Check**
-- **Navigate To**: `Admin -> Charges (Charges listing page)`
+- **Navigate To**: `Administration -> Charges (Charges list)`
 - **Observe**:
-  - Absence of the previously recorded charge Name/row in the Charges table
-  - Total number of rows in the Charges table (or count of matching rows if a filter/search is applied)
+  - the specific charge row is no longer present in the active charges list
+  - the visible count of charges has decreased by one for the same filter/criteria used in pre_check
+  - attempting to open the deleted charge by its previous Name/ID does not open a detail view (not found)
 
-**Expected Change**: The charge row identified by the recorded Name (and matching attributes) is no longer present in the Charges table. The total row count for Charges has decreased by one compared to the pre_check (or the count of matching rows is zero).
+**Expected Change**: The deleted Charge entry is removed from the primary active Charges list (no longer listed or openable) and the visible list count for the same filter/criteria has decreased accordingly.
 
 ---
 
@@ -1758,25 +1706,23 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Charges (Charges page / Charges table)`
+- **Navigate To**: `Charges -> Charges list (locate the target charge by Name)`
 - **Observe**:
-  - Locate the charge row by Name (the charge to edit)
-  - Charge Time Type column value for that charge
-  - Amount column value for that charge
-  - Is Penalty indicator/value for that charge
-  - Is Active indicator/value for that charge
+  - A row exists for the target Charge in the Charges list
+  - Displayed Amount for that Charge is the current (pre-edit) value and is not '<new Amount>'
+  - Displayed Charge Time Type for that Charge is the current (pre-edit) value and is not '<Charge Time Type>'
+  - Is Penalty and Is Active toggles (or status) reflect the pre-edit states
 
 **Post-Check**
-- **Navigate To**: `Admin -> Charges -> open the same Charge detail view (click the charge Name)`
+- **Navigate To**: `Charges -> Click the edited Charge Name to open Charge Detail`
 - **Observe**:
-  - Charge Name
-  - Charge Time Type (on detail view)
-  - Amount (on detail view)
-  - Is Penalty (on detail view)
-  - Is Active (on detail view)
-  - Charges table row (verify reflected values in the listing)
+  - Amount field shows '<new Amount>'
+  - Charge Time Type shows the selected loan option '<Charge Time Type>'
+  - Is Penalty toggle reflects the state chosen during edit (on/off)
+  - Is Active toggle (or status) reflects the state chosen during edit (active/inactive)
+  - Charges list row for the same Charge shows the updated Amount and updated Charge Time Type
 
-**Expected Change**: The charge's Amount shows '<new Amount>' and Charge Time Type shows the selected '<Charge Time Type>' on the Charge detail view; any toggled Is Penalty and Is Active values reflect the changes. The updated Amount and Charge Time Type are also reflected in the Charges table listing for that charge, proving the change persisted.
+**Expected Change**: The Charge record's Amount is updated to '<new Amount>' and its Charge Time Type is updated to '<Charge Time Type>'; these changes are visible both on the Charge detail page and in the Charges list, proving the backend persisted the edits.
 
 ---
 
@@ -1796,26 +1742,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Charges -> open the target Charge detail by clicking the Charge Name in the Charges table`
+- **Navigate To**: `Administration -> Charges (Charges list)`
 - **Observe**:
-  - Charge Name
-  - Charge Applies To
-  - Charge Time Type
-  - Amount
-  - Is Penalty
-  - Is Active
+  - The target charge entry exists in the Charges table (the charge to be edited is present)
+  - Record shows current Amount different from '<new Amount>' (or note current amount value)
+  - Record shows current Charge Time Type different from '<Charge Time Type>' (or note current time type)
+  - If applicable, Is Active / Is Penalty flags are shown with their current states
 
 **Post-Check**
-- **Navigate To**: `Charges -> open the same Charge detail by clicking the Charge Name in the Charges table (or refresh the detail view)`
+- **Navigate To**: `Administration -> Charges -> open the same charge detail (click Name) or search and open the edited charge from Charges list`
 - **Observe**:
-  - Charge Name
-  - Charge Applies To
-  - Charge Time Type
-  - Amount
-  - Is Penalty
-  - Is Active
+  - Charge detail Amount field shows '<new Amount>'
+  - Charge detail Charge Time Type shows the selected '<Charge Time Type>' option
+  - Charges list (when refreshed) shows the updated Amount and Charge Time Type for the charge row
+  - If Is Active or Is Penalty were toggled during edit, the detail view shows the new toggled states
 
-**Expected Change**: On the Charge detail the Amount equals '<new Amount>' and Charge Time Type equals the selected Savings Account option '<Charge Time Type>'. The Is Penalty and Is Active flags reflect the toggles applied during edit. Charge Name and Charge Applies To remain unchanged.
+**Expected Change**: The persisted charge record now reflects the edits: the Amount is updated to '<new Amount>' and the Charge Time Type is updated to '<Charge Time Type>' (and any toggled Is Active / Is Penalty flags reflect their new values) in both the charge detail view and the refreshed charges list.
 
 ---
 
@@ -1834,35 +1776,26 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Charges -> Charges table -> click the charge Name to open the Charge Detail view`
+- **Navigate To**: `Charges -> Charges list`
 - **Observe**:
-  - Charge Name
-  - Charge Applies To
-  - Amount
-  - Payment Mode
-  - Is Active
-  - Last Modified Timestamp
-  - Modified By
+  - Locate the target Charge row by Name (or ID) that will be edited and note its identifier
+  - Record the current 'Amount' value for that Charge (and record any other fields you plan to change, e.g., Payment Mode)
 
 **Post-Check**
-- **Navigate To**: `Charges -> Charges table -> (refresh listing) -> click the same charge Name to open the Charge Detail view`
+- **Navigate To**: `Charges -> Charges list (then open the edited Charge detail page)`
 - **Observe**:
-  - Charge Name
-  - Charge Applies To
-  - Amount
-  - Payment Mode
-  - Is Active
-  - Last Modified Timestamp
-  - Modified By
+  - Charges list row for the target Charge shows 'Amount' as '<new Amount>'
+  - Charge detail view shows the 'Amount' field with value '<new Amount>'
+  - Any other changed fields (e.g., Payment Mode) display the updated selections on the Charge detail view
 
-**Expected Change**: Amount changed to <new Amount>; any other edited fields (e.g., Payment Mode) reflect the new selections; Charge Applies To remains 'Client'; Last Modified Timestamp is later than the pre_check timestamp and Modified By shows the acting user, indicating the edits were persisted in the backend.
+**Expected Change**: The target Charge's Amount (and any other edited fields) is persisted on the backend and is visible in the Charges list row and on the Charge detail page showing the new values after Save.
 
 ---
 
 ### [TC-002] Log Out via Profile Icon
 **Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `partial`
 
-**Coverage Note**: *Creation of the floating rate and its base-flag can be fully verified in-app. Automatic adjustment of linked loan products' effective interest rates can only be verified if one or more loan products are already linked to this floating rate (and their effective rates are recalculated/displayed). If no loan products are linked, that side-effect cannot be observed by this test and requires a separate cross-entity verification.*
+**Coverage Note**: *Creation and base-flag of the Floating Rate can be fully verified in-app. Automatic adjustment of linked loan products depends on those products being configured to reference this floating rate and may be asynchronous — verifying propagation to all linked products requires identifying one or more specific loan products to inspect and may not be observable immediately.*
 
 **Original Steps:**
 1. 1. Click the Profile Icon in the top-right corner to open the User Profile Menu
@@ -1875,27 +1808,28 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Floating Rates page (Floating Rates listing)`
+- **Navigate To**: `Floating Rates -> List`
 - **Observe**:
-  - List of floating rates with columns: Floating Rate Name, Is Base Lending Rate, Is Active, Created By
-  - Count of rows where Is Base Lending Rate = true (record current count)
-  - Verify that no floating rate with the test name (<floating rate name>) exists prior to creation
+  - floating rates list does not contain the test Floating Rate named '<floating rate name>'
+  - current base lending rate (if any) is noted so tester can confirm intended initial base state
 
 **Post-Check**
-- **Navigate To**: `Admin -> Floating Rates page (Floating Rates listing) and open the newly created floating rate detail`
+- **Navigate To**: `Floating Rates -> List (then open the newly created Floating Rate record)`
 - **Observe**:
-  - Presence of a floating rate row with Floating Rate Name = <floating rate name>
-  - Is Base Lending Rate flag set to true for that floating rate
-  - Is Active flag value as set during creation (checked or unchecked)
-  - In the floating rate detail, Rate Periods table contains a row with From Date = <from date>, Interest Rate = <interest rate percentage>, and Is Differential Rate = false
-  - Count of rows where Is Base Lending Rate = true (should be 1 after creation)
+  - floating rates list contains a new entry with name '<floating rate name>'
+  - the new Floating Rate detail shows 'Is Base Lending Rate' indicator/checkbox as true or a 'Base' badge
+  - the Rate Period row exists with From Date equal to '<from date>' and Interest Rate equal to '<interest rate percentage>'
+  - Is Differential Rate is unchecked for the added period
+  - If applicable: navigate to Loan Products -> open a Loan Product configured to use this Floating Rate and observe its configured interest rate or effective rate display (shows updated rate resolved from the new Rate Period)
 
-**Expected Change**: A new floating rate with the specified name appears in the Floating Rates listing and in its detail view, the 'Is Base Lending Rate' flag is set. The Rate Periods table includes the specified From Date and Interest Rate with Is Differential Rate unchecked. There is at most one floating rate marked as base lending rate (any previously marked base is unset by the system). If loan products are linked to this floating rate, their effective interest rates should update per the new rate period (verification of linked loan product rate changes is conditional and may require navigating to those loan product details or loan accounts).
+**Expected Change**: A new Floating Rate record with the given name is persisted and marked as the Base Lending Rate; the specified rate period is saved. Where loan products are configured to reference this floating rate, those products' effective interest values reflect the new base lending rate according to the rate period (subject to any asynchronous propagation).
 
 ---
 
 ### [TC-003] Unauthenticated navigation to a protected page redirects to login
-**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `partial`
+
+**Coverage Note**: *Creation of the Floating Rate and its rate-period rows can be verified in-app via the Floating Rates list/detail. Verification that linked loan products' effective interest rates have been recalculated may be delayed or require inspecting each loan product detail (and may depend on backend recalculation jobs), so that aspect is only partially verifiable from the UI.*
 
 **Original Steps:**
 1. 1. Enter <authenticated page URL> in the browser address bar and navigate to it
@@ -1907,29 +1841,27 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Floating Rates -> List; Loan Products -> Product Detail for product(s) expected to reference this floating rate`
+- **Navigate To**: `Floating Rates -> Floating Rates List and Loan Products -> relevant Loan Product detail(s)`
 - **Observe**:
-  - Floating Rates list does NOT contain <floating rate name> (or note current presence if re-run)
-  - For each loan product expected to be linked: current configured interest rate display and whether a Floating Rate linkage is shown (linked floating rate name or blank) — record the displayed interest rate value(s)
+  - Floating Rates list does NOT contain an entry named '<floating rate name>' (record absence)
+  - If applicable/known, open each loan product expected to link to the floating rate and note the current interest rate / interest rate configuration (record '<pre-existing rate>' for comparison)
 
 **Post-Check**
-- **Navigate To**: `Floating Rates -> List -> Open the newly created <floating rate name> -> Rate Periods table; then Loan Products -> Product Detail for product(s) expected to reference this floating rate`
+- **Navigate To**: `Floating Rates -> Floating Rates List; open the newly created Floating Rate detail -> Rate Periods section; then Loan Products -> relevant Loan Product detail(s)`
 - **Observe**:
-  - Floating Rates list contains <floating rate name>
-  - Floating Rate detail shows Rate Periods table with two rows
-  - Rate Period row 1 fields: From Date equals entered <from date>, Interest Rate equals entered <interest rate percentage>, Is Differential Rate is unchecked
-  - Rate Period row 2 fields: From Date equals entered <from date>, Interest Rate equals entered <interest rate percentage>, Is Differential Rate is checked
-  - For each linked loan product: the product detail shows the floating rate linkage to <floating rate name> (if product-level linkage exists) or the loan's effective interest rate calculation shows the floating rate as the source
-  - For each linked loan product: the displayed effective interest rate (or the preview/calculated rate) matches the expected result based on the applicable Rate Period (absolute rate used for non-differential period; base lending rate ± differential percent applied for the differential period)
+  - Floating Rates list contains an entry named '<floating rate name>'
+  - Floating Rate detail shows two Rate Period rows with the supplied From Dates and Interest Rates
+  - The second Rate Period row shows 'Is Differential' checked or is labelled/marked as 'Differential'
+  - Linked loan product detail(s) show updated interest rate configuration or a computed interest rate/value that reflects application of the new floating rate period(s) (or show the floating rate linkage in the product settings)
 
-**Expected Change**: A new Floating Rate named <floating rate name> exists and its detail contains two Rate Period rows with the first row as an absolute rate (Is Differential Rate unchecked) and the second row as a differential rate (Is Differential Rate checked). Loan products that reference this floating rate reflect the floating rate linkage and their effective interest rates are updated according to the applicable Rate Period (absolute periods apply the listed rate; differential periods apply the base lending rate plus or minus the differential).
+**Expected Change**: A persistent Floating Rate record is created with two rate-period rows; the second period is stored as a differential rate. Loan product(s) that are linked to this floating rate should display updated interest rate configuration or computed interest rate that reflects the new applicable rate period(s).
 
 ---
 
 ### [TC-005] Direct navigation to Profile Settings while unauthenticated is blocked
 **Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `partial`
 
-**Coverage Note**: *The Floating Rate detail and its Rate Periods table are directly observable. Changes to already-approved/active loan accounts' calculated interest may be applied by scheduled background jobs (e.g., rate revaluation) and might not be immediate; verify product-level or loan-preview values if available. If linked loan recalculation is asynchronous, this verification confirms the rate period addition and immediate product-level linkage, not necessarily all downstream amortization recalculations.*
+**Coverage Note**: *The Floating Rate record and the newly added Rate Period can be verified in-app. However, automatic adjustment or recalculation of interest for already-existing loan accounts may be performed by background jobs or business processes and might not be immediately reflected in the UI; verifying full propagation to loan schedules/posted transactions may require additional backend checks or running scheduled jobs.*
 
 **Original Steps:**
 1. 1. In the browser address bar, navigate to the Profile Settings page URL
@@ -1941,24 +1873,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Floating Rates -> <existing floating rate> (Detail view)`
+- **Navigate To**: `Floating Rates -> Open detail for <existing floating rate>`
 - **Observe**:
-  - rate periods table (each row shows From Date, Interest Rate, Is Differential Rate)
-  - count of existing rate period rows
-  - floating rate name
-  - if shown: list of linked loan products or linked entities (product name, linkage indicator)
-  - for one linked loan product (pick one if listed): displayed effective interest or note indicating floating rate is applied
+  - Floating Rate Name shows current value (matches pre-edit)
+  - Rate Periods list does not contain a period with From Date '<from date>' and Interest Rate '<interest rate percentage>'
+  - Linked Loan Products (if shown) list linked products and display their currently-applied effective rate/period
 
 **Post-Check**
-- **Navigate To**: `Floating Rates -> <existing floating rate> (Detail view)`
+- **Navigate To**: `Floating Rates -> Open detail for <existing floating rate>`
 - **Observe**:
-  - rate periods table (each row shows From Date, Interest Rate, Is Differential Rate)
-  - presence of a new Rate Period row with From Date = <from date>, Interest Rate = <interest rate percentage>, Is Differential Rate = <as set>
-  - floating rate name (shows <updated floating rate name> if changed)
-  - if shown: list of linked loan products (product name, linkage indicator)
-  - for one linked loan product (same as pre-check): displayed effective interest or note indicating floating rate usage / updated effective rate for dates >= <from date>
+  - Floating Rate Name shows '<updated floating rate name>' if it was changed (or unchanged if left as-is)
+  - Rate Periods list contains a new period with From Date '<from date>' and Interest Rate '<interest rate percentage>' and correct 'Is Differential Rate' flag
+  - Linked Loan Products section/reference shows the new period as the applicable period for products whose effective date is on/after '<from date>' (or the loan product detail resolves to the new rate/period)
 
-**Expected Change**: The Floating Rate detail now includes a new Rate Period row with the specified From Date and Interest Rate and the configured Differential flag. If the floating rate name was edited, the detail header reflects the updated name. For loan products linked to this floating rate (if they are displayed), their effective interest metadata or preview reflects the application of the new rate period for applicable dates; full recalculation of active loans may be asynchronous and performed by scheduled jobs.
+**Expected Change**: A new Rate Period has been added to the Floating Rate with the specified From Date, Interest Rate, and differential flag; the Floating Rate name is updated if edited. Linked loan products should reference the new period as the applicable floating rate period for the relevant effective dates (note: propagation to existing loan account schedules or posted interest amounts may require background processing).
 
 ---
 
@@ -1976,21 +1904,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Delinquency Management -> Delinquency Ranges page`
+- **Navigate To**: `Organization Settings -> Delinquency Management -> Delinquency Ranges`
 - **Observe**:
-  - current rows in Delinquency Ranges table (capture count)
-  - presence of any row with Classification = <classification>
-  - for any matching row, Minimum Age Days and Maximum Age Days values
+  - Delinquency Ranges table is visible
+  - No row exists with Classification = <classification> and Minimum Age Days = <minimum age days>
 
 **Post-Check**
-- **Navigate To**: `Admin -> Delinquency Management -> Delinquency Ranges page`
+- **Navigate To**: `Organization Settings -> Delinquency Management -> Delinquency Ranges`
 - **Observe**:
-  - rows in Delinquency Ranges table (capture count)
-  - row with Classification = <classification>
-  - Minimum Age Days cell value for that row
-  - Maximum Age Days cell value for that row
+  - Delinquency Ranges table contains a row with Classification = <classification>
+  - The row shows Minimum Age Days = <minimum age days>
+  - The Maximum Age Days cell for that row is blank (or displays an explicit empty/—/N/A indicator) showing it applies beyond the minimum
 
-**Expected Change**: A new row appears in the Delinquency Ranges table with Classification = <classification> and Minimum Age Days = <minimum age days>; the Maximum Age Days cell is blank indicating it applies to all days beyond the minimum.
+**Expected Change**: A new delinquency range row is created in the Delinquency Ranges table with the provided Classification and Minimum Age Days, and its Maximum Age Days cell is empty indicating the range applies to all days beyond the minimum.
 
 ---
 
@@ -2008,20 +1934,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Delinquency Management -> Delinquency Buckets page`
+- **Navigate To**: `Delinquency Management -> Delinquency Buckets`
 - **Observe**:
-  - list of existing bucket names in the Delinquency Buckets table (confirm <bucket name> is not present)
-  - availability of Linked Loan Products multi-select (shows loan products that can be linked)
+  - Delinquency Buckets table does not contain a row with Bucket Name = <bucket name>
 
 **Post-Check**
-- **Navigate To**: `Admin -> Delinquency Management -> Delinquency Buckets page`
+- **Navigate To**: `Delinquency Management -> Delinquency Buckets`
 - **Observe**:
-  - a new row in the Delinquency Buckets table with Bucket Name = <bucket name>
-  - the table row shows the configured ranges (first range: Minimum Age Days = <minimum age days 1>, Maximum Age Days = <maximum age days 1>; second range: Minimum Age Days = <minimum age days 2>, Maximum Age Days = blank/open-ended)
-  - linked loan products are listed for the created bucket (matching the <linked loan products> selected during creation)
-  - opening the created bucket's detail view shows the added ranges and the linked loan products in the detail
+  - Delinquency Buckets table contains a row with Bucket Name = <bucket name>
+  - The bucket row displays associated ranges: 'Minimum Age Days: <minimum age days 1> - Maximum Age Days: <maximum age days 1>' and 'Minimum Age Days: <minimum age days 2> - Maximum Age Days: (blank/open-ended)'
+  - The bucket row or detail view shows the linked loan products: <linked loan products>
+  - Opening the created bucket's detail displays the two ranges as entered and lists the linked loan products
 
-**Expected Change**: A new delinquency bucket named <bucket name> appears in the Delinquency Buckets table and in its detail view; it contains the two ranges entered (first with the specified min and max, second with the specified min and no max indicating open-ended) and lists the selected linked loan products exactly as chosen during creation.
+**Expected Change**: A new Delinquency Bucket with name <bucket name> is present in the Delinquency Buckets list; it contains the two configured ranges (first with the specified minimum and maximum, second with the specified minimum and open-ended maximum) and the selected loan products are shown as linked to the bucket.
 
 ---
 
@@ -2038,18 +1963,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail -> Accounts tab -> Loan Accounts sub-tab`
+- **Navigate To**: `Client Detail -> Accounts -> Loans tab`
 - **Observe**:
-  - list of loan accounts rows with columns: Account No., Product Name, Status (and Principal if shown)
-  - confirm there is no existing loan row with Product Name = <product> and Principal = <principal> in status 'Submitted and Pending Approval'
+  - loans list does not contain a loan entry matching the application to be submitted (no row with the selected Product Name and the entered Principal)
+  - no loan with status 'Submitted and Pending Approval' exists for this client
 
 **Post-Check**
-- **Navigate To**: `Client Detail -> Accounts tab -> Loan Accounts sub-tab; if Loan Detail page opened by the wizard, also verify from Loan Detail header`
+- **Navigate To**: `Client Detail -> Accounts -> Loans tab (or Global Search -> Loan Account by account number if created)`
 - **Observe**:
-  - a new loan row present in the Loan Accounts list with Product Name = <product>, Principal = <principal> (or matching account details), and Status = 'Submitted and Pending Approval'
-  - open the new loan row to view the Loan Detail page and observe the header shows the generated Loan Account No., Client Name, and a status badge 'Submitted and Pending Approval' (yellow)
+  - loans list contains a new loan application row with the selected Product Name and the entered Principal
+  - the new loan row shows a status badge 'Submitted and Pending Approval' (yellow)
+  - opening the new loan row navigates to the Loan Detail page which displays the status badge 'Submitted and Pending Approval'
 
-**Expected Change**: A new loan account for the client is created with Product = <product> and Principal = <principal> and appears in the client's Loan Accounts list with status 'Submitted and Pending Approval' (yellow). The Loan Detail page for that account shows the 'Submitted and Pending Approval' status badge and a generated loan account number.
+**Expected Change**: A new loan account record is created for the client with the chosen Product and Principal and its workflow status is 'Submitted and Pending Approval' (visible in the loans list and on the Loan Detail page).
 
 ---
 
@@ -2067,21 +1993,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail -> Loans tab`
+- **Navigate To**: `Client Detail page -> New Loan Application Wizard -> Step 3 (Charges)`
 - **Observe**:
-  - list of loan applications for the client (with statuses)
-  - if any 'Submitted and Pending Approval' application exists, open the most recent and observe its Charges section (record current charge count and listed charge names/amounts)
+  - Charges repeating group does not contain <charge_name>
+  - No existing charge row with amount <amount> in the Charges step
 
 **Post-Check**
-- **Navigate To**: `Client Detail -> Loans tab -> Open the newly created loan application (the 'Submitted and Pending Approval' entry with the most recent Submitted On date) -> Charges section`
+- **Navigate To**: `Client Detail page -> Loans/Accounts -> Loan Applications (Submitted / Pending) -> Open the newly created Loan Application`
 - **Observe**:
-  - presence of a charge with name '<charge_name>'
-  - presence of a charge amount equal to '<amount>' for that charge
-  - displayed due date equals '<due_date>' (if a due date was entered)
-  - charge status/paid indicator (e.g., 'Due' or 'Outstanding')
-  - total number of charges on the application (should be pre-check count + 1)
+  - Charges repeating group contains a row with Charge Name equal to <charge_name>
+  - The charge row displays Amount equal to <amount>
+  - If visible, the loan application status is 'Submitted' or 'Pending Approval'
 
-**Expected Change**: A charge row with name '<charge_name>' and amount '<amount>' appears in the Charges section of the newly created loan application (status 'Submitted and Pending Approval' if the application was submitted). If a due date was provided it is shown on the charge. The total number of charges for the application has increased by one compared to the pre-check.
+**Expected Change**: A new charge entry is persisted on the loan application: the Charges section shows a row with the specified <charge_name> and <amount> (visible on the application detail in Submitted or Pending state).
 
 ---
 
@@ -2098,22 +2022,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail page -> Loans tab`
+- **Navigate To**: `Client Detail -> Accounts -> Loans`
 - **Observe**:
-  - count of loans listed for the client
-  - most recent loan entry: loan account number (if present)
-  - most recent loan entry: status (e.g., Submitted and Pending Approval, Approved, Active)
-  - most recent loan entry: Terms shown (Repayment Strategy, Amortization) if available
+  - loans list does not contain a loan with Repayment Strategy: <repayment_strategy> and Amortization: <amortization>
+  - no recently created loan entry exists for this client with the target terms
 
 **Post-Check**
-- **Navigate To**: `Loan Detail page for the newly created loan (if the Loan Detail did not open automatically after submission, go to Client Detail page -> Loans tab and open the most recent loan)`
+- **Navigate To**: `Client Detail -> Accounts -> Loans (open the newly created loan) OR use the Loan Detail page opened after submission`
 - **Observe**:
-  - loan account number
-  - loan status badge
-  - Terms section: Repayment Strategy
-  - Terms section: Amortization
+  - loan appears in client's Loans list (new row) with correct account number and status
+  - Terms section on the Loan Detail page shows Repayment Strategy: <repayment_strategy>
+  - Terms section on the Loan Detail page shows Amortization: <amortization>
 
-**Expected Change**: A new loan record exists for the client (new loan account number present) with status 'Submitted and Pending Approval' (or the expected post-submission status). In the Terms section the Repayment Strategy is set to <repayment_strategy> and the Amortization is set to <amortization> (these values match what was selected in Step 2 of the wizard).
+**Expected Change**: A new loan account for the client is created and its Terms section displays Repayment Strategy set to <repayment_strategy> and Amortization set to <amortization> as submitted in Step 2 of the wizard.
 
 ---
 
@@ -2130,24 +2051,23 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Detail page for the loan in Submitted and Pending Approval state`
+- **Navigate To**: `Loan Detail page for the target loan (currently Submitted / Pending Approval)`
 - **Observe**:
-  - status badge shows 'Submitted and Pending Approval' (yellow)
-  - Approved On Date field is empty or not set
+  - status badge displays 'Submitted' or 'Pending Approval'
   - Approved Amount field is empty or not set
-  - Expected Disbursement Date field is empty or not set
+  - Approved On Date field is empty or not set
+  - Approval activity/log does not contain an approval entry for this loan
 
 **Post-Check**
-- **Navigate To**: `Loans -> Approved / Loans Awaiting Disbursal listing and re-open the Loan Detail page for the same loan`
+- **Navigate To**: `Loan Detail page for the same loan (after confirming Approve dialog)`
 - **Observe**:
-  - status badge shows 'Approved' (blue) on the Loan Detail page
-  - Approved On Date displays the entered <approved_on_date>
-  - Approved Amount displays the entered <approved_amount>
-  - Expected Disbursement Date displays the entered <expected_disbursement_date> if provided
-  - Loan no longer appears in the 'Pending Approval' or 'Loans Pending Approval' listing
-  - Loan appears in 'Approved' or 'Loans Awaiting Disbursal' listing (if the application workflow places approved loans there)
+  - status badge displays 'Approved' (blue)
+  - Approved Amount equals the <approved_amount> entered in the Approve dialog
+  - Approved On Date equals the <approved_on_date> entered in the Approve dialog
+  - Approval activity/log contains an entry showing approval with approver username and note
+  - Loan is no longer listed among 'Pending Approval' items in any approvals dashboard or pending list (if a pending list is visible)
 
-**Expected Change**: The loan's status changed from 'Submitted and Pending Approval' (yellow) to 'Approved' (blue); the Approved On Date equals the entered <approved_on_date>; the Approved Amount equals the entered <approved_amount>; the Expected Disbursement Date (when provided) is recorded as <expected_disbursement_date>; the loan is removed from Pending Approval listings and appears in Approved/Awaiting Disbursal listings.
+**Expected Change**: The loan's lifecycle state changes from Submitted/Pending Approval to Approved; the approved amount and approved-on date are recorded on the loan record, and an approval entry appears in the loan activity/log showing the approver and note.
 
 ---
 
@@ -2171,23 +2091,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Detail page for the loan in Submitted and Pending Approval state`
+- **Navigate To**: `Loan Detail page for the target loan (Submitted / Pending Approval)`
 - **Observe**:
-  - loan account number and client name in header
-  - status badge showing 'Submitted and Pending Approval' (yellow)
-  - available state action buttons include: Approve, Reject, Withdraw, Delete
-  - recent activity/audit trail does not yet contain a rejection entry for this loan
+  - status badge displays 'Submitted' or 'Pending Approval'
+  - no 'Rejected' status is present on the loan
+  - loan does not appear in any 'Rejected' or 'Closed' lists/views
 
 **Post-Check**
-- **Navigate To**: `Loan Detail page for the same loan (refresh or reopen the page)`
+- **Navigate To**: `Loan Detail page for the same loan (and optionally Loans list / Pending Approvals view)`
 - **Observe**:
-  - loan account number and client name in header (same as pre-check)
-  - status badge showing 'Rejected' (red or designated rejected color)
-  - absence of the 'Submitted and Pending Approval' badge
-  - state action buttons appropriate for Rejected status (Approve/Reject not present)
-  - activity/audit trail contains a new entry indicating the loan was rejected with timestamp and acting user
+  - status badge displays 'Rejected' (or explicit rejection state label)
+  - the 'Submitted' / 'Pending Approval' badge is no longer displayed on the loan
+  - activity/audit log on the loan shows a rejection entry (with timestamp and current user as actor) or a rejection note
+  - loan no longer appears in Pending Approvals list or checker inbox (if such list/view is available) and appears in lists filtered by 'Rejected' where supported
 
-**Expected Change**: The loan's status has changed from 'Submitted and Pending Approval' to 'Rejected'; the 'Submitted and Pending Approval' badge is no longer displayed; Pending-Approval actions (Approve/Reject) are no longer available; and a rejection entry is recorded in the activity/audit trail with the rejecting user and timestamp.
+**Expected Change**: The loan's persisted state changes from Submitted/Pending Approval to Rejected: the Detail page shows a 'Rejected' status, the Submitted/Pending Approval badge is removed, an audit entry records the rejection, and the loan is removed from pending-approval queues.
 
 ---
 
@@ -2207,21 +2125,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Detail page for the target loan (use the loan account opened in preconditions)`
+- **Navigate To**: `Loan Detail page for the target loan (Submitted and Pending Approval)`
 - **Observe**:
-  - status badge text (expected: 'Submitted and Pending Approval' or equivalent pending status)
-  - presence of 'Withdraw' action in the state action bar
-  - loan account number and client name (to confirm correct loan)
+  - status badge displays 'Submitted' or 'Submitted and Pending Approval'
+  - Withdraw action/button is visible in the state action bar
 
 **Post-Check**
-- **Navigate To**: `Loan Detail page for the same loan (refresh or re-open the page to ensure backend state is loaded)`
+- **Navigate To**: `Loan Detail page for the same loan (refresh page or re-open after action)`
 - **Observe**:
-  - status badge text (expected: 'Withdrawn' or equivalent withdrawn status)
-  - absence of 'Submitted and Pending Approval' status badge
-  - absence of 'Withdraw' action in the state action bar
-  - Transactions or Audit Trails tab shows an entry indicating the withdrawal action (Withdrawal / Status change) or a maker/checker record if enabled
+  - status badge displays 'Withdrawn'
+  - the 'Submitted' / 'Submitted and Pending Approval' status badge is not present
+  - Withdraw action/button is no longer available in the state action bar
 
-**Expected Change**: The loan's status changed from 'Submitted and Pending Approval' to 'Withdrawn' (or equivalent withdrawn status); the 'Withdraw' action is no longer available on the state action bar, and a corresponding withdrawal entry appears in Transactions/Audit Trails indicating the withdrawal was processed.
+**Expected Change**: The loan's status changes from Submitted/Pending Approval to Withdrawn; the Submitted/Pending Approval status badge is removed and the Withdraw action is no longer available on the loan detail page.
 
 ---
 
@@ -2241,21 +2157,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail page -> Accounts tab -> Loans sub-tab ( locate the specific loan entry )`
+- **Navigate To**: `Client Detail page -> Loans tab (or Client Detail -> Accounts -> Loans)`
 - **Observe**:
-  - loan entry with Loan Account Number / Identifier (e.g., the target loan)
-  - status column showing 'Submitted and Pending Approval' for that loan
-  - client's loans count includes the target loan
+  - Loan application row for the target loan (by account number or application id) is present in the list
+  - Status badge for the loan reads 'Submitted' or 'Pending Approval'
+  - Loan detail can be opened from the list (loan detail page is reachable)
 
 **Post-Check**
-- **Navigate To**: `Client Detail page -> Accounts tab -> Loans sub-tab; additionally, attempt direct access to the deleted loan's Loan Detail URL and use Global Search for the loan identifier`
+- **Navigate To**: `Client Detail page -> Loans tab (or Client Detail -> Accounts -> Loans)`
 - **Observe**:
-  - the loan entry with the previously observed Loan Account Number / Identifier is absent from the loans list
-  - client's loans count is reduced by one compared to pre_check
-  - Global Search for the loan identifier returns 'No results found' or does not list the loan
-  - direct navigation to the deleted loan's detail URL returns 'Not found', redirects to Client Detail, or shows an explicit 'Loan not found' message
+  - Loan application row for the target loan is no longer present in the client's loan list
+  - No link or action is available to open the deleted loan from the client record
+  - Global Search for the loan account number / application id returns no results or indicates the loan is not found
 
-**Expected Change**: The deleted loan no longer appears in the client's Loans list and the client's loan count decreased by one; attempts to search for or directly open the deleted loan's detail page return no results or a not-found/redirect response.
+**Expected Change**: The Submitted loan application has been removed from the client's loan list and is no longer accessible from the client profile or global search; attempting to open the deleted loan should fail or show no results.
 
 ---
 
@@ -2277,21 +2192,20 @@
 **Pre-Check**
 - **Navigate To**: `Loan Detail page for the Approved loan`
 - **Observe**:
-  - status badge (expected 'Approved')
-  - loan balance / outstanding (should reflect pre-disbursement state)
-  - Transactions tab: latest transaction (if any) and transaction list
-  - Repayment Schedule tab: summary (total paid, total outstanding, total overdue) and schedule rows
+  - status badge is 'Approved' (e.g., yellow/orange as per UI)
+  - transactions list does not contain a disbursement transaction for the loan
+  - loan outstanding principal equals expected pre-disbursement balance
 
 **Post-Check**
-- **Navigate To**: `Loan Detail page -> Header, Transactions tab, Repayment Schedule tab. If Disburse to Savings was selected: Linked Savings Account Detail page`
+- **Navigate To**: `Loan Detail page for the same loan (refresh if necessary)`
 - **Observe**:
-  - status badge
-  - Transactions tab: presence of a new Disbursement transaction with Disbursed On Date = <disbursed_on_date>, Amount = <transaction_amount>, Payment Type = <payment_type>, and any provided payment details visible
-  - loan balance / outstanding updated to reflect the disbursement (principal outstanding equals expected amount after disbursement)
-  - Repayment Schedule: installments populated/updated with outstanding amounts and status indicators consistent with an Active loan
-  - If Disburse to Savings selected: Linked Savings Account Transactions: a deposit/credit transaction for <transaction_amount> on <disbursed_on_date> and updated available balance
+  - status badge is 'Active' (green)
+  - transactions list contains a Disbursement transaction with amount = <transaction_amount> and date = <disbursed_on_date>
+  - Disbursement transaction shows Payment Type = <payment_type> and any provided payment details are recorded
+  - repayment schedule and outstanding balances updated to reflect the disbursed amount
+  - if 'Disburse to Savings' was toggled: linked Savings account shows a deposit/receipt transaction for amount = <transaction_amount> and the savings balance is increased accordingly
 
-**Expected Change**: Status badge changes from 'Approved' to 'Active' (green). A Disbursement transaction is recorded dated <disbursed_on_date> for <transaction_amount> with the selected Payment Type and any provided payment details. The loan's outstanding/principal balance and repayment schedule reflect the disbursement (installments populated and total outstanding increased to include the disbursed principal as applicable). If 'Disburse to Savings' was toggled, the client's linked savings account shows a corresponding deposit/credit transaction for the disbursed amount and its available balance increases by that amount.
+**Expected Change**: The loan's workflow status changes from 'Approved' to 'Active' and a disbursement transaction is recorded with the entered amount, date, and payment type; if Disburse to Savings was used, the target savings account receives a corresponding deposit transaction and balance update.
 
 ---
 
@@ -2312,16 +2226,16 @@
 **Pre-Check**
 - **Navigate To**: `Loan Detail page for the target loan (currently in Approved state)`
 - **Observe**:
-  - status badge text and color (should read 'Approved' and be blue)
-  - available action buttons in the state action bar (e.g., Disburse, Undo Approval)
+  - status badge is 'Approved' (green)
+  - state action bar contains 'Undo Approval' action
 
 **Post-Check**
-- **Navigate To**: `Loan Detail page for the same loan (refresh if needed / reopen detail)`
+- **Navigate To**: `Loan Detail page for the same loan (refresh page or navigate back to the loan after performing Undo Approval)`
 - **Observe**:
-  - status badge text and color
-  - available action buttons in the state action bar
+  - status badge is 'Submitted and Pending Approval' (yellow)
+  - state action bar no longer shows 'Undo Approval' and shows actions appropriate for a pending approval (e.g., 'Approve')
 
-**Expected Change**: Status badge changes from 'Approved' (blue) to 'Submitted and Pending Approval' (yellow). Action bar updates to show Pending-Approval actions (e.g., Approve, Reject, Withdraw, Delete) and no longer shows Approved-only actions such as Disburse or Undo Approval.
+**Expected Change**: The loan's status changes from 'Approved' to 'Submitted and Pending Approval' and the loan detail page reflects this with a yellow status badge and pending-approval actions.
 
 ---
 
@@ -2338,24 +2252,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Detail page for the loan under test`
+- **Navigate To**: `Loan Detail page for the loan in Active state`
 - **Observe**:
-  - status badge (expected 'Active')
-  - loan balance / total outstanding amount (greater than 0)
-  - total paid amount
-  - repayment schedule (installment rows showing principal/interest/fees/penalties due and paid status)
-  - Transactions table - most recent entry (Date, Type, Amount, Payment Type) and transaction count
+  - status badge reads 'Active'
+  - outstanding principal/total due is greater than 0
+  - no 'Closed obligations met' status is shown
+  - transactions list does not contain a repayment equal to the expected full settlement amount
 
 **Post-Check**
 - **Navigate To**: `Loan Detail page for the same loan`
 - **Observe**:
-  - status badge
-  - loan balance / total outstanding amount
-  - total paid amount
-  - repayment schedule (installment rows and their paid statuses)
-  - Transactions table - most recent entry (Date, Type, Amount, Payment Type) and transaction count
+  - status badge reads 'Closed obligations met'
+  - outstanding principal/total due is 0 (or shows fully settled)
+  - a repayment transaction exists in the transactions list with the full settlement amount and the provided transaction date
+  - loan summary shows paid amounts updated (paid principal/interest/fees reflect the settlement)
 
-**Expected Change**: After confirming the full repayment: the status badge is 'Closed obligations met' (was 'Active' in pre-check); loan balance and total outstanding become 0.00; Total Paid increases by the full settlement amount; all repayment schedule installments are marked as paid (no outstanding amounts); a new Transactions table entry exists with Type 'Repayment', Amount equal to <amount_due>, Transaction Date equal to <transaction_date>, and Payment Type equal to <payment_type>; Transactions table row count increased by one.
+**Expected Change**: The loan status is updated from 'Active' to 'Closed obligations met', the outstanding amount is cleared to zero, and a repayment transaction for the full settlement amount is recorded on the loan with the specified transaction date.
 
 ---
 
@@ -2372,24 +2284,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Detail page -> Charges tab (and verify Summary tab totals)`
+- **Navigate To**: `Loan Detail page -> Charges / Transactions tab for the active loan`
 - **Observe**:
-  - Charges table rows with columns: Charge Name, Amount, Due Date, Paid, Waived, Outstanding
-  - The interest-related charge row(s) and their current Outstanding and Waived amounts
-  - Loan Summary: total outstanding amount (principal + interest + fees + penalties)
-  - Repayment Schedule: interest due for upcoming/installment rows (optional to note pre-change values)
-  - Transactions tab: absence of a recent 'Waive Interest' transaction for the intended amount
+  - loan status is 'Active'
+  - Charges summary contains an interest charge row with an outstanding amount greater than 0
+  - no existing 'Waive Interest' transaction present for the current interest due in the transactions list
 
 **Post-Check**
-- **Navigate To**: `Loan Detail page -> Charges tab, Summary tab, and Transactions tab`
+- **Navigate To**: `Loan Detail page -> Charges / Transactions tab for the same loan`
 - **Observe**:
-  - Charges table interest row shows increased 'Waived' amount and reduced 'Outstanding' amount
-  - Loan Summary shows total outstanding reduced by the waived interest amount
-  - Repayment Schedule reflects reduced interest due (if waiver applied to scheduled installments)
-  - Transactions tab (or Audit/Activity) shows an entry for 'Waive Interest' (or similar) with the waived amount and timestamp
-  - Charge history/Notes (if present) documents the waiver action
+  - Charges summary shows the interest charge marked as waived or shows a reduced/outstanding amount reflecting the waiver
+  - Transaction history contains a 'Waive Interest' transaction or entry with the waived amount and date
+  - Loan overview/summary reflects the updated interest due and outstanding balance after the waiver
 
-**Expected Change**: The interest charge's 'Waived' column increases by the waived interest amount and its 'Outstanding' decreases by the same amount; the Loan Summary's total outstanding reduces by the waived interest amount; a 'Waive Interest' transaction or audit entry is present in Transactions/Activity documenting the waiver.
+**Expected Change**: The previously outstanding interest charge is recorded as waived (or its outstanding amount is reduced by the waived amount); a 'Waive Interest' transaction appears in the transaction history with waiver details; and the loan's charges/overview reflect the reduced interest due and updated outstanding balance.
 
 ---
 
@@ -2407,22 +2315,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Detail page for the loan used in the test (open the same loan account)`
+- **Navigate To**: `Loan Detail page for the target loan`
 - **Observe**:
-  - status badge (expected: 'Active')
-  - loan outstanding balance (numeric value)
-  - Transactions table - recent entries (no 'Write Off' entry yet)
-  - Repayment Schedule - installment statuses and outstanding amounts (shows unpaid/overdue installments)
+  - status badge is 'Active'
+  - no 'Written Off' status badge present
 
 **Post-Check**
-- **Navigate To**: `Loan Detail page for the same loan (refresh if necessary)`
+- **Navigate To**: `Loan Detail page for the same loan (or refresh current loan detail)`
 - **Observe**:
-  - status badge (expected: 'Written Off' and red)
-  - loan outstanding balance (expected: cleared or clearly marked as written off)
-  - Transactions table - recent entries (contains a 'Write Off' transaction with the write-off amount and correct date/user)
-  - Repayment Schedule - installment statuses and outstanding amounts (previously outstanding installments are marked as waived/closed/written off)
+  - status badge is 'Written Off' (red)
+  - a write-off transaction appears in the Transactions/Activity list with write-off date and amount
+  - outstanding principal/interest is marked or annotated as written off (or outstanding balance reflects the write-off)
 
-**Expected Change**: The loan status changed from 'Active' to 'Written Off' (red); a 'Write Off' transaction exists matching the pre-check outstanding amount; the loan outstanding balance is cleared or marked as written-off and outstanding installments are updated to reflect the write-off.
+**Expected Change**: The loan's status is updated to 'Written Off'; a corresponding write-off transaction is recorded in the loan transactions and the outstanding balance/annotations reflect the write-off.
 
 ---
 
@@ -2440,25 +2345,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Detail page for the loan in Active state (open the loan referenced in the core test case)`
+- **Navigate To**: `Loan Detail page for the specific Active loan (and optionally Loans list)`
 - **Observe**:
-  - status badge (text: 'Active', color: green)
-  - loan account number
-  - loan balance / total outstanding amount
-  - available action buttons (e.g., Make Repayment, Waive Interest, Write Off) in the state action bar
-  - Repayment Schedule tab -> outstanding installment rows and their statuses
+  - status badge on Loan Detail shows 'Active'
+  - loan row in Loans list displays status 'Active' (if present)
 
 **Post-Check**
-- **Navigate To**: `Loan Detail page for the same loan (refresh or re-open the detail page)`
+- **Navigate To**: `Loan Detail page for the same loan and Loans list`
 - **Observe**:
-  - status badge (text: 'Closed', color: gray)
-  - loan account number (same as pre-check)
-  - loan balance / total outstanding amount
-  - available action buttons (state actions) — verify Close/Active-only actions are no longer present or are disabled
-  - Repayment Schedule tab -> outstanding installment rows (should show no outstanding amounts)
-  - Transactions tab -> latest transaction(s) showing closing/settlement entry and Closure Date recorded in summary
+  - status badge on Loan Detail shows 'Closed' (gray)
+  - loan row in Loans list displays status 'Closed' (gray) where applicable
+  - closure date or closure audit entry is present on Loan Detail (if UI shows closure metadata)
 
-**Expected Change**: The loan's status badge changes from 'Active' (green) to 'Closed' (gray). The loan account shows the same account number, total outstanding amount is zero (no remaining due) and repayment schedule shows no outstanding installments; Active-state actions (Make Repayment, Waive Interest, etc.) are no longer available and a closure/settlement transaction and closure date appear in the Transactions/summary.
+**Expected Change**: The loan's status is changed from 'Active' to 'Closed' and both the Loan Detail page and the Loans list (where visible) reflect the closed state with a gray 'Closed' status badge and associated closure metadata.
 
 ---
 
@@ -2477,22 +2376,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Detail page for the loan in Active state (open the same loan used in the test)`
+- **Navigate To**: `Loan Detail page for the Active loan -> Reschedule / Requests section`
 - **Observe**:
-  - Loan status badge (e.g., 'Active')
-  - Reschedule requests section / Requests list / Activity feed (verify there is no existing reschedule request matching the planned Reschedule From Date and Adjusted Due Date)
-  - Repayment Schedule (note current due dates for reference)
+  - reschedule requests list does not contain a pending reschedule entry for this loan
+  - no 'Reschedule Request Pending' banner or pending indicator is shown on the Loan Detail page
 
 **Post-Check**
-- **Navigate To**: `Loan Detail page for the loan in Active state (refresh the page or navigate back to ensure backend state is loaded)`
+- **Navigate To**: `Loan Detail page for the same loan -> Reschedule / Requests section`
 - **Observe**:
-  - Reschedule requests section / Requests list / Activity feed entry for the new reschedule request
-  - Visible fields on the new request: 'Reschedule From Date', 'Adjusted Due Date', 'Reason', 'Requesting User' (or maker), and 'Requested On' timestamp
-  - Request status badge or processing result showing 'Pending Approval' (or equivalent pending state)
-  - Loan status badge remains 'Active' (reschedule request does not change loan operational status before approval)
-  - Repayment Schedule still shows original due dates (optional: indicates change only after approval)
+  - reschedule requests list contains a new entry with status 'Pending Approval' or 'Pending'
+  - the new reschedule entry displays Reschedule From Date: <reschedule_from_date>
+  - the new reschedule entry displays Adjusted Due Date: <adjusted_due_date>
+  - the new reschedule entry displays Reason: <reason>
+  - loan status badge remains 'Active' and a pending reschedule indicator is visible on the page
 
-**Expected Change**: A new reschedule request entry appears in the loan's Reschedule requests / Requests list with the provided Reschedule From Date, Adjusted Due Date, and Reason; the entry shows the requesting user's name and a status of 'Pending Approval'. The loan's status remains 'Active' and repayment schedule changes are not applied until the reschedule request is approved.
+**Expected Change**: A new reschedule request record is created and visible on the Loan Detail page's reschedule/requests section with status 'Pending Approval' and shows the submitted Reschedule From Date (<reschedule_from_date>), Adjusted Due Date (<adjusted_due_date>), and Reason (<reason>).
 
 ---
 
@@ -2513,22 +2411,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Detail page -> Transactions tab`
+- **Navigate To**: `Loan Detail page -> Transactions tab (for the Active loan)`
 - **Observe**:
-  - count of transaction rows
-  - most recent transaction: {type, date, amount}
-  - loan balance / total outstanding
-  - repayment schedule summary (next due amount, total outstanding) and loan status badge
+  - transactions list does not contain a row with transaction type 'Prepayment' for the intended/prepay amount
+  - outstanding principal / loan balance shown before performing the prepayment
 
 **Post-Check**
-- **Navigate To**: `Loan Detail page -> Transactions tab`
+- **Navigate To**: `Loan Detail page -> Transactions tab (refresh if necessary)`
 - **Observe**:
-  - count of transaction rows
-  - new/latest transaction: {type, date, amount, payment type}
-  - loan balance / total outstanding
-  - repayment schedule summary (next due amount, total outstanding) and loan status badge
+  - transactions list contains a new row with transaction type 'Prepayment' and the submitted prepayment amount
+  - transaction row shows the prepayment date equal to the submitted transaction date
+  - outstanding principal / loan balance is reduced by the prepayment amount compared to the pre-check value
 
-**Expected Change**: Transaction count increased by 1 and the Transactions table contains a new row for the prepayment with Type = 'Prepayment' (or labeled equivalent), Transaction Date = submitted date, and Amount = submitted prepayment amount. The loan balance / total outstanding decreased by the prepayment amount (or to zero if the prepayment fully settles the loan). The running balance shown on the new transaction row reflects the decreased outstanding. Loan status remains 'Active' unless the prepayment fully repays the loan, in which case the status changes to 'Closed'.
+**Expected Change**: A new prepayment transaction row is created in the Transactions tab for the loan and the outstanding principal/loan balance is decreased by the prepayment amount.
 
 ---
 
@@ -2545,24 +2440,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Detail page for the target loan (Summary tab)`
+- **Navigate To**: `Loan Detail page for the target loan (open by account number or via client profile)`
 - **Observe**:
-  - status badge showing 'Active'
-  - outstanding balance / loan balance
-  - Repayment Schedule -> count of upcoming installments and their due dates
-  - Transactions tab -> most recent transaction entries (type, date, amount)
-  - Activity feed / Audit Trails for the loan -> ensure no existing 'Foreclosure' entry for this loan
+  - status badge is 'Active'
+  - no activity entry describing a foreclosure exists in the activity/notes feed
+  - outstanding principal and repayment schedule show pre-foreclosure balances
 
 **Post-Check**
-- **Navigate To**: `Loan Detail page for the same loan (Summary tab), then Transactions tab and Activity feed / Audit Trails`
+- **Navigate To**: `Loan Detail page -> Activity / Transactions tab (refresh the page if already open)`
 - **Observe**:
-  - status badge (expect not to be 'Active')
-  - outstanding balance / loan balance
-  - Repayment Schedule -> future installments (expect cancelled/removed or marked as settled)
-  - Transactions tab -> presence of a transaction entry with type 'Foreclosure' or 'Settlement' including date, amount and payment details
-  - Activity feed / Audit Trails -> an entry recording the Foreclosure action with maker's username and timestamp
+  - activity feed contains a new entry describing the Foreclosure action with date and performing user
+  - status badge indicates a foreclosed/closed state (e.g., 'Foreclosed' or 'Closed')
+  - transactions or account entries reflect the foreclosure (e.g., write-off or settlement entries) and outstanding balance is updated accordingly
 
-**Expected Change**: Loan status transitions from 'Active' to a non-active end state (e.g., 'Closed' or 'Foreclosed'); a foreclosure/settlement transaction appears in Transactions dated at the action time with the foreclosure amount; outstanding balance is reduced accordingly (typically to zero or to the post-foreclosure outstanding amount); future installments in the Repayment Schedule are cancelled or marked settled; Activity/Audit Trail contains a Foreclosure entry referencing the action and user.
+**Expected Change**: A foreclosure activity entry is recorded and the loan status transitions from Active to a foreclosed/closed state; transaction history and outstanding balances reflect the executed foreclosure.
 
 ---
 
@@ -2581,24 +2472,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Detail page for the loan (open the same loan used in the test case)`
+- **Navigate To**: `Loan Detail page for the target loan`
 - **Observe**:
-  - status badge (expected 'Active')
-  - outstanding principal balance (numeric value)
-  - transactions table (most recent entries: date, type, amount)
-  - loan activity log / recent activity entry
-  - repayment schedule summary (total outstanding, number of unpaid installments)
+  - status badge shows 'Active'
+  - transactions/activity list does not contain a 'Charge Off' entry
+  - outstanding principal and arrears balances reflect pre-charge-off amounts
 
 **Post-Check**
-- **Navigate To**: `Loan Detail page for the loan (reload or navigate back to ensure backend state is shown)`
+- **Navigate To**: `Loan Detail page for the same loan (refresh if necessary)`
 - **Observe**:
-  - status badge (new value indicating charge-off / written off state)
-  - outstanding principal balance (numeric value)
-  - transactions table (most recent entries: presence of a Charge Off / Write Off transaction)
-  - loan activity log / recent activity entry (entry describing charge off with user and timestamp)
-  - repayment schedule summary (total outstanding and statuses of remaining installments)
+  - status badge shows 'Charged Off' or an equivalent closed status indicating charge-off
+  - transactions/activity list contains a 'Charge Off' entry with date, amount, and user who performed the action
+  - outstanding principal and arrears balances have been adjusted according to the charge-off (e.g., reduced to zero or reduced by charged-off amount)
+  - audit/activity feed includes an entry describing the charge-off action
 
-**Expected Change**: The loan status is no longer 'Active' and is displayed as a charge-off state (e.g., 'Written Off' or equivalent); the outstanding principal balance is reduced/adjusted to reflect the charge off (typically zeroed or moved to charged-off amount per product rules); a new transaction appears in the Transactions table recording the charge off (type 'Charge Off' or 'Write Off', amount, date); the Loan activity log contains an entry describing the charge off action (user, date, amount, reason); the repayment schedule and total outstanding reflect that remaining unpaid principal has been written off.
+**Expected Change**: The loan status changes from Active to a Charged Off/closed status and the loan's transactions/activity list contains a Charge Off entry; outstanding balances are adjusted to reflect the charge-off.
 
 ---
 
@@ -2618,20 +2506,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Detail page for the loan in Active state`
+- **Navigate To**: `Loan Detail page for the target Active loan`
 - **Observe**:
-  - loan account number
-  - loan status badge
-  - assigned loan officer (header)
+  - Loan Detail header shows 'Loan Officer' field is empty or 'Unassigned'
+  - Or 'Loan Officer' value is not equal to '<loan_officer>'
 
 **Post-Check**
-- **Navigate To**: `Loan Detail page for the same loan (refresh or reopen the page)`
+- **Navigate To**: `Loan Detail page for the same loan (refresh page or navigate back to ensure data loaded from backend)`
 - **Observe**:
-  - loan account number
-  - loan status badge
-  - assigned loan officer (header)
+  - Loan Detail header displays 'Loan Officer' = '<loan_officer>'
+  - Loan summary/header badge shows the assigned loan officer name as '<loan_officer>'
 
-**Expected Change**: The assigned loan officer shown in the Loan Detail header is <loan_officer>. If a different officer was present before, it is replaced by <loan_officer>; the loan status remains Active.
+**Expected Change**: The loan's assigned Loan Officer is persisted and displayed in the Loan Detail header as '<loan_officer>' (previously unassigned or different).
 
 ---
 
@@ -2652,22 +2538,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Loan Detail -> Transactions tab`
+- **Navigate To**: `Loan Detail -> Transactions tab for the target loan`
 - **Observe**:
-  - target transaction is present and identifiable (Transaction ID or unique combination of Date, Amount, Type)
-  - Transactions table row for the target transaction shows Amount, Date, Type, and resulting Outstanding Balance
-  - Loan Detail -> Summary: values for 'Total Paid', 'Total Outstanding', and 'Loan Balance'
-  - Loan Detail -> Repayment Schedule: installment(s) affected by the target transaction showing Paid/Outstanding amounts and status
+  - transactions list contains the target transaction row (identify by transaction ID, date, amount and transaction type)
+  - visible transaction count for the loan (or page total) is recorded
+  - loan outstanding balance / account balance shown on loan summary or transactions header (record current value)
 
 **Post-Check**
-- **Navigate To**: `Loan Detail -> Transactions tab; then Loan Detail -> Summary; then Loan Detail -> Repayment Schedule`
+- **Navigate To**: `Loan Detail -> Transactions tab for the same loan (after performing Undo and confirming)`
 - **Observe**:
-  - target transaction identifier (Transaction ID or Date+Amount+Type) is not present in the Transactions table
-  - Transactions table row count decreased by one OR shows a reversal entry indicating the undo
-  - Loan Detail -> Summary: updated values for 'Total Paid', 'Total Outstanding', and 'Loan Balance'
-  - Loan Detail -> Repayment Schedule: affected installment(s) reflect reverted payment (Paid amount decreased and Outstanding amount increased) or reflect the reversal
+  - transactions list does not contain the original target transaction row OR the original transaction is marked as 'Reversed/Voided' and a new reversal transaction row exists referencing the original transaction ID
+  - visible transaction count for the loan has decreased by one compared to pre_check (or shows reversal marker instead of original row)
+  - loan outstanding balance / account balance updated to reflect the undo (pre_check balance adjusted by the transaction amount in the expected direction)
 
-**Expected Change**: The selected transaction no longer appears as a posted transaction in the Transactions tab. Corresponding loan totals are updated: 'Total Paid' decreases by the transaction amount and 'Total Outstanding'/'Loan Balance' increase by the same amount. Affected repayment schedule installment(s) show amounts reverted (paid decreased, outstanding increased). If the system records a reversal entry instead of deleting the original, the original posted transaction will not be reflected as an active payment and the Summary/Repayment Schedule will reflect the reversal.
+**Expected Change**: The original transaction is no longer active in the loan's Transactions tab: either it is removed or marked reversed and a reversal entry is present; the transactions count is reduced (or reversal marker shown) and the loan balance is updated to reflect the undone transaction.
 
 ---
 
@@ -2685,26 +2569,23 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail -> Savings Accounts tab`
+- **Navigate To**: `Client Detail -> Accounts (Savings) tab`
 - **Observe**:
-  - List of savings accounts for the client (rows, with Product Name and Status columns)
-  - Count of accounts with status 'Submitted and Pending Approval'
-  - Absence of an account row with Product Name = <product> AND Submitted On = <Submitted On date> in status 'Submitted and Pending Approval'
+  - accounts list does not contain a savings account row for product '<product>' with submission date '<Submitted On date>'
+  - no account with status 'Submitted and Pending Approval' exists for the target client
 
 **Post-Check**
-- **Navigate To**: `Client Detail -> Savings Accounts tab; open the newly created savings account detail page`
+- **Navigate To**: `Client Detail -> Accounts (Savings) tab`
 - **Observe**:
-  - A new row in the Savings Accounts list for Product Name = <product>
-  - Status column shows 'Submitted and Pending Approval' (yellow badge) for this new row
-  - Clickable account number link for the new savings account (opens detail page)
-  - On the Savings Account detail page: Product Name = <product>
-  - On the Savings Account detail page: Field Officer = <Field Officer>
-  - On the Savings Account detail page: Submitted On = <Submitted On date>
-  - On the Savings Account detail page: Minimum Opening Balance = <minimum opening amount>
-  - On the Savings Account detail page: Allow Overdraft = <on|off>
-  - On the Savings Account detail page: Charges section includes <charge> if it was added
+  - accounts list contains a new savings account row for product '<product>'
+  - status badge for the new account is 'Submitted and Pending Approval'
+  - submitted on date column shows '<Submitted On date>' for the new account
+  - minimum opening balance column shows '<minimum opening amount>'
+  - field officer column shows '<Field Officer>'
+  - overdraft indicator reflects the selected toggle state ('Allowed' when on, 'Not allowed' when off)
+  - if charge was added: charges column/row shows '<charge>' on the new account
 
-**Expected Change**: A new savings account record is created and appears in the client's Savings Accounts list with status 'Submitted and Pending Approval'. The account detail page for that record shows Product Name = <product>, Field Officer = <Field Officer>, Submitted On = <Submitted On date>, Minimum Opening Balance = <minimum opening amount>, Allow Overdraft = <on|off>, and lists the added charge <charge> if provided.
+**Expected Change**: A new Savings Account record for the selected product is created for the client and appears in the Accounts list with status 'Submitted and Pending Approval' and the entered metadata (Submitted On date, Field Officer, Minimum Opening Balance, overdraft setting, and any added charges).
 
 ---
 
@@ -2722,20 +2603,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Savings Account Detail page for the submitted account`
+- **Navigate To**: `Savings Account Detail page for the target account`
 - **Observe**:
-  - status badge text (expected: 'Submitted and Pending Approval')
-  - available action buttons (expected to include 'Approve')
-  - account number and client name (to ensure correct account)
+  - status badge shows 'Submitted' or 'Pending Approval'
+  - no 'Approved' status or approval date present in account header/audit trail
 
 **Post-Check**
-- **Navigate To**: `Savings Account Detail page for the same account (or refresh the detail page)`
+- **Navigate To**: `Savings Account Detail page for the same account (refresh if necessary)`
 - **Observe**:
-  - status badge text (expected: 'Approved')
-  - available action buttons (expected to include 'Activate' and not include 'Approve')
-  - account number and client name (unchanged)
+  - status badge shows 'Approved'
+  - approval metadata present (approval date and approver username) in audit/history or account header
+  - account appears as 'Approved' in Savings Accounts list or search results
 
-**Expected Change**: Status badge changed from 'Submitted and Pending Approval' to 'Approved'. The 'Approve' action is no longer present and the 'Activate' action is available on the account detail page, confirming the backend status update.
+**Expected Change**: The savings account status transitions from Submitted/Pending Approval to Approved; the detail page status badge displays 'Approved' and an approval audit entry (approver and approval date) is recorded and visible in the account history/list.
 
 ---
 
@@ -2752,20 +2632,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Savings Account Detail page for the submitted application`
+- **Navigate To**: `Savings Accounts -> Open the specific Submitted/Pending Approval account detail`
 - **Observe**:
-  - status badge equals 'Submitted and Pending Approval'
-  - action button 'Reject' is present
-  - no rejection indicator or rejection reason displayed
+  - status badge shows 'Submitted' or 'Pending Approval'
+  - no 'Rejected' status badge or rejection indicator is present on the account detail page
+  - action buttons include 'Approve' and 'Reject' (Reject is enabled)
 
 **Post-Check**
-- **Navigate To**: `Savings Account Detail page for the same account (refresh or reopen)`
+- **Navigate To**: `Savings Accounts -> Open the same account detail (or refresh the account detail page)`
 - **Observe**:
-  - status badge equals 'Rejected'
-  - rejection indicator or rejection reason is displayed on the detail page
-  - approval-related action buttons (e.g., 'Approve', 'Activate') are not available; 'Reject' action is no longer shown
+  - status badge shows 'Rejected'
+  - a rejection indicator is present (e.g., rejection badge, timeline entry or rejection reason with date)
+  - approval actions (Approve/Reject) are no longer available or are disabled for this account
+  - the account no longer appears in Pending Approval / Submitted lists (if viewing lists)
 
-**Expected Change**: The account status changed from 'Submitted and Pending Approval' to 'Rejected'; a visible rejection indicator/reason appears on the detail page; approval actions are removed from the UI, and an audit trail entry records the Reject action with Processing Result 'Rejected' attributed to the acting user.
+**Expected Change**: The savings account status changes from 'Submitted'/'Pending Approval' to 'Rejected' and the account detail displays an explicit rejection indicator (status badge and timeline entry); approval actions are removed or disabled and the account is removed from pending-approval lists.
 
 ---
 
@@ -2783,22 +2664,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Savings Account Detail page for the submitted application (from Client -> Accounts or Global Search)`
+- **Navigate To**: `Savings Accounts -> Open the target Savings Account Detail page (the account to be withdrawn)`
 - **Observe**:
-  - status badge showing 'Submitted and Pending Approval' (yellow)
-  - presence of action buttons appropriate to Pending status (Approve, Reject, Withdraw Application)
-  - account listed under the client's Accounts tab with status 'Submitted and Pending Approval'
-  - no transactions present in Transactions tab (optional pre-condition)
+  - status badge displays 'Submitted' or 'Pending Approval' (application pending)
+  - no 'Withdrawn' status indicator present on the account
+  - account appears in any pending approvals / submitted accounts list (if applicable)
 
 **Post-Check**
-- **Navigate To**: `Savings Account Detail page for the same application (from Client -> Accounts or Global Search)`
+- **Navigate To**: `Savings Accounts -> Open the same Savings Account Detail page (or refresh and revisit the account)`
 - **Observe**:
-  - status badge showing 'Withdrawn' (orange/Withdrawn chip)
-  - absence of action buttons for Pending status (Approve, Withdraw Application) — action buttons for Pending should no longer appear
-  - account listed under the client's Accounts tab with status 'Withdrawn'
-  - Transactions tab unchanged (no deposit transactions were posted as part of withdrawal)
+  - status badge displays 'Withdrawn' on the account detail
+  - 'Withdrawn' status indicator is present in the account header/summary
+  - the account is removed from Pending Approvals or Submitted lists (if applicable)
 
-**Expected Change**: The account's status changes from 'Submitted and Pending Approval' to 'Withdrawn'; pending-action buttons (Approve, Withdraw Application) are removed; the client's Accounts listing and the Savings Account Detail page reflect the 'Withdrawn' status.
+**Expected Change**: The account application status changes from 'Submitted'/'Pending Approval' to 'Withdrawn' and the UI shows a persistent 'Withdrawn' status indicator on the Savings Account detail (and the account no longer appears in pending/submitted lists).
 
 ---
 
@@ -2815,20 +2694,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Savings Account Detail page for <the account>`
+- **Navigate To**: `Savings Account Detail page for the Approved account`
 - **Observe**:
-  - status badge
-  - status text (should display 'Approved')
-  - account number
+  - status badge is 'Approved'
+  - Activate action button is visible and enabled
+  - Account operations (Deposit/Withdraw) are disabled or not available while in Approved state
 
 **Post-Check**
-- **Navigate To**: `Savings Account Detail page for <the account> and Client -> Savings Accounts tab (Accounts listing)`
+- **Navigate To**: `Savings Account Detail page for the same account`
 - **Observe**:
-  - status badge
-  - status text (should display 'Active')
-  - status column for the account in the Savings Accounts listing
+  - status badge is 'Active'
+  - Activate action button is not visible
+  - Account operations (Deposit/Withdraw) are enabled
 
-**Expected Change**: The savings account status changes from 'Approved' to 'Active'; the detail page status badge displays 'Active'; the account's status in the client's Savings Accounts listing shows 'Active' (and the account appears under Active filters).
+**Expected Change**: The savings account status changes from 'Approved' to 'Active'. The status badge displays 'Active', the 'Activate' action is removed, and account operations become available.
 
 ---
 
@@ -2845,21 +2724,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Savings Account Detail page for the account (or Client Detail -> Savings Accounts tab -> open the savings account)`
+- **Navigate To**: `Savings Account Detail page for the target account`
 - **Observe**:
-  - status badge text (expected: 'Approved')
-  - status badge color (expected: green or the UI's Approved color)
-  - available action buttons (expected to include 'Activate' and 'Undo Approval')
+  - status badge is 'Approved'
+  - approval metadata shows approval date and approver (if available)
+  - account appears under 'Approved' when filtering Savings Accounts list by status
 
 **Post-Check**
-- **Navigate To**: `Savings Account Detail page for the account (or Client Detail -> Savings Accounts tab -> open the savings account)`
+- **Navigate To**: `Savings Account Detail page for the same account`
 - **Observe**:
-  - status badge text
-  - status badge color
-  - available action buttons on the account detail page
-  - account status as shown in the Client's Savings Accounts list/table
+  - status badge displays 'Submitted and Pending Approval'
+  - approval metadata (approval date/approver) is absent or cleared
+  - account appears under 'Submitted and Pending Approval' when filtering Savings Accounts list by status
 
-**Expected Change**: The status badge text changes from 'Approved' to 'Submitted and Pending Approval' and its color changes from the Approved color to the Submitted/Pending Approval color; the action buttons update from containing 'Undo Approval'/'Activate' to containing 'Approve' (and other Pending actions such as 'Reject' or 'Withdraw') and 'Undo Approval' is no longer present; the account's status in the Client's Savings Accounts list also updates to 'Submitted and Pending Approval'.
+**Expected Change**: The account's status changes from 'Approved' to 'Submitted and Pending Approval'; any approval timestamp/approver information is cleared and the account is returned to the pending-approval workflow.
 
 ---
 
@@ -2883,22 +2761,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Savings Account Detail page -> Transactions tab (and Summary card)`
+- **Navigate To**: `Savings Account Detail page -> Transactions tab`
 - **Observe**:
-  - account balance on the Summary card (Account balance)
-  - available balance on the Summary card (Available balance)
-  - transactions table top row fields: Type, Amount, Transaction Date
-  - transactions table row count
+  - record current account balance as <Pre-Transaction Balance>
+  - verify transactions table does not contain a row with Type 'Deposit' and Amount <Transaction Amount> dated <Transaction Date>
 
 **Post-Check**
-- **Navigate To**: `Savings Account Detail page -> Transactions tab (and Summary card)`
+- **Navigate To**: `Savings Account Detail page -> Transactions tab (refresh page if necessary)`
 - **Observe**:
-  - account balance on the Summary card (Account balance)
-  - available balance on the Summary card (Available balance)
-  - transactions table top row fields: Type, Amount, Transaction Date
-  - transactions table row count
+  - transactions table contains a new row with Type 'Deposit', Amount <Transaction Amount>, Payment Type 'Cash', and Transaction Date <Transaction Date>
+  - account balance equals <Pre-Transaction Balance> + <Transaction Amount>
+  - the new transaction row appears as the most recent entry and shows posted/confirmed status
 
-**Expected Change**: A new transaction appears as the top (most recent) row in the Transactions table with Type 'Deposit', Amount equal to <Transaction Amount>, and Transaction Date equal to <Transaction Date>; the Account balance and Available balance on the Summary card increase by <Transaction Amount>; and the transactions table row count increases by 1.
+**Expected Change**: A Deposit transaction is persisted for the account with Amount <Transaction Amount>, Payment Type 'Cash' and Transaction Date <Transaction Date>, and the Account balance increases by <Transaction Amount> compared to the pre-check balance.
 
 ---
 
@@ -2918,21 +2793,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Savings Account Detail page for the target account`
+- **Navigate To**: `Savings Account Detail page for <the account>`
 - **Observe**:
-  - account balance
-  - available balance
-  - most recent transaction row (Date, Type, Amount) or transactions count
+  - Account balance shown on the detail page (record the pre-withdrawal balance)
+  - Transactions table does not contain a Withdrawal row with Date <Transaction Date>, Amount <Transaction Amount>, and Payment Type 'Cash'
+  - Note the current transaction count in the Transactions table (pre-withdrawal count)
 
 **Post-Check**
-- **Navigate To**: `Savings Account Detail page for the target account -> Transactions tab`
+- **Navigate To**: `Savings Account Detail page for <the account>`
 - **Observe**:
-  - account balance
-  - available balance
-  - transactions table top row (Date, Type, Amount, Status)
-  - transactions count
+  - Transactions table contains a new row with Type 'Withdrawal', Date <Transaction Date>, Amount <Transaction Amount>, and Payment Type 'Cash'
+  - Account balance on the detail page equals (pre-withdrawal balance - <Transaction Amount>)
+  - Transactions table transaction count has increased by 1 compared to the pre-withdrawal count
 
-**Expected Change**: A new transaction row appears in the Transactions table with Type 'Withdrawal', Transaction Date equal to the entered Transaction Date, and Amount equal to the entered Transaction Amount; the account balance and available balance on the detail page have decreased by the Transaction Amount (transactions count increased by one and the top-most transaction matches the new withdrawal).
+**Expected Change**: A new persisted Withdrawal transaction is present for the account with the specified date, amount, and payment type 'Cash', and the displayed account balance is reduced by <Transaction Amount> relative to the pre-withdrawal balance.
 
 ---
 
@@ -2952,22 +2826,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Savings Account Detail page -> Transactions tab (for the target account)`
+- **Navigate To**: `Savings Account Detail page -> Transactions tab`
 - **Observe**:
-  - account balance (displayed on Summary/header)
-  - most recent transaction Type
-  - most recent transaction Amount
-  - total number of transactions (count or last row index)
+  - record the current account balance as 'preBalance' (displayed on account header/summary)
+  - transactions list does not contain a recent row with Type 'Interest Posting' for the intended posting date
+  - if available, note the latest transaction id/date to identify new entry position
 
 **Post-Check**
-- **Navigate To**: `Savings Account Detail page -> Transactions tab (refresh page if needed)`
+- **Navigate To**: `Savings Account Detail page -> Transactions tab (refresh view if necessary)`
 - **Observe**:
-  - account balance (displayed on Summary/header)
-  - most recent transaction Type
-  - most recent transaction Amount
-  - total number of transactions (count or last row index)
+  - transactions list contains a new row with Type 'Interest Posting'
+  - the new 'Interest Posting' row shows an Amount equal to the calculated interest expected from the action
+  - account balance (displayed on account header/summary) equals preBalance + posted interest amount
+  - new transaction appears at or near the top of the transactions list with a transaction date matching the post action
 
-**Expected Change**: A new transaction row is present at the top/end of the Transactions list with Type 'Interest Posting' and Amount equal to <calculated interest>; the account balance has increased by the same <calculated interest> amount compared to the pre_check balance; the total number of transactions has increased by one.
+**Expected Change**: A new transaction of type 'Interest Posting' is created for the account with the calculated interest amount, and the displayed account balance increases by that posted interest amount compared to the pre-check balance.
 
 ---
 
@@ -2986,23 +2859,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Savings Account Detail page for the account under test`
+- **Navigate To**: `Savings Account Detail page for the target account (or Savings Accounts -> open the specific account)`
 - **Observe**:
-  - status badge (expected 'Active')
-  - account balance and available balance
-  - available action buttons (Expect: Deposit, Withdraw, Post Interest, Calculate Interest, Close)
-  - Transactions tab shows recent transactions (note last transaction id/amount for later comparison)
+  - status badge is 'Active'
+  - Close action button is visible on the account detail page
+  - (Optional) In Savings Accounts list the account row shows Status = 'Active'
 
 **Post-Check**
-- **Navigate To**: `Savings Account Detail page for the account under test; additionally verify in Savings Accounts listing (Accounts -> Savings) filtered by account number`
+- **Navigate To**: `Savings Account Detail page for the same account (or Savings Accounts -> open the specific account)`
 - **Observe**:
-  - status badge (expected 'Closed')
-  - account balance and available balance (value should remain as before closure or reflect any automatic disposition performed during close)
-  - available action buttons (Expect: Close button absent; actions for Deposit/Withdraw should be absent; may show Reopen/Reactivate depending on product)
-  - Transactions tab shows the same historical transactions plus any close-related transaction (if closure triggered an automatic final transaction, it should be present and reconciled against balances)
-  - Savings Accounts listing shows the account with Status column displaying 'Closed' (gray chip)
+  - status badge is 'Closed'
+  - Close action button is no longer present or is disabled
+  - Account no longer permits deposit/withdraw actions from the UI
+  - (Optional) In Savings Accounts list the account row shows Status = 'Closed'
 
-**Expected Change**: The account status has changed from 'Active' to 'Closed' (status badge displays 'Closed'); Deposit/Withdraw actions are no longer available on the detail page; the Savings Accounts listing shows the account with status 'Closed'. Any closure transaction (if performed by the system) appears in Transactions and balances reconcile with the presence of that transaction.
+**Expected Change**: The savings account's status changes from 'Active' to 'Closed' and the account detail UI reflects the closed state (status badge displays 'Closed' and transaction/close action controls are removed or disabled).
 
 ---
 
@@ -3019,22 +2890,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Savings Account Detail page for <the account> (open via Client -> Accounts -> Savings or Global Search by account number)`
+- **Navigate To**: `Client Profile -> Savings Accounts tab -> Open the target Savings Account detail (or Savings Accounts list -> open account)`
 - **Observe**:
-  - status badge (value) — expected 'Active'
-  - available action buttons (should include 'Block Account')
-  - account number / identifier (to confirm correct account)
-  - current account balance
+  - status badge shows 'Active'
+  - no 'Blocked' badge/chip is present on the account header or summary
+  - account does not appear in Savings Accounts list when filtered by status = 'Blocked'
 
 **Post-Check**
-- **Navigate To**: `Savings Account Detail page for <the account> (refresh the page or re-open via Client -> Accounts -> Savings or Global Search)`
+- **Navigate To**: `Refresh or re-open the same Savings Account detail (or navigate to Savings Accounts list and open the account); optionally apply status filter 'Blocked' in Savings Accounts list`
 - **Observe**:
-  - status badge (value)
-  - available action buttons (verify 'Block Account' is no longer present or is disabled; verify presence of actions appropriate to Blocked state)
-  - account number / identifier (to confirm same account)
-  - current account balance
+  - status badge shows 'Blocked' on the account detail header
+  - a 'Blocked' tag/chip is visible in account summary or header areas
+  - account appears in the Savings Accounts list when filtered by status = 'Blocked'
 
-**Expected Change**: Status badge changed from 'Active' to 'Blocked'. The 'Block Account' action is no longer available (or is disabled) on the detail page. The account appears with status 'Blocked' on the savings account detail view (and will show as Blocked in listings/search). Account balance remains unchanged by the block action.
+**Expected Change**: The savings account status has changed from 'Active' to 'Blocked' and the 'Blocked' status is persisted and visible on the account detail header and when listing/filtering accounts by status.
 
 ---
 
@@ -3051,22 +2920,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Savings Account Detail page for the account`
+- **Navigate To**: `Client Profile -> Accounts -> Savings Account Detail (target account)`
 - **Observe**:
-  - status badge (expect 'Active')
-  - absence of a 'Debit Blocked' indicator or badge
-  - presence of debit-related action buttons (e.g., 'Withdraw') enabled
-  - presence of 'Block Debit' action button
+  - Account status is 'Active'
+  - No 'Debit Blocked' indicator (badge or status line) is visible
+  - Debit/Withdraw action/button is present and enabled
 
 **Post-Check**
-- **Navigate To**: `Savings Account Detail page for the account`
+- **Navigate To**: `Client Profile -> Accounts -> Savings Account Detail (target account)`
 - **Observe**:
-  - presence of a clear 'Debit Blocked' indicator (badge or status line) on the account detail header
-  - status badge remains 'Active' (if applicable) but with an additional 'Debit Blocked' indicator visible
-  - debit-related action buttons (e.g., 'Withdraw') are disabled or not available; 'Block Debit' action replaced by 'Unblock Debit' or similar
-  - attempting to initiate a debit transaction (e.g., open Withdraw form and submit) is prevented and shows a validation/error message indicating debits are blocked
+  - A visible 'Debit Blocked' indicator (badge or status line) is present on the account header
+  - Debit/Withdraw action/button is disabled or not available
+  - Attempting to create a debit/withdrawal transaction is blocked and shows an error message or prevention UI (e.g., 'Debit blocked')
 
-**Expected Change**: A 'Debit Blocked' indicator appears on the Savings Account detail page; debit actions that were previously enabled (such as Withdraw) are now disabled or removed and replaced by an unblock action; any attempt to perform a debit transaction is prevented and returns an appropriate error/validation message.
+**Expected Change**: The account displays a persistent 'Debit Blocked' indicator and debit transactions are prevented — the debit action is disabled/removed and any attempted debit submission is rejected with an explanatory error.
 
 ---
 
@@ -3084,21 +2951,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Savings Account Detail page for <the account>`
+- **Navigate To**: `Savings Account Detail page for the target account`
 - **Observe**:
-  - account status badge (expected: 'Active')
-  - presence and enabled state of 'Deposit' / 'Credit' action button
-  - absence of any 'Credit Blocked' indicator (badge or status line)
-  - Transactions tab: 'Deposit' flow can be initiated (Deposit button enabled)
+  - No 'Credit Blocked' indicator (badge or status line) is present on the account header
+  - Account status shows 'Active' (or expected active state)
+  - Credit/deposit action/button on the account is available/enabled
 
 **Post-Check**
-- **Navigate To**: `Savings Account Detail page for <the account>`
+- **Navigate To**: `Savings Account Detail page for the same account (refresh page or reopen account)`
 - **Observe**:
-  - presence of a clear 'Credit Blocked' indicator on the page (badge or status line)
-  - state of action buttons: 'Deposit' / 'Credit' action is disabled or replaced by an 'Unblock Credit' action
-  - Transactions tab: initiating a Deposit/credit transaction is blocked (shows validation/error) and no new credit transaction appears in the Transactions list
+  - 'Credit Blocked' indicator (badge or status line) is present and clearly visible on the account header
+  - Credit/deposit action/button on the account is disabled or hidden
+  - Attempting to create a credit/deposit transaction results in the UI preventing the action or showing an error message such as 'Credits are blocked for this account'
+  - The 'Credit Blocked' indicator persists after a full page refresh (proves backend persistence)
 
-**Expected Change**: A 'Credit Blocked' indicator appears on the Savings Account Detail page; the 'Deposit' (credit) action is disabled or replaced by an 'Unblock Credit' action; attempts to submit a Deposit/credit transaction are rejected (error shown) and no credit transaction is recorded for the account.
+**Expected Change**: The account shows a persistent 'Credit Blocked' indicator and the UI prevents posting credit/deposit transactions (credit action is disabled/hidden and attempts to post credits are rejected with a clear error), demonstrating the credit-block state was saved.
 
 ---
 
@@ -3116,22 +2983,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail -> Share Accounts tab (or Client Detail -> Accounts -> Shares)`
+- **Navigate To**: `Client Detail -> Share Accounts tab for the target client`
 - **Observe**:
-  - list of share account rows (each row shows: product name, requested shares, status badge, external ID if present)
-  - count of share account rows matching Product = <share product> and External ID = <external id> (if provided) — expected to be 0 before test
-  - if previously existing entries exist for the same product, note their requested shares and statuses for disambiguation
+  - share accounts list does not contain an entry matching the new application (product: <share product>, requested shares: <valid number within product bounds>, submitted on: <valid date>, external id: <external id> if provided)
 
 **Post-Check**
-- **Navigate To**: `Client Detail -> Share Accounts tab (or Client Detail -> Accounts -> Shares)`
+- **Navigate To**: `Client Detail -> Share Accounts tab for the target client`
 - **Observe**:
-  - list of share account rows (each row shows: product name, requested shares, status badge, external ID if present)
-  - newly created share account row matching Product = <share product> with Requested Shares = <valid number within product bounds>
-  - status badge for that row showing 'Submitted and Pending Approval'
-  - External ID column showing <external id> if it was supplied during submission
-  - optionally: click the newly created row to open Share Account Detail and observe header status badge = 'Submitted and Pending Approval' and Requested/Approved shares details
+  - share accounts list contains a new entry with Share Product = <share product>
+  - the new entry shows Requested Shares = <valid number within product bounds>
+  - Submitted On date equals <valid date>
+  - status badge for the new entry is 'Submitted and Pending Approval'
+  - external id column shows <external id> when provided
+  - linked Savings Account for Charges is shown when selected (if applicable)
 
-**Expected Change**: A new Share Account row appears in the client's Share Accounts list for Product = <share product> with Requested Shares = <valid number within product bounds> and its status badge set to 'Submitted and Pending Approval'. If an External ID was provided during submission, the row shows that External ID. Opening the new account's detail page also shows the status badge 'Submitted and Pending Approval'.
+**Expected Change**: A new Share Account application row is created in the client's Share Accounts list showing the selected share product, requested shares amount, submitted on date, any provided external id, and a status badge of 'Submitted and Pending Approval'; any selected savings account for charges is linked in the application row.
 
 ---
 
@@ -3149,24 +3015,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Share Account Detail page for <share account>`
+- **Navigate To**: `Client Profile -> Share Accounts -> Open Share Account detail for <share account> (status: Submitted / Pending Approval)`
 - **Observe**:
-  - status badge (expected: 'Submitted and Pending Approval')
-  - total pending shares
-  - total approved shares
-  - unit price
-  - Purchased Shares tab (presence of any existing entries)
+  - status badge is 'Submitted' or indicates 'Pending Approval'
+  - Approved Shares field is empty or not populated
+  - Approved Date field is empty or not populated
+  - no approval audit entry or approval note exists on the account timeline
 
 **Post-Check**
-- **Navigate To**: `Share Account Detail page for <share account>`
+- **Navigate To**: `Client Profile -> Share Accounts -> Open Share Account detail for <share account> (after approval)`
 - **Observe**:
-  - status badge (expected: 'Approved')
-  - total approved shares
-  - total pending shares
-  - unit price
-  - Purchased Shares tab (new entry for the approval with Date = Approved Date and Number of Shares = Approved Shares entered)
+  - status badge is 'Approved' (visible on the Share Account detail header)
+  - Approved Shares field displays the number entered during approval
+  - Approved Date shows the date entered during approval
+  - account activity / audit timeline contains an entry indicating the approval action and approving user
 
-**Expected Change**: Status badge changes from 'Submitted and Pending Approval' to 'Approved'; 'Total Approved Shares' increases to equal the Approved Shares value entered in the approve dialog; 'Total Pending Shares' decreases by the same amount (typically to zero); the Purchased Shares tab contains a new entry reflecting the approved shares with the Approved Date.
+**Expected Change**: The Share Account's status changes from 'Submitted'/'Pending Approval' to 'Approved', and the Approved Shares and Approved Date fields are populated with the values entered during the approval. The approval is persisted and visible on the account detail view (including an approval audit entry).
 
 ---
 
@@ -3183,20 +3047,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Share Account Detail page for <share account>`
+- **Navigate To**: `Client Profile -> Share Accounts -> Open the Share Account detail page for the target account`
 - **Observe**:
-  - status badge (should read 'Submitted and Pending Approval')
-  - available action buttons (should include 'Approve' and 'Reject')
-  - Purchased Shares / Summary area showing pending shares or pending approval indicators
+  - status badge is 'Submitted and Pending Approval'
 
 **Post-Check**
-- **Navigate To**: `Share Account Detail page for <share account> (refresh or reopen)`
+- **Navigate To**: `Client Profile -> Share Accounts -> Open the same Share Account detail page`
 - **Observe**:
-  - status badge
-  - available action buttons (Approve/Reject/Activate etc)
-  - Share Accounts listing (Client -> Share Accounts tab or global Share Accounts page) row for <share account> showing status
+  - status badge is 'Rejected'
+  - action buttons related to approval (e.g., Approve/Reject) are disabled or no longer present as applicable
 
-**Expected Change**: Status badge changes from 'Submitted and Pending Approval' to 'Rejected'; the 'Approve' and 'Reject' actions are no longer available on the detail page; the Share Accounts listing shows the account's status as 'Rejected'.
+**Expected Change**: The Share Account's status changes from 'Submitted and Pending Approval' to 'Rejected' on the detail page, reflecting the backend state update.
 
 ---
 
@@ -3214,22 +3075,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client <client> -> Share Accounts -> <share account> Detail Page`
+- **Navigate To**: `Share -> Share Accounts -> Open <share account> detail page`
 - **Observe**:
-  - status badge (should show 'Approved')
-  - action buttons (should include 'Activate')
-  - total approved shares
-  - total pending shares
+  - status badge is 'Approved'
+  - Activate action/button is available
 
 **Post-Check**
-- **Navigate To**: `Client <client> -> Share Accounts -> <share account> Detail Page (refresh or reopen to ensure backend state)`
+- **Navigate To**: `Share -> Share Accounts -> Open <share account> detail page`
 - **Observe**:
-  - status badge
-  - action buttons
-  - Purchased Shares tab or Purchased Shares summary (to verify account is active)
-  - Audit trail / Activity log entry for activation (if available on detail page)
+  - status badge is 'Active'
+  - Activate action/button is no longer available (or replaced by actions allowed for an active account)
 
-**Expected Change**: Status badge changes from 'Approved' to 'Active'; the 'Activate' action is no longer present; actions appropriate for an Active share account (for example 'Apply Additional Shares', 'Redeem Shares', 'Close') are available; Purchased Shares / account summaries reflect the account as active; an activation entry appears in the activity log/audit trail.
+**Expected Change**: The Share Account status transitions from 'Approved' to 'Active' and the detail page displays an 'Active' status badge.
 
 ---
 
@@ -3246,23 +3103,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Share Account detail page for <share account>`
+- **Navigate To**: `Share Accounts -> Open the target Share Account detail page`
 - **Observe**:
-  - status badge (expected 'Approved')
-  - presence of 'Undo Approval' action button
-  - presence/absence of 'Approve' action button
-  - total approved shares / total pending shares values
+  - status badge displays 'Approved'
+  - an 'Undo Approval' action/button is visible and enabled
 
 **Post-Check**
-- **Navigate To**: `Share Account detail page for <share account>`
+- **Navigate To**: `Share Accounts -> Open the same Share Account detail page`
 - **Observe**:
-  - status badge
-  - presence/absence of 'Undo Approval' action button
-  - presence of 'Approve' action button
-  - total approved shares / total pending shares values
-  - audit trail / recent activity entry for the undo approval action (if available)
+  - status badge displays 'Submitted and Pending Approval'
+  - an 'Approve' action/button (or equivalent submit-for-approval action) is available
+  - 'Undo Approval' action/button is no longer present or is disabled
 
-**Expected Change**: The status badge changes from 'Approved' to 'Submitted and Pending Approval'; the 'Undo Approval' action is no longer present and the 'Approve' action is available; share counts reflect that the account is now pending (approved/pending shares updated accordingly) and an audit trail entry records the undo approval action.
+**Expected Change**: The Share Account status changes from 'Approved' to 'Submitted and Pending Approval' and the available actions update accordingly (approval action re-appears and undo-approval is removed/disabled).
 
 ---
 
@@ -3279,18 +3132,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Share Account detail page for <share account>`
+- **Navigate To**: `Client Profile -> Share Accounts -> Open the target Share Account -> Purchased Shares tab`
 - **Observe**:
-  - Purchased Shares table rows (each row: Date, Type, Number of Shares, Unit Price, Amount, Status)
-  - count of rows with Type 'Purchase' and Status 'Pending'
+  - Capture current count of rows where Type = 'Purchase' in the Purchased Shares table
+  - Confirm there is no existing 'Purchase' row with Status = 'Pending' that would match this new action
 
 **Post-Check**
-- **Navigate To**: `Share Account detail page for <share account>`
+- **Navigate To**: `Client Profile -> Share Accounts -> Open the target Share Account -> Purchased Shares tab`
 - **Observe**:
-  - Purchased Shares table rows (each row: Date, Type, Number of Shares, Unit Price, Amount, Status)
-  - count of rows with Type 'Purchase' and Status 'Pending'
+  - Purchased Shares table contains a new row with Type = 'Purchase' and Status = 'Pending'
+  - The count of rows where Type = 'Purchase' has increased by 1 compared to the pre-check capture
+  - The new row shows expected metadata (transaction date near action time and reference or created-by user matching the actor) where available
 
-**Expected Change**: The Purchased Shares table shows one additional row with Type 'Purchase' and Status 'Pending' (i.e., the count of rows with Type 'Purchase' and Status 'Pending' increased by 1). The new row displays a positive Number of Shares and Amount, and Amount equals Unit Price multiplied by Number of Shares.
+**Expected Change**: A new entry is created in the Purchased Shares table for the account: there is an added row with Type 'Purchase' and Status 'Pending' (the total number of Purchase rows increases by one), indicating the purchase request was persisted in the backend.
 
 ---
 
@@ -3314,26 +3168,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client -> Share Accounts -> <share account> Detail page`
+- **Navigate To**: `Client Profile -> Share Accounts -> <share account> (Active) -> Purchased Shares / Transactions`
 - **Observe**:
-  - Purchased Shares table (existing rows and last row type/date/number of shares/unit price/amount)
-  - Total Approved Shares value
-  - Total Pending Shares value
-  - Current Unit Price (displayed on the Share Account detail)
-  - Available action 'Redeem Shares' present
-  - Linked savings accounts list (to identify <linked_savings_account>)
+  - Purchased Shares table does not contain a 'Redemption' row for the pending redemption being executed
+  - Current unit price is visible on the Share Account page (used to compute redemption amount)
+  - Navigate to Savings Accounts -> <linked_savings_account> -> Transactions
+  - Selected savings account transaction list does not contain a credit for the redemption amount and available balance = <balance_before>
 
 **Post-Check**
-- **Navigate To**: `1) Client -> Share Accounts -> <share account> Detail page; 2) Clients -> Savings Accounts -> <linked_savings_account> Detail page (or Accounts Overview -> <linked_savings_account>)`
+- **Navigate To**: `Client Profile -> Share Accounts -> <share account> (Active) -> Purchased Shares / Transactions; then navigate to Savings Accounts -> <linked_savings_account> -> Transactions`
 - **Observe**:
-  - Purchased Shares table (new latest row exists)
-  - Latest Purchased Shares row columns: Date, Type, Number of Shares, Unit Price, Amount, Status
-  - Total Approved Shares value
-  - Share Account Transactions/Purchased Shares count (incremented)
-  - Linked savings account balance
-  - Linked savings account Transactions table (latest transaction referencing 'Redemption' or 'Redeem Shares' with credited Amount and description referencing <share account> or redemption)
+  - Purchased Shares table contains a new row with type 'Redemption' and Number of Shares = <number of shares to redeem>
+  - Redemption row shows Amount = <number of shares to redeem> * current unit price (matches calculation displayed on Share Account page)
+  - Selected savings account transaction list contains a credit/deposit transaction for the redemption Amount
+  - Selected savings account available balance has increased by the redemption Amount compared to <balance_before>
 
-**Expected Change**: A new 'Redemption' row appears in the Purchased Shares table with Number of Shares = <number of shares to redeem>, Unit Price = current unit price, and Amount = <number of shares to redeem> * Unit Price; Total Approved Shares decreased by <number of shares to redeem>; the selected <linked_savings_account> balance increased by the redemption Amount and its Transactions table contains a new credit transaction for that Amount referencing the share redemption.
+**Expected Change**: A 'Redemption' transaction row is recorded on the Share Account Purchased Shares table showing the redeemed number of shares and the correctly calculated Amount (shares × unit price), and the chosen savings account has a corresponding credit transaction and an increased available balance equal to that Amount.
 
 ---
 
@@ -3353,23 +3203,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Share Account Detail page for <share account> (via Client -> Share Accounts or Global Search)`
+- **Navigate To**: `Share Account detail page for the target <share account> (or Client Profile -> Share Accounts -> open the account)`
 - **Observe**:
-  - status badge (should be 'Active')
-  - share account number / identifier
-  - total approved shares
-  - total pending shares
-  - available action buttons (e.g., Apply Additional Shares, Redeem Shares, Close)
+  - status badge shows 'Active'
+  - account summary/holding values visible (sanity check that correct account opened)
 
 **Post-Check**
-- **Navigate To**: `Share Account Detail page for <share account>`
+- **Navigate To**: `Share Account detail page for the same <share account> (or return to Client Profile -> Share Accounts -> open the account)`
 - **Observe**:
-  - status badge
-  - share account number / identifier
-  - available action buttons
-  - Tabs: Purchased Shares and Transactions (for any closing transaction record)
+  - status badge shows 'Closed' (closed/gray chip)
+  - Close action is no longer available in actions menu
 
-**Expected Change**: Status badge changes from 'Active' to 'Closed'; actions valid only for Active accounts (Apply Additional Shares, Redeem Shares, Close) are no longer shown or are disabled; the account remains listed with the same account identifier and shows any closing transaction in Transactions/Purchased Shares as appropriate.
+**Expected Change**: The share account's status changes from 'Active' to 'Closed' and the account detail page displays a 'Closed' status badge; close action is no longer offered.
 
 ---
 
@@ -3387,22 +3232,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail -> Fixed Deposits tab (for <target client>)`
+- **Navigate To**: `Client Profile -> Accounts -> Fixed & Recurring Deposit Accounts (or Fixed Deposits list)`
 - **Observe**:
-  - list of Fixed Deposit accounts for <target client> (account numbers and deposit amounts)
-  - absence of any Fixed Deposit account with Deposit Amount = <Deposit_Amount> and status 'Submitted and Pending Approval'
+  - no account row exists for the target <Fixed_Deposit_Product> with deposit amount <Deposit_Amount> and status 'Pending' / 'Awaiting Approval'
+  - no recent account detail for the same deposit amount and submission timestamp
 
 **Post-Check**
-- **Navigate To**: `Client Detail -> Fixed Deposits tab (for <target client>) or Fixed Deposit Account detail page via newly created account link`
+- **Navigate To**: `Client Profile -> Accounts -> Fixed & Recurring Deposit Accounts -> Open the newly created Fixed Deposit account detail`
 - **Observe**:
-  - a new Fixed Deposit account row with Deposit Amount = <Deposit_Amount>
-  - a status badge on that row or in the account detail indicating 'Submitted and Pending Approval' (or equivalent 'awaiting approval')
-  - a clickable account number/link for the new Fixed Deposit account
-  - on the Fixed Deposit Account detail page: Deposit Amount = <Deposit_Amount>
-  - on the Fixed Deposit Account detail page: Maturity Date field is populated and visible
-  - on the Fixed Deposit Account detail page: Interest Rate value is populated (calculated from the product's Interest Rate Chart)
+  - account row exists for <Fixed_Deposit_Product> with displayed Deposit Amount equal to <Deposit_Amount>
+  - status badge shows 'Awaiting Approval' or 'Pending Approval'
+  - Maturity Date is visible and populated
+  - Interest Rate or calculated rate value is displayed and corresponds to the product's configured interest chart
+  - Account number or reference identifier for the newly created Fixed Deposit is present in the header/detail
 
-**Expected Change**: A new Fixed Deposit account record for <target client> is created: it appears in the client's Fixed Deposits list (with a clickable account number), shows Deposit Amount = <Deposit_Amount>, has a populated Maturity Date and Interest Rate (calculated from the selected product), and displays a status badge indicating the account is awaiting approval ('Submitted and Pending Approval').
+**Expected Change**: A new Fixed Deposit account record is persisted for the client: the Fixed & Recurring Deposit accounts list contains a new row for the selected product and deposit amount, and the account's detail page shows the entered Deposit Amount, a populated Maturity Date, an Interest Rate calculated from the product configuration, and a status indicating the account is awaiting approval.
 
 ---
 
@@ -3420,24 +3264,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Client Detail -> Accounts tab -> Recurring Deposits section`
+- **Navigate To**: `Client Profile -> Accounts -> Recurring Deposits`
 - **Observe**:
-  - number of recurring deposit accounts for the target client
-  - whether an account exists with Product Name = <Recurring_Deposit_Product> and Expected First Deposit On = <Expected_First_Deposit_On>
-  - for each listed recurring deposit account: [Account Number, Product Name, Status, Total Deposits Made, Maturity Date]
+  - recurring deposits list does not contain an entry for <Recurring_Deposit_Product> (no pending/awaiting approval account exists for this product and client)
 
 **Post-Check**
-- **Navigate To**: `Client Detail -> Accounts tab -> Recurring Deposits section (open the newly created Recurring Deposit Account detail page if present)`
+- **Navigate To**: `Client Profile -> Accounts -> Recurring Deposits (or open the newly created Recurring Deposit Account detail page)`
 - **Observe**:
-  - a recurring deposit account entry for Product Name = <Recurring_Deposit_Product>
-  - status badge for the new account (expected 'Submitted and Pending Approval' / awaiting approval)
-  - deposit schedule table (installment rows showing due dates and installment amounts)
-  - Total deposits made (expected initially 0 or current total as per system state)
-  - Maturity details (maturity date and maturity amount)
-  - Interest Rate value shown on the account detail (calculated from the product's Interest Rate Chart)
-  - Expected First Deposit On date reflected in the schedule or account summary
+  - recurring deposits list contains a new entry for <Recurring_Deposit_Product>
+  - account detail page shows the deposit schedule with installments and dates
+  - Total deposits made displayed as 0 or the current total
+  - Maturity details (maturity date and maturity amount) are present
+  - Interest Rate field displays a calculated value derived from the product's Interest Rate Chart
+  - status badge displays 'Awaiting Approval' or equivalent pending-approval state
 
-**Expected Change**: A new Recurring Deposit account for the target client and product <Recurring_Deposit_Product> exists (the recurring deposits list count increments by one or the new account row appears). The account detail shows the deposit schedule including the <Mandatory_Deposit_Amount_per_Installment> installments starting on <Expected_First_Deposit_On>, Total deposits made shown as 0 (or the current total if an initial deposit was recorded), maturity details populated (maturity date and amount), an Interest Rate value derived from the product's Interest Rate Chart, and a status badge indicating the account is awaiting approval (Submitted and Pending Approval).
+**Expected Change**: A new Recurring Deposit account for the target client is persisted and visible in the client's Recurring Deposits list and on its detail page, showing the generated deposit schedule, maturity details, an interest rate computed from the product's Interest Rate Chart, 'Total deposits made' initially zero (or current total), and a status indicating the account is awaiting approval.
 
 ---
 
@@ -3454,20 +3295,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Fixed Deposit Account detail page for the account under test`
+- **Navigate To**: `Fixed & Recurring Deposit Accounts -> Accounts list (or open the Fixed Deposit Account detail page)`
 - **Observe**:
-  - status badge (expected 'Submitted and Pending Approval' or 'Pending Approval')
-  - presence of 'Approve' action button on the detail action bar
-  - account identifier (account number) to confirm correct record
+  - Fixed Deposit Account detail page shows status badge 'Pending Approval'
+  - Accounts list (with status filter 'Pending' or search by account number/client) contains the account row with status 'Pending Approval'
 
 **Post-Check**
-- **Navigate To**: `Fixed Deposit Account detail page for the same account`
+- **Navigate To**: `Fixed & Recurring Deposit Accounts -> Accounts list; search for the same Fixed Deposit Account and open its detail page`
 - **Observe**:
-  - status badge
-  - action buttons on the detail action bar
-  - Approved / Approved On date or audit timestamp if displayed
+  - Accounts list row for the target Fixed Deposit Account shows status 'Approved' (no longer listed as 'Pending')
+  - Fixed Deposit Account detail page shows status badge 'Approved'
 
-**Expected Change**: The status badge updates from 'Submitted and Pending Approval' (Pending Approval) to 'Approved'; the 'Approve' action is removed from the action bar and subsequent actions such as 'Activate' become available; an Approved/Approved On date is recorded on the detail page if the UI shows approval timestamps.
+**Expected Change**: The Fixed Deposit Account transitions from 'Pending Approval' to 'Approved' — the account appears with an 'Approved' status in the Accounts list and its detail page reflects the 'Approved' status badge, proving the approval was persisted in the backend.
 
 ---
 
@@ -3484,23 +3323,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Fixed Deposit Account detail page (the account in Approved status)`
+- **Navigate To**: `Fixed Deposit Account -> Account Detail page (approved account)`
 - **Observe**:
-  - status badge (value should be 'Approved')
-  - account identifier / account number
-  - presence of 'Activate' action button in the action bar
-  - absence of Active-only actions (e.g., 'Premature Close', 'Close on Maturity')
+  - status badge shows 'Approved'
+  - 'Activate' action button is present and enabled
+  - no activation date is displayed in account header/summary
+  - recent transactions do not include an activation/disbursement entry
 
 **Post-Check**
-- **Navigate To**: `Fixed Deposit Account detail page (refresh or return to the page after activation)`
+- **Navigate To**: `Fixed Deposit Account -> Account Detail page (same account)`
 - **Observe**:
-  - status badge (value should be 'Active')
-  - account identifier / account number (same as pre-check)
-  - absence of 'Activate' action button in the action bar
-  - presence of Active-only actions (e.g., 'Premature Close', 'Close on Maturity')
-  - optionally, updated 'Activated On' or 'Activation Date' field if present
+  - status badge shows 'Active' (visual change from 'Approved')
+  - activation date is displayed in account header/summary
+  - account transactions include an activation transaction or system entry for activation
 
-**Expected Change**: The status badge for the fixed deposit account changes from 'Approved' to 'Active'; the 'Activate' action is no longer present and Active-only actions (such as 'Premature Close' and 'Close on Maturity') are available. The account identifier remains unchanged.
+**Expected Change**: The Fixed Deposit Account status changes from 'Approved' to 'Active'; an activation date appears on the account summary and an activation transaction/entry is recorded in the account transactions.
 
 ---
 
@@ -3524,20 +3361,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Fixed Deposit Account -> Detail page for the target account (page is open)`
+- **Navigate To**: `Fixed Deposit Account detail page (target account)`
 - **Observe**:
-  - status badge (expected 'Active')
-  - account balance / maturity amount
-  - transactions list (most recent transaction and types)
+  - status badge is 'Active'
+  - 'Premature Close' action button is present in the action bar
+  - transactions list does not contain a 'Premature Close' or 'Account Closure' transaction for the account
+  - account appears under Active Fixed Deposits when filtered by status
 
 **Post-Check**
-- **Navigate To**: `Fixed Deposit Account -> Detail page for the same account (or Client Detail -> Fixed Deposits tab to see listing)`
+- **Navigate To**: `Fixed Deposit Account detail page (same account) or Fixed Deposits list then open the account`
 - **Observe**:
-  - status badge
-  - transactions list (presence of a transaction indicating premature closure)
-  - account balance / maturity amount (updated to reflect premature closure settlement or transfer)
+  - status badge is 'Prematurely Closed' (or equivalent closed-with-premature label)
+  - 'Premature Close' action button is no longer present in the action bar
+  - transactions list contains a closure transaction with type/name indicating premature closure and shows closing balance/date
+  - account no longer appears under Active Fixed Deposits when filtered by status and appears under Closed/Prematurely Closed listings
 
-**Expected Change**: Status badge changed from 'Active' to 'Prematurely Closed'; a premature-closure transaction is recorded in the Transactions list; account balance and maturity amount updated to reflect the premature close (funds returned or transferred as per system handling).
+**Expected Change**: The Fixed Deposit Account status is updated from 'Active' to 'Prematurely Closed', the premature-close action is removed, and a closure transaction/record is created showing the closure date and resulting balances.
 
 ---
 
@@ -3557,23 +3396,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Fixed Deposit Account Detail page (the account under test)`
+- **Navigate To**: `Fixed Deposit Account detail page for the matured account`
 - **Observe**:
-  - status badge (expect 'Matured')
-  - account number
-  - maturity date
-  - maturity instructions (e.g., Transfer to Savings / Re-Invest)
-  - presence of 'Close on Maturity' action button in the action bar
+  - status badge is 'Matured'
+  - no 'Closed on Maturity' status visible on the page
 
 **Post-Check**
-- **Navigate To**: `Fixed Deposit Account Detail page (refresh or re-open to ensure backend state)`
+- **Navigate To**: `Fixed Deposit Accounts -> Accounts list (or use Global Search) -> open the same account detail page (or refresh the detail page)`
 - **Observe**:
-  - status badge
-  - available action buttons in the action bar
-  - Transactions tab — most recent transaction entry (type and date)
-  - account balance / maturity amount display
+  - status badge is 'Closed on Maturity' on the account detail page
+  - account activity/transactions list contains a closure entry (e.g., 'Closed on Maturity' or closure transaction)
+  - accounts list shows the account with status 'Closed on Maturity' in the status column
 
-**Expected Change**: Status badge changed from 'Matured' to 'Closed on Maturity'; the 'Close on Maturity' action is no longer present in the action bar; a maturity/closure transaction appears in the Transactions tab dated on or after the confirmation, and the account balance reflects that the deposit was closed (e.g., zero balance or disbursed amount per maturity instructions).
+**Expected Change**: The Fixed Deposit Account status is updated from 'Matured' to 'Closed on Maturity' and a closure transaction/event is recorded in the account activity/history, visible after refresh or by reopening the account.
 
 ---
 
@@ -3593,21 +3428,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Recurring Deposit Account Detail page (the account under test)`
+- **Navigate To**: `Recurring Deposit Account detail page (the account under test)`
 - **Observe**:
-  - status badge text (expected 'Submitted and Pending Approval' or 'Pending Approval')
-  - available action buttons in the action bar (should include 'Approve')
-  - account identifier (Account Number) to correlate with listing
+  - status badge displays 'Pending Approval'
+  - action bar shows 'Approve' action available
+  - audit/activities section does not yet contain an approval entry for this account (optional)
 
 **Post-Check**
-- **Navigate To**: `1) Recurring Deposit Account Detail page (refresh); 2) Recurring Deposits listing (Accounts -> Recurring Deposits)`
+- **Navigate To**: `Recurring Deposit Account detail page (refresh if necessary)`
 - **Observe**:
-  - status badge text on the detail page
-  - available action buttons in the action bar on the detail page (e.g., 'Activate', 'Reject' should be present; 'Approve' should no longer be present)
-  - in the Recurring Deposits listing row for the account: Status column text
-  - in the Recurring Deposits listing row for the account: Account Number and Client Name to confirm same resource
+  - status badge displays 'Approved'
+  - action bar no longer shows 'Approve' (or shows approval-related actions as per workflow)
+  - audit/activities section contains an approval entry showing current user and timestamp (if audit UI available)
 
-**Expected Change**: The account's status badge on the detail page changes from 'Submitted and Pending Approval' (or 'Pending Approval') to 'Approved'; the 'Approve' action is no longer shown and post-approval actions such as 'Activate' are available. The Recurring Deposits listing shows the same account row with Status = 'Approved'.
+**Expected Change**: The Recurring Deposit Account status is updated from 'Pending Approval' to 'Approved' on the detail page; the Approve action is no longer available and an approval audit entry is recorded in the account activity log where supported.
 
 ---
 
@@ -3627,21 +3461,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Recurring Deposit Account detail page for the account in preconditions`
+- **Navigate To**: `Recurring Deposit Account detail page (the account under test)`
 - **Observe**:
-  - status badge (displays 'Approved')
-  - action buttons on the detail action bar (includes 'Activate')
-  - account identifier (Account number) to ensure correct account context
+  - status badge displays 'Approved'
+  - action bar contains an 'Activate' button
 
 **Post-Check**
-- **Navigate To**: `Recurring Deposit Account detail page for the same account (refresh if needed)`
+- **Navigate To**: `Recurring Deposit Account detail page (refresh or reopen the same account)`
 - **Observe**:
-  - status badge (displays 'Active')
-  - action buttons on the detail action bar (no longer includes 'Activate'; includes actions available to Active accounts such as 'Deposit')
-  - Activation date field on the detail header (populated / not blank)
-  - Account identifier (Account number) matches pre-check to confirm same account
+  - status badge displays 'Active'
+  - 'Activate' action is no longer present in the action bar
+  - activation date is recorded on the account summary (if applicable)
 
-**Expected Change**: Status badge changes from 'Approved' to 'Active'; the 'Activate' action is removed from the action bar and actions appropriate to an Active recurring deposit account (e.g., 'Deposit') are present; the Activation date is populated on the account detail.
+**Expected Change**: The Recurring Deposit Account status changes from 'Approved' to 'Active' on the account detail page, the 'Activate' action is removed, and an activation date is recorded in the account summary.
 
 ---
 
@@ -3660,18 +3492,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Recurring Deposit Account detail page -> Transactions tab and Summary/Details section`
+- **Navigate To**: `Recurring Deposit Account detail page -> Transactions tab and Account Summary/Overview`
 - **Observe**:
-  - Most recent transaction in Transactions table (Date, Type, Amount)
-  - Total deposits made value on the Recurring Deposit detail page (Summary/Details)
+  - transactions list does not contain a Deposit transaction with the intended deposit amount and current/expected transaction date
+  - Account Summary 'Total deposits made' value (record current displayed value before performing the deposit)
 
 **Post-Check**
-- **Navigate To**: `Recurring Deposit Account detail page -> Transactions tab and Summary/Details section`
+- **Navigate To**: `Recurring Deposit Account detail page -> Transactions tab and Account Summary/Overview`
 - **Observe**:
-  - Most recent transaction in Transactions table (Date, Type, Amount, Status)
-  - Total deposits made value on the Recurring Deposit detail page (Summary/Details)
+  - transactions list contains a new Deposit transaction row with the entered deposit amount, correct transaction date and type 'Deposit'
+  - Account Summary 'Total deposits made' value increased by the deposited amount compared to the recorded pre-check value
 
-**Expected Change**: A new transaction of type 'Deposit' appears at the top of the Transactions table with Amount equal to the deposit amount entered in the test and Transaction Date equal to the deposit date; the 'Total deposits made' value on the Recurring Deposit detail page has increased by the same deposit amount compared to the pre-check.
+**Expected Change**: A new Deposit transaction row is created in the Transactions list showing the entered amount and transaction date, and the Recurring Deposit account's 'Total deposits made' summary value increases by that deposit amount.
 
 ---
 
@@ -3688,24 +3520,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Recurring Deposit Account -> Detail page for the account under test`
+- **Navigate To**: `Recurring Deposit Account detail page`
 - **Observe**:
-  - status badge (should be 'Active')
-  - account balance
-  - available balance
-  - Transactions tab -> most recent transaction type and date
-  - Summary tab -> maturity date / next scheduled deposit information
+  - status badge is 'Active'
+  - account number or identifier matches the target Recurring Deposit Account
 
 **Post-Check**
-- **Navigate To**: `Recurring Deposit Account -> Detail page for the same account (refresh or reopen to ensure backend state)`
+- **Navigate To**: `Recurring Deposit Account detail page`
 - **Observe**:
-  - status badge
-  - account balance
-  - available balance
-  - Transactions tab -> most recent transaction type, date and amount
-  - Summary tab -> closure date or 'Prematurely Closed' note
+  - status badge is 'Prematurely Closed'
+  - transactions list contains a closure entry (e.g., 'Premature Close' or 'Account Closure') with the expected date
+  - account balance and summary reflect closure (e.g., balance adjusted or zeroed according to product rules)
 
-**Expected Change**: Status badge is updated to 'Prematurely Closed' (was 'Active' in pre-check); account balance and available balance reflect the closure (typically zero or the payout amount removed from the account); Transactions contains a new 'Premature Close' / closure payout transaction with the closure date and payout amount; Summary shows a closure date and the status 'Prematurely Closed'.
+**Expected Change**: The account status changes from 'Active' to 'Prematurely Closed' on the Recurring Deposit Account detail page and a corresponding premature closure transaction is recorded in the account transactions/history.
 
 ---
 
@@ -3722,20 +3549,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Recurring Deposit Account detail page (specific account under test)`
+- **Navigate To**: `Recurring Deposit Account detail page`
 - **Observe**:
-  - status badge (expect 'Matured')
-  - 'Close on Maturity' action button visible and enabled on the action bar
-  - account identifier / account number shown in header
+  - status badge shows 'Matured'
+  - account summary shows maturity date
+  - transactions/history does not contain a 'Closure on Maturity' entry for the current date
 
 **Post-Check**
-- **Navigate To**: `Recurring Deposit Account detail page (refresh page or navigate away and re-open via Recurring Deposits listing)`
+- **Navigate To**: `Recurring Deposit Account detail page (refresh if needed)`
 - **Observe**:
-  - status badge
-  - action buttons on the detail action bar
-  - Transactions tab latest entry (to confirm maturity/closure posting)
+  - status badge shows 'Closed on Maturity'
+  - transactions/history contains a 'Closure on Maturity' transaction or closure event with the closure date
+  - account summary displays a closure date and the available balance reflects closed state (zero or appropriately settled)
 
-**Expected Change**: Status badge changed from 'Matured' to 'Closed on Maturity'; the 'Close on Maturity' action is no longer present on the action bar; account is reflected as closed (i.e., shown in closed/closed-on-maturity state) and a final maturity/closure transaction is present in Transactions.
+**Expected Change**: The account status changes from 'Matured' to 'Closed on Maturity', a closure transaction/event is recorded in the transactions/history with the closure date, and the account summary reflects the closed state (closure date shown and balance settled).
 
 ---
 
@@ -3755,18 +3582,16 @@
 **Pre-Check**
 - **Navigate To**: `Accounting -> Chart of Accounts`
 - **Observe**:
-  - Expand the '<Account_Type>' top-level node in the Chart of Accounts tree and locate the header account named '<existing header account>'
-  - Record the current list of child accounts under the '<existing header account>' header (each entry's GL Code and Account Name)
-  - Verify that GL Code '<unique GL Code>' is NOT present under the '<existing header account>' header
+  - Chart of Accounts tree displays the header account '<existing header account>' under '<Account_Type>'
+  - Chart of Accounts tree does NOT contain a detail account row with GL Code '<unique GL Code>' and Account Name '<Account Name>'
 
 **Post-Check**
 - **Navigate To**: `Accounting -> Chart of Accounts`
 - **Observe**:
-  - Expand the '<Account_Type>' top-level node and open the '<existing header account>' header node
-  - List child accounts under the header showing GL Code, Account Name, Account Usage, Account Type, and Manual Entries Allowed indicator for each row
-  - Locate the row with GL Code '<unique GL Code>' and observe its details
+  - Chart of Accounts tree contains a new detail account row under '<Account_Type>' -> '<existing header account>' with GL Code '<unique GL Code>' and Account Name '<Account Name>'
+  - The new account row shows Account Usage = 'Detail' and the 'Manual Entries Allowed' indicator is enabled/checked (if displayed in UI)
 
-**Expected Change**: A new detail account row appears under '<Account_Type>' > '<existing header account>' with GL Code '<unique GL Code>' and Account Name '<Account Name>'; the row shows Account Usage = 'Detail', Account Type = '<Account_Type>', and Manual Entries Allowed = checked. The header's child list now includes this new row (child count increased by one) and previously-verified absence of '<unique GL Code>' is now false.
+**Expected Change**: A new Detail GL account with the specified GL Code and Account Name appears as a child of the chosen header account in the Chart of Accounts, with Account Usage set to 'Detail' and Manual Entries Allowed enabled.
 
 ---
 
@@ -3785,18 +3610,16 @@
 **Pre-Check**
 - **Navigate To**: `Accounting -> Chart of Accounts`
 - **Observe**:
-  - account row with GL Code <existing GL Code>
-  - account name <existing Account Name>
-  - parent/child position in the chart hierarchy (if visible)
+  - chart/tree contains a row for the account with name '<existing Account Name>'
+  - the row shows GL Code '<existing GL Code>' (or GL Code column value matches)
 
 **Post-Check**
-- **Navigate To**: `Accounting -> Chart of Accounts`
+- **Navigate To**: `Accounting -> Chart of Accounts (refresh the page or re-open the Chart of Accounts view)`
 - **Observe**:
-  - absence of account row with GL Code <existing GL Code>
-  - absence of account name <existing Account Name>
-  - search for <existing GL Code> or <existing Account Name> returns no results or a 'not found' message
+  - chart/tree does NOT contain a row for the account with name '<existing Account Name>'
+  - no search result for '<existing Account Name>' or '<existing GL Code>' in the Chart of Accounts list
 
-**Expected Change**: The account row for <existing Account Name> (GL Code <existing GL Code>) is no longer present in the Chart of Accounts tree; searching or attempting to open the deleted GL Code/account returns no result or 'not found'.
+**Expected Change**: The account row for '<existing Account Name>' (GL Code '<existing GL Code>') is removed from the Chart of Accounts tree after deletion; the Chart of Accounts no longer lists that account.
 
 ---
 
@@ -3820,18 +3643,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Accounting -> Chart of Accounts`
+- **Navigate To**: `Accounting -> Chart of Accounts (open Account Detail for <existing Account Name>)`
 - **Observe**:
-  - tree row for GL Code <existing GL Code> displays Account Name '<existing Account Name>'
-  - Account Detail view for GL Code <existing GL Code> (open by clicking the account name) shows Account Name field value '<existing Account Name>'
+  - Chart of Accounts tree contains a row with account name '<existing Account Name>' and GL Code '<existing GL Code>'
+  - Account Detail view header (when opened) shows account name '<existing Account Name>' and GL Code '<existing GL Code>'
 
 **Post-Check**
-- **Navigate To**: `Accounting -> Chart of Accounts`
+- **Navigate To**: `Accounting -> Chart of Accounts (open Account Detail for the edited account)`
 - **Observe**:
-  - tree row for GL Code <existing GL Code> displays Account Name '<new Account Name>'
-  - Account Detail view for GL Code <existing GL Code> (open by clicking the account name) shows Account Name field value '<new Account Name>'
+  - Chart of Accounts tree row for GL Code '<existing GL Code>' displays account name '<new Account Name>'
+  - Account Detail view header shows account name '<new Account Name>'
+  - GL Code '<existing GL Code>' remains unchanged for the account
 
-**Expected Change**: The Account Name for GL Code <existing GL Code> is updated from '<existing Account Name>' to '<new Account Name>' in both the Account Detail view and the Chart of Accounts tree row.
+**Expected Change**: The account's display name is updated from '<existing Account Name>' to '<new Account Name>' in both the Account Detail view header and the Chart of Accounts tree row (GL Code '<existing GL Code>' remains the same).
 
 ---
 
@@ -3851,19 +3675,17 @@
 **Pre-Check**
 - **Navigate To**: `Accounting -> Journal Entries`
 - **Observe**:
-  - Filter by Office = <Office> and Transaction Date = <Transaction_Date> (or narrow Date Range covering <Transaction_Date>)
-  - Initial count of journal entries matching the filter (e.g., displayed rows)
-  - For visible entries: observe columns Entry ID, Office, Transaction Date, Debit Total, Credit Total, Difference, Reference Number, Created By
+  - journal entries list does not contain an entry with Office = <Office> and Transaction Date = <Transaction_Date> and (if provided) Reference Number = <Reference_Number>
 
 **Post-Check**
 - **Navigate To**: `Accounting -> Journal Entries`
 - **Observe**:
-  - Apply same filter: Office = <Office> and Transaction Date = <Transaction_Date>
-  - New/updated count of journal entries matching the filter
-  - Locate a journal entry row with Office = <Office> and Transaction Date = <Transaction_Date>
-  - From that row observe: Entry ID, Debit Total, Credit Total, Difference, Reference Number, Comments (if visible), Created By (should be <Accountant>)
+  - journal entries list contains a new row with Office = <Office> and Transaction Date = <Transaction_Date>
+  - the new row shows Debit Total equal to Credit Total and Difference = 0
+  - open the new journal entry detail and verify Entry Lines include <GL_Account_1> and <GL_Account_2> with the entered amounts
+  - in entry detail, Reference Number and Comments are present when they were provided during creation
 
-**Expected Change**: A new journal entry row appears for the selected Office and Transaction Date (or the initial count increased by one); the entry's Debit Total equals its Credit Total, the Difference displays 0.00, and the Created By column shows the <Accountant>. Reference Number and Comments (if provided during submission) are visible on the entry row or detail view.
+**Expected Change**: A new journal entry record is created for the selected Office and Transaction Date; the entry is balanced (Debit total equals Credit total and Difference is zero) and includes the specified GL account lines and any provided reference/comments.
 
 ---
 
@@ -3880,21 +3702,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Accounting -> Journal Entries -> Closing Entries`
+- **Navigate To**: `Accounting -> Accounting Closures (Closing Entries) page`
 - **Observe**:
-  - list of existing rows in the Closing Entries table (note count)
-  - for the most recent row observe Office, Closing Date, Created Date, Created By, and Comments
-  - verify that there is no existing row with Office = <Office> and Closing Date = <Closing_Date>
+  - Closing Entries table does not contain a row with Office '<Office>' and Closing Date '<Closing_Date>'
 
 **Post-Check**
-- **Navigate To**: `Accounting -> Journal Entries -> Closing Entries`
+- **Navigate To**: `Accounting -> Accounting Closures (Closing Entries) page`
 - **Observe**:
-  - Closing Entries table contains a row with Office = <Office> and Closing Date = <Closing_Date>
-  - the new row shows Created Date (recent) and Created By = current <Accountant> user
-  - Comments column contains <Comments> if comments were provided on submission
-  - attempt to create a Journal Entry with Transaction Date on or before <Closing_Date> and observe a validation/error message preventing the posting
+  - Closing Entries table contains a new row with Office '<Office>' and Closing Date '<Closing_Date>'
+  - The new closure row shows metadata such as created by (current username) and creation timestamp (if available)
+  - Attempt to create a manual Journal Entry dated '<Closing_Date>' (Accounting -> Journal Entries -> Create Journal Entry) is blocked or rejected with a validation/error message preventing posting for dates on or before '<Closing_Date>'
 
-**Expected Change**: A new row appears in the Closing Entries table with Office <Office> and Closing Date <Closing_Date>; the row shows a recent Created Date and Created By the acting Accountant, and Comments contains <Comments> if provided. Additionally, the system prevents posting Journal Entries with Transaction Dates on or before <Closing_Date> (attempts to create such entries should be blocked with a validation/error message).
+**Expected Change**: A new accounting closure record appears in the Closing Entries table for the specified Office and Closing Date, and the system prevents posting journal entries dated on or before that closing date (creation of such journal entries is rejected with a validation/error message).
 
 ---
 
@@ -3912,22 +3731,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Accounting -> Accounting Rules page`
+- **Navigate To**: `Accounting Rules page (e.g., System Administration -> Accounting Rules)`
 - **Observe**:
-  - Search for '<Rule Name>' in the Accounting Rules table (use table search/filter)
-  - Confirm no row exists with Rule Name = '<Rule Name>'
-  - Confirm table displays columns: 'Rule Name', 'Office', 'Debit Account(s)', 'Credit Account(s)'
+  - Accounting Rules table does not contain a row with Rule Name '<Rule Name>'
+  - No existing row with matching Debit Account(s) and Credit Account(s) for '<Rule Name>'
 
 **Post-Check**
-- **Navigate To**: `Accounting -> Accounting Rules page`
+- **Navigate To**: `Accounting Rules page (e.g., System Administration -> Accounting Rules)`
 - **Observe**:
-  - Search for '<Rule Name>' in the Accounting Rules table (use table search/filter)
-  - A row exists with Rule Name = '<Rule Name>'
-  - Office column shows the selected Office name, or is blank/indicates 'Applies to all offices' if left blank during creation
-  - Debit Account(s) column lists the debit account(s) selected in the Create Rule form
-  - Credit Account(s) column lists the credit account(s) selected in the Create Rule form
+  - Accounting Rules table contains a row with Rule Name '<Rule Name>'
+  - Office column shows the selected Office or is blank indicating rule applies to all offices
+  - Debit Accounts column lists the configured Debit Account(s) selected during creation
+  - Credit Accounts column lists the configured Credit Account(s) selected during creation
+  - Allow Multiple Debit/Credit Entries flags reflect the choices made (if displayed)
 
-**Expected Change**: A new row appears in the Accounting Rules table with Rule Name equal to '<Rule Name>'; the Office column displays the chosen Office (or is blank/marked for all offices if left blank); the Debit Account(s) and Credit Account(s) columns list the configured accounts exactly as selected during rule creation.
+**Expected Change**: A new accounting rule row for '<Rule Name>' is present in the Accounting Rules table showing the configured Office (or blank for all offices), the selected Debit Account(s), the selected Credit Account(s), and the configured allow-multiple flags.
 
 ---
 
@@ -3944,24 +3762,24 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Accounting Rules -> Open the detail view for <existing rule>`
+- **Navigate To**: `Administration -> Accounting Rules -> Open the existing Accounting Rule detail view for the rule being edited`
 - **Observe**:
-  - Rule Name
-  - Debit Account(s) (listed GL accounts)
-  - Allow Multiple Debit Entries (checkbox state)
-  - Credit Account(s) (listed GL accounts)
-  - Allow Multiple Credit Entries (checkbox state)
+  - Rule Name displays the current/original rule name
+  - Debit Account(s) list shows currently assigned debit GL account(s)
+  - Allow Multiple Debit Entries checkbox shows current state (checked/unchecked)
+  - Credit Account(s) list shows currently assigned credit GL account(s)
+  - Allow Multiple Credit Entries checkbox shows current state (checked/unchecked)
 
 **Post-Check**
-- **Navigate To**: `Admin -> Accounting Rules -> Refresh and open the detail view for the same rule (or return to Accounting Rules listing and re-open the rule)`
+- **Navigate To**: `Administration -> Accounting Rules -> Open the same Accounting Rule detail view (refresh page or re-open from list to confirm persistence)`
 - **Observe**:
-  - Rule Name
-  - Debit Account(s) (listed GL accounts)
-  - Allow Multiple Debit Entries (checkbox state)
-  - Credit Account(s) (listed GL accounts)
-  - Allow Multiple Credit Entries (checkbox state)
+  - Rule Name displays the <new Rule Name>
+  - Debit Account(s) list shows the newly selected Debit Account(s)
+  - Allow Multiple Debit Entries checkbox reflects the toggled state performed during edit
+  - Credit Account(s) list shows the newly selected Credit Account(s)
+  - Allow Multiple Credit Entries checkbox reflects the toggled state performed during edit
 
-**Expected Change**: Rule Name equals <new Rule Name>; Debit Account(s) contains the newly selected GL account(s) and no longer shows removed selections; Allow Multiple Debit Entries reflects the new toggled state; Credit Account(s) contains the newly selected GL account(s) and no longer shows removed selections; Allow Multiple Credit Entries reflects the new toggled state.
+**Expected Change**: The Accounting Rule detail view now persists and displays the updated values: Rule Name shows the <new Rule Name>, the Debit and Credit account selections match those chosen during edit, and the Allow Multiple Debit/Credit Entries checkboxes reflect the toggled choices.
 
 ---
 
@@ -3979,21 +3797,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Accounting -> Accounting Rules (Listing)`
+- **Navigate To**: `Accounting Rules & Financial Activity Mappings -> Financial Activity Mappings (Accounting Rules) list`
 - **Observe**:
-  - presence of a row with Rule Name = <existing rule>
-  - Office column value for the row
-  - Debit Account(s) and Credit Account(s) values for the row
-  - total number of rows (or visible row count) in the Accounting Rules table
+  - the list contains a row for '<existing rule>' (rule name visible)
+  - the rule is discoverable via list search/filter by name
 
 **Post-Check**
-- **Navigate To**: `Accounting -> Accounting Rules (Listing)`
+- **Navigate To**: `Accounting Rules & Financial Activity Mappings -> Financial Activity Mappings (Accounting Rules) list`
 - **Observe**:
-  - absence of any row with Rule Name = <existing rule>
-  - searching/filtering by <existing rule> returns no results or 'No results found' message
-  - total number of rows decreased by one compared to pre-check (or no longer includes the deleted rule)
+  - the list does not contain a row for '<existing rule>'
+  - search/filter for '<existing rule>' returns no results or shows 'No records found'
 
-**Expected Change**: The Accounting Rules table no longer contains a row for <existing rule>; the rule is removed from the listing (search/filter for <existing rule> returns no results) and the visible row count is reduced accordingly.
+**Expected Change**: The Accounting Rules list no longer contains an entry for '<existing rule>'; the rule row that was present in the pre-check has been removed.
 
 ---
 
@@ -4010,21 +3825,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Accounting -> Financial Activity Mappings`
+- **Navigate To**: `Administration -> Accounting -> Financial Activity Mappings`
 - **Observe**:
-  - Financial Activity Mappings table rows (columns: Financial Activity, GL Account)
-  - absence of '<unmapped Financial Activity>' in the Financial Activity column
-  - presence of '+ Create Mapping' button
+  - Financial Activity Mappings table does not contain an entry for <unmapped Financial Activity>
 
 **Post-Check**
-- **Navigate To**: `Admin -> Accounting -> Financial Activity Mappings`
+- **Navigate To**: `Administration -> Accounting -> Financial Activity Mappings`
 - **Observe**:
-  - Financial Activity Mappings table rows (columns: Financial Activity, GL Account)
-  - presence of a row with Financial Activity = '<unmapped Financial Activity>'
-  - GL Account value for that row equals '<GL Account>'
-  - total row count increased by 1 compared to pre_check (optional numeric check)
+  - Financial Activity Mappings table contains a new row with Financial Activity: <unmapped Financial Activity> and GL Account: <GL Account>
+  - The new mapping row is visible in the table without error badges or pending status
 
-**Expected Change**: A new row appears in the Financial Activity Mappings table with Financial Activity set to '<unmapped Financial Activity>' and GL Account set to '<GL Account>'; the mapping that was previously absent is now present and will enable automatic posting for that activity.
+**Expected Change**: A new mapping row for <unmapped Financial Activity> linked to <GL Account> appears in the Financial Activity Mappings table, confirming the mapping was created and will be used for automatic accounting postings.
 
 ---
 
@@ -4041,20 +3852,23 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Provisioning Criteria page`
+- **Navigate To**: `Provisioning -> Provisioning Criteria`
 - **Observe**:
-  - list of Criteria Names in the Provisioning Criteria table
-  - number of rows in the Provisioning Criteria table
-  - for each existing row: Criteria Name, Created Date, Definitions count
+  - Provisioning Criteria table does not contain an entry with Criteria Name '<criteria name>'
+  - No recent Created Date entry exists matching the expected creation time for '<criteria name>'
 
 **Post-Check**
-- **Navigate To**: `Provisioning Criteria page`
+- **Navigate To**: `Provisioning -> Provisioning Criteria`
 - **Observe**:
-  - row with Criteria Name = <criteria name>
-  - Created Date for the new row
-  - Definitions for the new row showing: Loan Product, Category, Minimum Age, Maximum Age, Provisioning Percentage, Liability Account, Expense Account
+  - Provisioning Criteria table contains a row with Criteria Name '<criteria name>'
+  - Created Date column populated for the row with Criteria Name '<criteria name>'
+  - Open the newly created Criteria detail and observe the Definitions repeating table contains a row with Loan Product '<loan product>'
+  - In the Definitions row observe Category is 'STANDARD'
+  - In the Definitions row observe Minimum_Age is '<minimum overdue days>' and Maximum_Age is '<maximum overdue days>'
+  - In the Definitions row observe Provisioning_Percentage is '<provision percentage>'
+  - In the Definitions row observe Liability Account is '<liability account>' and Expense Account is '<expense account>'
 
-**Expected Change**: A new row appears in the Provisioning Criteria table with Criteria Name equal to <criteria name> and a non-empty Created Date. The new row contains one Definitions entry with Loan Product = <loan product>, Category = STANDARD, Minimum Age = <minimum overdue days>, Maximum Age = <maximum overdue days>, Provisioning Percentage = <provision percentage>, Liability Account = <liability account>, and Expense Account = <expense account>.
+**Expected Change**: A new Provisioning Criteria entry with the specified Criteria Name is present in the Provisioning Criteria list with a populated Created Date; its detail view contains one Definitions row configured for the specified Loan Product with Category 'STANDARD', the provided minimum and maximum overdue days, the entered provisioning percentage, and the selected liability and expense GL accounts.
 
 ---
 
@@ -4074,19 +3888,18 @@
 **Pre-Check**
 - **Navigate To**: `Provisioning -> Entries page`
 - **Observe**:
-  - count of rows in Provisioning Entries table
-  - most recent row: Entry Date
-  - most recent row: Journal Entry Created column value (empty or journal entry id/link)
+  - Provisioning Entries table is visible
+  - Record the current number of rows and the latest 'Entry Date' shown in the table
+  - Note the 'Journal Entry Created' value for the latest row (e.g., journal id/link or status)
 
 **Post-Check**
-- **Navigate To**: `Provisioning -> Entries page, then navigate to Accounting -> Journal Entries page to follow the referenced journal entry`
+- **Navigate To**: `Provisioning -> Entries page`
 - **Observe**:
-  - count of rows in Provisioning Entries table
-  - most recent row: Entry Date
-  - most recent row: Journal Entry Created column value (non-empty and clickable to a Journal Entry)
-  - Journal Entries page: presence of a Journal Entry matching the ID/link shown in the Provisioning Entries table (verify Transaction Date and amount present)
+  - Provisioning Entries table contains one additional row compared to pre-check
+  - The new row displays an appropriate Entry Date corresponding to the provisioning run
+  - The new row's 'Journal Entry Created' column shows a created journal entry (e.g., a journal entry ID/link or status 'Created')
 
-**Expected Change**: Provisioning Entries table row count increased by 1; the new most-recent row's Entry Date is the creation date and its 'Journal Entry Created' column shows a created journal entry (non-empty and clickable); the referenced Journal Entry exists in Journal Entries with a matching ID and has Transaction Date and amount details.
+**Expected Change**: A new provisioning entry row is added to the Provisioning Entries table for the generated run; its Entry Date corresponds to the generation event and the 'Journal Entry Created' column indicates a created journal entry (visible as an ID/link or a 'Created' status).
 
 ---
 
@@ -4103,21 +3916,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Provisioning > Entries page`
+- **Navigate To**: `Provisioning -> Entries`
 - **Observe**:
-  - number of rows in the Provisioning Entries table
-  - identify and note the target provisioning entry row (by Entry Date, Created By or other visible identifier)
-  - record the target row's 'Entry Date' value and 'Journal Entry Created' column value
+  - Target provisioning entry exists in the table (identify by run name / reference / run id shown in row)
+  - There is exactly one row matching the target provisioning run/reference before recreation
+  - 'Journal Entry Created' column value for the existing row is shown (capture current value for comparison)
 
 **Post-Check**
-- **Navigate To**: `Provisioning > Entries page`
+- **Navigate To**: `Provisioning -> Entries`
 - **Observe**:
-  - number of rows in the Provisioning Entries table
-  - the most recent/newest row's 'Entry Date' value
-  - the most recent/newest row's 'Journal Entry Created' column value
-  - presence of a new row that corresponds to the recreated provisioning entry (e.g., same identifying fields as the original but with a new Entry Date/Created Date)
+  - A new provisioning entry row appears for the recreated run (an additional row with the same run reference or clear 'recreated' indicator)
+  - The new row shows an Entry Date corresponding to the recreation action (newer than the original entry date)
+  - The new row's 'Journal Entry Created' column indicates a created journal entry (e.g., displays 'Yes' or shows a journal entry link/ID)
+  - Total rows matching the provisioning run/reference has increased by 1
 
-**Expected Change**: The Provisioning Entries table has one additional row compared to pre_check; a new row appears for the recreated provisioning entry whose 'Entry Date' reflects the recreation timestamp (i.e., same or later than the action time) and whose 'Journal Entry Created' column indicates that a journal entry was created (e.g., shows 'Created' / a journal entry link / yes).
+**Expected Change**: A new provisioning entry row is added to the Entries table for the recreated run with an updated Entry Date, and the new row's 'Journal Entry Created' column indicates that a journal entry was created (for example by showing 'Yes' or a journal entry link/ID).
 
 ---
 
@@ -4135,22 +3948,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Offices page`
+- **Navigate To**: `Administration -> Offices`
 - **Observe**:
-  - Presence or absence of an office with name '<Office Name>' in the Offices table
-  - Parent Office value for any existing row with name '<Office Name>' (should be none)
-  - Total number of rows in the Offices table
+  - Offices table does not contain a row with Office Name '<Office Name>'
 
 **Post-Check**
-- **Navigate To**: `Offices page`
+- **Navigate To**: `Administration -> Offices`
 - **Observe**:
-  - Offices table row with Office Name = '<Office Name>'
-  - Parent Office column value for the '<Office Name>' row should equal '<Parent Office>'
-  - Opened On Date column value for the '<Office Name>' row should equal '<Opened On Date>'
-  - External ID column value for the '<Office Name>' row should equal '<External ID>' (if provided)
-  - Total number of rows in the Offices table
+  - Offices table contains a row with Office Name '<Office Name>'
+  - Parent Office column for that row shows '<Parent Office>'
+  - Opened On (or Opening Date) column for that row shows '<Opened On Date>'
+  - External ID column shows '<External ID>' if an External ID was provided
 
-**Expected Change**: A new row appears in the Offices table for '<Office Name>' with Parent Office = '<Parent Office>' and Opened On Date = '<Opened On Date>'; if an External ID was provided it is shown in the External ID column; the total number of offices increases by 1 compared to the pre-check.
+**Expected Change**: A new office row is created in the Offices table for the entered Office Name and displays the selected Parent Office and the provided Opened On date (and External ID if supplied).
 
 ---
 
@@ -4167,22 +3977,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Offices page -> Open the Detail page for the existing office (<existing office>)`
+- **Navigate To**: `Offices -> Click the existing Office Name to open the Office Detail page`
 - **Observe**:
-  - Office Name (current value)
-  - Opened On Date (current value)
-  - External ID (current value, if present)
-  - Status/metadata displayed on the Office Detail header (to confirm correct office)
+  - Office Detail header shows Office Name = <existing office>
+  - Opened On date displays the current <Opened On Date>
+  - External ID displays the current value (if present)
 
 **Post-Check**
-- **Navigate To**: `Offices page -> Open the Detail page for the same office (<existing office>) and also review the Offices listing row for that office`
+- **Navigate To**: `Offices -> Click the (same) Office Name to open the Office Detail page; optionally return to Offices list to verify listing`
 - **Observe**:
-  - Office Name (displayed on Office Detail header and in Offices listing)
-  - Opened On Date (displayed on Office Detail and Offices listing if shown)
-  - External ID (displayed on Office Detail)
-  - Breadcrumbs or account identifier to ensure the same office record is being viewed
+  - Office Detail header shows Office Name = <new Office Name> (the value entered in the edit form)
+  - Opened On date displays the updated <Opened On Date> (the value entered in the edit form)
+  - External ID shows the updated value if it was changed
+  - Offices list contains a row for the office with Office Name = <new Office Name>
 
-**Expected Change**: The Office Name on the Office Detail page and in the Offices listing matches the new <Office Name> entered in the Edit form; the Opened On Date on the Office Detail page matches the new <Opened On Date> entered; the External ID on the Office Detail matches the updated <External ID> if it was changed. Other identifying metadata (breadcrumb/office identifier) still references the same office record.
+**Expected Change**: The Office record is persisted: the Office Detail page (and the Offices list) display the updated Office Name and the updated Opened On Date; External ID is updated if provided.
 
 ---
 
@@ -4200,53 +4009,50 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Employees page`
+- **Navigate To**: `Administration -> Employees (Employees page/list)`
 - **Observe**:
-  - Search for '<First Name> <Last Name>' returns no matching row
-  - Employees table columns visible: Name, Office, Is Loan Officer, Status
+  - employees table does not contain a row with Name '<First Name> <Last Name>' and Office '<Office>'
 
 **Post-Check**
-- **Navigate To**: `Employees page (use search for '<First Name> <Last Name>')`
+- **Navigate To**: `Administration -> Employees (Employees page/list); refresh the list if necessary`
 - **Observe**:
-  - A row with Name '<First Name> <Last Name>' is present
+  - employees table contains a row with Name '<First Name> <Last Name>'
+  - Office column shows '<Office>' for that row
+  - Is Loan Officer column is unchecked for that row
+  - Status column shows 'Active' for that row
+
+**Expected Change**: A new employee row is created in the Employees table with the provided First and Last Name and Office; the Status is 'Active' and the Is Loan Officer flag is unset.
+
+---
+
+### [TC-002] Log Out via Profile Icon
+**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+
+**Original Steps:**
+1. 1. Click the Profile Icon in the top-right corner to open the User Profile Menu
+2. 2. Click 'Log Out' in the dropdown
+
+**Original Expected Result:** terminates authenticated session; clears authentication token; redirects to login page
+
+---
+
+#### Verification Plan
+
+**Pre-Check**
+- **Navigate To**: `Employees page`
+- **Observe**:
+  - employees table does not contain a row with Name '<First Name> <Last Name>'
+  - no row exists with Office '<Office>' and Name '<First Name> <Last Name>'
+
+**Post-Check**
+- **Navigate To**: `Employees page`
+- **Observe**:
+  - employees table contains a row with Name '<First Name> <Last Name>'
   - Office column for that row shows '<Office>'
-  - Is Loan Officer indicator for that row is unchecked / shows 'No'
+  - Is Loan Officer column for that row is checked/true
   - Status column for that row shows 'Active'
 
-**Expected Change**: A new employee row with Name '<First Name> <Last Name>' appears in the Employees table with Office '<Office>'; the Is Loan Officer indicator is unchecked and the Status displays 'Active'.
-
----
-
-### [TC-002] Log Out via Profile Icon
-**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
-
-**Original Steps:**
-1. 1. Click the Profile Icon in the top-right corner to open the User Profile Menu
-2. 2. Click 'Log Out' in the dropdown
-
-**Original Expected Result:** terminates authenticated session; clears authentication token; redirects to login page
-
----
-
-#### Verification Plan
-
-**Pre-Check**
-- **Navigate To**: `Employees page`
-- **Observe**:
-  - search for the employee name '<First Name> <Last Name>' in the Employees table
-  - verify there is no row with Name '<First Name> <Last Name>' and Office '<Office>'
-  - note the current total employee count (optional)
-
-**Post-Check**
-- **Navigate To**: `Employees page`
-- **Observe**:
-  - row with Name '<First Name> <Last Name>'
-  - Office column value for that row equals '<Office>'
-  - Is Loan Officer column for that row shows checked/true
-  - Status column for that row shows 'Active'
-  - total employee count increased by 1 compared to pre-check (if noted)
-
-**Expected Change**: A new row appears in the Employees table with Name '<First Name> <Last Name>' and Office '<Office>'; the Is Loan Officer column for that row is checked/true and the Status column displays 'Active'. If a total count was noted in pre_check, it has increased by one.
+**Expected Change**: A new employee record appears in the Employees table with full name '<First Name> <Last Name>', assigned to Office '<Office>', marked as a Loan Officer, and Status set to 'Active'.
 
 ---
 
@@ -4263,18 +4069,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Employees -> Click the employee name '<First Name> <Last Name>' to open Staff Detail page`
+- **Navigate To**: `Employees -> Open Staff Detail for '<First Name> <Last Name>'`
 - **Observe**:
-  - Mobile Number (current value)
-  - Is Loan Officer indicator (checkbox state or badge)
+  - Mobile Number does not equal <new mobile number>
+  - Is Loan Officer indicator is not checked on the Staff Detail page
 
 **Post-Check**
-- **Navigate To**: `Employees -> Click the employee name '<First Name> <Last Name>' to open Staff Detail page`
+- **Navigate To**: `Employees -> Open Staff Detail for '<First Name> <Last Name>'`
 - **Observe**:
-  - Mobile Number
-  - Is Loan Officer indicator (checkbox state or badge)
+  - Mobile Number equals <new mobile number>
+  - Is Loan Officer indicator is shown as checked on the Staff Detail page
 
-**Expected Change**: Mobile Number changed from the pre-check value to '<new mobile number>'; Is Loan Officer indicator is set to checked/true for the employee.
+**Expected Change**: The employee's Mobile Number is updated to <new mobile number> and the Is Loan Officer flag is set (checked) on the Staff Detail page, reflecting the persisted backend change.
 
 ---
 
@@ -4294,23 +4100,18 @@
 **Pre-Check**
 - **Navigate To**: `Tellers page`
 - **Observe**:
-  - Tellers table rows (Teller Name column)
-  - Count of rows in Tellers table
-  - Presence or absence of a row with Teller Name '<Teller Name>'
-  - Columns visible: Office, Status, Description
+  - tellers table does not contain a row with the <Teller Name> to be created
+  - if available, search/filter for <Teller Name> returns no results
 
 **Post-Check**
-- **Navigate To**: `Tellers page`
+- **Navigate To**: `Tellers page (refresh list or use search/filter for <Teller Name>)`
 - **Observe**:
-  - Tellers table rows (Teller Name column)
-  - Count of rows in Tellers table
-  - Row with Teller Name '<Teller Name>'
-  - Office value in that row
-  - Status value in that row
-  - Description value in that row
-  - Start Date and End Date cells in that row (if visible)
+  - tellers table contains a new row with the created <Teller Name>
+  - the Office column for that row shows the selected <Office>
+  - the Status column shows the selected status (e.g., 'Active')
+  - the Description cell displays the entered <Description> (if provided)
 
-**Expected Change**: Tellers table contains a new row with Teller Name '<Teller Name>' and Office '<Office>'; the Status column for that row shows the selected Status (e.g., 'Active'); the Description cell shows '<Description>' (or is empty if none was provided). The total row count in the Tellers table has increased by one compared to pre_check.
+**Expected Change**: A new teller entry is present in the Tellers list matching the submitted Teller Name and Office, with the Status and Description fields reflecting the values entered in the Create Teller form.
 
 ---
 
@@ -4327,24 +4128,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Tellers -> Click <existing teller> to open Teller Detail page -> Cashiers section`
+- **Navigate To**: `Tellers -> Open Teller Detail for <existing teller>`
 - **Observe**:
-  - count of rows in Cashiers table
-  - presence or absence of a row with Staff = <Staff> and Start Date = <Start Date>
-  - Start Date and End Date values for any existing assignments for <Staff>
-  - Is Full Day column values for any existing assignments for <Staff>
+  - Cashiers table is visible on the Teller Detail page
+  - Cashiers table does not contain a row with Staff = <Staff> and Start Date = <Start Date>
 
 **Post-Check**
-- **Navigate To**: `Tellers -> Click <existing teller> to open Teller Detail page -> Cashiers section`
+- **Navigate To**: `Tellers -> Open Teller Detail for <existing teller>`
 - **Observe**:
-  - count of rows in Cashiers table
-  - a row with Staff = <Staff>
-  - Start Date column for the new row equals <Start Date>
-  - End Date column for the new row equals <End Date> (if <End Date> was provided)
-  - Is Full Day column for the new row reflects whether 'Is Full Day' was checked
-  - the new assignment row is visible in the list (not hidden by pagination/filtering)
+  - Cashiers table contains a new row with Staff = <Staff>
+  - Start Date column for the new row shows <Start Date>
+  - End Date column for the new row shows <End Date> (if End Date was provided)
+  - Is Full Day column for the new row shows 'Yes' when checked and 'No' when unchecked
+  - Description column for the new row shows <Description> (if Description was provided)
 
-**Expected Change**: Cashiers table row count increased by one and there is a new row with Staff = <Staff> and Start Date = <Start Date>; End Date matches the provided value if entered; the 'Is Full Day' column reflects the submitted checkbox state; the new assignment is visible in the Cashiers list.
+**Expected Change**: A new cashier assignment row is created in the Teller's Cashiers table reflecting the entered Staff, Start Date, optional End Date, the Is Full Day selection, and optional Description.
 
 ---
 
@@ -4362,22 +4160,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Tellers -> Select <existing teller> -> Cashiers table -> Select <existing cashier> (Cashier Detail page)`
+- **Navigate To**: `Tellers -> Click the teller row -> Cashiers table -> Click the cashier row to open Cashier Detail page`
 - **Observe**:
-  - Cash In Hand value
-  - Opening Balance value
-  - Running Balance value (if displayed separately)
-  - Cashier Transactions table: row count and last (most recent) row details {Date, Type, Amount, Running Balance}
+  - Cashier Transactions table current row count or last transaction identifier (record snapshot)
+  - Cash In Hand numeric value
+  - Running Balance numeric value
 
 **Post-Check**
-- **Navigate To**: `Tellers -> Select <existing teller> -> Cashiers table -> Select <existing cashier> (Cashier Detail page)`
+- **Navigate To**: `Tellers -> Click the teller row -> Cashiers table -> Click the cashier row to open Cashier Detail page`
 - **Observe**:
-  - Cash In Hand value
-  - Opening Balance value
-  - Running Balance value (if displayed separately)
-  - Cashier Transactions table: row count and top/most-recent row details {Date, Type, Amount, Running Balance}
+  - Cashier Transactions table contains a new transaction row for the allocation (new row compared to pre-check snapshot)
+  - New transaction row shows transaction type indicating cash allocation and displays the allocated amount
+  - Cash In Hand numeric value increased by the allocated amount compared to pre-check
+  - Running Balance numeric value increased by the allocated amount compared to pre-check
 
-**Expected Change**: Cashier Transactions table has one additional transaction row (new most-recent/top row) representing the allocation (Type indicates allocation/Allocate Cash) with Amount equal to the allocated amount; Cash In Hand and Running Balance values increased by the allocated amount; the new transaction's Running Balance equals the previous running balance plus the allocated amount.
+**Expected Change**: A new allocation transaction row is added to the Cashier Transactions table and both Cash In Hand and Running Balance values increase by the allocated cash amount relative to their pre-check values.
 
 ---
 
@@ -4394,20 +4191,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Tellers page -> Teller Detail for <existing teller> -> Cashiers tab -> Cashier Detail for <existing cashier>`
+- **Navigate To**: `Tellers -> Click <existing teller> -> Cashiers table -> Click <existing cashier> (Cashier Detail page)`
 - **Observe**:
-  - Cash In Hand value on the Cashier Detail header/card
-  - Running Balance value on the Cashier Detail or Cashier Transactions summary
-  - Most recent row in the Cashier Transactions table: [Date, Type, Amount, Currency, Running Balance after transaction]
+  - Cashier Transactions table: note current rows and ensure there is no settlement row matching Amount: <Amount> and Transaction Date: <Transaction_Date>
+  - UI shows current Running Balance value for the cashier (record this value)
+  - UI shows current Cash In Hand value for the cashier (record this value)
 
 **Post-Check**
-- **Navigate To**: `Tellers page -> Teller Detail for <existing teller> -> Cashiers tab -> Cashier Detail for <existing cashier>`
+- **Navigate To**: `Tellers -> Click <existing teller> -> Cashiers table -> Click <existing cashier> (Cashier Detail page) -> Transactions / Cashier Transactions table`
 - **Observe**:
-  - Cash In Hand value on the Cashier Detail header/card
-  - Running Balance value on the Cashier Detail or Cashier Transactions summary
-  - Top/newest row in the Cashier Transactions table: [Date, Type, Amount, Currency, Running Balance after transaction]
+  - Cashier Transactions table contains a new settlement transaction row with Amount: <Amount>, Currency: <Currency>, Transaction Date: <Transaction_Date>, and a transaction type or description indicating 'Settle Cash' or 'Settlement'
+  - Running Balance value has decreased by <Amount> compared to the pre-check recorded Running Balance
+  - Cash In Hand value has decreased by <Amount> compared to the pre-check recorded Cash In Hand
 
-**Expected Change**: A new settlement transaction appears as the newest row in the Cashier Transactions table with Type 'Settle Cash' (or equivalent), Amount = <Amount>, Currency = <Currency>, and Transaction Date = <Transaction_Date>. The Cash In Hand value decreased by <Amount> compared to the pre_check value, and the Running Balance decreased by <Amount> (i.e., post-check running balance = pre-check running balance minus <Amount>).
+**Expected Change**: A new settlement transaction is present for the submitted Amount/Currency/Transaction Date and both the Running Balance and Cash In Hand values have decreased by the settlement Amount to reflect the posted settlement.
 
 ---
 
@@ -4425,23 +4222,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Users (Users page)`
+- **Navigate To**: `Administration -> Users (Users page)`
 - **Observe**:
-  - Users table loaded
-  - no row with Username: <new username>
-  - columns visible: Username, First Name, Last Name, Email, Office, Status
+  - Users table does not contain a row with Username '<new username>'
+  - No user detail exists for '<new username>' (search returns no results)
 
 **Post-Check**
-- **Navigate To**: `Admin -> Users (Users page)`
+- **Navigate To**: `Administration -> Users (Users page) and open the created user's detail`
 - **Observe**:
-  - row with Username: <new username>
-  - Email column for that row shows: <email address>
-  - Office column for that row shows: <office> (if provided)
-  - Staff column/link shows: <staff record> (if linked)
-  - Roles column or roles indicator shows the selected role(s)
-  - Status column shows Active (or the default status for newly created users)
+  - Users table contains a new row with Username '<new username>' and Email '<email address>'
+  - Created user's detail page displays First Name '<first name>', Last Name '<last name>', Office '<office>' and the selected Roles
+  - If 'Send Password to Email' was checked, UI shows confirmation that password/email was sent (if present)
 
-**Expected Change**: A new row appears in the Users table with Username '<new username>' and Email '<email address>'; optional fields (Office, Staff, Roles) reflect the values entered during creation and the Username that was absent in pre_check is now present.
+**Expected Change**: A persistent user record for '<new username>' is created in the backend: the Users list shows the new row with the entered email and the user's detail page reflects the supplied profile fields and assigned roles.
 
 ---
 
@@ -4458,22 +4251,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Roles page (Roles listing)`
+- **Navigate To**: `Users & Roles -> Roles`
 - **Observe**:
-  - roles table rows (Name column)
-  - search/filter input for roles
-  - ensure '<role name>' is NOT present in the roles table prior to creation (optional)
+  - roles list does not contain a role named '<role name>'
+  - no Role Permissions page is open for '<role name>'
 
 **Post-Check**
-- **Navigate To**: `Admin -> Roles page; click the newly created role '<role name>' to open the Role Permissions page`
+- **Navigate To**: `Users & Roles -> Roles`
 - **Observe**:
-  - roles table contains a row with Name = '<role name>'
-  - roles table or role detail shows Description = '<description>'
-  - clicking the '<role name>' row opens the Role Permissions page
-  - Role Permissions page displays a permissions matrix with categories: 'User Management', 'Portfolio', 'Organization', 'Accounting', 'Reports', 'Other_Permissions'
+  - roles list contains a row for the new role with name '<role name>' and description '<description>'
+  - clicking the new role opens the Role Permissions page for '<role name>'
+  - Role Permissions page displays a permissions matrix with categories: 'User Management', 'Portfolio', 'Organization', 'Accounting', 'Reports', and 'Other_Permissions'
   - each listed category shows its permission checkboxes (visible and interactable)
 
-**Expected Change**: A new role named '<role name>' with description '<description>' appears in the Roles listing; clicking that role opens the Role Permissions page which displays the permissions matrix containing categories User Management, Portfolio, Organization, Accounting, Reports, and Other_Permissions with their permission checkboxes.
+**Expected Change**: A new Role record with the specified name and description is persisted and the Role Permissions page for that role displays the permissions matrix containing the categories User Management, Portfolio, Organization, Accounting, Reports, and Other_Permissions with their permission checkboxes.
 
 ---
 
@@ -4491,18 +4282,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Roles -> Role Permissions page for <role name>`
+- **Navigate To**: `Users & Roles -> Roles -> <role name> -> Permissions tab`
 - **Observe**:
-  - <specific permission> checkbox state (expected: unchecked before action)
-  - Role name displayed on the page
+  - User Management permission group is visible
+  - The checkbox for <specific permission> is currently unchecked (or not selected)
 
 **Post-Check**
-- **Navigate To**: `Admin -> Roles -> Role Permissions page for <role name> (perform the steps, then refresh the page or navigate away to Roles list and re-open the role permissions page)`
+- **Navigate To**: `Users & Roles -> Roles -> <role name> -> Permissions tab (after saving / page refresh or navigating away and back)`
 - **Observe**:
-  - <specific permission> checkbox state (expected: checked)
-  - Role name displayed on the page
+  - The checkbox for <specific permission> under User Management is checked
+  - Role last-modified metadata or audit indicator shows a recent change (if available)
 
-**Expected Change**: The checkbox for <specific permission> is checked on the Role Permissions page for <role name> and remains checked after a page refresh or after navigating away and returning (indicating the permission change was persisted in the backend).
+**Expected Change**: The specific permission checkbox for <specific permission> is persisted as checked on the role's Permissions tab after refresh or re-opening the role, demonstrating the backend stored the permission change.
 
 ---
 
@@ -4520,26 +4311,23 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `From Client -> Accounts -> <From_Account> (Account Detail) and To Client -> Accounts -> <To_Account> (Account Detail)`
+- **Navigate To**: `Client Profile -> Accounts -> <From_Account> -> Transactions AND Client Profile -> Accounts -> <To_Account> -> Transactions`
 - **Observe**:
-  - From account: available balance
-  - From account: account balance
-  - From account: most recent transaction (date, amount, type, reference/description if present)
-  - To account: available balance
-  - To account: account balance
-  - To account: most recent transaction (date, amount, type, reference/description if present)
+  - From account current balance shown (record as <from_balance_before>)
+  - From account transactions list does NOT contain a debit transaction for <transfer amount> on <transfer date> referencing transfer to <To_Account>
+  - To account current balance shown (record as <to_balance_before>)
+  - To account transactions list does NOT contain a credit transaction for <transfer amount> on <transfer date> referencing transfer from <From_Account>
 
 **Post-Check**
-- **Navigate To**: `From Client -> Accounts -> <From_Account> (Account Detail) and To Client -> Accounts -> <To_Account> (Account Detail)`
+- **Navigate To**: `Client Profile -> Accounts -> <From_Account> -> Transactions AND Client Profile -> Accounts -> <To_Account> -> Transactions`
 - **Observe**:
-  - From account: available balance
-  - From account: account balance
-  - From account: transactions list (newest entry: date, amount, type = Debit, reference/description)
-  - To account: available balance
-  - To account: account balance
-  - To account: transactions list (newest entry: date, amount, type = Credit, reference/description)
+  - From account transactions list contains a new DEBIT transaction with amount <transfer amount>, date <transfer date>, description contains <description> (if provided), and counterparty reference to <To_Account>
+  - From account current balance equals <from_balance_before> - <transfer amount>
+  - To account transactions list contains a new CREDIT transaction with amount <transfer amount>, date <transfer date>, description contains <description> (if provided), and counterparty reference to <From_Account>
+  - To account current balance equals <to_balance_before> + <transfer amount>
+  - UI shows a success notification confirming the transfer (message includes transfer processed or similar)
 
-**Expected Change**: From account available and account balance decreased by <transfer amount> and a new debit transaction exists dated <transfer date> with amount = <transfer amount> and description matching the submitted description; To account available and account balance increased by <transfer amount> and a new credit transaction exists dated <transfer date> with amount = <transfer amount> and matching description; both transactions share the same transfer reference/transaction id (or show linked transfer reference) confirming the debit and credit are the same transfer.
+**Expected Change**: A debit transaction for <transfer amount> is recorded on the source account dated <transfer date> and the source account balance is reduced by <transfer amount>; simultaneously a credit transaction for <transfer amount> is recorded on the destination account dated <transfer date> and the destination account balance is increased by <transfer amount>.
 
 ---
 
@@ -4557,21 +4345,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Administration -> Account Transfers & Standing Instructions -> Standing Instructions page`
+- **Navigate To**: `Standing Instructions page (Standing Instructions list)`
 - **Observe**:
-  - presence of a table row with Name = <Name> (exists or not)
-  - total number of rows in the Standing Instructions table
-  - columns visible for each row: Name, From Client, From Account, To Client, To Account, Amount, Validity (From/Till), Recurrence Type, Recurrence Frequency/Interval, Status
+  - standing instructions table does not contain a row with Name = <Name>
 
 **Post-Check**
-- **Navigate To**: `Administration -> Account Transfers & Standing Instructions -> Standing Instructions page`
+- **Navigate To**: `Standing Instructions page (Standing Instructions list)`
 - **Observe**:
-  - presence of a table row with Name = <Name>
-  - the row's values for From Account, To Account, Amount, Validity From, Validity Till, Recurrence Type, Recurrence Frequency/Interval
-  - Status column for the new row
-  - total number of rows in the Standing Instructions table
+  - success notification is displayed with text indicating the standing instruction was created
+  - standing instructions table contains a row with Name = <Name>
+  - the new row displays configured details when provided: From Account = <From_Account>, To Account = <To_Account>, Instruction Type = <Instruction_Type>, Amount = <Amount> (if entered), Validity From = <validity from date> (if entered), Validity Till = <validity till date> (if entered), Recurrence = <Recurrence_Type> / frequency details (if configured)
 
-**Expected Change**: A new row appears in the Standing Instructions table with Name = <Name>. The new row shows the From Account, To Account, Amount, Validity From/Till, Recurrence Type and Recurrence Frequency/Interval matching the values entered in the Create form. The Status column for the new row is 'Active'. If a pre-check recorded the table row count, the total number of rows has increased by 1.
+**Expected Change**: A new Standing Instruction record is present in the Standing Instructions table with Name = <Name>, and the displayed fields (From Account, To Account, Instruction Type, Amount, Validity dates, and Recurrence details) match the values entered in the Create form.
 
 ---
 
@@ -4588,20 +4373,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Standing Instructions page`
+- **Navigate To**: `Standing Instructions -> Listing`
 - **Observe**:
-  - listing contains a row with Name = <Name>
-  - Status column value for that row equals 'Disabled'
-  - Actions column for that row includes an 'Enable' action
+  - a row exists with Name = <Name>
+  - Status column for that row shows 'Disabled'
 
 **Post-Check**
-- **Navigate To**: `Admin -> Standing Instructions page`
+- **Navigate To**: `Standing Instructions -> Listing (refresh or navigate away and return) and optionally open the detail for <Name>`
 - **Observe**:
-  - listing contains a row with Name = <Name>
-  - Status column value for that row equals 'Active'
-  - Actions column for that row no longer shows an 'Enable' action (may show 'Disable' or 'Edit')
+  - a row exists with Name = <Name>
+  - Status column for that row shows 'Active'
+  - when opening the detail for <Name>, the Status field shows 'Active' (verifies persistence)
 
-**Expected Change**: The Standing Instruction named <Name> has its Status changed from 'Disabled' to 'Active' in the listing, and the 'Enable' action is no longer available for that row.
+**Expected Change**: The Standing Instruction with Name = <Name> changes status from 'Disabled' to 'Active' in the listing and the Active status persists after refreshing the list or viewing the instruction detail.
 
 ---
 
@@ -4619,22 +4403,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Standing Instructions page (Listing)`
+- **Navigate To**: `Standing Instructions -> Listing`
 - **Observe**:
-  - Presence of a row with Name = <Name>
-  - Status column for the row with Name = <Name> shows 'Active'
-  - From Client and To Client values for the row (to uniquely identify the instruction)
-  - Amount for the row (to uniquely identify the instruction)
+  - a table row exists with Name = <Name>
+  - the Status column for that row shows 'Active'
+  - the row shows a 'Disable' action/button available
 
 **Post-Check**
-- **Navigate To**: `Standing Instructions page (Listing) — refresh the listing or reopen the page`
+- **Navigate To**: `Standing Instructions -> Listing (refresh if necessary)`
 - **Observe**:
-  - Presence of a row with Name = <Name>
-  - Status column for the row with Name = <Name>
-  - From Client and To Client values for the row
-  - Amount for the row
+  - the table row with Name = <Name> is present
+  - the Status column for that row shows 'Disabled'
+  - the 'Disable' action/button is no longer shown for that row (or an 'Enable' action is shown if toggle exists)
 
-**Expected Change**: The Status column for the row with Name = <Name> changed from 'Active' to 'Disabled' (the listing reflects the updated status for the same instruction identified by Name, From Client, To Client, and Amount).
+**Expected Change**: The standing instruction with Name = <Name> now displays Status = 'Disabled' in the listing, and the prior 'Disable' action is removed (or replaced by an 'Enable' action), indicating the backend state was updated.
 
 ---
 
@@ -4651,19 +4433,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Standing Instructions page`
+- **Navigate To**: `Navigation -> Account Transfers & Standing Instructions -> Standing Instructions`
 - **Observe**:
-  - presence of a row with Name = <Name> in the Standing Instructions table
-  - current count of rows matching Name = <Name> (expect >= 1)
+  - standing instructions table contains a row with Name = <Name>
+  - row shows expected details (source account, destination account, amount, frequency) for Name = <Name>
 
 **Post-Check**
-- **Navigate To**: `Standing Instructions page (refresh the page and/or use the Name filter/search with Name = <Name>)`
+- **Navigate To**: `Navigation -> Account Transfers & Standing Instructions -> Standing Instructions`
 - **Observe**:
-  - absence of any row with Name = <Name> in the Standing Instructions table
-  - search/filter for Name = <Name> returns zero results or 'No results found' message
-  - success notification displayed after deletion with text containing: 'removes standing instruction from listing' (if notification is ephemeral, rely on listing/search absence as primary proof)
+  - standing instructions table does not contain a row with Name = <Name>
+  - a transient success notification is shown with text: 'removes standing instruction from listing' or equivalent confirmation message
 
-**Expected Change**: The standing instruction with Name = <Name> is no longer present in the Standing Instructions listing or search results; the count of entries matching that Name decreased by 1 from pre-check; a deletion success notification was shown immediately after the action.
+**Expected Change**: The standing instruction entry with Name = <Name> is removed from the Standing Instructions listing and a success notification confirming deletion is displayed.
 
 ---
 
@@ -4680,23 +4461,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Tax Management -> Tax Components page`
+- **Navigate To**: `Tax Management -> Tax Components`
 - **Observe**:
-  - count of rows in the Tax Components table
-  - list of Tax Component names currently visible (to confirm the to-be-created Name is not already present)
+  - tax components table does not contain a row with Name '<valid name>'
+  - no entry exists with Percentage '<valid percentage>' for Name '<valid name>'
 
 **Post-Check**
-- **Navigate To**: `Admin -> Tax Management -> Tax Components page (use table search/filter by Name if not on first page); optionally click the created Tax Component to open its detail view`
+- **Navigate To**: `Tax Management -> Tax Components`
 - **Observe**:
-  - count of rows in the Tax Components table
-  - a Tax Component row with Name equal to the Name entered in the test
-  - Percentage column value for that row equals the Percentage entered in the test
-  - Debit Account (or Debit Account Type + selected GL account) displayed for that row matches the Debit selection made in the test
-  - Credit Account (or Credit Account Type + selected GL account) displayed for that row matches the Credit selection made in the test
-  - Start Date column value for that row equals the Start Date entered in the test
-  - optionally, opening the Tax Component detail view shows the same Name, Percentage, Debit Account, Credit Account, and Start Date values
+  - tax components table contains a row with Name '<valid name>'
+  - Percentage column for the row shows '<valid percentage>'
+  - Debit and Credit GL account columns (if displayed) show the selected <matching GL account> values
 
-**Expected Change**: Row count increased by 1 and the Tax Components table contains a new row matching the values entered during creation: the Name entered in the test appears, the Percentage matches the entered percentage, the selected Debit Account/Account Type and Credit Account/Account Type are shown, and the Start Date matches. If a detail view is opened, the same field values are present there.
+**Expected Change**: A new Tax Component has been created and is listed in the Tax Components table: a row appears with the entered Name and Percentage (and the selected debit/credit GL accounts where those columns are shown).
 
 ---
 
@@ -4713,25 +4490,26 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Tax Management -> Tax Groups`
+- **Navigate To**: `Tax Management -> Tax Groups`
 - **Observe**:
-  - Tax Groups table is visible
-  - absence or presence of a row with Name = '<valid name>' (should be absent prior to creation)
+  - Tax Groups table does not contain a row with Name = <valid name>
+  - No existing Tax Group row lists <matching Tax Component> in Associated Components for the same name
 
 **Post-Check**
-- **Navigate To**: `Admin -> Tax Management -> Tax Groups`
+- **Navigate To**: `Tax Management -> Tax Groups`
 - **Observe**:
-  - Tax Groups table
-  - a row with Name = '<valid name>'
-  - Associated Components column for that row showing '<matching Tax Component>'
-  - the Start Date and End Date displayed for the associated component row
+  - Tax Groups table contains a row with Name = <valid name>
+  - Associated Components column for the new row includes <matching Tax Component>
+  - Component effective dates (Start Date / End Date) are visible in the group's component details or hover/expand view for the new row
 
-**Expected Change**: A new Tax Group row with Name = '<valid name>' appears in the Tax Groups table; its Associated Components column lists the added component '<matching Tax Component>' and the component row shows the configured Start Date and End Date.
+**Expected Change**: A new Tax Group record is present in the Tax Groups table with the specified Name and its Associated Components listing includes the selected Tax Component; the component row shows the configured start and end dates.
 
 ---
 
 ### [TC-001] Open Profile Settings via Profile Icon
-**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `partial`
+
+**Coverage Note**: *Creation and the holiday record (name, dates, rescheduling type) can be verified in the Holidays UI. Actual effect on installments (that installments falling on holidays were rescheduled) cannot be fully verified here — that requires inspecting affected loan/savings repayment schedules or running/observing scheduled background jobs.*
 
 **Original Steps:**
 1. 1. Click the Profile Icon in the top-right corner to open the User Profile Menu
@@ -4744,23 +4522,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin > Organization > Holidays`
+- **Navigate To**: `Admin -> Organization -> Holidays`
 - **Observe**:
-  - Search for holiday by name: <holiday name> (expect: no results / row not present)
-  - Holidays table columns visible: Name, Start Date, To Date, Status, Rescheduling Type, Applicable Offices
-  - If possible, note current count of rows or last created holiday to detect changes
+  - Holidays table is accessible
+  - Holidays table does not contain a row with Name = <holiday name> (the holiday to be created)
 
 **Post-Check**
-- **Navigate To**: `Admin > Organization > Holidays`
+- **Navigate To**: `Admin -> Organization -> Holidays`
 - **Observe**:
-  - Presence of a row with Name = <holiday name>
-  - Start Date column value for that row = <from date>
-  - To Date column value for that row = <to date>
-  - Rescheduling Type column value for that row = <rescheduling type>
-  - Applicable Offices column shows the selected <applicable offices> (one or more)
-  - A success notification/toast containing the text 'creates holiday; installments falling on holidays are rescheduled per configured type' is displayed immediately after submission
+  - Success notification is displayed with text containing 'creates holiday; installments falling on holidays are rescheduled per configured type' (or equivalent confirmation)
+  - Holidays table contains a new row with Name = <holiday name>
+  - The new row's Start Date column equals <from date>
+  - The new row's To Date column equals <to date>
+  - The new row displays the selected Rescheduling Type = <rescheduling type>
+  - Applicable Offices column shows one or more of the selected <applicable offices> (where the table exposes office info)
 
-**Expected Change**: A new holiday row appears in the Holidays table with Name = <holiday name>, Start Date = <from date>, To Date = <to date>, Rescheduling Type = <rescheduling type>, and Applicable Offices including the selected offices; a success notification with the configured rescheduling message is shown after submission.
+**Expected Change**: A new holiday entry is present in the Holidays table with the provided Name, From/To dates, selected Rescheduling Type, and applicable offices; a success notification confirming holiday creation is shown. (Note: downstream rescheduling of installments is not validated here.)
 
 ---
 
@@ -4778,20 +4555,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin > Organization > Funds`
+- **Navigate To**: `Admin -> Organization -> Funds`
 - **Observe**:
-  - Funds table rows (visible list)
-  - absence or presence of a row with Fund Name = <fund name> and External ID = <external id>
-  - current total number of rows (record count or pagination indicator)
+  - funds table does not contain row with Fund Name = <fund name> and External ID = <external id>
 
 **Post-Check**
-- **Navigate To**: `Admin > Organization > Funds`
+- **Navigate To**: `Admin -> Organization -> Funds`
 - **Observe**:
-  - Funds table rows (visible list)
-  - row with Fund Name = <fund name> and External ID = <external id>
-  - total number of rows (record count or pagination indicator)
+  - funds table contains row with Fund Name = <fund name> and External ID = <external id>
+  - success notification with text containing 'creates fund' is visible
 
-**Expected Change**: A new row exists in the Funds table with Fund Name equal to <fund name> and External ID equal to <external id>. If the pre-check showed that such a row was absent, the post-check shows it present and the total number of rows has increased by one (or the new row appears on the first page of results according to current sort/filter).
+**Expected Change**: A new Fund row with the specified Fund Name and External ID is present in the Funds table and a success notification confirming the creation was displayed.
 
 ---
 
@@ -4808,21 +4582,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Organization -> Payment Types; then open a representative transaction form (e.g., Client -> Savings Account -> Deposit)`
+- **Navigate To**: `Admin -> Organization -> Payment Types (also open a representative transaction form such as Savings Deposit or Loan Repayment)`
 - **Observe**:
-  - Payment Types table does NOT contain <payment type name>
-  - Payment Types table columns visible: Name, Is Cash Payment, Is Active (if present), Position
-  - Payment Type dropdown in the transaction form does NOT list <payment type name>
+  - Payment Types table does not contain '<payment type name>'
+  - Representative transaction form payment type dropdown does not contain '<payment type name>'
 
 **Post-Check**
-- **Navigate To**: `Admin -> Organization -> Payment Types; then open a representative transaction form (e.g., Client -> Savings Account -> Deposit)`
+- **Navigate To**: `Admin -> Organization -> Payment Types (then open a representative transaction form such as Savings Deposit or Loan Repayment)`
 - **Observe**:
-  - Payment Types table contains a row with Name = <payment type name>
-  - The Is Cash Payment column for that row reflects the chosen checkbox state (checked or unchecked)
-  - The Position column for that row shows <position>
-  - Payment Type dropdown in the transaction form lists <payment type name> as a selectable option
+  - Payment Types table contains a row with Name = '<payment type name>' and Is Cash Payment = <chosen state>
+  - Representative transaction form payment type dropdown includes '<payment type name>' as a selectable option
 
-**Expected Change**: A new Payment Type named '<payment type name>' exists in the Payment Types table with the configured Is Cash Payment state and Position, and the same name appears as a selectable option in Payment Type dropdowns on transaction forms (e.g., Deposit, Withdrawal, Disbursement); a success notification confirming creation was displayed after submission.
+**Expected Change**: A new Payment Type record with the specified name and Is Cash Payment flag is persisted in the Payment Types table and is available as a selectable option in transaction forms (e.g., deposit or repayment forms).
 
 ---
 
@@ -4840,25 +4611,23 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin > Organization > Currencies`
+- **Navigate To**: `Admin -> Organization -> Currencies`
 - **Observe**:
-  - Identify and record the currency rows that will be selected by name and currency code (e.g., 'US Dollar - USD')
-  - For each identified currency row, record the current 'Is Active' value (e.g., Active/Inactive or toggle state) shown in the table
-  - Record the displayed total count of active currencies (if a summary/count is shown) or note the number of rows with Active = true in the current table/view
+  - Target currency rows intended for activation are not marked active (row checkbox unchecked or active indicator/badge absent)
+  - No 'Active' state or selected styling present for those currency rows
 
 **Post-Check**
-- **Navigate To**: `Admin > Organization > Currencies (refresh page or navigate away and return to ensure persisted state)`
+- **Navigate To**: `Admin -> Organization -> Currencies (refresh page or navigate away and return)`
 - **Observe**:
-  - For each previously identified currency row, check the 'Is Active' column/toggle and the row checkbox state
-  - Confirm the table row visually indicates active/selected state (active badge, toggle ON, or similar) for each selected currency
-  - Record the displayed total count of active currencies (if available) or count rows with Active = true
+  - Previously selected currency rows show active/selected state (row checkbox checked and/or 'Active' indicator/badge visible)
+  - Active state persists after navigation/refresh and is reflected in the table (including any Active column or filters)
 
-**Expected Change**: Each currency row that was selected in the test is now marked Active (Is Active = true / active badge or toggle ON) and shows the active/selected state in the Currencies table; the total number of active currencies has increased by the number of currencies selected. These changes persist after refreshing or navigating away and back to the Currencies page.
+**Expected Change**: The currency rows that were selected in the core test case are now persisted and displayed as active in the Currencies table (checked/active indicator present), and this active state remains after navigation or page refresh.
 
 ---
 
 ### [TC-006] Invoking Log Out endpoint while unauthenticated is blocked
-**Category**: `negative` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
+**Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. In the browser address bar, navigate to the Log Out endpoint/URL that the 'Log Out' button would call
@@ -4869,20 +4638,20 @@
 
 #### Verification Plan
 
-**Actor A (Role: `user with Bulk Import permission (e.g., admin)`)**
-- **Action**: Execute the steps from the core test case: navigate to Admin > Organization > Bulk Import, upload the valid Clients import file for the Clients import card and confirm upload.
-
-**Actor B (Role: `different user with Clients view permission (e.g., data officer)`)**
-- **Session**: `new_session`
-- **Navigate To**: `Admin > Organization > Bulk Import -> Clients import history, then navigate to Clients page (Clients listing)`
-- **Action**: 
+**Pre-Check**
+- **Navigate To**: `Admin -> Organization -> Bulk Import (Clients import card); Clients -> Clients list / Search`
 - **Observe**:
-  - Import history row for Clients with Import Time matching the recent upload (most recent entry)
-  - Import history columns: Completed status (e.g., 'Completed' or completed indicator), Total Records, Success Count, Failure Count, and Download/Results link
-  - Clients listing table rows for clients present in the uploaded file showing Name, External ID (or other unique identifier from the file), and Status
-  - If available, client detail page for an imported client showing Submitted On/Creation Date matching import time and status (e.g., 'Pending')
+  - Import History does not contain an entry for '<import_file_name>' or for a recent upload timestamp matching this test run
+  - Clients list does not contain any rows for External ID(s) referenced in the import file (e.g., '<external_id_1>', '<external_id_2>')
 
-**Expected Change**: A new Clients import history entry exists for the uploaded file with status 'Completed' (or completed indicator); Success Count equals the number of records successfully imported (and Failure Count reflects any failed rows). The Clients listing contains the imported client records (matching External ID or Name from the file) and their status is the expected post-import status (typically 'Pending' if imports create pending clients).
+**Post-Check**
+- **Navigate To**: `Admin -> Organization -> Bulk Import -> Import History; then Clients -> Clients list / Search`
+- **Observe**:
+  - Import History contains an entry for '<import_file_name>' (or matching upload timestamp) with status 'Completed' or 'Import Completed'
+  - A transient success notification is visible stating 'file uploaded; Clients imported per template' (if notifications are shown)
+  - Clients list contains new client rows matching the imported entries by Name and/or External ID (e.g., '<external_id_1>')
+
+**Expected Change**: A new Import History record exists showing the uploaded Clients file has completed successfully, and the client records referenced in that import file are present in the Clients list (discoverable by the imported names and/or External IDs).
 
 ---
 
@@ -4902,23 +4671,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin > Organization > Bulk Import`
+- **Navigate To**: `Admin -> Organization -> Bulk Import; then Groups -> Groups List`
 - **Observe**:
-  - Groups import card/row is present with Upload control enabled
-  - Groups import history table (columns: Name, Import Time, End Time, Completed, Total Records, Success Count, Failure Count, Download)
-  - value of the most recent Groups import history row (record its Import Time and Completed status) or the current count of import history rows
-  - for each group name included in the selected import file: whether a group with that exact name already exists in Groups listing (navigate to Clients/Groups -> Groups page if needed) — record presence/absence
+  - Bulk Import history does not contain an entry for '<import_filename>' (the file you will upload)
+  - Groups list does not contain any of the group names present in '<import_file>'
 
 **Post-Check**
-- **Navigate To**: `Admin > Organization > Bulk Import; then navigate to Groups page (Admin > Organization > Groups) for entity verification`
+- **Navigate To**: `Admin -> Organization -> Bulk Import; then Groups -> Groups List`
 - **Observe**:
-  - Groups import history table: a new entry with Import Time roughly matching the test run time appears as the most recent row
-  - most recent entry fields: Completed = true (or Completed status indicating finished), Total Records equals the number of rows in the uploaded file, Success Count equals Total Records (or equals expected successful imports), Failure Count equals 0 (or equals expected failures if any)
-  - Download link for the new import entry is available (for error file or result details)
-  - Groups listing contains entries for each group name present in the uploaded import file (each group row shows Name, Account Number, Office, Status)
-  - Opening the detail page for at least one imported group shows data populated from the import file (Office matches, Status is as expected — e.g., Active or Pending per template)
+  - Bulk Import history contains an entry for '<import_filename>' with a status of 'Completed' or 'Success' and a timestamp after upload
+  - Application displays a success notification with text 'file uploaded; Groups imported per template' (or equivalent success message)
+  - Groups list contains new rows for each group name from '<import_file>'
+  - Imported group rows show expected attributes from the file (e.g., office, staff assignment, and status as provided by the import template)
 
-**Expected Change**: A new Groups import history entry exists with Import Time matching the upload, Completed status indicating the import finished, and Success Count equal to the number of records in the uploaded file (Failure Count zero if all succeeded). The Groups listing now includes the groups from the uploaded file (their names appear and their detail pages reflect the imported data).
+**Expected Change**: A new import history entry for the uploaded Groups file appears with status 'Completed'/'Success' and the Groups referenced in the import file are created and visible in the Groups list with attributes matching the import file.
 
 ---
 
@@ -4938,21 +4704,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin > Organization > Bulk Import -> Centers import history; Organization > Centers`
+- **Navigate To**: `Admin -> Organization -> Bulk Import; Organization -> Centers (record baseline before upload)`
 - **Observe**:
-  - Existing Centers import history rows (Filename, Import Time, End Time, Completed, Total Records, Success Count, Failure Count) — note the latest entry if any
-  - Count of centers currently present that match the names/External IDs in <valid Centers import file> (expect 0 if importing new centers)
-  - Presence of any Centers with External IDs listed in <valid Centers import file>
+  - Bulk import history contains no entry for the intended import file name or timestamp
+  - Centers list does not contain any rows matching the center names/identifiers present in the import file
 
 **Post-Check**
-- **Navigate To**: `Admin > Organization > Bulk Import -> Centers import history; Organization > Centers`
+- **Navigate To**: `Admin -> Organization -> Bulk Import (Centers import history) and Organization -> Centers`
 - **Observe**:
-  - A new import history row for <import filename> with Import Time and End Time populated
-  - For that import history row: Completed status (Completed = true), Total Records equals the number of rows in <valid Centers import file>, Success Count equals Total Records, Failure Count = 0 (for a fully successful import)
-  - Centers listing contains entries for each Center from <valid Centers import file> with matching Name and External Id and associated Office
-  - Import history 'Download' link is available for the import entry and clicking it (optional) returns the import result file (success/failure details)
+  - Bulk import history contains a new entry for the uploaded Centers file
+  - Import entry status is 'Completed' (or similar success status) and shows imported record counts and any error summary
+  - Centers list contains new center rows matching the names/identifiers from the import file and shows expected attributes (office, status)
 
-**Expected Change**: A new Centers import history entry for <import filename> appears and shows Completed = true with Success Count equal to Total Records and Failure Count = 0; all centers defined in <valid Centers import file> are now present in Organization > Centers listing with matching Name and External Id (and associated Office) as specified in the import file.
+**Expected Change**: A new Bulk Import record for the uploaded Centers file is present with status 'Completed' and the Centers from the file are created and visible in the Centers list with the expected attributes.
 
 ---
 
@@ -4969,22 +4733,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin > Organization > Bulk Import (Offices import card) AND Admin > Organization > Offices listing`
+- **Navigate To**: `Administration -> Organization -> Offices (Offices list page)`
 - **Observe**:
-  - Bulk Import -> Offices card: most recent import history entry (filename, status, timestamp) — confirm it does NOT include the file about to be uploaded
-  - Bulk Import -> Offices card: current Completed/Failed/Total counts for the most recent entry (if any)
-  - Offices listing: total number of office rows
-  - Offices listing: verify that office names (or External IDs) present in the import file are NOT present prior to import
+  - Offices list does not contain entries matching the office names present in the import file
+  - Total Offices count shown in header does not include the offices from the import file
 
 **Post-Check**
-- **Navigate To**: `Admin > Organization > Bulk Import -> Offices import history AND Admin > Organization > Offices listing`
+- **Navigate To**: `1) Administration -> Organization -> Bulk Import (Offices import history)
+2) Administration -> Organization -> Offices (Offices list page)`
 - **Observe**:
-  - Bulk Import -> Offices import history: a new entry for the uploaded filename with status 'Completed' or 'Completed with failures', timestamp and Success Count/Failure Count/Total Records shown
-  - Bulk Import -> Offices import history: ability to view/import details or download failed-records file (if failures occurred)
-  - Offices listing: presence of office rows matching the office names/External IDs from the imported file
-  - Offices listing: total number of office rows increased by the number of successfully imported offices
+  - Bulk Import history shows the uploaded Offices import job with status 'Completed' or 'Import completed' and a successful record count matching the file
+  - Offices list contains new rows for each Office defined in the uploaded import file (names, office codes or other identifying fields match the file)
+  - Total Offices count shown in header increased by the number of imported offices
+  - No import error entries present for the completed import job
 
-**Expected Change**: A new import history entry appears for the uploaded Offices file showing a Completed status (or Completed with failures) with Success Count > 0; the Offices listing contains the offices from the import file and the total rows count has increased by the number of successfully imported offices.
+**Expected Change**: The Offices defined in the uploaded import file are created in the system: the Bulk Import history shows the Offices import job as completed/successful, and the Offices list contains new entries corresponding to the offices from the file (with matching names/codes).
 
 ---
 
@@ -5002,20 +4765,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `1) Admin > Organization > Bulk Import -> Staff import card / Import History; 2) Admin > Organization > Employees (Staff listing) or Employees page`
+- **Navigate To**: `Administration -> Organization -> Employees (Employees list)`
 - **Observe**:
-  - Bulk Import - Staff import history: latest entry (if any) showing File Name, Import Time, End Time, Completed/Status, Total Records, Success Count, Failure Count
-  - Employees listing: current presence or absence of the staff records that will be in the import file (searchable by Username, External ID, or Full Name) and current total staff count
+  - employees list does not contain rows for identifiers present in the import file (e.g., email addresses, external IDs, or unique usernames)
+  - count of employees matching import criteria is zero or unchanged prior to import
 
 **Post-Check**
-- **Navigate To**: `1) Admin > Organization > Bulk Import -> Staff import history; 2) Admin > Organization > Employees (Staff listing) -- use search/filter by Username or External ID from the uploaded file`
+- **Navigate To**: `Administration -> Organization -> Employees (Employees list)`
 - **Observe**:
-  - Success notification message shown after upload (text: 'file uploaded; Staff imported per template' or equivalent)
-  - Bulk Import - Staff import history: a new row for the uploaded file appears with Import Time and End Time populated, Status/Completed indicator showing completed/success
-  - Bulk Import - Staff import history: Total Records equals the number of rows in the uploaded file, Success Count equals Total Records (or shows expected successes), Failure Count is 0 (or shows any failed rows with details available for download)
-  - Employees listing: the staff records from the uploaded file appear (searchable by Username, External ID, or Full Name) with expected attributes visible (Office, Is Loan Officer flag if set, Status Active/Inactive as per import, and any External ID)
+  - employees list contains one row per entry in the uploaded import file (matched by email, external ID, or username)
+  - new employee rows display expected fields: First Name, Last Name, Office, Email, Status
+  - import audit/status indicator or import job reference is present (e.g., 'Imported' or import job id) where the UI shows import details
 
-**Expected Change**: A new import history entry for the uploaded Staff file appears with a completed/success status and matching success count; the staff records contained in the file are present in the Employees listing (searchable by Username/External ID) with their expected attributes; a success notification 'file uploaded; Staff imported per template' is displayed.
+**Expected Change**: Employee/staff records corresponding to each row in the uploaded Staff import file are created in the system and are visible in the Employees list with matching identifying data (first/last name, office, email) and an import/completion status.
 
 ---
 
@@ -5034,18 +4796,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin > Organization > Bulk Import (Users import row) and Admin > Users (Users listing)`
+- **Navigate To**: `Admin -> Users  (and optionally Admin -> Organization -> Bulk Import -> Import History)`
 - **Observe**:
-  - Bulk Import history: latest Users import row showing Import Time, End Time, Completed flag, Total Records, Success Count, Failure Count
-  - Users listing: current count of users (or presence/absence of usernames/emails that will be in the import file)
+  - Users list does not contain entries matching the records in the import file (by username or email)
+  - Bulk Import -> Import History does not contain a completed entry for the import file name or expected upload timestamp
 
 **Post-Check**
-- **Navigate To**: `Admin > Organization > Bulk Import (Users import row) and Admin > Users (Users listing)`
+- **Navigate To**: `Admin -> Users and Admin -> Organization -> Bulk Import -> Import History`
 - **Observe**:
-  - Bulk Import history: new/updated Users import row with Import Time and End Time populated, Completed flag set (e.g., 'Completed' or Completed = true), Total Records matching uploaded file, Success Count showing number of imported users, Failure Count = 0
-  - Users listing: rows for each user from the uploaded file present (matching Username, First/Last Name or Email), and overall user count increased by the Success Count
+  - Users list contains rows for each user from the uploaded import file (matching username and/or email and external ID where provided)
+  - Bulk Import Import History shows an entry for the uploaded file with status 'Completed' or 'Imported'
+  - Imported user detail pages (open at least one) show expected imported attributes such as office, roles or active/invited status as provided in the file
 
-**Expected Change**: A Users import history entry appears/updates with Completed status and End Time; Total Records equals the uploaded file row count and Success Count equals those imported (Failure Count 0 for a valid file). The Users listing contains new user records matching the import file (usernames/emails present) and the total number of users increased by the Success Count.
+**Expected Change**: All user records defined in the uploaded import file are created and visible in the Users list; the Bulk Import history records the upload as completed/imported and individual user records reflect imported attributes.
 
 ---
 
@@ -5062,24 +4825,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin > Organization > Bulk Import -> Loans (Import History)`
+- **Navigate To**: `Admin -> Organization -> Bulk Import -> Loans (Import History)`
 - **Observe**:
-  - Latest Loans import entry (presence/status)
-  - Success Count for latest Loans import
-  - Failure Count for latest Loans import
-  - Timestamp of latest Loans import
-  - Count of Loans in Loans listing matching identifiers from the import file (search by External ID or Account No.)
+  - note current latest import entries (timestamp, uploader, status) to establish baseline
+  - confirm there is no existing import history entry for the test file (by filename/timestamp) being uploaded
+  - navigate to Loans -> All Loans and record current total loan count or confirm that sample loan identifiers from the import file are not present
 
 **Post-Check**
-- **Navigate To**: `Admin > Organization > Bulk Import -> Loans (Import History) and Loans -> All Loans listing (use search)`
+- **Navigate To**: `Admin -> Organization -> Bulk Import -> Loans (Import History) and Loans -> All Loans`
 - **Observe**:
-  - A new Loans import history entry for the uploaded file
-  - Status of that import entry (Completed / Failed / Completed with Errors)
-  - Success Count and Failure Count for that import entry
-  - Import completion timestamp
-  - Loans listing search results for identifiers from the uploaded file (External ID or Account No.)
+  - a new import history entry exists for the uploaded file with uploader equal to the current user
+  - the import history entry shows status 'Completed' (or equivalent success state) and any processing summary (rows processed/success/failures) if available
+  - Loans list contains new loan accounts created from the import (matching account numbers or external IDs from the import file) or the total loan count increased by the expected number
 
-**Expected Change**: A new import history entry appears for the uploaded file with status 'Completed' (or 'Completed with Errors' if some records failed). The Success Count equals the number of successfully imported loan records (and Failure Count equals zero for a fully successful import). The import entry shows a recent completion timestamp. Corresponding loan accounts are present in the Loans listing (searching by the External ID or Account No. from the import file returns the newly created loan records).
+**Expected Change**: A new Loans import history entry is recorded for the uploaded file with status 'Completed', and the loan accounts specified in the import file are created and visible in the Loans list (matching account numbers/external IDs or reflected in the loans count).
 
 ---
 
@@ -5099,25 +4858,26 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin > Organization > Bulk Import -> Savings import history`
+- **Navigate To**: `Admin > Organization > Bulk Import -> Savings import history; then navigate to Savings -> Accounts (or Savings Accounts list/search)`
 - **Observe**:
-  - latest Savings import entry (Filename, Upload Time, Status/Completed flag, Success Count, Failure Count)
-  - total count of Savings accounts in system (or count of Savings accounts matching identifiers present in the import file if known)
+  - No existing import history entry for the target import file (search by filename or recent uploaded timestamp) — note current count of Completed imports for comparison
+  - Savings Accounts list does not contain the account numbers or external IDs that are expected to be created by the import (if known) or does not show new accounts created at the intended upload timestamp
 
 **Post-Check**
-- **Navigate To**: `Admin > Organization > Bulk Import -> Savings import history; optionally navigate to Clients/Savings Accounts listing to spot-created accounts`
+- **Navigate To**: `Admin > Organization > Bulk Import -> Savings import history; open the new import's details; then navigate to Savings -> Accounts and search by account numbers or import timestamp`
 - **Observe**:
-  - a new Savings import history entry for the uploaded <valid Savings import file> showing Filename and Upload Time
-  - the new entry's Status/Completed flag and Completion Time
-  - the new entry's Success Count and Failure Count
-  - the Savings accounts listing contains sample account(s) or account numbers present in the import file (or the total Savings accounts count increased by the Success Count)
+  - A new import history row exists for the uploaded file (filename or uploaded timestamp matches) with status 'Completed' (or 'Imported') and a success indicator/notification
+  - Import details show counts of processed/created records and list of created Savings account numbers or identifiers (or a downloadable result/report)
+  - The Savings Accounts list/search returns the account numbers or external IDs shown in the import details (accounts are present and Active/Approved as applicable)
 
-**Expected Change**: A new import history row for the uploaded <valid Savings import file> appears with Status = 'Completed' and Success Count equal to the number of records in the file and Failure Count = 0; the system's Savings accounts reflect the import (the total number of Savings accounts increased by the Success Count and sample account(s) from the file are present in the Savings accounts listing).
+**Expected Change**: A new Bulk Import history entry for the uploaded Savings file is present with status 'Completed' and the Savings accounts listed in the import details are visible in the Savings Accounts list, proving the backend has created the imported Savings records.
 
 ---
 
 ### [TC-001] Open Profile Settings via Profile Icon
-**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `partial`
+
+**Coverage Note**: *The UI can verify the Global Scheduler checkbox state and scheduler-job metadata (Next Run / Last Run / job status). Proving the scheduler engine actually started/stopped (i.e., background job execution) may require waiting for scheduled executions or inspecting server logs, so backend execution is only partially verifiable in the UI.*
 
 **Original Steps:**
 1. 1. Click the Profile Icon in the top-right corner to open the User Profile Menu
@@ -5130,24 +4890,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `System Administration -> Manage Scheduler Jobs (Global Scheduler Control visible on this page)`
+- **Navigate To**: `System Administration -> Global Scheduler Control and System Administration -> Scheduler Jobs`
 - **Observe**:
-  - Scheduler Enabled checkbox state (checked or unchecked)
-  - Global Start/Stop toggle label/value
-  - Next Run Time for job 'Apply Annual Fee'
-  - Currently Running indicator for job 'Apply Annual Fee' (true/false)
-  - Previous Run Status for job 'Apply Annual Fee' (Success/Failed and timestamp)
+  - value/state of the 'Scheduler Enabled' checkbox on Global Scheduler Control (record current state as 'pre-state')
+  - Scheduler Jobs list rows including for at least one known scheduled job: observe 'Last Run' timestamp, 'Next Run' timestamp (if shown), and any job-level status/indicator
 
 **Post-Check**
-- **Navigate To**: `System Administration -> Manage Scheduler Jobs (Global Scheduler Control visible on this page)`
+- **Navigate To**: `System Administration -> Global Scheduler Control and System Administration -> Scheduler Jobs`
 - **Observe**:
-  - Scheduler Enabled checkbox state (checked or unchecked)
-  - Global Start/Stop toggle label/value
-  - Next Run Time for job 'Apply Annual Fee'
-  - Currently Running indicator for job 'Apply Annual Fee' (true/false)
-  - Previous Run Status for job 'Apply Annual Fee' (Success/Failed and timestamp)
+  - value/state of the 'Scheduler Enabled' checkbox on Global Scheduler Control (should be inverted from pre-state)
+  - Scheduler Jobs list rows for the same job(s) inspected in pre_check: observe 'Last Run' and 'Next Run' timestamps and job-level status/indicator
+  - If scheduler was disabled by the toggle: job-level 'Next Run' entries should be removed/cleared or job status should indicate disabled and 'Last Run' timestamps should not advance during an observation window
+  - If scheduler was enabled by the toggle: job-level 'Next Run' entries should appear/update or subsequent 'Last Run' timestamps should advance after scheduled execution(s) (may require waiting for next scheduled run)
 
-**Expected Change**: The 'Scheduler Enabled' checkbox value is the inverse of the pre_check value (i.e., toggled). Corresponding system behavior must reflect that change: if scheduler was turned OFF, scheduled jobs (e.g., 'Apply Annual Fee') should show no future Next Run Time (cleared or marked not scheduled) and 'Currently Running' should be false; if scheduler was turned ON, scheduled jobs should show populated Next Run Time values consistent with their CRON schedules (future timestamp) and may show 'Currently Running' true if a job is active. The global toggle state displayed on the Manage Scheduler Jobs page must match the new checkbox state.
+**Expected Change**: The 'Scheduler Enabled' checkbox state is inverted compared to pre_check, and the Scheduler Jobs view reflects that global state: disabling the scheduler removes/upgrades job next-run scheduling or marks jobs as disabled and prevents new 'Last Run' updates; enabling the scheduler restores next-run scheduling and allows jobs to execute (observable as 'Next Run' entries and later updated 'Last Run' timestamps).
 
 ---
 
@@ -5167,18 +4923,19 @@
 **Pre-Check**
 - **Navigate To**: `System Administration -> Manage Scheduler Jobs`
 - **Observe**:
-  - Is Active toggle state for <Job Name>
-  - Next Run Time for <Job Name>
-  - Previous Run Status for <Job Name>
+  - Table contains a row for <Job Name>
+  - Record the current state shown by the 'Is Active' toggle for the <Job Name> row (either 'ON' or 'OFF')
+  - Note the 'Last Modified' or 'Updated At' timestamp/value for the <Job Name> row if available
 
 **Post-Check**
-- **Navigate To**: `System Administration -> Manage Scheduler Jobs`
+- **Navigate To**: `System Administration -> Manage Scheduler Jobs (after toggling, then refresh the page or navigate away and return)`
 - **Observe**:
-  - Is Active toggle state for <Job Name>
-  - Next Run Time for <Job Name>
-  - Previous Run Status for <Job Name>
+  - Table still contains a row for <Job Name>
+  - The 'Is Active' toggle for the <Job Name> row reflects the new state (the opposite of the pre-check recorded value)
+  - The 'Last Modified' or 'Updated At' timestamp/value for the <Job Name> row is more recent than the pre-check value (if available)
+  - No transient UI-only success banner should be the only indicator — the persisted toggle state remains after page refresh/navigation
 
-**Expected Change**: The Is Active toggle state for <Job Name> is flipped compared to the pre_check state and remains persisted after navigation/refresh. If toggled to Active the table shows the Is Active toggle ON and the Next Run Time is populated; if toggled to Inactive the toggle shows OFF and the Next Run Time is cleared or blank.
+**Expected Change**: The 'Is Active' value for <Job Name> has been updated and persists in the Manage Scheduler Jobs table (visible after a page refresh or after navigating away and back), and the row's last-modified timestamp is updated accordingly.
 
 ---
 
@@ -5195,18 +4952,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `System Administration > Manage Scheduler Jobs`
+- **Navigate To**: `System Administration -> Manage Scheduler Jobs`
 - **Observe**:
-  - presence of a job row for <Job Name>
-  - current CRON Expression value for <Job Name> (record this as pre-edit value)
+  - job row for <Job Name> exists in the jobs table
+  - CRON Expression cell for <Job Name> does not contain <valid CRON expression> (i.e., the new expression is not yet present)
 
 **Post-Check**
-- **Navigate To**: `System Administration > Manage Scheduler Jobs (refresh the page or navigate away and return to ensure persisted backend state)`
+- **Navigate To**: `System Administration -> Manage Scheduler Jobs (refresh or reopen the page to confirm persistence)`
 - **Observe**:
-  - CRON Expression value for <Job Name>
-  - job row for <Job Name> still present
+  - CRON Expression cell for <Job Name> contains <valid CRON expression>
+  - After a full page refresh or reopening Manage Scheduler Jobs, the CRON Expression cell for <Job Name> still contains <valid CRON expression> (proves backend persistence)
+  - Optional: job row's Last Updated / Audit metadata reflects a recent update (if column available)
 
-**Expected Change**: The CRON Expression for <Job Name> is updated from the pre-edit value to <valid CRON expression> and the new expression persists after page refresh/navigation.
+**Expected Change**: The CRON Expression column for the <Job Name> row now displays the provided <valid CRON expression>, replacing the previous expression, and the value remains after a page refresh or reopening the Manage Scheduler Jobs page.
 
 ---
 
@@ -5224,22 +4982,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `System Administration > Manage Scheduler Jobs`
+- **Navigate To**: `System Administration -> Manage Scheduler Jobs`
 - **Observe**:
-  - Locate the row for <Job Name>
-  - CRON Expression column value for <Job Name> (record the current value)
-  - Next Run Time column value for <Job Name> (record the current value)
-  - Is Active / Currently Running indicators for <Job Name>
+  - Job row for <Job Name> exists in the jobs table
+  - CRON Expression column value for <Job Name> is not <valid CRON expression>
 
 **Post-Check**
-- **Navigate To**: `System Administration > Manage Scheduler Jobs (refresh the page or re-run search if necessary)`
+- **Navigate To**: `System Administration -> Manage Scheduler Jobs`
 - **Observe**:
-  - Locate the row for <Job Name>
-  - CRON Expression column value for <Job Name>
-  - Next Run Time column value for <Job Name>
-  - Is Active / Currently Running indicators for <Job Name>
+  - Job row for <Job Name> exists in the jobs table
+  - CRON Expression column value for <Job Name> equals <valid CRON expression>
 
-**Expected Change**: The CRON Expression for <Job Name> is updated to <valid CRON expression>. The Next Run Time is recalculated and updated consistent with the new CRON expression. Active/Currently Running indicators remain appropriate (not unexpectedly changed) for the job.
+**Expected Change**: The CRON Expression for the scheduler job named <Job Name> is updated to <valid CRON expression> in the Manage Scheduler Jobs table.
 
 ---
 
@@ -5258,16 +5012,17 @@
 **Pre-Check**
 - **Navigate To**: `System Administration -> Global Configuration`
 - **Observe**:
-  - Enabled checkbox state for <Configuration_Name> (checked or unchecked)
-  - Configuration row displays Configuration Name and current Value/Description
+  - Locate the row for <Configuration_Name>
+  - Record the current Enabled checkbox state for <Configuration_Name> as PRE_STATE (either 'Checked' or 'Unchecked')
 
 **Post-Check**
-- **Navigate To**: `System Administration -> Global Configuration, then System Administration -> Audit Trails`
+- **Navigate To**: `System Administration -> Global Configuration (refresh page or navigate away and return to ensure reload)`
 - **Observe**:
-  - Enabled checkbox state for <Configuration_Name> (checked or unchecked) in the Global Configuration listing
-  - Audit Trails table entry for the change with fields: Action Name (e.g., 'Update Global Configuration'), Entity Name ('Global Configuration'), Resource ID or Configuration Name matching <Configuration_Name>, Maker (current user), Made On Date/Timestamp, and a description showing previous and new enabled state
+  - Locate the row for <Configuration_Name>
+  - Enabled checkbox state for <Configuration_Name> is present and persisted (should be the opposite of PRE_STATE)
+  - Optional: any success/toast message confirming update is shown (e.g., 'Configuration updated' or similar)
 
-**Expected Change**: The Enabled checkbox state for <Configuration_Name> is inverted compared to the pre_check state (i.e., toggled). Additionally, an audit trail entry exists recording the toggle with the current user as the actor and showing the previous and new enabled states and a timestamp.
+**Expected Change**: The Enabled checkbox for <Configuration_Name> is toggled to the opposite state compared to PRE_STATE and remains in that new state after refreshing/navigating back to the Global Configuration list, proving the change was persisted.
 
 ---
 
@@ -5286,16 +5041,16 @@
 **Pre-Check**
 - **Navigate To**: `System Administration -> Global Configuration`
 - **Observe**:
-  - presence of row for <Configuration_Name>
-  - current Value shown in the Value column for <Configuration_Name> (record this as pre_value)
+  - configuration row for <Configuration_Name> is present in the list
+  - Value cell for <Configuration_Name> shows the current/previous value (not <valid configuration value>)
 
 **Post-Check**
-- **Navigate To**: `System Administration -> Global Configuration`
+- **Navigate To**: `System Administration -> Global Configuration (refresh page or navigate away and back if needed)`
 - **Observe**:
-  - presence of row for <Configuration_Name>
-  - Value shown in the Value column for <Configuration_Name>
+  - Value cell for <Configuration_Name> displays <valid configuration value>
+  - Updated value remains visible after page refresh or after navigating away and returning to the Global Configuration page
 
-**Expected Change**: The Value column for <Configuration_Name> displays <valid configuration value>; this value should match the value entered during the inline edit and differ from pre_value if the pre-check recorded a different value.
+**Expected Change**: The Value column for the <Configuration_Name> row is updated to and persists as <valid configuration value>, indicating the configuration change was saved in the backend.
 
 ---
 
@@ -5319,18 +5074,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `System Administration > Global Configuration`
+- **Navigate To**: `System Administration -> Global Configuration`
 - **Observe**:
-  - Enabled state of <Configuration_Name>
-  - Value of <Configuration_Name>
+  - configuration row for <Configuration_Name> is present
+  - record the current 'Enabled' state and current 'Value' for <Configuration_Name> before editing
 
 **Post-Check**
-- **Navigate To**: `System Administration > Global Configuration`
+- **Navigate To**: `System Administration -> Global Configuration (refresh page or re-open to confirm persistence)`
 - **Observe**:
-  - Enabled state of <Configuration_Name>
-  - Value of <Configuration_Name>
+  - configuration row for <Configuration_Name> is present
+  - Enabled state equals <enabled state>
+  - Value equals <valid configuration value>
 
-**Expected Change**: Enabled state for <Configuration_Name> is now set to <enabled state> and Value is now set to <valid configuration value>; these should reflect the saved changes (i.e., Enabled changed from the pre_check value to <enabled state> and Value changed from the pre_check value to <valid configuration value>).
+**Expected Change**: The Global Configuration entry for <Configuration_Name> now shows Enabled = <enabled state> and Value = <valid configuration value>, confirming the updated configuration was persisted.
 
 ---
 
@@ -5350,20 +5106,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Manage Codes -> Select <Code List Name> -> Open Code Values Editor`
+- **Navigate To**: `Organization Settings -> Code Values -> Code Values Editor for <Code List Name>`
 - **Observe**:
-  - list of rows in the Code Values Editor (count)
-  - presence/absence of an entry with Value = <new entry value> (should be absent before test)
-  - Is Active value for any existing row with Value = <new entry value> (should be absent)
+  - Code values list does not contain an entry with Value = <new entry value>
+  - No row exists where Value equals <new entry value> (confirm by scanning visible pages/filter)
 
 **Post-Check**
-- **Navigate To**: `Admin -> Manage Codes -> Select <Code List Name> -> Open Code Values Editor`
+- **Navigate To**: `Organization Settings -> Code Values -> Code Values Editor for <Code List Name>`
 - **Observe**:
-  - list of rows in the Code Values Editor (count)
-  - row with Value = <new entry value>
-  - Is Active column value for the row with Value = <new entry value>
+  - Code values list contains a row with Value = <new entry value>
+  - The 'Is Active' column for that row reflects the state chosen during creation (e.g. 'Active' or 'Inactive')
+  - Row appears in the expected sort/filter context (visible without additional unknown filters applied)
 
-**Expected Change**: A new row appears in the Code Values Editor for <Code List Name> with Value = <new entry value> and its Is Active column reflecting the chosen state; the total row count is increased by 1 compared to the pre-check.
+**Expected Change**: A new code value row is present in the Code Values Editor for <Code List Name> with Value set to <new entry value> and the Is Active flag matching the selection made during creation.
 
 ---
 
@@ -5383,20 +5138,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Manage Codes -> <Code List Name> -> Values Editor`
+- **Navigate To**: `Organization Settings -> Code Values Editor -> <Code List Name>`
 - **Observe**:
-  - presence of a row with Value = <existing value>
-  - Is Active status for that row (e.g., active/inactive chip or checkbox)
-  - total number of rows in the Values Editor for <Code List Name>
+  - code values table contains a row with Value = <existing value>
+  - Is Active column shows current state for that row (Active or Inactive)
+  - no row exists with Value = <updated value> (if different from <existing value>)
 
 **Post-Check**
-- **Navigate To**: `Admin -> Manage Codes -> <Code List Name> -> Values Editor`
+- **Navigate To**: `Organization Settings -> Code Values Editor -> <Code List Name> (refresh list if necessary)`
 - **Observe**:
-  - presence of a row with Value = <updated value>
-  - Is Active status for that row (reflects the change made)
-  - total number of rows in the Values Editor for <Code List Name> (should match pre-check unless a uniqueness conflict prevented the update)
+  - code values table contains a row with Value = <updated value>
+  - Is Active column for that row reflects the change made (Active or Inactive)
+  - the original row with Value = <existing value> is no longer present if Value was changed
 
-**Expected Change**: The row that previously showed Value = <existing value> now shows Value = <updated value>; the Is Active column for that row reflects the new state. The total count of code values remains the same (no duplicate/new row created) unless the update was blocked due to uniqueness constraints.
+**Expected Change**: The code value entry that previously had Value = <existing value> now displays Value = <updated value>, and its Is Active flag reflects the updated state made during the edit.
 
 ---
 
@@ -5415,18 +5170,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Manage Codes -> Open Code List: <Code List Name> -> Code Values Editor`
+- **Navigate To**: `Organization Settings -> Code Tables (Code Values Editor) -> <Code List Name>`
 - **Observe**:
-  - row with Value = <existing value> is present in the list
-  - Is Active column / active indicator for the row with Value = <existing value> shows checked or 'Active'
+  - a row with Value = <existing value> is present in the list
+  - Is Active column shows checked/active indicator for that row
 
 **Post-Check**
-- **Navigate To**: `Admin -> Manage Codes -> Open Code List: <Code List Name> -> Code Values Editor (refresh if necessary)`
+- **Navigate To**: `Organization Settings -> Code Tables (Code Values Editor) -> <Code List Name>`
 - **Observe**:
-  - row with Value = <existing value> is present in the list
-  - Is Active column / active indicator for the row with Value = <existing value> shows unchecked or 'Inactive'
+  - the row with Value = <existing value> is still present
+  - Is Active column shows unchecked/inactive indicator for that row
+  - row may be visually styled as inactive (grayed out) or show an 'Inactive' badge
 
-**Expected Change**: The code value row for Value = <existing value> is now marked inactive: the Is Active checkbox is unchecked or an inactive indicator is shown for that row (i.e., its active status changed from active to inactive).
+**Expected Change**: The code value row for <existing value> is marked inactive: its 'Is Active' checkbox/indicator is unchecked or an inactive status indicator is displayed (previously it was active).
 
 ---
 
@@ -5443,22 +5199,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Manage Codes -> <Code List Name> -> Code Values Editor`
+- **Navigate To**: `Organization Settings -> Manage Code Values -> <Code List Name>`
 - **Observe**:
-  - visible ordered list of code values for <Code List Name>
-  - position/index of '<entry A>'
-  - position/index of '<entry B>'
-  - relative ordering showing '<entry A>' appears below '<entry B>'
+  - The code values list displays rows in current ordering
+  - <entry B> row appears above <entry A> row
+  - If present, the positional/index column shows <entry A> at a lower priority/greater index than <entry B>
 
 **Post-Check**
-- **Navigate To**: `Admin -> Manage Codes -> <Code List Name> -> Code Values Editor (refresh view if necessary)`
+- **Navigate To**: `Organization Settings -> Manage Code Values -> <Code List Name>`
 - **Observe**:
-  - visible ordered list of code values for <Code List Name>
-  - position/index of '<entry A>'
-  - position/index of '<entry B>'
-  - relative ordering showing '<entry A>' appears above '<entry B>'
+  - <entry A> row now appears above <entry B> row in the code values list
+  - The positional/index column (if displayed) reflects <entry A> with a higher priority/lower index than before
+  - Ordering persists after refreshing the Code Values page or reopening the Code List
 
-**Expected Change**: '<entry A>' has moved up in the ordering so that it now appears immediately above '<entry B>' (its index/position decreased by one compared to the pre-check).
+**Expected Change**: The selected code value <entry A> has moved up one position in the persisted code list ordering and is now displayed above <entry B>.
 
 ---
 
@@ -5475,20 +5229,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Manage Codes -> Open Code Values Editor for <Code List Name>`
+- **Navigate To**: `Organization Settings -> Code Tables -> <Code List Name> -> Code Values Editor`
 - **Observe**:
-  - visible ordering of code values in the list
-  - row for <entry B> (capture current row index and the label of the row immediately above and below)
-  - row for <entry C> (capture current row index and the label of the row immediately above and below)
+  - Code values list displays <entry B> above <entry C>
+  - Ordering/index positions show <entry B> immediately preceding <entry C>
 
 **Post-Check**
-- **Navigate To**: `Admin -> Manage Codes -> Open Code Values Editor for <Code List Name>`
+- **Navigate To**: `Organization Settings -> Code Tables -> <Code List Name> -> Code Values Editor (refresh or navigate away and back)`
 - **Observe**:
-  - visible ordering of code values in the list
-  - row for <entry B> (capture current row index and the label of the row immediately above and below)
-  - row for <entry C> (capture current row index and the label of the row immediately above and below)
+  - Code values list displays <entry B> below <entry C>
+  - Ordering/index positions show <entry B> immediately following <entry C>
 
-**Expected Change**: <entry B> now appears immediately below <entry C> (i.e., <entry B> row index increased by one relative to pre_check and the adjacent neighbor ordering reflects that <entry B> moved down one position).
+**Expected Change**: The code value ordering is persisted so that <entry B> now appears after <entry C> in the Code Values Editor list even after navigating away or refreshing the page.
 
 ---
 
@@ -5507,18 +5259,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `System Administration > Manage Data Tables`
+- **Navigate To**: `System Administration -> Manage Data Tables`
 - **Observe**:
-  - presence of row with Data Table Name: <Data_Table_Name>
-  - total number of custom data tables (count) shown in the list
+  - custom data table row for <Data_Table_Name> is present in the list
+  - option/button 'Delete' visible for the <Data_Table_Name> row
 
 **Post-Check**
-- **Navigate To**: `System Administration > Manage Data Tables`
+- **Navigate To**: `System Administration -> Manage Data Tables`
 - **Observe**:
-  - absence of row with Data Table Name: <Data_Table_Name>
-  - total number of custom data tables (count) shown in the list
+  - custom data table row for <Data_Table_Name> is not present in the list
+  - no search/filter result returns <Data_Table_Name>
+  - optional: success toast or banner confirming deletion is displayed (if UI shows transient message)
 
-**Expected Change**: The row for <Data_Table_Name> is no longer present in the Manage Data Tables list and the total count of custom data tables has decreased by one compared to pre-check.
+**Expected Change**: The custom data table named <Data_Table_Name> is removed from the Manage Data Tables list and cannot be found by name via the list or search/filter.
 
 ---
 
@@ -5539,20 +5292,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Admin -> Manage Data Tables`
+- **Navigate To**: `System Administration -> Data Tables (Manage Data Tables)`
 - **Observe**:
-  - Listing of existing data tables (rows visible)
-  - No row exists with Data Table Name = <data table name> and Application Table Name = <application table>
+  - Manage Data Tables list does not contain an entry with Data Table Name = <data table name>
+  - No existing row with Application Table Name = <application table> for the same Data Table Name
 
 **Post-Check**
-- **Navigate To**: `Admin -> Manage Data Tables`
+- **Navigate To**: `System Administration -> Data Tables (Manage Data Tables) and refresh list`
 - **Observe**:
-  - A row with Data Table Name = <data table name>
-  - Application Table Name column for that row shows = <application table>
-  - Multi Row indicator for that row matches the option selected during creation (checked if Multi Row was selected, unchecked otherwise)
-  - Opening the new data table's detail displays Column Definitions and includes a column with Name = <column name>, Type = <column type>, and the configured Length / Is Mandatory / Is Unique attributes
+  - Manage Data Tables list contains a row with Data Table Name = <data table name>
+  - The row shows Application Table Name = <application table>
+  - If 'Multi Row' was checked during creation, the row shows Multi Row = true (or corresponding indicator)
+  - Open the newly created Data Table detail and observe Column Definitions contains a column with Name = <column name>, Type = <column type> and the configured Length/Is Mandatory/Is Unique flags
 
-**Expected Change**: A new row appears in the Manage Data Tables listing with Data Table Name set to <data table name> and Application Table Name set to <application table>; the Create Data Table form is closed; the row's Multi Row indicator reflects the selection made during creation; opening the created data table shows the defined column(s) including <column name> with type <column type> and the configured Length, Is Mandatory, and Is Unique attributes.
+**Expected Change**: A new Data Table record is present in the Manage Data Tables list with the specified Data Table Name and Application Table Name; its detail view contains the configured column definition(s) and the Create Data Table form is closed.
 
 ---
 
@@ -5571,23 +5324,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `System Administration > Audit Trails`
+- **Navigate To**: `System Administration -> Audit Trails`
 - **Observe**:
-  - row where Action Name = <Action_Name>
-  - Processing Result column value for that row (expected 'Pending')
-  - Checker column for that row (expected empty/null)
-  - Checked On Date column for that row (expected empty/null)
-  - Maker and Made On Date values for that row (record of who created the pending command)
+  - an audit row for <Action_Name> exists
+  - Processing Result column for that row displays 'Pending'
 
 **Post-Check**
-- **Navigate To**: `System Administration > Audit Trails`
+- **Navigate To**: `System Administration -> Audit Trails`
 - **Observe**:
-  - row where Action Name = <Action_Name>
-  - Processing Result column value for that row
-  - Checker column for that row
-  - Checked On Date column for that row
+  - the same audit row for <Action_Name> is present
+  - Processing Result column for that row displays 'Approved'
+  - Processing/Approved By column shows the approver username (if available)
+  - Processing/Approved Date column shows a recent timestamp (if available)
 
-**Expected Change**: The selected audit row's Processing Result changes from 'Pending' to 'Approved'; the Checker field is populated with the approver's username and the Checked On Date is populated with the approval timestamp (previously blank).
+**Expected Change**: The audit row's Processing Result changes from 'Pending' to 'Approved' after clicking Approve; the row reflects the approver (username) and approval timestamp where the UI exposes those fields.
 
 ---
 
@@ -5607,21 +5357,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `System Administration > Audit Trails`
+- **Navigate To**: `System Administration -> Audit Trails`
 - **Observe**:
-  - presence of an audit row with Action Name = <Action_Name>
-  - Processing Result column for that row shows 'Pending'
-  - Checker column for that row is empty
-  - Checked On Date column for that row is empty
+  - audit row for <Action_Name> with Processing Result = 'Pending'
+  - audit row identifier (e.g., transaction id / timestamp / actor) to uniquely identify the row
 
 **Post-Check**
-- **Navigate To**: `System Administration > Audit Trails`
+- **Navigate To**: `System Administration -> Audit Trails`
 - **Observe**:
-  - Processing Result column for the audit row with Action Name = <Action_Name> shows 'Rejected'
-  - Checker column shows the rejecting user's username (the Administrator who performed the reject)
-  - Checked On Date column is populated with a timestamp
-  - Audit record/detail shows Rejection Reason = <rejection reason> if a reason was entered
+  - the previously identified audit row now shows Processing Result = 'Rejected'
+  - the rejection reason entered is visible in the audit row (if a Rejection Reason column exists) or inside the audit entry detail panel when the row is opened
 
-**Expected Change**: Processing Result for the audit row with Action Name = <Action_Name> changes from 'Pending' to 'Rejected'; the Checker and Checked On Date fields are populated with the rejecting user's identity and timestamp; the Rejection Reason is recorded and visible in the audit record if provided.
+**Expected Change**: The Processing Result for the selected audit trail entry changes from 'Pending' to 'Rejected', and the provided rejection reason is persisted and viewable in the audit row or its detail view.
 
 ---

@@ -20,19 +20,16 @@
 **Pre-Check**
 - **Navigate To**: `Login page`
 - **Observe**:
-  - Sign In form present (Email/Username and Password fields)
-  - No active session / Accounts Overview not displayed
+  - Attempting to sign in with the to-be-registered credentials fails (e.g., displays 'Incorrect email or password' or 'No account found')
 
 **Post-Check**
 - **Navigate To**: `Login page`
 - **Observe**:
-  - Enter the registered Email/Username and Password and submit the Sign In form
-  - Flash message: 'Signed in successfully.'
-  - Redirected to Accounts Overview page
-  - Welcome message contains the registered first and last name
-  - Accounts table is displayed (rows and footer total balance present)
+  - Signing in with the newly-registered credentials succeeds and flash message 'Signed in successfully.' is displayed
+  - User is redirected to Accounts Overview
+  - Accounts Overview shows 'Welcome, <First Name>' (the first name used at registration) and the accounts table is visible
 
-**Expected Change**: The newly registered credentials authenticate successfully: signing in with the registered email/username and password shows 'Signed in successfully.' and redirects to the Accounts Overview with the user's welcome message and accounts table, proving the user account was created in the backend.
+**Expected Change**: A new user account has been created in the backend for the registered email/username; the user can authenticate with the provided credentials and reach the Accounts Overview where their first name is displayed.
 
 ---
 
@@ -55,20 +52,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Registration page`
-- **Observe**:
-  - Registration form is displayed with fields for First Name, Last Name, ZIP Code, Phone Number, SSN, Username (email), Password, Confirm Password
-  - Username (email) field is available to enter a new email address
-
-**Post-Check**
 - **Navigate To**: `Login page`
 - **Observe**:
-  - Flash message 'Account created successfully — please sign in' is shown
-  - Able to authenticate using the newly registered Username (email) and Password
-  - After authentication, user is redirected to Accounts Overview
-  - Accounts Overview displays a welcome message containing the registered user's first and last name and the accounts table (may be empty for a new user)
+  - Attempt to sign in with the email and password planned for registration returns an authentication error (e.g., 'Incorrect email or password' or 'No account found')
 
-**Expected Change**: A new user account was created in the backend: the newly registered credentials successfully authenticate, producing 'Signed in successfully.' and redirecting to Accounts Overview where the welcome message shows the registered name.
+**Post-Check**
+- **Navigate To**: `Login page -> sign in with the newly registered credentials`
+- **Observe**:
+  - Successful sign-in and redirect to Accounts Overview
+  - Welcome message includes the registered user's first name
+  - Accounts table is visible (Account Number, Type, Balance, Status) or an empty-state indicating a new account
+
+**Expected Change**: A new user account has been created and stored in the backend: the newly registered credentials allow successful authentication and access to the Accounts Overview with a welcome message.
 
 ---
 
@@ -92,18 +87,18 @@
 **Pre-Check**
 - **Navigate To**: `Login page`
 - **Observe**:
-  - Attempt to sign in using the same Username (email) and Password values that will be used in the registration test
-  - Authentication failure banner text (e.g., "Incorrect email or password. Please try again.") or lack of successful sign-in
+  - Attempting to sign in with the to-be-registered username/email results in an authentication failure (e.g., error 'Incorrect email or password.' or 'User not found')
+  - No active session exists for the to-be-registered user
 
 **Post-Check**
-- **Navigate To**: `Login page`
+- **Navigate To**: `Login page -> Sign in using the newly registered credentials -> Accounts Overview`
 - **Observe**:
-  - Successful sign-in flash message: "Signed in successfully."
-  - Redirect to Accounts Overview page
-  - Welcome message that includes the registered user's name
-  - Accounts table or dashboard elements (account rows, total balance footer)
+  - Login attempt with the newly registered email/username and password succeeds (no authentication error)
+  - User is redirected to Accounts Overview
+  - Accounts Overview displays a welcome message: 'Welcome, <First Name>'
+  - Accounts table is visible (Account Number, Type, Balance, Status) indicating an account record exists for the new user
 
-**Expected Change**: Before registration, signing in with the test email/password fails with an authentication error. After completing the registration steps, signing in with the same email/password succeeds, flashes "Signed in successfully.", and redirects to Accounts Overview where the welcome message shows the new user's name and the accounts/dashboard is displayed.
+**Expected Change**: A new user account has been created in the backend: the user can authenticate with the registered credentials and is redirected to the Accounts Overview where a welcome message and account listing for that user are displayed.
 
 ---
 
@@ -126,18 +121,17 @@
 **Pre-Check**
 - **Navigate To**: `Login page`
 - **Observe**:
-  - Attempt to sign in using the exact Username (email) and Password planned for registration
-  - Expected failed authentication response: 'Incorrect email or password. Please try again.' (verifies account does not yet exist)
+  - Attempting to sign in with the test email and password fails (no existing account) — an error message is shown such as 'Incorrect email or password.' or 'Unregistered email'.
 
 **Post-Check**
-- **Navigate To**: `Login page`
+- **Navigate To**: `Login page -> Sign in with the newly registered email and the 8-character password`
 - **Observe**:
-  - Flash message 'Signed in successfully.' after submitting the registered credentials
-  - Redirect to Accounts Overview page
-  - Welcome message contains the registered First Name and Last Name
-  - Accounts Overview displays the accounts table footer (total balance) or at least the Accounts Overview left-hand navigation item present
+  - Flash message 'Signed in successfully.' (or equivalent success message) is displayed
+  - User is redirected to Accounts Overview page
+  - Welcome message 'Welcome, <First Name>' is visible
+  - Accounts list or profile page is accessible showing account rows or user profile details
 
-**Expected Change**: After registration the same credentials can be used to sign in successfully; user is redirected to Accounts Overview and the welcome message shows the registered name, proving the user account was created in the backend.
+**Expected Change**: The newly registered user can authenticate with the provided credentials and is taken to the Accounts Overview; the presence of a successful sign-in message, welcome text with the user's first name, and accessible account/profile data confirm the backend user record was created.
 
 ---
 
@@ -161,21 +155,17 @@
 **Pre-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - count of account rows
-  - table footer: total balance across all accounts
-  - for the funding source account: masked account number and current balance
-  - for each account row: Account Type, masked Account Number, Current Balance, Account Status, Open Date (rows ordered by Open Date, earliest first)
+  - accounts list does not contain a newly opened Checking account with an initial balance of $25.00
+  - identify and note the funding account row (masked account number, e.g., ****5001) and record its displayed balance before opening the new account
 
 **Post-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - count of account rows
-  - table footer: total balance across all accounts
-  - presence of a new account row (should be the most recently opened account — appears as the last row given earliest-first ordering)
-  - new account row details: Account Type, masked Account Number, Current Balance, Account Status, Open Date
-  - for the funding source account: masked account number and updated current balance
+  - accounts list contains a new Checking account entry with a masked account number and displayed balance of $25.00
+  - new Checking account row shows status 'Active' or equivalent
+  - the previously noted funding account row shows a balance reduced by $25.00 compared to the pre-check value
 
-**Expected Change**: Number of account rows increased by 1. A new account row exists for a Checking account with Current Balance = $25, Account Status = 'Active', and Open Date = today (appearing as the most recently created row). The funding source account's current balance decreased by $25. The table footer total balance across all accounts remains unchanged (the $25 was moved internally from the funding account into the new checking account).
+**Expected Change**: A new Checking account is created and visible in Accounts Overview with an initial balance of $25.00 and Active status, and the selected funding account's balance has decreased by $25.00.
 
 ---
 
@@ -200,21 +190,18 @@
 **Pre-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - number of accounts (row count)
-  - accounts table rows with columns: Account Number (masked), Account Type, Current Balance, Account Status, Open Date
-  - identify and note the funding source account row and its Current Balance
-  - total balance across all accounts (footer total)
+  - List of accounts showing columns: Account Number (masked), Type, Balance, Status, Open Date
+  - Record the current balance of the funding account selected in the test (identify by masked account number, e.g., ****5001)
+  - Record the current count of Savings account rows and confirm there is no existing Savings account row with Balance = $100.00 and Open Date = today
 
 **Post-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - number of accounts (row count)
-  - presence of a new account row with Account Type 'Savings' and Current Balance $100.00
-  - new account row shows Account Status 'Active' and an Open Date equal to today's date and an Account Number masked as ****last4
-  - funding source account row's Current Balance
-  - total balance across all accounts (footer total)
+  - Accounts table contains a new row with Type = 'Savings', Balance = $100.00, Status = 'Active', and Open Date = today (or very recent)
+  - The new Savings row displays a masked account number (format ****1234) and is present in the accounts list
+  - The funding account's displayed balance has decreased by $100.00 compared to the pre-check recorded balance
 
-**Expected Change**: Account count increased by 1; a new 'Savings' account row appears (typically the most recently opened row) showing Current Balance = $100.00, Account Status = 'Active', and Open Date = today's date with a masked account number. The original funding source account's balance has decreased by $100.00. The footer total balance across all accounts remains unchanged (funds moved internally between accounts).
+**Expected Change**: A new Savings account entry is created and visible in Accounts Overview with balance $100.00 and Active status, and the funding account's balance is reduced by $100.00 from its pre-action value.
 
 ---
 
@@ -236,21 +223,23 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Accounts Overview -> open Source Account details (Transactions tab) and view Accounts table`
+- **Navigate To**: `Accounts Overview -> open Source account details (Transactions); open Destination account details (Transactions)`
 - **Observe**:
-  - current balance of source account (as shown on Accounts Overview and in Source Account details)
-  - current balance of destination account (as shown on Accounts Overview)
-  - most recent transaction ID or timestamp in source account transaction list (if present)
+  - Record Source account current balance
+  - Record Destination account current balance
+  - Source account recent transactions do NOT contain a transfer for the amount about to be submitted
+  - Destination account recent transactions do NOT contain a transfer for the amount about to be submitted
 
 **Post-Check**
-- **Navigate To**: `Accounts Overview -> open Source Account details (Transactions tab) and open Destination Account details (Transactions tab)`
+- **Navigate To**: `Accounts Overview -> open Source account details (Transactions); open Destination account details (Transactions)`
 - **Observe**:
-  - updated balance of source account
-  - updated balance of destination account
-  - new transaction entry in source account transactions containing the transaction ID shown on the transfer success screen and the transfer amount
-  - new transaction entry in destination account transactions referencing the same transaction ID (or corresponding deposit entry) and the transfer amount
+  - Source account balance decreased by the exact transfer amount compared to the recorded pre-check value
+  - Destination account balance increased by the exact transfer amount compared to the recorded pre-check value
+  - A new transaction row exists in the Source account transactions showing a debit/transfer for the transfer amount and listing the transaction ID that was displayed on the transfer success screen
+  - A new transaction row exists in the Destination account transactions showing a credit/transfer for the transfer amount and listing the same transaction ID or a clear cross-reference
+  - Opening the new transaction details shows the transaction ID, amount, accounts involved, and a timestamp consistent with the submission time
 
-**Expected Change**: Source account balance decreased by the transfer amount; destination account balance increased by the same transfer amount; combined total across both accounts remains unchanged; a new transaction appears in the source (debit) and destination (credit) transaction lists showing the same transaction ID displayed on the transfer success page and matching the transfer amount.
+**Expected Change**: An internal transfer transaction is persisted: the Source balance is reduced by the transfer amount, the Destination balance is increased by the same amount, and the new transaction(s) appear in both accounts' transaction lists with the transaction ID displayed on the success screen.
 
 ---
 
@@ -273,20 +262,92 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Accounts Overview`
+- **Navigate To**: `Accounts Overview -> Select Source Account -> Transactions`
 - **Observe**:
-  - balance of Source account (capture value as pre_balance)
-  - total balance footer (capture value as pre_total_balance)
+  - record the current available balance for the selected source account
+  - note the most recent transactions list does not contain an entry for the planned transfer amount and external recipient
 
 **Post-Check**
-- **Navigate To**: `Accounts Overview; Statements -> Generate Statement (select Source account and a date range covering the transfer date)`
+- **Navigate To**: `Accounts Overview -> Select Source Account -> Transactions`
 - **Observe**:
-  - balance of Source account (capture value as post_balance)
-  - total balance footer (capture value as post_total_balance)
-  - Generated statement / transactions list for the Source account showing recent transactions
-  - Transaction entry with the Transaction ID shown on the transfer success screen (or a transaction matching the transfer amount and external payee details, account numbers masked)
+  - Transfer Confirmation page displayed immediately after submission containing a visible transaction ID
+  - transactions list contains a new transaction row with the same transaction ID shown on the confirmation page
+  - the new transaction row shows a debit/External Transfer type and the transfer amount (displayed as a negative amount)
+  - the source account's available balance is reduced by the transfer amount compared to the pre-check balance
 
-**Expected Change**: Source account balance decreased by the transfer amount (post_balance = pre_balance - transfer_amount); total balance footer decreased by the same amount. A transaction appears in the generated statement/transactions list corresponding to the transfer, with the same transfer amount and the Transaction ID that was displayed on the transfer success screen (external account details shown masked as per UI).
+**Expected Change**: A new debit transaction for the external transfer is persisted in the source account's transaction history with the transaction ID shown on the confirmation page, the transaction amount matches the submitted transfer amount, and the source account available balance is decreased by that transfer amount.
+
+---
+
+### [TC-001] Send secure message (basic) with required message body
+**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+
+**Original Steps:**
+1. 1. Navigate to the Support Center page
+2. 2. In the Secure Message form, enter <optional subject> in the Subject field
+3. 3. Select <Category> from the Category dropdown
+4. 4. Enter <valid message body> in the Message Body rich text editor
+5. 5. (Optional) Leave Attachment empty
+6. 6. Click the 'Send Message' button
+
+**Original Expected Result:** A success notification displays: "Message sent successfully. Returns ticket ID." and the notification shows a visible ticket ID
+
+---
+
+#### Verification Plan
+
+**Pre-Check**
+- **Navigate To**: `Payments -> Bill Payment form (ensure the Bill Payment form is visible) OR Accounts Overview -> Accounts list`
+- **Observe**:
+  - current displayed balance for <Source_Account> (capture as PRE_BALANCE)
+  - payments/transactions list does not contain a recent entry for <payee name> with amount <payment amount> and today's timestamp (or no matching pending/completed payment exists)
+
+**Post-Check**
+- **Navigate To**: `Payments -> Payment History (or Accounts Overview -> Account Details for <Source_Account>)`
+- **Observe**:
+  - success notification displayed with visible reference code (e.g., 'Reference: XXXXX')
+  - displayed balance for <Source_Account> equals PRE_BALANCE minus <payment amount>
+  - payment/transaction history contains a new entry for <payee name> with amount <payment amount>, the visible reference code, and status 'Completed' or 'Submitted'
+
+**Expected Change**: A visible reference code is shown in the success notification and a new payment transaction row exists for the specified payee and amount; the Source Account's displayed balance is reduced by the Payment Amount (PRE_BALANCE - <payment amount>).
+
+---
+
+### [TC-002] Send secure message with a valid attachment
+**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+
+**Original Steps:**
+1. 1. Navigate to the Support Center page
+2. 2. In the Secure Message form, enter <optional subject> in the Subject field
+3. 3. Select <Category> from the Category dropdown
+4. 4. Enter <valid message body> in the Message Body rich text editor
+5. 5. Click 'Upload' on the Attachment control and select <valid allowed file> from the OS file dialog
+6. 6. Confirm the attachment appears in the form upload list
+7. 7. Click the 'Send Message' button
+
+**Original Expected Result:** A success notification displays: "Message sent successfully. Returns ticket ID." and the support message list shows a new message row with the entered Subject and a visible attachment name
+
+---
+
+#### Verification Plan
+
+**Pre-Check**
+- **Navigate To**: `Payments -> Bill Payment form (ensure Source Account dropdown is visible) and Accounts Overview -> My Accounts`
+- **Observe**:
+  - Current displayed balance for the alternate Source Account selected in the test (capture this value as prePaymentBalance)
+  - No recent payment entry exists with the reference code that will be returned by this transaction (i.e., the reference code is not present prior to submission)
+  - Payments page does not show a success notification for the payment about to be submitted
+
+**Post-Check**
+- **Navigate To**: `Payments -> Bill Payment form (review Source Account balance and notifications) and Accounts Overview -> My Accounts and Payments -> Recent Payments / Transaction History`
+- **Observe**:
+  - A success notification is displayed with the exact message: 'Payment submitted successfully. Returns a reference code and updates account balances.'
+  - A visible reference code is shown in the success notification
+  - The displayed balance for the alternate Source Account on the Payments page is reduced by the Payment Amount compared to prePaymentBalance
+  - The displayed balance for the same alternate Source Account on Accounts Overview matches the reduced balance shown on the Payments page
+  - Recent Payments / Transaction History contains a new entry for the submitted payment showing the same reference code and the payment amount
+
+**Expected Change**: A success notification appears containing a visible reference code, and the selected alternate Source Account's displayed balance is reduced by the Payment Amount in both the Payments page and Accounts Overview; additionally a new transaction/payment record appears in Recent Payments/Transaction History referencing the same reference code and amount.
 
 ---
 
@@ -310,14 +371,19 @@
 **Pre-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - balance of <Source_Account> (as shown in the accounts table)
+  - accounts table lists existing accounts (note collateral account and its current balance)
+  - no loan account row exists for a Personal loan with amount = <Loan_Amount> (or no loan row matching the to-be-created loan's unique details)
 
 **Post-Check**
-- **Navigate To**: `Accounts Overview`
+- **Navigate To**: `Accounts Overview -> (or) Loan Details (if redirected)`
 - **Observe**:
-  - balance of <Source_Account> (as shown in the accounts table)
+  - accounts table contains a new loan row of type 'Loan' with loan subtype or label 'Personal'
+  - the new loan row displays the approved amount = <Loan_Amount>
+  - the new loan row displays a loan account identifier (account number or reference)
+  - collateral account (selected during application) still shows the same balance as observed in pre_check (no debit)
+  - if redirected to Loan Details page: page shows loan type 'Personal', approved amount = <Loan_Amount>, loan account identifier, and approval status 'Approved' or 'Active'
 
-**Expected Change**: The Source Account balance is decreased by the <payment amount> (new_balance = old_balance - payment amount). The deduction equals the submitted Payment Amount. Additionally, the Payments page displayed a success notification containing a visible reference code for the transaction when the payment was submitted.
+**Expected Change**: A new loan account for the submitted Personal loan is created and visible in the application with a unique loan account identifier and the approved Loan_Amount; the collateral account balance remains unchanged (no funds debited).
 
 ---
 
@@ -340,97 +406,23 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Payments -> Bill Payment form (Payments page with Bill Payment form visible)`
+- **Navigate To**: `Accounts Overview -> Accounts list (or Loans tab if present)`
 - **Observe**:
-  - displayed balance of <alternate Source_Account> on the Payments page (record this value as pre_check_balance)
-  - no success notification for the current payment is present
+  - accounts list does NOT contain a Loan account row for an Auto loan with the requested/expected Loan_Amount
+  - record the current balance of the selected collateral account (e.g. '****500X' = <collateral_balance_before>)
+  - record the current count of Loan-type accounts (loan_count_before)
 
 **Post-Check**
-- **Navigate To**: `Payments -> Bill Payment form (then Accounts Overview to cross-check balances)`
+- **Navigate To**: `Accounts Overview -> Accounts list (or Loans tab) and optionally Request Loan -> Loan Details`
 - **Observe**:
-  - success notification text on screen
-  - visible reference code within the success notification
-  - displayed balance of <alternate Source_Account> on the Payments page
-  - displayed balance of <alternate Source_Account> on the Accounts Overview page (if present)
+  - accounts list contains a new Loan account row
+  - new loan row displays Loan Type = 'Auto'
+  - new loan row displays Approved Amount equal to the submitted Loan_Amount
+  - new loan row shows a non-empty loan account identifier / account number
+  - selected collateral account balance equals <collateral_balance_before> (no debit occurred)
+  - count of Loan-type accounts = loan_count_before + 1
 
-**Expected Change**: A success notification appears containing the exact message 'Payment submitted successfully. Returns a reference code and updates account balances.' and includes a visible reference code; the displayed balance for <alternate Source_Account> is reduced by <payment amount> compared to the pre_check_balance on the Payments page, and the same reduced balance is reflected on the Accounts Overview page (post-check balance = pre_check_balance - <payment amount>).
-
----
-
-### [TC-001] Send secure message (basic) with required message body
-**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
-
-**Original Steps:**
-1. 1. Navigate to the Support Center page
-2. 2. In the Secure Message form, enter <optional subject> in the Subject field
-3. 3. Select <Category> from the Category dropdown
-4. 4. Enter <valid message body> in the Message Body rich text editor
-5. 5. (Optional) Leave Attachment empty
-6. 6. Click the 'Send Message' button
-
-**Original Expected Result:** A success notification displays: "Message sent successfully. Returns ticket ID." and the notification shows a visible ticket ID
-
----
-
-#### Verification Plan
-
-**Pre-Check**
-- **Navigate To**: `Accounts Overview`
-- **Observe**:
-  - list of account rows and their Account Type values
-  - count of accounts (number of rows)
-  - absence of any account row with Account Type 'Personal' or 'Loan' that matches the forthcoming loan details
-
-**Post-Check**
-- **Navigate To**: `Accounts Overview`
-- **Observe**:
-  - presence of a new account row representing the approved loan
-  - Account Type value showing 'Personal' (or 'Loan - Personal')
-  - Account Identifier displayed (masked showing only last 4 digits, e.g., ****1234)
-  - Current Balance / Principal equal to the approved Loan Amount shown in the loan details
-  - Account Status badge (e.g., 'Active') for the new loan account
-  - Open Date displayed for the new loan account
-  - total account count increased by 1 compared to pre_check (footer row or row count)
-
-**Expected Change**: A new loan account row for the approved Personal loan appears in Accounts Overview with a loan account identifier (masked), Account Type 'Personal', Current Balance/Principal equal to the approved Loan Amount, an 'Active' status badge, an Open Date corresponding to creation, and the total number of accounts increased by one.
-
----
-
-### [TC-002] Send secure message with a valid attachment
-**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
-
-**Original Steps:**
-1. 1. Navigate to the Support Center page
-2. 2. In the Secure Message form, enter <optional subject> in the Subject field
-3. 3. Select <Category> from the Category dropdown
-4. 4. Enter <valid message body> in the Message Body rich text editor
-5. 5. Click 'Upload' on the Attachment control and select <valid allowed file> from the OS file dialog
-6. 6. Confirm the attachment appears in the form upload list
-7. 7. Click the 'Send Message' button
-
-**Original Expected Result:** A success notification displays: "Message sent successfully. Returns ticket ID." and the support message list shows a new message row with the entered Subject and a visible attachment name
-
----
-
-#### Verification Plan
-
-**Pre-Check**
-- **Navigate To**: `Accounts Overview`
-- **Observe**:
-  - total number of accounts listed
-  - for each account row: Account Type, masked Account Number (last 4 digits), Current Balance, Account Status, Open Date
-  - count/list of any existing accounts with Account Type containing 'Auto' (and their displayed balances)
-
-**Post-Check**
-- **Navigate To**: `Accounts Overview`
-- **Observe**:
-  - a new account row with Account Type containing 'Auto'
-  - masked Account Number in the new row whose last 4 digits match the loan account identifier (last 4 digits) shown on the loan-success confirmation screen
-  - displayed Current Balance or displayed loan amount for that account equals the approved Loan_Amount returned on the success screen
-  - Account Status for the new row shows 'Active' (or equivalent active badge)
-  - Open Date for the new row is today's date (or the loan creation date returned on the success screen)
-
-**Expected Change**: The Accounts Overview shows one additional account row representing the approved Auto loan: an Account Type containing 'Auto' appears, the masked account number's last 4 digits match the loan identifier returned by the success screen, the displayed amount matches the approved Loan_Amount, the account status is Active, and the account's Open Date equals the loan creation date. The total account count increases by 1.
+**Expected Change**: A new Loan account entry is created for the Auto loan with the approved amount and a loan account identifier; the selected collateral account balance remains unchanged (no debit), and the total number of Loan accounts increases by one.
 
 ---
 
@@ -452,27 +444,26 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Accounts Overview`
+- **Navigate To**: `Accounts Overview -> Loans (or Accounts list) / note Collateral Account`
 - **Observe**:
-  - count of account rows in the accounts table
-  - list of account rows showing Account Type and masked Account Number (e.g., ****1234)
-  - Current Balance for the collateral account selected in the application (record the balance value)
+  - Loans list does not contain a loan entry with Loan Type 'Home' and the submitted Loan_Amount
+  - If selecting a collateral account in the test, record the current balance for that collateral account (note value shown in Balance column or Account Details)
 
 **Post-Check**
-- **Navigate To**: `Accounts Overview -> (click the newest account row corresponding to the loan) -> Loan Details`
+- **Navigate To**: `Accounts Overview -> Loans (or Accounts list) -> open new Loan Account Details if available`
 - **Observe**:
-  - accounts table has one additional row compared to pre-check
-  - new account row with Account Type 'Loan' or 'Home Loan' appears (masked account number shown)
-  - masked account number on the new row matches the loan account identifier shown on the application success screen
-  - open the new loan account row to view Loan Details page showing: Loan Type 'Home', Approved Loan Amount, Loan Account Identifier, Account Status (e.g., Active), and Open Date
-  - Current Balance of the collateral account recorded in pre-check is unchanged
+  - Loans list contains a new loan entry with Loan Type = 'Home'
+  - The new loan entry displays the approved Loan Amount equal to the submitted Loan_Amount
+  - A loan account identifier (account number or loan ID) is shown for the new loan entry
+  - Opening the loan account details shows loan metadata (loan type 'Home', approved amount, creation date)
+  - The previously-recorded collateral account balance remains unchanged (no debit was applied)
 
-**Expected Change**: Accounts table contains one additional account row representing the newly created loan; the new loan's masked account identifier matches the identifier shown on the loan-approval success screen; the Loan Details page displays Loan Type 'Home', the approved loan amount, loan account identifier, status 'Active', and today's open date. The collateral account balance remains unchanged (no debit).
+**Expected Change**: A new loan account of type 'Home' is created and visible in the Accounts/Loans list with an assigned loan account identifier and an approved amount matching the submitted Loan_Amount; the selected collateral account balance remains the same (no debit occurred).
 
 ---
 
 ### [TC-008] Request Callback: clear pre-filled Phone Number and submit (required field left blank)
-**Category**: `negative` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
+**Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Clear the Phone Number field so it is empty
@@ -487,25 +478,20 @@
 
 #### Verification Plan
 
-**Actor A (Role: `applicant`)**
-- **Action**: Execute the steps from the core test case (open Request Loan page, submit application with Down_Payment < 10% of Loan_Amount).
-
-**Actor B (Role: `loan_officer`)**
-- **Session**: `new_session`
-- **Navigate To**: `Admin -> Loan Applications (or Loan Processing Queue)`
-- **Action**: 
+**Pre-Check**
+- **Navigate To**: `Request Loan -> My Loan Applications (Loan History)`
 - **Observe**:
-  - applicant username or name
-  - application ID or reference
-  - loan type
-  - loan amount
-  - down payment amount
-  - collateral account (identifier and balance)
-  - application submission timestamp
-  - application status (e.g., Denied / Declined)
-  - denial reason/message (text shown by credit engine)
+  - no existing loan application row with the target Loan_Amount and current timestamp
+  - no existing application for the same Loan_Type and collateral with status 'Denied' or 'Pending' that matches the submission data
 
-**Expected Change**: A new loan application record exists for the applicant with the submitted Loan_Amount and Down_Payment; the record's status is 'Denied' (or equivalent) and the denial reason explicitly states the down payment requirement was not met (i.e., Down_Payment is below the minimum 10% of Loan_Amount). No loan account should have been created.
+**Post-Check**
+- **Navigate To**: `Request Loan -> My Loan Applications (Loan History)`
+- **Observe**:
+  - a loan application row exists with the submitted Loan_Amount and Down_Payment
+  - the application's status column shows 'Denied' or 'Rejected'
+  - the application's details or denial reason text contains an explanation referencing the down payment being below 10% (e.g., 'minimum 10% down payment not met') or credit-engine denial reason
+
+**Expected Change**: A new loan application record is created and recorded in the user's Loan Applications list with status 'Denied' and a denial reason indicating the down payment was below the required 10% (credit-engine simulated denial).
 
 ---
 
@@ -527,29 +513,30 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Accounts Overview -> Update Contact Info (Customer Profile) page`
+- **Navigate To**: `User Menu -> Update Contact Info (Contact Profile)`
 - **Observe**:
-  - First Name
-  - Last Name
-  - Street Address
-  - City
-  - State
-  - ZIP Code
-  - Phone Number
+  - First Name field contains current (pre-update) value
+  - Last Name field contains current (pre-update) value
+  - Street Address field contains current (pre-update) value
+  - City field contains current (pre-update) value
+  - State field contains current (pre-update) value
+  - ZIP Code field contains current (pre-update) value
+  - Phone Number field contains current (pre-update) value
+  - No success notification 'Profile updated successfully.' is visible before submitting
 
 **Post-Check**
-- **Navigate To**: `Accounts Overview -> Update Contact Info (Customer Profile) page (refresh or navigate away and return to verify persistence)`
+- **Navigate To**: `User Menu -> Update Contact Info (Contact Profile)`
 - **Observe**:
-  - First Name
-  - Last Name
-  - Street Address
-  - City
-  - State
-  - ZIP Code
-  - Phone Number
-  - Success notification/banner text
+  - Success notification with text 'Profile updated successfully.' is visible
+  - First Name field value = <valid first name>
+  - Last Name field value = <valid last name>
+  - Street Address field value = <valid street address>
+  - City field value = <valid city>
+  - State field value = <valid state>
+  - ZIP Code field value = <valid ZIP/postal code>
+  - Phone Number field value = <valid phone number>
 
-**Expected Change**: After submitting the update, the profile fields show the newly submitted values: First Name = <valid first name>, Last Name = <valid last name>, Street Address = <valid street address>, City = <valid city>, State = <valid state>, ZIP Code = <valid ZIP/postal code>, Phone Number = <valid phone number>. The success notification 'Profile updated successfully.' is displayed, and the updated values persist after a refresh or after navigating away and returning to the Contact Profile page.
+**Expected Change**: The Contact Profile form fields are updated to the submitted values and a 'Profile updated successfully.' notification is shown, confirming the backend persisted the new contact information which is reflected when revisiting the form.
 
 ---
 
@@ -572,28 +559,23 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Update Contact Info / Contact Profile page`
+- **Navigate To**: `User Menu -> Update Contact Info (Contact Profile) page`
 - **Observe**:
-  - Phone Number (current value)
-  - First Name
-  - Last Name
+  - Phone Number field is pre-filled with the currently saved phone number (e.g., the value before the update)
+  - No success notification for the new phone number is present
 
 **Post-Check**
-- **Navigate To**: `Update Contact Info / Contact Profile page`
+- **Navigate To**: `User Menu -> Update Contact Info (Contact Profile) page (refresh or reopen the page in a new session/tab)`
 - **Observe**:
-  - Phone Number (displayed value)
-  - Success notification text 'Profile updated successfully.'
-  - First Name
-  - Last Name
+  - Success notification with text 'Profile updated successfully.' was displayed after submission
+  - Phone Number field value equals <valid phone number>
 
-**Expected Change**: Phone Number now equals the new value entered ('<valid phone number>') and is persisted on the profile after refresh; First Name and Last Name remain unchanged; a success notification 'Profile updated successfully.' was displayed upon submission.
+**Expected Change**: The Contact Profile's Phone Number is updated to <valid phone number> and the change is persisted — subsequent visits to the Contact Profile page show the new phone number.
 
 ---
 
 ### [TC-003] Request callback with valid next-business-day date, time window and editable phone number
-**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `partial`
-
-**Coverage Note**: *The UI exposes the profile fields and a success message but does not guarantee visibility of backend audit metadata (e.g., 'last updated' timestamp or an audit log). Only the UI refresh and unchanged field values can be fully verified in-app; backend update records (if any) require access to logs or an API and are not observable here.*
+**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Navigate to the Support Center page
@@ -610,36 +592,24 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Account Dashboard -> Update Contact Info (Customer Profile) page`
+- **Navigate To**: `User Menu -> Update Contact Info (Contact Profile) page`
 - **Observe**:
-  - First Name (value)
-  - Last Name (value)
-  - Street Address (value)
-  - City (value)
-  - State (value)
-  - ZIP Code (value)
-  - Phone Number (value)
-  - Presence of a 'Profile updated' or 'Last updated' timestamp field (if visible)
+  - Form is pre-filled with current profile values: First Name = <existing first name>, Last Name = <existing last name>, Street Address = <existing street address>, City = <existing city>, State = <existing state>, ZIP Code = <existing ZIP/postal code>, Phone Number = <existing phone number>
+  - No validation errors or pending save indicators present
 
 **Post-Check**
-- **Navigate To**: `Account Dashboard -> Update Contact Info (Customer Profile) page (refresh or reload view after submission)`
+- **Navigate To**: `User Menu -> Update Contact Info (Contact Profile) page (after clicking 'Update Profile')`
 - **Observe**:
-  - Success notification text: "Profile updated successfully."
-  - First Name (value)
-  - Last Name (value)
-  - Street Address (value)
-  - City (value)
-  - State (value)
-  - ZIP Code (value)
-  - Phone Number (value)
-  - Presence of a 'Profile updated' or 'Last updated' timestamp field (if visible)
+  - Success notification with text 'Profile updated successfully.' is displayed
+  - Contact Profile form remains visible after submission
+  - Form fields show the same values as observed in pre_check: First Name = <existing first name>, Last Name = <existing last name>, Street Address = <existing street address>, City = <existing city>, State = <existing state>, ZIP Code = <existing ZIP/postal code>, Phone Number = <existing phone number>
 
-**Expected Change**: A success notification 'Profile updated successfully.' is displayed and the profile form remains visible showing the same pre-filled values for all fields. If the UI exposes a 'last updated' timestamp or similar audit indicator, it should advance/update to reflect the submission; otherwise, field values must remain identical to the pre-check values (no unintended modifications).
+**Expected Change**: The application displays a success notification and refreshes the profile data; the Contact Profile form continues to display the same pre-filled values, indicating the profile was reloaded without any field changes.
 
 ---
 
 ### [TC-001] Send secure message (basic) with required message body
-**Category**: `positive` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
+**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Navigate to the Support Center page
@@ -655,20 +625,22 @@
 
 #### Verification Plan
 
-**Actor A (Role: `customer`)**
-- **Action**: Execute the steps from the core test case. When the success message appears, copy the displayed tracking ID and note the card type, linked account, and full shipping address that were submitted.
-
-**Actor B (Role: `support_agent`)**
-- **Session**: `new_session`
-- **Navigate To**: `Admin Dashboard -> Card Requests (or Support Center -> Card Requests queue)`
-- **Action**: 
+**Pre-Check**
+- **Navigate To**: `Manage Cards -> Card Requests (or My Card Requests)`
 - **Observe**:
-  - ticket list contains a ticket with the customer's tracking ID
-  - ticket fields: requestor username/email, card type, linked account number (masked or last 4), full shipping address
-  - ticket status (expected 'Open' or 'Submitted')
-  - ticket creation timestamp
+  - card requests list does not contain an entry matching the selected Card Type and the selected Account to Link with today's date
+  - no recent card request entry with the provided Shipping Address or identical last-4 account digits
 
-**Expected Change**: A new card-request ticket exists in the Card Requests queue with the same tracking ID shown to the customer, matching card type, linked account, and shipping address; the ticket status is 'Open' or 'Submitted' and the creation timestamp is recent (within a few minutes of submission).
+**Post-Check**
+- **Navigate To**: `Manage Cards -> Card Requests (or My Card Requests)`
+- **Observe**:
+  - card requests list contains a new entry created today
+  - new entry shows Card Type = selected <Card Type>
+  - new entry shows Linked Account = <Account to Link> (masked, e.g., ****5001 or last-4 digits)
+  - new entry shows a status badge 'Submitted' or 'Pending'
+  - new entry displays a tracking ID or request reference (alphanumeric)
+
+**Expected Change**: A new card request ticket is created and visible in the Card Requests list for the selected account and card type, displaying a tracking ID/reference and a status of 'Submitted' or 'Pending'.
 
 ---
 
@@ -691,21 +663,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Manage Cards -> Card Controls card`
+- **Navigate To**: `Manage Cards page -> Card Controls section`
 - **Observe**:
-  - Select Existing Card dropdown contains <Selected Card> and shows current selection
-  - Displayed Card Status for <Selected Card> (expected 'Active')
-  - Displayed New/Current Spending Limit for <Selected Card> (record current value)
+  - Selected card (<Selected Card>) is present in the Select Existing Card dropdown
+  - Selected card (<Selected Card>) status is 'Active' in the Card Controls area
+  - Current Spending Limit value is displayed for the selected card (pre-update value)
 
 **Post-Check**
-- **Navigate To**: `Manage Cards -> Card Controls card (refresh page or re-open Manage Cards to ensure persisted state)`
+- **Navigate To**: `Manage Cards page -> Card Controls section (or Card list/dashboard)`
 - **Observe**:
-  - Select Existing Card dropdown contains and selects <Selected Card>
-  - Displayed Card Status for <Selected Card>
-  - Displayed Spending Limit for <Selected Card>
-  - Success banner text if present (e.g., 'Card controls updated successfully.')
+  - A success message/toast 'Card controls updated successfully.' is visible after submission
+  - Selected card (<Selected Card>) status displays 'Frozen' in the Card Controls area
+  - Spending Limit field/value for the selected card shows the newly entered limit (<valid spending limit within policy>)
+  - If the application shows a cards list or dashboard, that list reflects the card's status as 'Frozen' and displays the updated spending limit
 
-**Expected Change**: After the update, the selected card's Status is 'Frozen' (was 'Active' in pre-check) and the Spending Limit equals the <valid spending limit within policy> entered during the test; these values persist after a page refresh/navigation.
+**Expected Change**: The selected card's status has changed from 'Active' to 'Frozen' and its Spending Limit has been updated to the entered valid value; the change is visible in the Card Controls area (and reflected in any cards list/dashboard).
 
 ---
 
@@ -727,20 +699,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Manage Cards -> Card Controls`
+- **Navigate To**: `Manage Cards -> Card Controls (select <Selected Card>)`
 - **Observe**:
-  - Selected card shown as <Selected Card> in Select Existing Card dropdown
-  - Travel Notice summary for <Selected Card> (dates and destinations) — may be empty
-  - Number of existing travel notices listed for <Selected Card>
+  - Travel Notice summary does not contain the date range <valid start date> – <valid end date>
+  - Travel Notice destinations list does not include <destination A>
+  - No recent 'Card controls updated successfully.' flash message displayed
 
 **Post-Check**
-- **Navigate To**: `Manage Cards -> Card Controls (reload or new session recommended) and select <Selected Card>`
+- **Navigate To**: `Manage Cards -> Card Controls (select <Selected Card>) or Card Details for <Selected Card>`
 - **Observe**:
-  - Travel Notice summary for <Selected Card> (dates and destinations)
-  - List of destinations for the active travel notice(s) for <Selected Card>
-  - Number of travel notices listed for <Selected Card>
+  - Flash message 'Card controls updated successfully.' is visible (recent)
+  - Travel Notice summary shows date range <valid start date> – <valid end date>
+  - Travel Notice destinations list contains <destination A>
+  - Travel Notice entry is associated with the selected card (card masked number or card name shown)
 
-**Expected Change**: A travel notice for <Selected Card> exists showing the date range <valid start date> – <valid end date> and includes '<destination A>' in its destinations list; if no travel notice existed in pre_check, the number of travel notices for <Selected Card> has increased by 1, otherwise the newly created notice is present among the listed notices.
+**Expected Change**: A Travel Notice entry for the selected card exists showing the specified start and end dates (<valid start date> – <valid end date>) and the destinations list includes <destination A>; the success flash message is displayed after submission.
 
 ---
 
@@ -763,18 +736,17 @@
 **Pre-Check**
 - **Navigate To**: `Manage Cards -> Card Controls (select <Selected Card>)`
 - **Observe**:
-  - Travel Notice summary start date for <Selected Card> (if present)
-  - Travel Notice summary end date for <Selected Card> (if present)
-  - Travel Notice summary destinations list for <Selected Card> (could be empty)
+  - Travel Notice summary does not contain the date range <valid start date> – <valid end date>
+  - Travel Notice destination list does not contain <destination A> or <destination B>
 
 **Post-Check**
-- **Navigate To**: `Manage Cards -> Card Controls (refresh page or navigate away and return, then select <Selected Card>)`
+- **Navigate To**: `Manage Cards -> Card Controls (select <Selected Card>)`
 - **Observe**:
-  - Travel Notice summary start date for <Selected Card>
-  - Travel Notice summary end date for <Selected Card>
-  - Travel Notice summary destinations list for <Selected Card>
+  - Travel Notice summary displays the date range '<valid start date> – <valid end date>'
+  - Travel Notice destination list contains '<destination A>' and '<destination B>'
+  - If shown, a success notification 'Card controls updated successfully.' is visible or was previously shown
 
-**Expected Change**: Travel Notice summary for <Selected Card> shows the entered <valid start date> – <valid end date> and the destinations list includes both '<destination A>' and '<destination B>'. These values persist after a page refresh or navigating away and back, indicating the changes were saved to the backend.
+**Expected Change**: The selected card's Travel Notice is created/updated so that the summary shows the specified start and end dates and lists the two added destinations (<destination A> and <destination B>).
 
 ---
 
@@ -796,20 +768,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Investments -> Portfolio Snapshot (and open Trade History if available)`
+- **Navigate To**: `Investments -> Portfolio Snapshot (holdings panel)`
 - **Observe**:
-  - holding row for <existing fund symbol> (record current share quantity, average cost per share, and market value) or note 'no holding' if absent
-  - available buying power for <funding account with sufficient buying power> (record numeric value) — visible in Investments funding-account info or Accounts Overview
-  - top entry of Trade History (record latest order ID and status if present) to use as baseline
+  - holding row for <existing fund symbol> with current share quantity (record this value as PRE_QUANTITY)
+  - no newly executed trade for <existing fund symbol> with today's timestamp is present in Trade History (optional)
 
 **Post-Check**
-- **Navigate To**: `Investments -> Portfolio Snapshot and Trade History`
+- **Navigate To**: `Investments -> Portfolio Snapshot (holdings panel); Trade History / Orders`
 - **Observe**:
-  - holding row for <existing fund symbol> (updated share quantity, average cost per share, and market value)
-  - available buying power for <funding account with sufficient buying power> (numeric value)
-  - most recent Trade History entry (order ID displayed, Action = 'Buy', Symbol = <existing fund symbol>, Quantity = <valid quantity>, Status = 'Executed' or 'Completed')
+  - success notification displays "Trade executed successfully." and shows an order ID
+  - holding row for <existing fund symbol> exists and its displayed share quantity equals PRE_QUANTITY + <valid quantity> purchased
+  - Trade History contains a new entry with the displayed order ID, action 'Buy', fund symbol <existing fund symbol>, and quantity = <valid quantity> (status 'Executed' or 'Completed')
 
-**Expected Change**: The holding row for <existing fund symbol> shows the share quantity increased by <valid quantity> compared to the pre-check (or a new holding row appears with quantity = <valid quantity> if previously absent); the available buying power for <funding account with sufficient buying power> decreased by the approximate purchase cost (purchase price × <valid quantity> plus any fees) relative to the pre-check value; and a new Trade History entry exists with an order ID and status indicating the trade executed.
+**Expected Change**: A new executed buy order is recorded (visible via the success notification with an order ID and in Trade History) and the Portfolio Snapshot holdings row for <existing fund symbol> shows the share quantity increased by the purchased <valid quantity> compared to the pre-check value.
 
 ---
 
@@ -832,21 +803,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Investments page -> Portfolio Snapshot (Holdings section)`
+- **Navigate To**: `Investments -> Portfolio Snapshot (or Investments page)`
 - **Observe**:
-  - holdings row for <existing fund symbol>: share quantity
-  - holdings row for <existing fund symbol>: market value
-  - portfolio total market value
+  - holding row for <existing fund symbol> showing current share quantity (record this quantity as PRE_QUANTITY)
+  - Trade History / Orders list does not contain a recent sell order for <existing fund symbol> with the intended <valid quantity>
 
 **Post-Check**
-- **Navigate To**: `Investments page -> Portfolio Snapshot (Holdings section)`
+- **Navigate To**: `Investments -> Portfolio Snapshot (and open Trade History / Orders)`
 - **Observe**:
-  - success notification text and order ID (e.g., 'Trade executed successfully.' with order ID)
-  - holdings row for <existing fund symbol>: updated share quantity
-  - holdings row for <existing fund symbol>: updated market value
-  - portfolio total market value
+  - holding row for <existing fund symbol> shows quantity equal to PRE_QUANTITY minus <valid quantity>
+  - Trade History / Orders contains a new entry for <existing fund symbol> with the order ID shown in the success notification and status 'Executed' or 'Completed'
+  - Optional: Destination account balance (Accounts Overview) increased by the trade proceeds (if proceeds are displayed and determinable)
 
-**Expected Change**: The holdings row for <existing fund symbol> shows the share quantity decreased by <valid quantity> (new_quantity = pre_check_quantity - <valid quantity>); the Investments page displays 'Trade executed successfully.' with an order ID; the holdings' market value and portfolio total market value reflect the reduction accordingly.
+**Expected Change**: The Portfolio Snapshot holding for <existing fund symbol> is reduced by <valid quantity> compared to the pre-check value, and a corresponding executed trade entry with the same order ID appears in Trade History / Orders.
 
 ---
 
@@ -868,20 +837,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Investments page -> Recurring Investment Plans section`
+- **Navigate To**: `Investments page -> Recurring Investment Plans (or Recurring Plans tab/section)`
 - **Observe**:
-  - list of recurring plans (each row shows: fund symbol, frequency, contribution amount, start date, funding account, status)
-  - count of recurring plans
-  - whether a plan already exists for <existing fund symbol> with <Start_Date> and <valid contribution amount>
+  - recurring plans list does NOT contain an entry for <existing fund symbol> with Start Date = <Start_Date>
+  - no row exists with Contribution = <valid contribution amount> and Frequency = <Weekly or Monthly> for <existing fund symbol>
 
 **Post-Check**
-- **Navigate To**: `Investments page -> Recurring Investment Plans section`
+- **Navigate To**: `Investments page -> Recurring Investment Plans (or Recurring Plans tab/section)`
 - **Observe**:
-  - list of recurring plans (each row shows: fund symbol, frequency, contribution amount, start date, funding account, status)
-  - count of recurring plans
-  - a plan row for <existing fund symbol> with the configured <Frequency>, <valid contribution amount>, <Start_Date>, and <funding account with adequate balance>
+  - recurring plans list contains a new row for <existing fund symbol>
+  - the new row shows Frequency = <Weekly or Monthly>
+  - the new row shows Contribution Amount = <valid contribution amount>
+  - the new row shows Start Date = <Start_Date>
+  - the new row shows Funding Account = <funding account with adequate balance>
+  - a UI toast or banner displays: "Plan created successfully." (optional confirmation message)
 
-**Expected Change**: The Recurring Plans list contains a new row for <existing fund symbol> with Frequency = <Weekly or Monthly>, Contribution Amount = <valid contribution amount>, Start Date = <Start_Date>, Funding Account = <funding account with adequate balance>, and a status indicating the plan is scheduled/active; the total count of recurring plans has increased by one; the UI also displayed the confirmation message 'Plan created successfully.' after creation.
+**Expected Change**: A new recurring investment plan row is created for <existing fund symbol> with Frequency <Weekly or Monthly>, Contribution Amount <valid contribution amount>, Start Date <Start_Date>, and the selected funding account; the UI displays a "Plan created successfully." confirmation.
 
 ---
 
@@ -903,19 +874,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Account Statements -> e-Statement Preference form`
+- **Navigate To**: `Account Statements -> E-Statement Preferences`
 - **Observe**:
-  - Paperless opt-in checkbox state
-  - Email Address field value
+  - Paperless (e-Statement) opt-in checkbox state (expected: unchecked before action)
+  - Email Address field value (expected: empty or not equal to <valid email>)
 
 **Post-Check**
-- **Navigate To**: `Accounts Overview -> Account Statements -> e-Statement Preference form (refresh or navigate away and back to ensure persistence)`
+- **Navigate To**: `Account Statements -> E-Statement Preferences (refresh page or navigate away and back to confirm persistence)`
 - **Observe**:
-  - Paperless opt-in checkbox state
-  - Email Address field value
-  - transient success banner or flash message
+  - Paperless (e-Statement) opt-in checkbox is checked
+  - Email Address field displays <valid email>
+  - UI shows confirmation message 'e-Statement preference updated.' (optional success flash/banner)
 
-**Expected Change**: After saving, the Paperless opt-in checkbox is checked and the Email Address field displays the saved address (<valid email>). The success banner 'e-Statement preference updated.' is shown immediately after saving, and the checked state and email persist after navigating away and returning to the e-Statement Preference form.
+**Expected Change**: The Paperless opt-in checkbox is checked and the Email Address field persists and displays the provided <valid email> after saving (confirmable after page refresh/navigation).
 
 ---
 
@@ -936,20 +907,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Account Statements -> e-Statement Preference section`
+- **Navigate To**: `Account Statements -> E-Statement Preferences`
 - **Observe**:
-  - Paperless e-Statement opt-in checkbox state (checked or unchecked)
-  - Email Address field value shown for e-statements
-  - Presence/absence of a recent 'e-Statement preference updated.' success message
+  - Paperless (e-Statement) opt-in checkbox state (expected: checked before disabling)
+  - Email field populated with the user's email address
+  - Current preference label or summary (if present) showing Paperless: On
 
 **Post-Check**
-- **Navigate To**: `Account Statements -> e-Statement Preference section (reload page or open in a new session)`
+- **Navigate To**: `Account Statements -> E-Statement Preferences (reload page or revisit to confirm persistence)`
 - **Observe**:
-  - Paperless e-Statement opt-in checkbox state (expected to be unchecked)
-  - Email Address field value (expected unchanged unless edited)
-  - Visible success banner or flash message: 'e-Statement preference updated.'
+  - Paperless (e-Statement) opt-in checkbox is unchecked
+  - UI displays a success message: 'e-Statement preference updated.' (toast or banner)
+  - Preference summary or label (if present) shows Paperless: Off
 
-**Expected Change**: After saving, the Paperless e-Statement opt-in checkbox is unchecked and the change persists on page reload (preference stored in backend); a success message 'e-Statement preference updated.' is displayed and the Email Address remains unchanged.
+**Expected Change**: The Paperless e-Statement preference is disabled for the account: the opt-in checkbox becomes unchecked and the unchecked state persists after saving and reloading the Preferences page.
 
 ---
 
@@ -971,18 +942,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Accounts Overview -> Security Settings (open Change Password panel)`
+- **Navigate To**: `Account Menu -> Profile -> Security Settings (Change Password form)`
 - **Observe**:
-  - Change Password form is visible with fields: Current Password, New Password, Confirm New Password and 'Change Password' button
-  - Tester has an active session (user is currently signed in) and knows the current password
+  - Change Password form is visible with fields: Current Password, New Password, Confirm New Password
+  - No success notification 'Password changed successfully.' is present on the page
+  - User is currently authenticated ( Accounts Overview or welcome message is visible )
 
 **Post-Check**
-- **Navigate To**: `Log Out -> Login page`
+- **Navigate To**: `Header -> Sign Out, then Login Page`
 - **Observe**:
-  - Attempt to sign in with the OLD (pre-change) password
-  - Attempt to sign in with the NEW (post-change) password
+  - Logging in with the NEW password succeeds and redirects to Accounts Overview / shows 'Welcome, [First Name]'
+  - Logging in with the OLD password fails and shows error 'Incorrect email or password. Please try again.'
 
-**Expected Change**: Signing in with the old password fails with the message 'Incorrect email or password. Please try again.'; signing in with the new password succeeds, the user is redirected to Accounts Overview and a flash message 'Signed in successfully.' is displayed.
+**Expected Change**: The user's password has been updated in the backend: authentication with the new password succeeds and authentication with the previous password fails.
 
 ---
 
@@ -1004,21 +976,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Support Center -> My Tickets / Message History`
+- **Navigate To**: `Support Center -> My Tickets / Submitted Messages`
 - **Observe**:
-  - list of recent support tickets (ticket ID, subject, category, date/time)
-  - count of tickets visible in the list
-  - most recent ticket's ticket ID (if any) and timestamp
+  - Tickets list does not contain an entry matching the message subject or a recent message snippet that will be submitted
+  - No ticket was created within the last 5 minutes that matches the message content to be sent
 
 **Post-Check**
-- **Navigate To**: `Support Center -> My Tickets / Message History`
+- **Navigate To**: `Support Center -> My Tickets / Submitted Messages`
 - **Observe**:
-  - success notification containing the returned ticket ID
-  - list of recent support tickets (ticket ID, subject, category, date/time)
-  - top/newest ticket's ticket ID, subject, category, timestamp, and message preview
-  - updated count of tickets visible in the list
+  - Tickets list contains a new ticket entry with a visible ticket ID
+  - The new ticket entry shows the selected Category
+  - The new ticket entry shows a received status (e.g., 'Open', 'Submitted', or similar)
+  - Opening the ticket detail displays the submitted message body exactly (and the subject if one was provided)
 
-**Expected Change**: A new ticket is created and appears in My Tickets/Message History. The success notification's ticket ID matches the ticket ID shown on the new ticket entry. The new ticket is listed at the top (or newest position) with the selected category, the entered subject (or a placeholder if left blank), a message preview matching the sent message body, a timestamp near the send time, and the total ticket count increased by 1.
+**Expected Change**: A new support ticket record is created and visible in My Tickets with a ticket ID; its category and message body (and subject if provided) match the submitted values and the ticket status indicates it was received.
 
 ---
 
@@ -1041,30 +1012,27 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Support Center -> Secure Messages (Message List / Sent Messages)`
+- **Navigate To**: `Support Center -> Secure Messages (My Messages / Sent)`
 - **Observe**:
-  - number of messages listed on the first page of the support message list
-  - subjects of the most recent messages (first page)
-  - attachment names (if any) shown for those recent messages
-  - presence or absence of a ticket ID column/field in the message list
+  - message list does not contain a message with the Subject used in this test
+  - no message row shows the attachment filename that will be uploaded
 
 **Post-Check**
-- **Navigate To**: `Support Center -> Secure Messages (Message List / Sent Messages)`
+- **Navigate To**: `Support Center -> Secure Messages (My Messages / Sent)`
 - **Observe**:
-  - number of messages listed on the first page of the support message list
-  - subject of the newest/most-recent message row
-  - attachment name shown for the newest message row
-  - ticket ID shown for the newest message row
-  - sent timestamp or status (e.g., 'Sent') for the newest message row
+  - message list contains a new message row with the submitted Subject
+  - the new message row displays the attachment filename (or the message details show the attachment name)
+  - the new message row shows or links to the ticket ID returned by the send action
+  - the new message status is visible (e.g., 'Open' or 'Sent')
 
-**Expected Change**: The support message list contains one additional message compared to pre_check. The newest message row has the Subject exactly matching the submitted subject, displays the uploaded attachment filename in the attachment column, shows a ticket ID for that message, and has a recent sent timestamp/status indicating it was just submitted.
+**Expected Change**: A new support message record appears in the user's Secure Messages list with the submitted Subject and the uploaded attachment filename; the send action returned a ticket ID and that ticket ID is associated with the newly created message.
 
 ---
 
 ### [TC-003] Request callback with valid next-business-day date, time window and editable phone number
-**Category**: `positive` | **Verification Type**: `other` | **Coverage**: `partial`
+**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `partial`
 
-**Coverage Note**: *There is no documented in-app persistent view for submitted callback requests (no support-queue view specified). Full backend persistence cannot be verified in-app; verification relies on the external email confirmation sent to the user's email inbox. Email delivery may be delayed or routed externally, so mailbox access is required.*
+**Coverage Note**: *The app displays an immediate confirmation panel, but email delivery is external and cannot be fully verified in-app. Also, some deployments may not expose a persistent 'Request History' or 'My Requests' list — in that case only the confirmation panel can be observed.*
 
 **Original Steps:**
 1. 1. Navigate to the Support Center page
@@ -1081,12 +1049,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Support Center -> Schedule Callback form`
+- **Navigate To**: `Support Center -> Request History / My Requests (or Support Center landing if no history page)`
 - **Observe**:
-  - Schedule Callback form is displayed
-  - No confirmation banner is present
-  - Confirmation panel (for a recent callback) is not visible on-screen
+  - no existing callback request entry for the selected Preferred Date and Preferred Time Window
+  - no recent 'Callback request submitted' entry with the phone number to be used
 
 **Post-Check**
+- **Navigate To**: `Support Center -> Request History / My Requests (or Support Center landing where confirmation panels are shown)`
+- **Observe**:
+  - request list contains a new Callback Request entry
+  - entry displays Preferred Date: <Preferred Date selected in test>
+  - entry displays Preferred Time Window: <Preferred Time Window selected in test>
+  - entry displays Phone Number: <Phone Number used>
+  - entry status is 'Scheduled' or 'Pending' (or equivalent)
+  - ticket ID or reference code is displayed on the request entry (if the UI surfaces one)
+  - confirmation panel or banner on submission shows text: 'Callback request submitted.' and mentions an email confirmation
+
+**Expected Change**: A new callback request is persisted and visible in the user's Support Center requests: the Request entry shows the selected Preferred Date, Preferred Time Window, and the Phone Number used; the entry has status 'Scheduled' or 'Pending' and includes a ticket/reference if provided. The UI also shows the submission confirmation banner/panel that references an email confirmation (email delivery itself cannot be verified in-app).
 
 ---

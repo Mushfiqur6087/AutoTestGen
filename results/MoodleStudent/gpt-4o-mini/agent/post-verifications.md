@@ -16,16 +16,15 @@
 **Pre-Check**
 - **Navigate To**: `Dashboard`
 - **Observe**:
-  - Calendar block
-  - New event button
+  - Calendar block is visible
+  - No new event interface is open
 
 **Post-Check**
-- **Navigate To**: `Dashboard`
+- **Navigate To**: `Calendar block`
 - **Observe**:
-  - Calendar block
-  - New event creation interface
+  - New event creation interface is open
 
-**Expected Change**: The New event creation interface is displayed after clicking the New Event button.
+**Expected Change**: The new event creation interface is displayed after clicking the New Event Button.
 
 ---
 
@@ -44,14 +43,14 @@
 **Pre-Check**
 - **Navigate To**: `My Courses`
 - **Observe**:
-  - list of courses displayed in the course grid
+  - course grid does not show the starred course at the top
 
 **Post-Check**
 - **Navigate To**: `My Courses`
 - **Observe**:
-  - pinned course at the top of the course grid
+  - starred course appears at the top of the course grid
 
-**Expected Change**: The starred course appears at the top of the course grid.
+**Expected Change**: The starred course is now pinned to the top of the course grid.
 
 ---
 
@@ -68,18 +67,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course Page -> Assignment`
+- **Navigate To**: `Assignment page for Essay Draft`
 - **Observe**:
-  - Submission status
-  - Grading status
+  - submission status shows 'Not submitted'
+  - no text in online text editor
 
 **Post-Check**
-- **Navigate To**: `Course Page -> Assignment`
+- **Navigate To**: `Assignment page for Essay Draft`
 - **Observe**:
-  - Submission status
-  - Grading status
+  - submission status shows 'Submitted for grading'
+  - submitted text is visible in the submission preview
 
-**Expected Change**: Submission status changes to 'Submitted for grading'; Grading status remains 'Not graded'.
+**Expected Change**: The submission status changes to 'Submitted for grading' and the entered text is displayed in the submission preview.
 
 ---
 
@@ -97,18 +96,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course X -> Activities tab -> Assignments section`
+- **Navigate To**: `Assignment page for Essay Draft`
 - **Observe**:
-  - submission status
-  - grading status
+  - submission status shows 'Not submitted'
+  - no uploaded files listed
 
 **Post-Check**
-- **Navigate To**: `Course X -> Activities tab -> Assignments section`
+- **Navigate To**: `Assignment page for Essay Draft`
 - **Observe**:
-  - submission status
-  - grading status
+  - submission status shows 'Submitted for grading'
+  - uploaded file is listed as a downloadable link
 
-**Expected Change**: Submission status changes to 'Submitted for grading' and grading status remains 'Not graded'.
+**Expected Change**: The submission status changes to 'Submitted for grading' and the uploaded file appears in the submission file list.
 
 ---
 
@@ -126,20 +125,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Assignment page`
+- **Navigate To**: `Assignment page for Essay Draft`
 - **Observe**:
-  - Submission status
-  - Grading status
-  - Time remaining
+  - Submission status shows 'Submitted for grading'
 
 **Post-Check**
-- **Navigate To**: `Assignment page`
+- **Navigate To**: `Assignment page for Essay Draft`
 - **Observe**:
-  - Submission status
-  - Grading status
-  - Time remaining
+  - Submission edit form is displayed
 
-**Expected Change**: Submission status remains 'Submitted for grading'; Grading status remains 'Not graded'; Time remaining is unchanged.
+**Expected Change**: The submission edit form is now visible, allowing the student to modify their submission.
 
 ---
 
@@ -159,17 +154,17 @@
 **Pre-Check**
 - **Navigate To**: `Profile`
 - **Observe**:
-  - First Name
-  - Last Name
-  - Email Address
+  - First Name field shows previous value
+  - Last Name field shows previous value
+  - Email Address field shows previous value
 
 **Post-Check**
 - **Navigate To**: `Profile`
 - **Observe**:
-  - First Name
-  - Last Name
-  - Email Address
+  - First Name field shows <valid first name>
+  - Last Name field shows <valid last name>
+  - Email Address field shows <valid email>
 
-**Expected Change**: First Name, Last Name, and Email Address fields reflect the updated values entered during the profile edit.
+**Expected Change**: The profile reflects the updated first name, last name, and email address as entered.
 
 ---

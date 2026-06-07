@@ -15,22 +15,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (with Edit mode enabled)`
+- **Navigate To**: `Dashboard (Edit mode enabled)`
 - **Observe**:
-  - Edit mode toggle is ON and 'Reset page to default' button is visible at top right
-  - Current list and order of dashboard blocks (capture names and positions), e.g., [Block 1: Timeline, Block 2: Calendar, Block 3: <custom block A>, ...]
-  - Presence of any custom-added blocks or layout changes (e.g., additional blocks, moved blocks, hidden default blocks)
-  - Presence of block move icons and three-dot options menu on each block
+  - 'Latest announcements' block is present on the Dashboard in a non-default position (indicating a custom block placement)
+  - Dashboard shows Edit mode controls (move, configure, delete) indicating Edit mode is active
 
 **Post-Check**
-- **Navigate To**: `Dashboard (still in Edit mode or reload Dashboard if Edit mode auto-toggles)`
+- **Navigate To**: `Dashboard (refresh the page or navigate away and return) `
 - **Observe**:
-  - Edit mode toggle state and visibility of 'Reset page to default' button
-  - List and order of dashboard blocks (capture names and positions), specifically check for Timeline and Calendar blocks
-  - Absence of previously observed custom-added blocks or user-added placements
-  - Default block controls present (move icon and options) for default blocks only
+  - 'Latest announcements' block is not present on the Dashboard in the custom location
+  - Default blocks and their default positions are visible (Dashboard block arrangement matches the known default for the student dashboard)
+  - Edit mode controls remain available or the UI shows the Dashboard in the expected post-reset state
 
-**Expected Change**: Dashboard layout reverted to the default configuration: default blocks (Timeline and Calendar) are present in their default positions; any custom-added blocks or non-default block placements observed in the pre-check are no longer present; block order matches the platform's default Dashboard layout for the user.
+**Expected Change**: Any custom block placements (for example the 'Latest announcements' block added or moved earlier) have been removed or returned to their original default positions and the Dashboard block arrangement matches the default student dashboard layout after refresh.
 
 ---
 
@@ -50,18 +47,16 @@
 **Pre-Check**
 - **Navigate To**: `Dashboard (Edit mode enabled)`
 - **Observe**:
-  - Dashboard block order (left-to-right, top-to-bottom)
-  - position/index of Timeline block (column and row or ordinal index)
-  - presence of Timeline block title 'Timeline' and its move handle
+  - Timeline block is present at its current/original location (record the block's column and order index or a visual landmark such as 'left column, position 2')
+  - Dashboard shows Edit mode controls and move handles for blocks
 
 **Post-Check**
-- **Navigate To**: `Dashboard (Edit mode enabled) — after performing the move and after a page reload or navigating away and back`
+- **Navigate To**: `Dashboard (exit Edit mode if required, then refresh the page)`
 - **Observe**:
-  - Dashboard block order (left-to-right, top-to-bottom)
-  - position/index of Timeline block (column and row or ordinal index)
-  - presence of Timeline block title 'Timeline' and its move handle
+  - Timeline block is displayed at the new location (the column and order index match the target position noted in the test step)
+  - Dashboard layout persists after a full page refresh and the Timeline block remains in the new location
 
-**Expected Change**: The Timeline block's position/index matches the <new position> specified in the test steps (its ordinal location in the Dashboard block order has changed from the pre-check). The Timeline block is shown in the new location and this new position persists after a page reload or after navigating away from and back to the Dashboard.
+**Expected Change**: The Timeline block is relocated from its original column/index to the specified new column/index and that new position is persisted after refreshing the Dashboard.
 
 ---
 
@@ -81,18 +76,18 @@
 **Pre-Check**
 - **Navigate To**: `Dashboard (Edit mode enabled)`
 - **Observe**:
-  - current layout of dashboard blocks (identify columns and rows)
-  - position/index of the Timeline block (e.g., Column X, Row Y or index N from top-left)
-  - state of Edit mode toggle (should be enabled)
+  - Timeline block is present on the Dashboard
+  - Timeline block is not at <new position> (record its current position index or relative placement among other blocks)
+  - Block move controls are not active (no drag overlay visible before the move)
 
 **Post-Check**
-- **Navigate To**: `Dashboard after performing the move → then reload the page and/or navigate away (e.g., Home) and return to Dashboard`
+- **Navigate To**: `Dashboard (after reposition action, then refresh the page)`
 - **Observe**:
-  - position/index of the Timeline block (Column/Row or index as recorded in pre_check)
-  - order of other blocks in the same column(s)
-  - Edit mode toggle state after navigation/reload
+  - A drag overlay/handle was shown during the move action and is no longer visible after release
+  - Timeline block is displayed at <new position> relative to the other dashboard blocks
+  - After refreshing the Dashboard, the Timeline block remains at <new position> (layout persisted for the logged-in user)
 
-**Expected Change**: The Timeline block's position/index has changed from the pre_check value to the new position specified during the move action (<new position>); this new position remains after a full page reload and after navigating away and returning to the Dashboard (i.e., the layout change is persisted for the current user).
+**Expected Change**: The Timeline block is relocated to <new position> on the student's Dashboard; the reposition is reflected in the block order immediately after the move and remains in place after a full page refresh (persisted user dashboard layout).
 
 ---
 
@@ -110,19 +105,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (Edit mode enabled)`
+- **Navigate To**: `User Dashboard (Edit mode enabled)`
 - **Observe**:
-  - Timeline block is present in the dashboard blocks area
-  - Timeline block three-dot menu is visible
+  - Timeline block is visible on the Dashboard
+  - Timeline block header and three-dot block action menu are present
 
 **Post-Check**
-- **Navigate To**: `Dashboard (reload page; verify with Edit mode enabled and then disabled)`
+- **Navigate To**: `User Dashboard (after confirming deletion and performing a full page refresh)`
 - **Observe**:
-  - Timeline block is NOT present in the dashboard blocks area
-  - No Timeline widget or Timeline block placeholder appears in the previous Timeline block position
-  - Other dashboard blocks and edit controls render normally (confirming page loaded correctly)
+  - Timeline block header is not present anywhere on the Dashboard
+  - Timeline block three-dot menu and any timeline rows are not visible
 
-**Expected Change**: The Timeline block has been removed from the Dashboard and remains absent after reloading the page and after toggling Edit mode off and on.
+**Expected Change**: The Timeline block is removed from the student's Dashboard and remains absent after a page refresh, proving the deletion persisted for the current user.
 
 ---
 
@@ -142,18 +136,18 @@
 **Pre-Check**
 - **Navigate To**: `Dashboard (Edit mode enabled)`
 - **Observe**:
-  - current column and order/index of the Calendar block (e.g., left/center/right column and ordinal position within column)
-  - current column and order/index of the Timeline block
-  - presence of the Calendar block move handle (drag handle) and Edit mode toggle state
+  - Calendar block is present on the Dashboard
+  - Record the Calendar block's current column (e.g., left/middle/right) and its index position among blocks in that column (e.g., 1st, 2nd, 3rd).
+  - Take note that only one Calendar block exists for this user.
 
 **Post-Check**
-- **Navigate To**: `Dashboard (after page refresh, Edit mode enabled)`
+- **Navigate To**: `Dashboard (after performing the drag-and-drop) -> Refresh the page while keeping Edit mode enabled`
 - **Observe**:
-  - column and order/index of the Calendar block
-  - column and order/index of the Timeline block
-  - presence of the Calendar block move handle
+  - Calendar block is present on the Dashboard
+  - Calendar block is located in the target column and at the target index position recorded during the drag operation
+  - No duplicate Calendar block is present and other blocks' ordering reflects the move
 
-**Expected Change**: The Calendar block's column and order/index have changed from the pre-check values to the target <new position>; the Calendar block is visible in the new location on the dashboard and the layout change persists after a page refresh (other blocks' positions updated accordingly).
+**Expected Change**: The Calendar block's column and ordinal index differ from the values recorded in pre_check and match the intended new position; the moved position persists after a full page refresh.
 
 ---
 
@@ -175,16 +169,18 @@
 **Pre-Check**
 - **Navigate To**: `Dashboard (Edit mode enabled)`
 - **Observe**:
-  - column and row index of the Calendar block (e.g., Column 1, Row 2)
-  - order/sequence of blocks in each dashboard column
+  - Dashboard block list / layout is visible
+  - Calendar block is present
+  - Record the current Dashboard block order (e.g., list of block titles or the Calendar block's position index and its immediate neighbor blocks) before performing the move
 
 **Post-Check**
-- **Navigate To**: `Dashboard (after performing the move, then reload the page or navigate away and return)`
+- **Navigate To**: `Dashboard (Edit mode enabled) after performing the Move action and refreshing the page`
 - **Observe**:
-  - column and row index of the Calendar block (expected new position)
-  - order/sequence of blocks in each dashboard column
+  - Calendar block is present at the target/new position in the recorded Dashboard block order
+  - Calendar block's new neighbors (blocks immediately before and after) match the expected placement after the move
+  - No duplicate Calendar block exists and Edit mode remains enabled
 
-**Expected Change**: The Calendar block's column and row index has changed from the pre_check value to the new position chosen during the move action, and this new position persists after a page reload or navigating away and back (i.e., the dashboard block order reflects the moved Calendar block).
+**Expected Change**: The Calendar block's position in the dashboard block order has changed from the previously recorded original position to the specified new position and this new position persists after a page refresh.
 
 ---
 
@@ -203,18 +199,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (Edit mode enabled)`
+- **Navigate To**: `User Dashboard (Edit mode enabled)`
 - **Observe**:
-  - Calendar block is present in the dashboard blocks area
-  - Calendar block header shows current month and contains 'New event' button and month navigation arrows
+  - Calendar block is visible on the Dashboard
+  - Calendar block shows its header and three-dot block action menu
 
 **Post-Check**
-- **Navigate To**: `Dashboard (reload the page or navigate to another page and return to Dashboard)`
+- **Navigate To**: `User Dashboard (refresh the page to confirm persistence)`
 - **Observe**:
-  - Calendar block is not present in the dashboard blocks area
-  - No Calendar block header, 'New event' button, or month navigation arrows are visible where the Calendar block previously appeared
+  - Calendar block is not present on the Dashboard
+  - No Calendar block header or block action menu is visible in any block column or region
 
-**Expected Change**: The Calendar block is no longer present on the Dashboard after deletion; the absence persists after a page reload or navigating away and back, confirming the change was persisted.
+**Expected Change**: The Calendar block has been removed from the student's Dashboard and remains absent after a full page refresh, indicating the deletion persisted.
 
 ---
 
@@ -231,27 +227,26 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `My Courses page`
+- **Navigate To**: `My Courses`
 - **Observe**:
-  - verify at least two course cards are visible in the grid
-  - record the current position/index of the <target course> card (e.g., position X from top)
-  - verify the <target course> card does NOT display the Starred indicator (star icon not filled)
-  - optionally record the identities (name or id) of the top 3 course cards
+  - QA Automation 101 course card is present in the course list
+  - QA Automation 101 does not show a Starred indicator/icon
+  - QA Automation 101 is not the first (top) course card in the current sort/filter order
 
 **Post-Check**
-- **Navigate To**: `My Courses page`
+- **Navigate To**: `My Courses`
 - **Observe**:
-  - position/index of the <target course> card
-  - Starred indicator on the <target course> card (star icon filled/marked)
-  - identities (name or id) of the top 3 course cards
-  - total count of course cards in the grid
+  - QA Automation 101 course card appears as the first (top) course card in the list
+  - QA Automation 101 displays a Starred indicator/icon on its card
+  - When applying the Starred filter, QA Automation 101 is listed in the Starred results
+  - After performing a full page refresh, QA Automation 101 remains starred and stays at the top position
 
-**Expected Change**: The <target course> card is now at the top (position 1) of the My Courses grid and displays the Starred indicator; the total number of courses is unchanged; any course(s) previously above the target course are now listed below it.
+**Expected Change**: The QA Automation 101 course card is pinned to the top of My Courses and displays the Starred indicator; this pinned/starred state persists after a page refresh.
 
 ---
 
 ### [TC-009] Open Grades overview from Reports card
-**Category**: `positive` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
+**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Click the Grades overview link in the Reports card
@@ -262,24 +257,25 @@
 
 #### Verification Plan
 
-**Actor A (Role: `course participant (student or teacher)`)**
-- **Action**: Execute the steps from the core test case: on My Courses page, open the three-dot menu for <target course> and select 'Remove from view'.
-
-**Actor B (Role: `teacher (course instructor) or course manager`)**
-- **Session**: `new_session`
-- **Navigate To**: `Course page for <target course> -> Participants page (Participants Management view)`
-- **Action**: 
+**Pre-Check**
+- **Navigate To**: `My Courses (All/default filter)`
 - **Observe**:
-  - Participants table rows
-  - Row for the user who performed 'Remove from view' (by name or username)
-  - Status/Role column for that row
+  - 'QA Automation 101' course card is present in the All/default list
+  - 'QA Automation 101' is not listed under the Hidden filter (confirm by switching to Hidden filter)
 
-**Expected Change**: The user who removed the course from view is still listed in the Participants table with an enrolled role/status (i.e., the user remains enrolled and is not absent), proving the action did not unenrol the user.
+**Post-Check**
+- **Navigate To**: `My Courses -> Hidden filter (then optionally switch back to All/default)`
+- **Observe**:
+  - 'QA Automation 101' course card is present in the Hidden list
+  - 'QA Automation 101' is absent from the All/default list after the action
+  - Clicking the 'QA Automation 101' card in Hidden opens the course page and the Course, Participants, Grades, and Activities tabs render
+
+**Expected Change**: The 'QA Automation 101' course card is removed from the All/default My Courses view and appears under the Hidden filter; the student can still open the hidden course page, indicating the user remains enrolled and access is preserved.
 
 ---
 
 ### [TC-005] Browser Back navigation after logout
-**Category**: `edge` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
+**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Click the "Log out" button
@@ -292,24 +288,25 @@
 
 #### Verification Plan
 
-**Actor A (Role: `teacher`)**
-- **Action**: Execute the steps from the core test case: open the Course page in Edit mode, click Add Row to create a new section row, inside that section click Add Row to create a new item, enter a valid name in the Name field for the new item, and ensure the section's 'Collapsed' checkbox is unchecked so the item is visible.
-
-**Actor B (Role: `student`)**
-- **Session**: `new_session`
-- **Navigate To**: `Course page -> Course content (main course view, not Edit mode)`
-- **Action**: 
+**Pre-Check**
+- **Navigate To**: `Course Page -> Sections list for 'QA Automation 101'`
 - **Observe**:
-  - the list of sections (section headers and their contained items)
-  - presence of an item with name '<valid name>' inside one of the sections
-  - that the new section is expanded so the item '<valid name>' is visible (not hidden under a collapsed header)
+  - No section contains an item named '<valid name>'
+  - 'Add Row' (or equivalent course edit/add controls) is visible, indicating the current user has editing permission
 
-**Expected Change**: A new section row is present in the course content and contains an item with the name '<valid name>'; the item is visible in the section because the section is not collapsed.
+**Post-Check**
+- **Navigate To**: `Course Page -> Sections list for 'QA Automation 101' (after saving the new section and performing a full page refresh)`
+- **Observe**:
+  - Sections list contains a new section row that includes an item named '<valid name>'
+  - The new section is expanded (its content is visible), indicating the 'Collapsed' checkbox was unchecked
+  - The item named '<valid name>' is rendered as an activity/resource entry (clickable link or named row) within that new section
+
+**Expected Change**: A new section row is persisted in the Course Page Sections list and contains an item with the exact name '<valid name>'; the section is expanded (not collapsed) and both the section and its item remain present after a full page refresh.
 
 ---
 
 ### [TC-002] Attempt to use Log out when not authenticated (precondition not met)
-**Category**: `negative` | **Verification Type**: `cross_actor` | **Coverage**: `verifiable`
+**Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
 
 **Original Steps:**
 1. 1. Open the application home page (or a page that would normally show the Log out control)
@@ -322,23 +319,21 @@
 
 #### Verification Plan
 
-**Actor A (Role: `student`)**
-- **Action**: Execute the steps from the core test case (open Add submission, enter online text, upload a valid file, click Submit).
-
-**Actor B (Role: `teacher`)**
-- **Session**: `new_session`
-- **Navigate To**: `Course -> Assignment page -> Submissions tab (Assignment Submissions view)`
-- **Action**: 
+**Pre-Check**
+- **Navigate To**: `Assignment page for 'Essay Draft' -> Submission status / Submission summary`
 - **Observe**:
-  - row for the student (name/initials) in the Submissions table
-  - Submission status column for that row
-  - Grading status column for that row
-  - Submission date/time column for that row
-  - Online text preview (or Online text preview column/cell) for that row
-  - File submission column showing uploaded filename(s) and download links
-  - Grading summary panel values (Number of participants, Number of submissions, Needs grading)
+  - submission status is not 'Submitted for grading' (e.g., shows 'No submission' or 'Draft')
+  - submission preview does not contain the online text '<online text>'
+  - no uploaded file entry named '<uploaded file>' is present in the submission summary
 
-**Expected Change**: A submission record exists for the student with Submission status 'Submitted for grading', Grading status 'Not graded', a submission date/time corresponding to the action, the entered online text visible in the online text preview, the uploaded file listed with the correct filename and an accessible download link, and the Grading summary reflecting the new submission (Number of submissions incremented).
+**Post-Check**
+- **Navigate To**: `Assignment page for 'Essay Draft' -> Submission summary (refresh the page to verify persistence)`
+- **Observe**:
+  - submission status is 'Submitted for grading'
+  - submission preview displays the entered online text '<online text>' (visible in the preview area or submission confirmation)
+  - uploaded file '<uploaded file>' appears in the submission file list as a downloadable link
+
+**Expected Change**: The Assignment submission status changes to 'Submitted for grading', the submission preview contains the entered online text '<online text>', and the uploaded file named '<uploaded file>' is present as a downloadable entry in the submission summary; these items persist after a page refresh.
 
 ---
 
@@ -357,20 +352,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Assignment page for the assignment under test`
+- **Navigate To**: `Course 'QA Automation 101' -> Assignment 'Essay Draft' (Submission section)`
 - **Observe**:
-  - Submission status row (e.g., 'No submissions have been made yet' or similar)
-  - Submission summary: online text preview (should be empty or not present)
-  - Submission summary: list of file attachments (should be empty)
+  - Submission status is not 'Submitted for grading' (e.g., shows 'No submission' or 'Draft')
+  - Submission summary does not contain the online text to be submitted
+  - No files are listed in the submission files/attachments area
 
 **Post-Check**
-- **Navigate To**: `Assignment page for the assignment under test`
+- **Navigate To**: `Course 'QA Automation 101' -> Assignment 'Essay Draft' (Submission section) — refresh page or reopen assignment to confirm persistence`
 - **Observe**:
-  - Submission status row text
-  - Submission summary: online text preview content
-  - Submission summary: list of file attachments
+  - Submission status row displays 'Submitted for grading'
+  - Submission summary displays the exact online text that was entered during the test
+  - No file attachments are listed in the submission files/attachments area
+  - Submission timestamp or 'last modified' reflects the recent submission action (optional but recommended)
 
-**Expected Change**: Submission status row shows 'Submitted for grading'; the submission summary displays an online text preview that exactly matches the submitted <online text>; there are no file attachments listed in the submission summary.
+**Expected Change**: After submitting the online text, the assignment's submission state is persisted: the Submission status reads 'Submitted for grading', the submitted online text appears in the submission summary, and there are no file attachments listed.
 
 ---
 
@@ -388,22 +384,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Assignment page -> Submission status section`
+- **Navigate To**: `Assignment page -> Essay Draft (Submission details area)`
 - **Observe**:
-  - Submission status row (e.g., 'No submissions have been made yet' or current status)
-  - Submission summary uploaded files list (expected empty)
-  - Online text preview area (expected absent or empty)
-  - Last modified field (timestamp of last change, if any)
+  - File upload area is visible and accepts file attachments
+  - Online text editor / online text preview area is not present (assignment_allows_online_text == false)
+  - Submission summary does not list the file named <uploaded file>
+  - Submission status row does not show 'Submitted for grading' (e.g., shows 'No submission' or 'Draft')
 
 **Post-Check**
-- **Navigate To**: `Assignment page -> Submission status section (refresh page or navigate away and return)`
+- **Navigate To**: `Assignment page -> Essay Draft (after submitting and refreshing the page)`
 - **Observe**:
-  - Submission status row
-  - Submission summary uploaded files list
-  - Online text preview area
-  - Last modified field
+  - Submission status row shows 'Submitted for grading'
+  - Submission summary lists the uploaded file with the filename <uploaded file> as a downloadable link
+  - No online text preview or online text content is shown in the submission summary or preview area
 
-**Expected Change**: Submission status row shows 'Submitted for grading'; Submission summary lists the uploaded file <uploaded file>; Online text preview is absent or empty (no online text present); Last modified timestamp updated to reflect the new submission.
+**Expected Change**: After uploading the file and clicking Submit, the assignment's submission status updates to 'Submitted for grading' and the submission summary persistently includes the uploaded file named <uploaded file>; there is no online text content displayed.
 
 ---
 
@@ -422,24 +417,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Assignment page -> Submission status section`
+- **Navigate To**: `Assignment page for 'Essay Draft' (before submitting)`
 - **Observe**:
-  - Submission status (e.g. 'No submissions have been made yet' or 'No submission')
-  - Grading status
-  - Uploaded files list (should be empty)
-  - Online text preview (should be absent)
-  - Last modified (may be empty or show previous timestamp)
+  - 'Add submission' button is visible
+  - Submission status is not 'Submitted for grading' (e.g., shows 'No submission' or 'Not submitted')
+  - Submission summary shows no uploaded files and no online text preview
 
 **Post-Check**
-- **Navigate To**: `Assignment page -> Submission status section`
+- **Navigate To**: `Assignment page for 'Essay Draft' (refresh the page or reopen after clicking Submit)`
 - **Observe**:
-  - Submission status
-  - Grading status
-  - Uploaded files list
-  - Online text preview
-  - Last modified timestamp
+  - Submission status row shows 'Submitted for grading'
+  - Submission summary shows no uploaded files (no file links are listed)
+  - Submission preview area shows no online text content/preview
 
-**Expected Change**: Submission status shows 'Submitted for grading'; uploaded files list remains empty and no online text preview is present; grading status reflects that the submission is not yet graded (e.g. 'Not graded'); Last modified timestamp is updated to the time of this submission.
+**Expected Change**: The submission record for student1 now exists and the Submission status changed from not-submitted to 'Submitted for grading' while the persisted submission contains no uploaded files and no online-text content.
 
 ---
 
@@ -458,20 +449,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Course -> Activities page`
+- **Navigate To**: `Course -> Activities tab`
 - **Observe**:
-  - count of 'Additional Activity Type' rows
-  - presence/absence of activity with name '<new activity>' in any Additional Activity Type row
+  - No Additional Activity Type section exists for the to-be-created row (no section header or table for the new Additional Activity Type)
+  - No activity row with the name '<new activity>' is present in any activity group or table
 
 **Post-Check**
-- **Navigate To**: `Course -> Activities page`
+- **Navigate To**: `Course -> Activities tab (refresh the page to confirm persistence)`
 - **Observe**:
-  - count of 'Additional Activity Type' rows
-  - presence of activity link with name '<new activity>' in a new Additional Activity Type row
-  - expanded/collapsed state of the new Additional Activity Type row
-  - on clicking the '<new activity>' link, the activity page loads (page heading matches activity name or activity-type specific heading)
+  - A new 'Additional Activity Type' section header is present with the created row listed under it
+  - The new Additional Activity Type section is expanded and shows a table row for the activity named '<new activity>'
+  - The activity name '<new activity>' is a clickable link
+  - After clicking the '<new activity>' link, the browser navigates to the activity page whose title/header or main heading equals '<new activity>' or clearly identifies the opened activity
 
-**Expected Change**: The number of 'Additional Activity Type' rows has increased by one; a row containing an activity link named '<new activity>' is present. Expanding that row reveals the activity link, and clicking the link navigates to the activity's page (activity page heading or URL indicates the newly created activity).
+**Expected Change**: A new Additional Activity Type section containing an activity row named '<new activity>' appears in the Activities list; the activity row is expandable, the activity name is a clickable link, and clicking it navigates to the activity page showing the activity title '<new activity>'. The new section and activity remain present after a page refresh, proving persistence.
 
 ---
 
@@ -498,24 +489,21 @@
 **Pre-Check**
 - **Navigate To**: `Profile page -> User Details card`
 - **Observe**:
-  - Full name (First and Last name)
-  - Email address
-  - Email visibility
-  - Country
-  - Timezone
-  - Description
+  - Full name displayed (note current value before change)
+  - Email address displayed (note current value before change)
+  - Timezone displayed (note current value before change)
+  - 'Edit profile' link/button is visible
 
 **Post-Check**
-- **Navigate To**: `Profile page -> User Details card`
+- **Navigate To**: `Profile page -> User Details card (after clicking 'Update profile' and refreshing the page)`
 - **Observe**:
-  - Full name (First and Last name)
-  - Email address
-  - Email visibility
-  - Country
-  - Timezone
-  - Description
+  - Full name equals '<First name> <Last name>'
+  - Email address equals '<valid email>'
+  - Timezone equals '<Timezone>'
+  - Description contains '<description>'
+  - User is returned to the Profile page after saving (Profile page is displayed)
 
-**Expected Change**: Full name is updated to '<First name> <Last name>'; Email address is updated to '<valid email>'; Email visibility is set to '<Email visibility>'; Country is set to '<Country>'; Timezone is set to '<Timezone>'; Description is updated to '<description>'. The Profile page is displayed after saving and shows these persisted values.
+**Expected Change**: The User Details card displays the updated full name as '<First name> <Last name>', the Email address as '<valid email>', the Timezone as '<Timezone>', and the Description contains '<description>'; these updated values persist after a page refresh and the application returns to the Profile page after saving.
 
 ---
 
@@ -533,21 +521,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (protected authenticated area)`
+- **Navigate To**: `Dashboard (while authenticated as student1)`
 - **Observe**:
-  - user initials / user menu visible in header
-  - personalized greeting on Dashboard
-  - Timeline block present
-  - Calendar block present
+  - Personalized greeting visible (e.g., 'Welcome, student1' or student initials/name)
+  - User menu contains 'Log out' option
+  - Protected dashboard content is rendered (e.g., course card for 'QA Automation 101')
 
 **Post-Check**
-- **Navigate To**: `Attempt to access Dashboard (same browser session) or reload protected URL after clicking 'Log out'`
+- **Navigate To**: `Attempt to open Dashboard URL / refresh the Dashboard after clicking 'Log out'`
 - **Observe**:
-  - Login page authentication form visible (Username and Password fields and Log in button)
-  - no user initials / user menu visible in header
-  - protected Dashboard content (personalized greeting, Timeline, Calendar) not visible
-  - browser URL indicates Login page (not Dashboard)
+  - Login page is displayed with Username and Password input fields and a 'Log in' button
+  - No authenticated dashboard content is visible (course cards, personalized greeting absent)
+  - Authenticated user menu and 'Log out' option are not rendered
 
-**Expected Change**: After clicking 'Log out', attempts to access a protected page (Dashboard) redirect to the Login page showing the authentication form; personalized/protected UI elements (user initials/menu, Dashboard greeting, Timeline/Calendar) are no longer visible, demonstrating the authenticated session was terminated and re-authentication is required.
+**Expected Change**: The authenticated session is terminated: after clicking 'Log out', attempts to view the Dashboard (or refreshing the protected page) redirect to the Login page and show the authentication form; protected content and authenticated user controls are no longer accessible.
 
 ---

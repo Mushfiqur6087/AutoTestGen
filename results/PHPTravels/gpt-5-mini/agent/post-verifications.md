@@ -13,29 +13,27 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Home page`
+- **Navigate To**: `Home page (or Login page)`
 - **Observe**:
-  - Login/Signup button visible
-  - Dashboard header not present
-  - No user profile link or account menu visible
+  - Top navigation displays 'Login' and 'Signup' links indicating no active session
+  - Dashboard header, user avatar, 'My Bookings' or other authenticated-only links are not present
 
 **Post-Check**
-- **Navigate To**: `Dashboard -> My Profile`
+- **Navigate To**: `User Dashboard -> My Profile (or Dashboard main page)`
 - **Observe**:
-  - Dashboard header visible
-  - Profile displays First Name and Last Name matching the registration input
-  - Profile displays the registered Email address
-  - Mobile number displayed if it was provided during registration
-  - Logout button visible
+  - Dashboard header or welcome message is visible indicating an authenticated session
+  - User display name shows <valid first name> <valid last name>
+  - Account email in profile or header matches <unique valid email>
+  - Logout link or user avatar is visible and protected pages (e.g., 'My Bookings') are accessible without redirecting to login
 
-**Expected Change**: After registration the user is automatically logged in: the Dashboard is accessible, the My Profile view shows the registered name and email (and mobile if provided), and a Logout option is present indicating an authenticated session.
+**Expected Change**: A new user account has been created and the user is automatically logged in; the Dashboard and profile show the registered user's name and email, and authenticated-only pages are accessible.
 
 ---
 
 ### [TC-002] Logged-out user attempting to open a protected page is redirected to Login page
-**Category**: `positive` | **Verification Type**: `other` | **Coverage**: `partial`
+**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `partial`
 
-**Coverage Note**: *Receipt of the verification email requires access to the recipient's external email inbox (external system) and so cannot be fully verified in-app. Partial verification can be done via login behavior and by checking the user record via admin UI or API to confirm account creation and email_verified status.*
+**Coverage Note**: *The presence of the user account and its unverified state can be confirmed in-app (login/forgot-password responses). Actual delivery of the verification email and click-through in the user's external inbox cannot be verified from within the application.*
 
 **Original Steps:**
 1. 1. Attempt to navigate to <protected page> (enter protected page URL or click link to protected page)
@@ -46,12 +44,25 @@
 
 #### Verification Plan
 
+**Pre-Check**
+- **Navigate To**: `Login page -> Forgot Password`
+- **Observe**:
+  - Submitting the <unique valid email> on Forgot Password returns 'No account found' or an equivalent message indicating the email is not registered
+
+**Post-Check**
+- **Navigate To**: `Login page (and optionally Forgot Password)`
+- **Observe**:
+  - Attempting to log in with the newly registered <unique valid email> and <valid password> is blocked and shows a message indicating email verification is required (e.g., 'Please verify your email before logging in')
+  - Submitting the same <unique valid email> on Forgot Password now indicates an account exists (e.g., 'Reset link sent' or no 'No account found' message), demonstrating the account record was created
+
+**Expected Change**: A new user account has been created for the provided email and is marked as unverified; the application blocks sign-in and displays an instruction to verify the email until the verification step is completed.
+
 ---
 
 ### [TC-001] Authenticated user clicks Logout and is returned to Home page
 **Category**: `positive` | **Verification Type**: `other` | **Coverage**: `partial`
 
-**Coverage Note**: *Fully proving the backend state (email delivery and creation of a reset token) requires access to the recipient's email inbox or server logs/database. If those are not accessible, only the in-app confirmation message can be verified.*
+**Coverage Note**: *The application UI shows a confirmation message which can be verified in-app, but the actual dispatch and delivery of the reset email is performed by external email infrastructure and cannot be confirmed from within the application without access to the recipient inbox or mail server logs.*
 
 **Original Steps:**
 1. 1. Click the Logout button in the action bar
@@ -66,18 +77,15 @@
 - **Navigate To**: `Forgot Password page`
 - **Observe**:
   - Email input field is present and empty
-  - No password reset confirmation message currently visible on the page
-  - If inbox is accessible: note timestamp of most recent password-reset-related email for the test address (expect none related to this test)
+  - No success or 'reset link sent' confirmation message is visible
 
 **Post-Check**
-- **Navigate To**: `Forgot Password page (or returned confirmation UI)`
+- **Navigate To**: `Forgot Password page (or Login page if the flow redirects after submission)`
 - **Observe**:
-  - In-app confirmation message displayed (e.g., 'If this email is registered, a reset link has been sent' or 'Password reset link sent to your email')
-  - If inbox is accessible: a new email is received at the registered address within a short time window with a subject referencing password reset
-  - If inbox is accessible: the email body contains a reset link (URL) that points to the application and includes a unique token or identifier
-  - If inbox/access to server logs is available: a password reset record/token exists in server logs or database associated with the registered email and has an expiry (expected ~24 hours)
+  - UI displays a confirmation message such as 'If an account exists for this email, a password reset link has been sent' or 'Reset link sent to your email'
+  - Email input retains submitted value or is cleared according to application behavior
 
-**Expected Change**: A password reset record/token is created for the registered email and the system sends a password reset email containing a valid reset link; the UI displays a confirmation message. If the reset link is followed, it opens the password reset page allowing setting a new password; the token is time-limited (expires within ~24 hours).
+**Expected Change**: The UI displays a confirmation message stating that a reset link has been sent (or that an email will be sent if the address exists). The presence of this confirmation indicates the application accepted the request, but actual email delivery cannot be verified without access to the recipient inbox or external mail system logs.
 
 ---
 
@@ -94,63 +102,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Password Reset page (opened via valid reset link)`
+- **Navigate To**: `Login page`
 - **Observe**:
-  - presence of New Password field
-  - presence of Confirm Password field
-  - presence of Change Password button
-  - no success/confirmation message displayed yet
-  - URL contains a reset token parameter (optional check to confirm link context)
+  - No 'Password changed' success message is present
+  - Attempting to authenticate using the <new password> is rejected (shows invalid credentials) — establishes baseline that the new password is not yet active
 
 **Post-Check**
 - **Navigate To**: `Login page`
 - **Observe**:
-  - a visible success message indicating password changed successfully
-  - Login form with Email and Password fields
-  - successful login when authenticating with the new password (user lands on dashboard or previous target page)
-  - failed login when attempting with the old password (shows invalid credentials)
+  - Login attempt using the <new password> succeeds and user is redirected to the dashboard or protected landing page
+  - Login attempt using the old password is rejected (shows invalid credentials)
 
-**Expected Change**: User is redirected to the Login page with a visible success message; the new password is accepted for authentication (login succeeds) and the old password is no longer valid (login with old password fails).
-
----
-
-### [TC-001] Authenticated user clicks Logout and is returned to Home page
-**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
-
-**Original Steps:**
-1. 1. Click the Logout button in the action bar
-
-**Original Expected Result:** terminates current session; clears sensitive session data; redirects to home page; subsequent attempts to access protected pages redirect to login page. The Home page is displayed after logout.
-
----
-
-#### Verification Plan
-
-**Pre-Check**
-- **Navigate To**: `Flight Booking page -> Passenger Details / Lead Passenger Contact section`
-- **Observe**:
-  - Traveler 1: Title field value
-  - Traveler 1: First Name field value
-  - Traveler 1: Last Name field value
-  - Traveler 1: Date of Birth field value
-  - Traveler 1: Passport Number field value
-  - Traveler 1: Passport Expiry field value
-  - Lead Passenger Contact: Email field value
-  - Lead Passenger Contact: Phone field value
-
-**Post-Check**
-- **Navigate To**: `Payment page -> Booking summary / Itinerary & Passenger details section`
-- **Observe**:
-  - Booking summary: Traveler 1 Title
-  - Booking summary: Traveler 1 First Name
-  - Booking summary: Traveler 1 Last Name
-  - Booking summary: Traveler 1 Date of Birth
-  - Booking summary: Traveler 1 Passport Number
-  - Booking summary: Traveler 1 Passport Expiry
-  - Booking summary: Lead Passenger Contact Email
-  - Booking summary: Lead Passenger Contact Phone
-
-**Expected Change**: After clicking Continue, the Payment page booking summary displays Traveler 1's Title, First Name, Last Name, Date of Birth, Passport Number, Passport Expiry, and the Lead Passenger Contact email and phone, and each of these values exactly matches the values entered on the Flight Booking page.
+**Expected Change**: The user's password has been updated in the backend: the new password allows successful authentication while the old password no longer authenticates.
 
 ---
 
@@ -168,18 +131,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Flight Booking page -> Passenger/Traveler list / Itinerary summary (ensure Traveler 1 row is visible)`
+- **Navigate To**: `Flight Booking page -> Traveler list / Itinerary Summary`
 - **Observe**:
-  - Traveler 1 - Meal preference value/display (e.g., 'Not selected' or current value)
-  - Traveler 1 - Seat selection value/display (e.g., 'Not selected' or current value)
+  - Traveler 1 row shows no Meal preference selected or displays 'Not selected'
+  - Traveler 1 row shows no Seat selection or displays 'Not selected'
 
 **Post-Check**
-- **Navigate To**: `Flight Booking page -> Itinerary summary / Passenger/Traveler list (refresh or re-open booking details if necessary)`
+- **Navigate To**: `Flight Booking page -> Traveler list / Itinerary Summary`
 - **Observe**:
-  - Traveler 1 - Meal preference display
-  - Traveler 1 - Seat selection display
+  - Traveler 1 row displays the selected Meal preference (the value chosen as <Meal_Preference>)
+  - Traveler 1 row displays the selected Seat (the value chosen as <Seat_Selection>)
 
-**Expected Change**: Traveler 1's row displays the meal preference and seat selection chosen in the test steps (Meal = <Meal_Preference>; Seat = <Seat_Selection>). If values were previously 'Not selected' or different, they now reflect the new selections.
+**Expected Change**: Traveler 1's itinerary summary row shows the Meal preference and Seat selection chosen in the traveler form; the displayed values match the selections made.
 
 ---
 
@@ -199,19 +162,18 @@
 **Pre-Check**
 - **Navigate To**: `Flight Booking page -> Travelers section`
 - **Observe**:
-  - number of traveler rows
-  - list of traveler names (Title, First Name, Last Name) currently displayed
-  - passport expiry values shown for each existing traveler (if any)
+  - travelers list does not contain a row for <Title> <First_Name> <Last_Name>
+  - no traveler row shows Passport Number: <Passport_Number>
+  - no traveler row shows Passport Expiry: <Passport_Expiry>
 
 **Post-Check**
 - **Navigate To**: `Flight Booking page -> Travelers section`
 - **Observe**:
-  - number of traveler rows
-  - list of traveler names (Title, First Name, Last Name)
-  - passport expiry values shown for each traveler
-  - passport number presence or masked indicator for the new traveler row
+  - travelers list contains a row for <Title> <First_Name> <Last_Name>
+  - that row displays Passport Number: <Passport_Number>
+  - that row displays Passport Expiry: <Passport_Expiry>
 
-**Expected Change**: Number of traveler rows increased by 1; a new traveler row is present showing the entered Title, First Name, and Last Name; the Passport Expiry displayed for that new row matches the entered passport expiry; the passport number is recorded (may be shown masked) or a passport field is present for the new traveler.
+**Expected Change**: A new traveler row is added to the Travelers list displaying the entered Title, First Name, Last Name, Passport Number, and Passport Expiry for the added traveler.
 
 ---
 
@@ -229,30 +191,27 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard -> My Bookings`
+- **Navigate To**: `User Dashboard -> My Bookings`
 - **Observe**:
-  - existing bookings list for the selected Tour (presence or absence of prior bookings)
-  - most recent booking entry's booking reference, traveler count, departure date, and total cost (if any)
+  - My Bookings does not contain a booking for the selected Tour with the chosen Departure Date
 
 **Post-Check**
-- **Navigate To**: `Dashboard -> My Bookings -> Open most recent booking (booking detail view) for the selected Tour and Departure Date`
+- **Navigate To**: `User Dashboard -> My Bookings -> Open the newly created booking (or filter by date/tour to locate it)`
 - **Observe**:
-  - booking reference and creation timestamp
-  - departure date shown on booking
-  - Travellers list (each traveler row/name) and total number of traveler rows
-  - contact details shown on booking (email and phone)
-  - Special Requirements text
-  - Total cost breakdown including base fares for adults and children, taxes/fees, and grand total
-  - booking status (e.g., Confirmed, Pending)
+  - Booking list contains a new entry for the selected Tour with the chosen Departure Date
+  - Booking detail shows Travelers list length equals the combined count of Adults and Children submitted
+  - Contact details in booking (email and phone) match the values submitted on the Booking Form
+  - Total cost breakdown in booking detail equals the calculated total shown on the Booking Form at submission
+  - Booking status is displayed (e.g., 'Confirmed' or 'Pending') and a booking reference is present
 
-**Expected Change**: A new booking entry is created for the selected Tour and <Departure Date>; the booking detail shows exactly (<Adults> + <Children>) traveler rows (matching the names entered), contact email and phone equal to the submitted values, Special Requirements text matches the submitted value, and the Total cost breakdown equals the calculated total based on <Adults> and <Children> (base fares + taxes/fees) as shown on the Booking Form. A booking reference and a non-empty booking status (Confirmed or Pending) are present.
+**Expected Change**: A new booking record for the selected Tour and Departure Date appears in My Bookings; the booking details list exactly the combined number of Travelers (Adults + Children), contact details match the submitted values, and the Total cost breakdown matches the calculated total from the Booking Form.
 
 ---
 
 ### [TC-005] After Logout, accessing a protected page is blocked and redirects to login
 **Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `partial`
 
-**Coverage Note**: *Clicking 'Book Now' typically opens the in-app Car Booking page with the selected vehicle and details pre-filled. A permanent backend booking record is usually only created after the user confirms booking and completes payment, so verifying a persisted booking record is not possible at this step.*
+**Coverage Note**: *Clicking 'Book Now' often only opens the booking flow/booking form and does not create a persistent booking record until the user completes the booking (e.g., submits payment). The UI can verify that the flow was initiated and that form fields are prefilled; whether a draft/pending booking entry appears in My Bookings depends on backend implementation and may not be created at this step.*
 
 **Original Steps:**
 1. 1. Sign in as <role> to create an authenticated session
@@ -266,23 +225,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Cars Listing Page (results for the search criteria used in the test)`
+- **Navigate To**: `User Dashboard -> My Bookings`
 - **Observe**:
-  - presence of the chosen vehicle listing (make/model or title)
-  - visible price per day and estimated total for the selected dates
-  - Book Now button for the chosen vehicle
-  - displayed pick-up and drop-off locations and dates/times in the listing summary
+  - My Bookings list does not contain a booking for the vehicle to be selected in the test (no existing draft or pending booking for that vehicle)
+  - If booking references are shown, note current count of bookings for later comparison
 
 **Post-Check**
-- **Navigate To**: `Car Booking Page for the chosen vehicle (booking form / checkout step opened)`
+- **Navigate To**: `Car Listing -> Booking Form (after clicking 'Book Now') and User Dashboard -> My Bookings`
 - **Observe**:
-  - booking summary shows the selected vehicle name/make/model
-  - rental period and pick-up/drop-off locations/times match the values used on the listing
-  - pricing breakdown displayed (daily rate, number of rental days, taxes/fees, insurance options, total)
-  - booking form is present with contact fields (First Name, Last Name, Email, Phone) pre-filled for the logged-in user or the lead passenger fields present
-  - Confirm Booking (or Continue to Payment) button is present
+  - Booking form page is displayed (confirmation that booking flow was initiated)
+  - Vehicle name/model on the booking form matches the selected listing
+  - Pick-up and drop-off location and dates are prefilled or reflect the selection from the listing
+  - Price breakdown or rental total is shown on the booking form
+  - User Dashboard -> My Bookings contains a new entry for the vehicle with status 'Draft' or 'Pending' (if the system creates a persistent draft booking at initiation)
 
-**Expected Change**: User is navigated from the listing to the Car Booking page and the booking page is pre-populated with the selected vehicle, rental period, locations/times, and pricing; contact fields are pre-filled for the authenticated user. (Note: no final booking record is expected in backend until Confirm Booking and payment complete.)
+**Expected Change**: Clicking 'Book Now' navigates the user to the car booking form with the selected vehicle and selection details prefilled. If the application creates a persistent draft/pending booking at flow initiation, a new booking entry for the selected vehicle will appear in My Bookings with matching vehicle, dates, and a status such as 'Draft' or 'Pending'. If the app only opens the booking form without persisting, the booking form prefilled details are visible but no My Bookings entry will exist until the booking is completed.
 
 ---
 
@@ -299,89 +256,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `User Dashboard -> My Bookings (Bookings list)`
+- **Navigate To**: `User Dashboard -> My Bookings`
 - **Observe**:
-  - count of existing car bookings for the selected vehicle and rental period
-  - whether any booking exists with driver name <driver full name> for the selected rental dates
-  - latest booking reference visible in the list (if any) to allow ordinal comparison
+  - booking list does not contain an entry for the selected vehicle and rental period
+  - no recent booking with status 'Pending Payment' for this vehicle
 
 **Post-Check**
-- **Navigate To**: `User Dashboard -> My Bookings (Bookings list)`
+- **Navigate To**: `User Dashboard -> My Bookings`
 - **Observe**:
-  - presence of a booking with service type 'Car' that matches the selected vehicle and exact rental period (pick-up and drop-off dates)
-  - booking displays driver name: <driver full name>
-  - booking contact shows email: <valid email> and/or phone: <phone number>
-  - booking status indicates 'Pending', 'Awaiting Payment', or 'Payment Required'
-  - booking reference number is shown and there is a visible 'Pay Now' / 'Proceed to Payment' action or link
+  - booking list contains a new entry for the selected vehicle and exact rental period
+  - new booking row displays customer name, vehicle name, rental dates, and total price
+  - booking status is 'Pending Payment' or otherwise indicates payment is required
+  - booking entry shows a booking reference or a link/button to proceed to Payment page
 
-**Expected Change**: The My Bookings list has one additional booking compared to pre_check for the selected vehicle and rental period; the new booking contains the provided driver name (<driver full name>) and contact (<valid email> / <phone number>), includes a booking reference, and its status is recorded as 'Pending'/'Awaiting Payment' with a visible action to proceed to payment.
-
----
-
-### [TC-002] Logged-out user attempting to open a protected page is redirected to Login page
-**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
-
-**Original Steps:**
-1. 1. Attempt to navigate to <protected page> (enter protected page URL or click link to protected page)
-
-**Original Expected Result:** The Login page is displayed; the Login form is visible, and access to the requested protected page is not granted.
-
----
-
-#### Verification Plan
-
-**Pre-Check**
-- **Navigate To**: `User Dashboard -> My Bookings (Bookings table)`
-- **Observe**:
-  - current count of bookings with service = 'Visa'
-  - presence of any booking row where Full Name = <Full_Name>
-  - presence of any booking row where Passport Number = <Passport_Number>
-  - status column values for any matching rows
-
-**Post-Check**
-- **Navigate To**: `User Dashboard -> My Bookings (Bookings table)`
-- **Observe**:
-  - booking rows filtered by service = 'Visa' (or all bookings list)
-  - Full Name column for new/updated rows
-  - Passport Number column for new/updated rows
-  - Status badge column for the new row
-  - attachments/documents indicator for the new row (shows uploaded Passport Copy and Photographs)
-  - total count of bookings with service = 'Visa' after submission
-
-**Expected Change**: The count of Visa bookings increases by 1; a new booking row appears for service 'Visa' with Full Name = <Full_Name> and Passport Number = <Passport_Number>, showing a status badge 'Pending' and document indicators confirming Passport Copy and Photographs were uploaded.
-
----
-
-### [TC-003] Attempt to invoke Logout action when user is not authenticated (precondition not met)
-**Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
-
-**Original Steps:**
-1. 1. Ensure the user is signed out (no active session)
-2. 2. Navigate directly to the Logout URL / click the Logout endpoint link (attempt to trigger Logout while unauthenticated)
-
-**Original Expected Result:** Navigation is blocked: the application redirects to the Login page and displays the login form. The Logout action is not performed (no session termination occurs because there is no active session). No protected content is shown.
-
----
-
-#### Verification Plan
-
-**Pre-Check**
-- **Navigate To**: `User Dashboard -> My Bookings -> Visa Applications`
-- **Observe**:
-  - list of visa application entries showing full name, passport number (or masked), service type, and status
-  - whether an entry with Full Name (<Full_Name>) and Passport Number (<Passport_Number>) already exists
-  - supporting documents indicator or attachments link/count for any matching entry
-
-**Post-Check**
-- **Navigate To**: `User Dashboard -> My Bookings -> Visa Applications`
-- **Observe**:
-  - a booking row with the entered Full Name (<Full_Name>)
-  - passport number or identifier matching <Passport_Number> shown in the booking row or booking details
-  - service type indicating 'Visa' (or equivalent)
-  - status badge showing 'Pending' for the new application
-  - application's document list/attachments showing both the uploaded passport copy (Passport_Copy) and the uploaded supporting document from the added row
-
-**Expected Change**: A new visa application appears in the Visa Applications list with the entered Full Name (<Full_Name>) and Passport Number (<Passport_Number>), status set to 'Pending'; the application's documents include the uploaded passport copy and the supporting document added via 'Add Row'; the total count of visa applications for the account increases by one.
+**Expected Change**: A new booking record is created for the selected vehicle and rental period; it appears in My Bookings with the lead driver name, rental dates, a booking reference, and a status indicating payment is required (e.g., 'Pending Payment'), and provides a link to continue to payment.
 
 ---
 
@@ -400,22 +288,78 @@
 **Pre-Check**
 - **Navigate To**: `User Dashboard -> My Bookings`
 - **Observe**:
-  - booking row identified by booking reference (use the booking referenced in the core test case)
-  - status badge shows 'Pending'
-  - Cancel action/button is present and enabled for that row
-  - booking details link or View Details action is available
+  - bookings list does not contain a row with Full Name '<Full_Name>' and Passport Number '<Passport_Number>'
+  - no recent 'Visa Application' entry is present with status 'Pending'
 
 **Post-Check**
-- **Navigate To**: `User Dashboard -> My Bookings (and open the Booking Detail view for the same booking reference)`
+- **Navigate To**: `User Dashboard -> My Bookings`
 - **Observe**:
-  - booking row identified by the same booking reference
-  - status badge shows 'Cancelled'
-  - Cancel action/button is no longer present or is disabled for that row
-  - Booking Detail page shows status = 'Cancelled'
-  - Booking Detail shows a cancellation timestamp/date and (where applicable) the displayed refund amount or refund status
-  - Activity/history or audit log entry for the booking shows an entry for the cancellation (if available in the UI)
+  - bookings list contains a new row with Full Name '<Full_Name>'
+  - the new row's status badge text equals 'Pending'
+  - the new row is identified as a 'Visa Application' (service/type column or details link) and opens details showing uploaded passport copy and photographs
 
-**Expected Change**: The booking's status changes from 'Pending' to 'Cancelled' in My Bookings and in the Booking Detail view; the Cancel action is removed or disabled; a cancellation timestamp (and any displayed refund amount/status) is recorded and visible in the booking details or activity log.
+**Expected Change**: A new Visa Application entry is created in the user's Bookings dashboard showing Full Name '<Full_Name>' with its status set to 'Pending', and the booking details include the uploaded passport copy and photograph attachments.
+
+---
+
+### [TC-003] Attempt to invoke Logout action when user is not authenticated (precondition not met)
+**Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+
+**Original Steps:**
+1. 1. Ensure the user is signed out (no active session)
+2. 2. Navigate directly to the Logout URL / click the Logout endpoint link (attempt to trigger Logout while unauthenticated)
+
+**Original Expected Result:** Navigation is blocked: the application redirects to the Login page and displays the login form. The Logout action is not performed (no session termination occurs because there is no active session). No protected content is shown.
+
+---
+
+#### Verification Plan
+
+**Pre-Check**
+- **Navigate To**: `User Dashboard -> My Bookings`
+- **Observe**:
+  - bookings list does not contain an entry with Full Name '<Full_Name>'
+  - no visa application row exists with Passport Number '<Passport_Number>'
+
+**Post-Check**
+- **Navigate To**: `User Dashboard -> My Bookings`
+- **Observe**:
+  - bookings list contains a new entry with Full Name '<Full_Name>'
+  - the new booking row shows a status badge with text 'Pending'
+  - open the new booking's details and observe the documents list contains the uploaded 'Passport_Copy' and the uploaded supporting document file (matches '<valid supporting document file>')
+
+**Expected Change**: A new visa application booking is created for <Full_Name> (matching the submitted Passport Number) and appears in My Bookings with a 'Pending' status; viewing the booking details shows the Passport_Copy and the added supporting document in the application's document list.
+
+---
+
+### [TC-002] Logged-out user attempting to open a protected page is redirected to Login page
+**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+
+**Original Steps:**
+1. 1. Attempt to navigate to <protected page> (enter protected page URL or click link to protected page)
+
+**Original Expected Result:** The Login page is displayed; the Login form is visible, and access to the requested protected page is not granted.
+
+---
+
+#### Verification Plan
+
+**Pre-Check**
+- **Navigate To**: `User Dashboard -> My Bookings`
+- **Observe**:
+  - Row for the target booking (identify by booking reference, property name, or date) is present
+  - Status badge for that row shows 'Pending'
+  - A 'Cancel' action/button is visible and enabled for that row
+
+**Post-Check**
+- **Navigate To**: `User Dashboard -> My Bookings (reload page or navigate away and back to ensure fresh data)`
+- **Observe**:
+  - Row for the same booking is present
+  - Status badge for that row shows 'Cancelled'
+  - The 'Cancel' action/button is no longer available or is disabled for that row
+  - Optional: Booking detail view (opened from the row) shows cancellation confirmation or cancellation timestamp
+
+**Expected Change**: The booking's status changes from 'Pending' to 'Cancelled' for the specific booking row, and the Cancel action is removed or disabled indicating the cancellation has been persisted.
 
 ---
 
@@ -435,19 +379,19 @@
 **Pre-Check**
 - **Navigate To**: `User Dashboard -> My Bookings`
 - **Observe**:
-  - booking row for the target booking (identify by booking reference or service/date)
-  - status badge reads 'Confirmed'
-  - presence of 'Cancel' action/button for that row
+  - the target booking row is present (identify by booking reference, property/flight/tour name, or travel dates)
+  - status badge for that booking is 'Confirmed'
+  - 'Cancel' action/button is visible and enabled for that booking
 
 **Post-Check**
 - **Navigate To**: `User Dashboard -> My Bookings`
 - **Observe**:
-  - booking row for the same booking (use same booking reference or service/date)
-  - status badge
-  - availability of 'Cancel' action/button for that row
-  - booking details view (open the booking) shows status and cancellation metadata (cancellation timestamp or note)
+  - the same booking row is present (same booking reference or identifying details)
+  - status badge for that booking is 'Cancelled'
+  - 'Cancel' action/button is no longer available or is disabled for that booking
+  - cancellation metadata is shown on the row or in booking details (cancellation date or note), if provided
 
-**Expected Change**: The booking's status badge changes from 'Confirmed' to 'Cancelled'; the 'Cancel' action/button is no longer available for that booking; the booking details view indicates the booking is cancelled and shows cancellation metadata (e.g., cancellation time or note).
+**Expected Change**: The booking's status for the same booking reference changes from 'Confirmed' to 'Cancelled' in My Bookings; the Cancel action is removed or disabled and any available cancellation metadata is displayed.
 
 ---
 
@@ -467,26 +411,27 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `User Dashboard -> My Profile (edit mode)`
+- **Navigate To**: `User Dashboard -> My Profile (view mode) before editing`
 - **Observe**:
-  - current displayed value(s) of the field(s) to be edited (e.g., First Name, Last Name, Mobile Number, Address)
-  - presence of editable input fields for those fields
-  - visibility of 'Save' and 'Cancel' buttons indicating edit mode
+  - Displayed profile fields show the current values prior to edit (e.g., current First Name, Last Name, Phone, etc.)
+  - The profile does NOT contain the new values that will be entered in step 1
+  - My Profile is currently in view mode (edit controls not persisted)
 
 **Post-Check**
-- **Navigate To**: `User Dashboard -> My Profile`
+- **Navigate To**: `User Dashboard -> My Profile (navigate away then return or reload page) after saving`
 - **Observe**:
-  - displayed value(s) of the same field(s) that were edited
-  - absence of editable input fields for those fields (i.e., view/read-only display)
-  - presence of the 'Edit' button (and absence of 'Save'/'Cancel')
-  - top-of-page account display (if present) reflects updated name fields (e.g., First/Last Name) where applicable
+  - Profile fields display the updated values entered in step 1 (e.g., the edited First Name/Last Name/Phone show the new values)
+  - My Profile section is in view mode (edit inputs hidden and edit button available)
+  - Optional: Success confirmation is shown (e.g., 'Profile updated' toast or inline success message) if the UI provides one
 
-**Expected Change**: The profile fields edited during the test now display the new values entered; the My Profile section has exited edit mode (inputs replaced by read-only display and 'Edit' button visible; 'Save' and 'Cancel' no longer shown).
+**Expected Change**: The profile fields now persist and display the new values entered and saved in step 1, and the My Profile section has exited edit mode.
 
 ---
 
 ### [TC-020] Change Sort_By reorders results
-**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `partial`
+
+**Coverage Note**: *Some deployments queue reviews for moderation or require background processing; the review might not appear in public listings immediately. The test can fully verify persistence if the user's booking-details or 'My Reviews' area shows the submission; otherwise only an in-app confirmation is verifiable.*
 
 **Original Steps:**
 1. 1. Open the Sort By dropdown
@@ -500,21 +445,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `User Dashboard -> Reviews (or Booking Details -> Reviews section) with the target booking selected`
+- **Navigate To**: `User Dashboard -> My Bookings -> Open the target Booking -> Reviews section (or My Reviews)`
 - **Observe**:
-  - current count of reviews for the target booking
-  - texts and ratings of existing reviews for the target booking
-  - presence/absence of the exact review text to be submitted
+  - reviews list does not contain a review with the same submitted review text and rating
+  - record the current review count for the booking (e.g., X reviews)
 
 **Post-Check**
-- **Navigate To**: `User Dashboard -> Reviews (or Booking Details -> Reviews section) with the target booking selected`
+- **Navigate To**: `User Dashboard -> My Bookings -> Open the target Booking -> Reviews section (or My Reviews)`
 - **Observe**:
-  - updated count of reviews for the target booking
-  - texts and ratings of reviews for the target booking (most recent first)
-  - author name associated with the new review
-  - timestamp or relative time label for the new review
+  - reviews list contains a new review entry with the submitted rating and submitted review text
+  - a confirmation message or toast such as 'Review submitted' or 'Review saved' is visible after submission
+  - the booking's review count has increased by 1 compared to the pre_check value
 
-**Expected Change**: A new review appears in the Reviews list for the target booking containing the submitted rating and review text; the review count for the booking has increased by 1; the new review is attributed to the logged-in user and shows a recent timestamp (i.e., reflects the submission).
+**Expected Change**: A new review entry for the booking appears containing the submitted rating and review text and the booking's review count increments by one; if moderation delays public visibility, at minimum the UI shows a success confirmation indicating the review was saved.
 
 ---
 
@@ -536,26 +479,24 @@
 **Pre-Check**
 - **Navigate To**: `User Dashboard -> Settings`
 - **Observe**:
-  - Default Currency
-  - Default Language
-  - Notification Preferences (e.g., email, SMS, push toggles)
+  - Current saved values for Default Currency, Default Language, and Notification Preferences are visible (capture their values before change)
 
 **Post-Check**
-- **Navigate To**: `User Dashboard -> Settings (after clicking 'Save Settings', then navigate away (e.g., Dashboard or Home) and return, or after a full page reload)`
+- **Navigate To**: `User Dashboard -> Settings (after clicking 'Save Settings'; then reload the page or log out and log back in and return to Settings)`
 - **Observe**:
-  - Visible confirmation message indicating settings were saved (e.g., 'Settings saved', success toast/alert)
-  - Default Currency
-  - Default Language
-  - Notification Preferences (e.g., email, SMS, push toggles)
+  - Default Currency is set to the selected <Default_Currency>
+  - Default Language is set to the selected <Default_Language>
+  - Notification Preferences toggles/checkboxes reflect the selected <Notification_Preferences>
+  - A visible success confirmation message is displayed indicating settings were saved
 
-**Expected Change**: The settings page shows the updated values entered in the test: Default Currency equals <Default_Currency>, Default Language equals <Default_Language>, and Notification Preferences reflect the adjusted options. The success confirmation is visible immediately after save, and the updated preference values persist after navigating away and returning or after a page reload.
+**Expected Change**: The Settings page displays the newly selected Default Currency, Default Language, and Notification Preferences after saving, and these values remain persisted after page reload or logout/login.
 
 ---
 
 ### [TC-001] Authenticated user clicks Logout and is returned to Home page
 **Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `partial`
 
-**Coverage Note**: *Email notification about the modification is sent externally and cannot be fully verified from the in-app UI. This post-verification confirms in-app indicators (success notification, booking detail updates, modification history, and fee lines). Email delivery should be validated separately via the recipient mailbox or system email logs.*
+**Coverage Note**: *The UI can verify updated dates, special requests, added traveler row, fee line item, and success notification. The outbound email notification referenced in the expected result is sent via external email delivery and cannot be verified from within the application UI.*
 
 **Original Steps:**
 1. 1. Click the Logout button in the action bar
@@ -567,32 +508,31 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `User Dashboard -> My Bookings -> Booking Details page for the existing booking`
+- **Navigate To**: `User Dashboard -> My Bookings -> Booking Details (for the existing booking to be modified)`
 - **Observe**:
-  - current travel dates shown on the booking detail
-  - Special Requests field value (existing special requests)
-  - traveler list and details (names, passenger types) and count
-  - price breakdown (base rate, existing fees/taxes, total)
-  - modification history/log (most recent modification entry and timestamp) or absence of recent modification
+  - current travel dates shown on the booking (original travel dates)
+  - special requests field shows the pre-modification text (or is empty if none existed)
+  - traveler updates repeating section does not contain the new traveler update details
+  - fee/charges line items do not include a modification fee for the requested change (or show the pre-modification fee state)
+  - booking status is 'default' or current pre-modification status
 
 **Post-Check**
-- **Navigate To**: `User Dashboard -> My Bookings -> Booking Details page for the same booking (refresh if necessary)`
+- **Navigate To**: `User Dashboard -> My Bookings -> Booking Details (open the same booking after modification completes)`
 - **Observe**:
-  - updated travel dates reflect the newly submitted <new travel dates>
-  - Special Requests field shows the newly entered <special requests>
-  - traveler list includes the newly added/updated traveler row with the provided <traveler update details> (name/details visible and count updated accordingly)
-  - price breakdown includes a visible fee line item for modification or applicable charges and shows updated total amount
-  - modification history/log contains a new entry for this modification with timestamp and summary
-  - presence of an on-screen success notification/toast with text indicating the modification succeeded (e.g., contains 'applies requested modifications, charges applicable fees as needed, updates booking')
+  - travel dates reflect the newly entered travel dates
+  - special requests text includes the newly entered special requests
+  - traveler updates repeating section contains a row with the newly added traveler update details
+  - a visible fee/charge line item is present for modification fees with an amount and label indicating it is a modification charge
+  - a success/confirmation notification was displayed after save (e.g., 'Modifications applied' or equivalent)
 
-**Expected Change**: Booking detail now displays the new travel dates; the Special Requests field contains the submitted text; the traveler list includes the newly added/updated traveler row; the price breakdown shows a new fee line item for modification and an updated total reflecting that fee; the booking's modification history/log contains a new entry for this change; an in-app success notification confirming the successful modification is displayed. (Note: actual email notification delivery is external and not verifiable here.)
+**Expected Change**: The booking details persistently show the updated travel dates, include the new special requests and the newly added traveler update row, and display a fee line item for any applicable modification charges; a success notification is shown after the save action. (Email notification is expected to be sent but is not verifiable in-app.)
 
 ---
 
 ### [TC-002] Logged-out user attempting to open a protected page is redirected to Login page
 **Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `partial`
 
-**Coverage Note**: *Full verification of refund disbursement to the original external payment method and delivery of the outbound cancellation email cannot be performed inside the app. This check verifies in-app state changes (status, displayed refund amount, and any in-app refund/activity records).*
+**Coverage Note**: *The UI can verify booking status change and displayed refund amount, but external side-effects mentioned in the expected result (actual payment refund to the original payment method and delivery of the cancellation email) cannot be independently verified from within the application UI.*
 
 **Original Steps:**
 1. 1. Attempt to navigate to <protected page> (enter protected page URL or click link to protected page)
@@ -604,23 +544,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard -> My Bookings -> Booking Details for the target booking (use the same booking reference used in the test)`
+- **Navigate To**: `User Dashboard -> My Bookings -> Open Booking Detail for the existing booking`
 - **Observe**:
-  - booking status badge (expected 'Default' or 'Confirmed' prior to cancellation)
-  - presence and enabled state of 'Cancel' action/button in the action bar
-  - absence of a Refund_Amount field or any 'Refund' entry in booking details or booking activity log
-  - Wallet/Credits -> Transaction History does not contain a refund entry for this booking reference (if applicable)
+  - status badge shows the booking in its pre-cancellation state (e.g., 'Confirmed' or 'Default')
+  - no Refund_Amount field or refund value is shown in the booking detail prior to cancellation
+  - Cancel action/button is present in the action bar (indicating cancellation is allowed per policy)
 
 **Post-Check**
-- **Navigate To**: `Dashboard -> My Bookings -> Booking Details for the same booking reference`
+- **Navigate To**: `User Dashboard -> My Bookings -> Open Booking Detail for the same booking`
 - **Observe**:
-  - booking status badge
-  - Refund_Amount display in booking details or in the cancellation confirmation/activity log
-  - state of 'Cancel' action/button (expected removed or disabled)
-  - Wallet/Credits -> Transaction History contains a refund transaction referencing this booking (if refunds are recorded to Wallet/Credits)
-  - in-app booking activity/log entry indicating 'Cancellation processed' or 'Refund initiated' (if available)
+  - status badge shows 'Cancelled'
+  - Refund_Amount field is present and displays a monetary value
+  - A success notification is displayed referencing cancellation and refund (contains text such as 'cancellation' and 'refund' or the application's configured success message)
 
-**Expected Change**: Booking status changes to 'Cancelled'; the booking detail shows a Refund_Amount with the calculated refund; the Cancel action is no longer available or is disabled; and, if the system records refunds in-app, a refund transaction or 'Refund Initiated' activity entry appears in Wallet/Credits or the booking activity log. (Actual refund to the original external payment method and outbound cancellation email delivery are external and not verifiable from the app.)
+**Expected Change**: The booking's status changes from its pre-cancellation state to 'Cancelled', the booking detail now includes a Refund_Amount showing the calculated refund, and the UI shows a success notification confirming the cancellation (though actual payment refund processing and outgoing cancellation email delivery are external and not verifiable in-app).
 
 ---
 
@@ -637,22 +574,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Payment Page (booking summary) and Profile -> Saved Cards`
+- **Navigate To**: `User Dashboard -> My Bookings`
 - **Observe**:
-  - booking status on Payment Page (e.g., 'Pending Payment' or 'Awaiting Payment')
-  - presence or absence of a booking reference on the Payment Page
-  - Saved Cards list in Profile (note any existing saved card last 4 digits)
+  - booking entry for the booking-to-be-paid exists identified by item/details and amount
+  - booking status is 'Awaiting Payment' or 'Pending Payment'
+  - no confirmed booking reference number is present for that booking
 
 **Post-Check**
-- **Navigate To**: `Dashboard -> My Bookings -> Booking Details; Profile -> Saved Cards; Dashboard -> Transactions/Wallet`
+- **Navigate To**: `User Dashboard -> My Bookings`
 - **Observe**:
-  - booking reference shown on Booking Confirmation page and listed in My Bookings
-  - booking status in My Bookings (expected 'Confirmed' or equivalent successful status)
-  - payment method displayed on the booking (e.g., 'Credit/Debit Card ••••1234')
-  - Saved Cards list contains a card entry with last 4 digits matching the entered card
-  - transaction record in Transactions/Wallet showing the booking amount with status 'Completed' or 'Paid'
+  - booking entry for the same booking is present
+  - booking status is 'Confirmed' (or equivalent confirmed state)
+  - a booking reference number is displayed for that booking
+  - payment method for the booking shows 'Credit/Debit Card' and/or masked card (last 4 digits)
+  - saved-card indicator or token is present if 'Save Card For Future Use' was checked
 
-**Expected Change**: The booking transitions from 'Pending Payment' to a confirmed/paid state and appears in My Bookings with a booking reference that matches the confirmation page; the booking shows the payment method as the masked card (last 4 digits matching the entered card); the card is added to the user's Saved Cards list; and a completed payment transaction for the booking amount is recorded in Transactions/Wallet.
+**Expected Change**: The booking's status changes from 'Awaiting Payment' to 'Confirmed', a booking reference number is assigned and displayed, and the payment method (masked card / last4) is recorded; saved-card token/indicator is persisted if the user opted to save the card.
 
 ---
 
@@ -669,26 +606,22 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard -> My Bookings -> Open the specific Booking Details for the booking ready for payment`
+- **Navigate To**: `User Dashboard -> My Bookings (locate the booking awaiting payment)`
 - **Observe**:
-  - booking status (e.g., 'Pending Payment' or 'Awaiting Payment')
-  - booking reference (should be empty or marked as provisional if present)
-  - payment method (if listed) or 'Not Paid'
-  - total amount / price breakdown shown
-  - presence/absence of invoice/voucher download link
-  - payment transaction id (if any) in the booking details or Transactions/Wallet
+  - booking row for the booking exists
+  - status is 'Awaiting Payment' or 'Pending Payment'
+  - no booking reference number is present in the booking row/details
+  - price breakdown matches the expected amount shown on the Payment Page
 
 **Post-Check**
-- **Navigate To**: `Dashboard -> My Bookings -> Open the same Booking Details (and optionally view Wallet/Transactions)`
+- **Navigate To**: `User Dashboard -> My Bookings -> View Details (or open Booking Confirmation page after payment)`
 - **Observe**:
-  - booking status
-  - booking reference number
-  - payment method listed on the booking (payment record)
-  - payment transaction id and timestamp
-  - invoice/voucher download link or Download Confirmation/Invoice button
-  - Wallet/Transactions shows a debit of the booking amount with method 'PayPal' (if Wallet/Transactions is used)
+  - booking row status is 'Confirmed' or 'Paid'
+  - a booking reference number is displayed (non-empty)
+  - payment method or payment note indicates 'PayPal' where shown
+  - booking detail/confirmation shows payment date/time and total matching the prior price
 
-**Expected Change**: Booking status changes from 'Pending Payment' (or equivalent) to 'Confirmed'; a booking reference number is generated and displayed in Booking Details and the My Bookings list; the payment method is recorded as 'PayPal' with a payment transaction id and timestamp; an invoice/voucher download becomes available; the transaction appears in Wallet/Transactions as a debit for the booking amount noting PayPal as the method.
+**Expected Change**: The booking status changes from 'Awaiting Payment'/'Pending Payment' to 'Confirmed' or 'Paid', a booking reference number is assigned and visible in the confirmation and booking details, and the payment method is recorded as PayPal.
 
 ---
 
@@ -706,24 +639,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Payment Page for the booking (before submitting payment)`
+- **Navigate To**: `User Dashboard -> My Bookings -> Open the booking pending payment (or Payment Page if still in-flow)`
 - **Observe**:
-  - booking status (e.g., 'Pending Payment' or 'Ready for Payment')
-  - price breakdown (room/flight/tour/car base price, taxes, fees, total)
-  - absence of an invoice download link on the page
-  - no payment transaction ID or payment method recorded in the booking summary
+  - booking row/status shows 'Pending Payment' or 'Awaiting Payment'
+  - no 'Download Invoice' button or invoice PDF link is present for this booking
+  - price breakdown is visible and payment method selection is available
 
 **Post-Check**
-- **Navigate To**: `Booking Confirmation page and Dashboard -> My Bookings -> Booking Details (confirmed booking)`
+- **Navigate To**: `User Dashboard -> My Bookings -> Open the confirmed booking (or Booking Confirmation page)`
 - **Observe**:
-  - booking status displays 'Confirmed' (or equivalent confirmed state)
-  - payment method shows Credit/Debit Card with masked card number (last 4 digits) or cardholder name
-  - payment transaction ID or payment reference is present in the booking details
-  - Download Invoice button/link is present
-  - clicking Download Invoice downloads a PDF file
-  - downloaded invoice PDF contains the booking reference/confirmation number and total amount matching the confirmation page
+  - status badge displays 'Confirmed' or 'Paid' for the booking
+  - 'Download Invoice' button/link is present on the Booking Confirmation or Booking Details page
+  - clicking the 'Download Invoice' button initiates a file download and a PDF file is received (filename or PDF content references the booking reference)
 
-**Expected Change**: Booking status changes from 'Pending Payment' to 'Confirmed'; a payment record is created showing Credit/Debit Card (masked number) and a transaction ID; an invoice PDF becomes available via a Download Invoice link and the downloaded PDF contains the booking reference and total amount that match the Booking Confirmation page.
+**Expected Change**: The booking status changes from 'Pending Payment' to 'Confirmed'/'Paid' and an invoice PDF becomes available for that booking; clicking 'Download Invoice' returns a downloadable PDF containing the booking reference.
 
 ---
 
@@ -741,23 +670,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard -> My Bookings -> Open the booking that is ready for payment`
+- **Navigate To**: `Payment Page for the specific booking (before submitting payment)`
 - **Observe**:
-  - booking reference number
-  - booking status (expecting 'Pending Payment' or 'Awaiting Payment')
-  - payment status/details (expecting 'Payment Required' or similar)
-  - voucher download button/link (should NOT be present or should be disabled)
+  - payment form is visible (cardholder name, card number, expiry, CVV fields)
+  - booking shows status 'Pending Payment' or equivalent
+  - no 'Download Voucher' button or voucher link is present on the confirmation/booking detail (voucher not yet generated)
 
 **Post-Check**
-- **Navigate To**: `Dashboard -> My Bookings -> Open the booking just paid -> Booking Details / Confirmation page`
+- **Navigate To**: `User Dashboard -> My Bookings -> Open the Booking Details (or revisit the Booking Confirmation page)`
 - **Observe**:
-  - booking reference number (same as pre-check)
-  - booking status (expecting 'Confirmed')
-  - payment status (expecting 'Paid' or 'Payment Confirmed')
-  - voucher download button/link (should be present and enabled)
-  - clicking the Download Voucher button initiates a download or opens a file with MIME type 'application/pdf' containing the booking reference
+  - booking status is 'Confirmed' or 'Paid'
+  - 'Download Voucher' button or link is present on the Booking Confirmation or Booking Details page
+  - activating the 'Download Voucher' control initiates a downloadable file with .pdf extension or the HTTP response has Content-Type: application/pdf
 
-**Expected Change**: Booking status changes from 'Pending Payment' to 'Confirmed'; payment status becomes 'Paid'; a voucher download link/button appears and, when activated, returns a valid PDF voucher referencing the booking.
+**Expected Change**: After completing card payment and returning to booking context, the booking status changes from 'Pending Payment' to 'Confirmed' or 'Paid', and a voucher PDF becomes available via a visible 'Download Voucher' button/link which, when activated, initiates a PDF download.
 
 ---
 
@@ -776,29 +702,28 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard -> My Bookings -> Booking Details for the relevant booking (before payment)`
+- **Navigate To**: `User Dashboard -> My Bookings -> Booking (Pending Payment) -> Booking Details / Payment Page`
 - **Observe**:
-  - booking status (expected: Pending Payment or Awaiting Payment)
-  - payment method (expected: not yet recorded or shows selected method as PayPal but not completed)
-  - Invoices/Documents section or Download Invoice button (expected: not present or disabled)
-  - booking reference/confirmation number (may be absent or provisional)
+  - booking status is 'Pending Payment' or 'Awaiting Payment'
+  - no invoice link or invoice number is present on the booking details
+  - payment method shows PayPal not yet completed
 
 **Post-Check**
-- **Navigate To**: `Booking Confirmation page (immediately after payment) and Dashboard -> My Bookings -> Booking Details (refresh if necessary)`
+- **Navigate To**: `User Dashboard -> My Bookings -> Booking (most recent) -> Booking Details / Booking Confirmation page`
 - **Observe**:
-  - booking status
-  - booking reference/confirmation number
-  - payment method recorded for the booking
-  - Invoices/Documents section or Download Invoice button/link present and enabled
-  - browser downloads list shows a downloaded PDF file (or prompt to save) after clicking Download Invoice
-  - downloaded invoice filename (should include booking reference or invoice number)
+  - booking status is 'Confirmed' or similar success status
+  - 'Download Invoice' button or invoice link is present on the Booking Confirmation or Booking Details page
+  - an invoice number or invoice entry is displayed in the booking details (e.g., 'Invoice #:')
+  - clicking 'Download Invoice' initiates a download or shows a success/download started indicator
 
-**Expected Change**: Booking status changes from 'Pending Payment' to 'Confirmed' and a booking reference/confirmation number is present; payment method is recorded as 'PayPal'; an invoice is created and made available in the Booking Details/Invoices section with a working Download Invoice action that triggers a PDF download whose filename includes the booking reference and whose contents reflect the booking reference and total amount.
+**Expected Change**: After completing payment via PayPal and returning to the Booking Confirmation, the booking status changes from 'Pending Payment' to 'Confirmed' and a downloadable invoice PDF is available (invoice link/button and invoice number are present); clicking the Download Invoice control initiates the invoice download.
 
 ---
 
 ### [TC-006] Double-click Logout rapidly (duplicate click race)
-**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `partial`
+
+**Coverage Note**: *The PayPal payment processing occurs externally and the exact transaction details cannot be verified in-app. The presence of a downloadable voucher link and that a PDF download is initiated can be verified, but the contents of the PDF and server-side voucher storage integrity require backend or file-system checks outside the UI.*
 
 **Original Steps:**
 1. 1. From the authenticated session, click the Logout button
@@ -811,21 +736,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Payment Page for the booking (where price breakdown is visible)`
+- **Navigate To**: `User Dashboard -> My Bookings -> (select the booking awaiting payment)`
 - **Observe**:
-  - price breakdown (base fare, taxes, fees, total) displayed
-  - payment methods list present (PayPal available)
-  - booking status shown as 'Pending Payment' or 'Awaiting Payment'
-  - no Voucher download link/button present on this page
+  - booking row/status shows 'Pending Payment' or 'Awaiting Payment'
+  - no 'Download Voucher' button or voucher link is present on the booking detail
 
 **Post-Check**
-- **Navigate To**: `Booking Confirmation page, then Dashboard -> My Bookings -> Booking Details for the same booking`
+- **Navigate To**: `User Dashboard -> My Bookings -> View Details for the completed booking (or open Booking Confirmation page)`
 - **Observe**:
-  - booking status changed to 'Confirmed' (or equivalent success state)
-  - Download Voucher button or voucher download link is present on the Booking Confirmation and Booking Details pages
-  - initiating the Download Voucher action returns an HTTP response indicating a PDF (e.g., Content-Type: application/pdf) and a file download is initiated
+  - booking status shows 'Confirmed' or 'Paid'
+  - 'Download Voucher' button or link is present on the booking detail or confirmation page
+  - clicking the 'Download Voucher' link/button initiates a .pdf file download and the downloaded file size is greater than 0 bytes (or browser download shows a successful file save)
 
-**Expected Change**: After completing PayPal payment and arriving at the Booking Confirmation, the booking status changes from 'Pending Payment' to 'Confirmed' and a Download Voucher button/link appears; activating the download returns a PDF voucher (download initiates and response content-type is application/pdf).
+**Expected Change**: After completing payment via PayPal, the booking status changes to 'Confirmed' (or 'Paid') and a downloadable voucher PDF link/button appears on the Booking Confirmation or My Bookings -> Booking Detail page; initiating that link starts a non-empty .pdf download.
 
 ---
 
@@ -842,19 +765,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Any page with the top navigation (e.g., Home page) that shows the Currency dropdown in the header`
+- **Navigate To**: `Any page with the top-navigation Currency selector (e.g., Home page)`
 - **Observe**:
-  - currently selected currency in the Currency dropdown
-  - a visible sample price on the page (note its currency symbol/unit) 
+  - currency selector displays the current/default currency (not <currency>)
+  - sample prices on the page show the current/default currency symbol/format
 
 **Post-Check**
-- **Navigate To**: `Reload the same page (or navigate away and back). Then open Dashboard -> My Profile -> Preferences (if available) to confirm saved preference`
+- **Navigate To**: `Reload the current page (and optionally navigate to another page, e.g., Hotel listing) to confirm persistence`
 - **Observe**:
-  - selected currency in the Currency dropdown after reload
-  - the same sample price on the page (verify its currency symbol/unit reflects the selected currency)
-  - profile currency preference in My Profile / Preferences (if the profile stores currency)
+  - currency selector displays <currency>
+  - sample prices on the page show <currency> symbol/format
 
-**Expected Change**: After selecting <currency> and reloading, the Currency dropdown still displays <currency>; visible prices on the page show the currency symbol/unit for <currency>; for authenticated users the profile Preferences (if present) reflect <currency> as the saved currency preference.
+**Expected Change**: After selecting <currency> and reloading the page, the currency selector and visible prices remain set to <currency>, proving the selection persisted across page reload/navigation.
 
 ---
 
@@ -872,19 +794,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Dashboard (authenticated session) or any protected page`
+- **Navigate To**: `Any page with the top Language dropdown (e.g., User Dashboard or top navigation)`
 - **Observe**:
-  - language dropdown current selection (confirm it's not Arabic)
-  - a visible UI label/text (e.g., top navigation label) to record current language rendering
+  - language dropdown selected value is not 'Arabic'
+  - example UI text (e.g., top navigation labels such as 'My Bookings') is displayed in the current non-Arabic language
 
 **Post-Check**
-- **Navigate To**: `Reload the current page; then navigate to Dashboard -> My Profile (Settings)`
+- **Navigate To**: `Reload the current page (browser refresh) where the Language dropdown is located`
 - **Observe**:
-  - language dropdown current selection
-  - top navigation and several UI labels to confirm interface language
-  - My Profile / Settings -> preferred language field
+  - language dropdown selected value is '<language>' (English or Spanish or French)
+  - example UI text (e.g., top navigation labels such as 'My Bookings') is displayed in '<language>'
+  - page layout remains left-to-right (no RTL layout applied)
 
-**Expected Change**: After selecting <language> and reloading, the language dropdown displays <language>; top navigation and UI labels are rendered in <language>; My Profile / Settings shows preferred language set to <language>.
+**Expected Change**: After selecting <language> and reloading, the Language dropdown remains set to <language> and visible UI text updates to the selected <language>, demonstrating that the language preference persisted across the page reload.
 
 ---
 
@@ -904,20 +826,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Any authenticated page with the top navigation (e.g., Dashboard) containing the Language dropdown`
+- **Navigate To**: `Page containing the Language dropdown (top navigation) while logged in`
 - **Observe**:
-  - current value of the Language dropdown (record existing language)
-  - a couple of key UI labels to establish language context (e.g., 'Home', 'My Bookings', 'Account')
-  - My Profile -> language preference field (if present) to record the stored preference
+  - language dropdown shows the current selected language (e.g., English or site default) and Arabic is NOT selected
+  - page layout/text direction is LTR (where applicable)
 
 **Post-Check**
-- **Navigate To**: `1) Reload the current page; 2) Navigate to another authenticated area such as Dashboard or My Profile`
+- **Navigate To**: `Reload the same page (or navigate away and return) containing the Language dropdown`
 - **Observe**:
-  - value of the Language dropdown (should show 'Arabic' or the Arabic label)
-  - site UI labels/navigation are displayed in Arabic (e.g., 'Home', 'My Bookings', 'Account' rendered in Arabic)
-  - My Profile -> language preference field equals Arabic
+  - language dropdown displays 'Arabic' as the selected language
+  - page UI text is presented in Arabic or layout switches to RTL where applicable
 
-**Expected Change**: After selecting Arabic and reloading, the Language dropdown displays Arabic and the site's UI labels render in Arabic; the user's profile language preference is updated to Arabic, demonstrating that the selection persisted in the backend and across pages.
+**Expected Change**: After selecting Arabic and reloading, the language dropdown remains set to Arabic and the UI reflects Arabic/RTL behavior, demonstrating persistence of the language selection.
 
 ---
 
@@ -935,36 +855,29 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Item Detail page -> Reviews section`
+- **Navigate To**: `Item Detail Page -> Reviews section`
 - **Observe**:
-  - total review count
-  - most recent review: overall rating
-  - most recent review: Cleanliness rating (if present)
-  - most recent review: Service rating (if present)
-  - most recent review: Location rating (if present)
-  - most recent review: written feedback text
-  - presence/absence of photo thumbnails on most recent review
-  - verify there is no existing review that matches the to-be-submitted combination of ratings + text + photo (record absence)
+  - reviews list does not contain an entry with the expected written feedback text submitted by the current user
+  - no review entry exists showing the specific combination of Overall, Cleanliness, Service and Location ratings to be submitted
 
 **Post-Check**
-- **Navigate To**: `Item Detail page -> Reviews section`
+- **Navigate To**: `Item Detail Page -> Reviews section`
 - **Observe**:
-  - total review count
-  - most recent review: overall rating
-  - most recent review: Cleanliness rating
-  - most recent review: Service rating
-  - most recent review: Location rating
-  - most recent review: written feedback text
-  - most recent review: photo thumbnails
-  - review association with the item (item name or identifier shown)
-  - review attribution (display name matches submitting user or shows configured anonymity)
+  - a new review entry authored by the current user is present
+  - overall rating displays the submitted Overall rating
+  - category ratings display the submitted Cleanliness, Service and Location values
+  - written feedback text matches the submitted feedback
+  - uploaded photo thumbnails appear in the review entry
+  - reviews count or list position reflects the new review (e.g., count incremented or new row visible)
 
-**Expected Change**: Total review count increased by 1 and a new review appears as the most recent entry that displays the submitted Overall rating and the category-specific ratings (Cleanliness, Service, Location), contains the entered written feedback text, shows the uploaded photo thumbnails, and is associated with and attributed to the item/submitting user.
+**Expected Change**: A new review is created and appears in the item's Reviews section showing the submitted Overall rating, the Cleanliness, Service and Location category ratings, the written feedback text, and the uploaded photo thumbnails; the reviews list/count reflects the added review.
 
 ---
 
 ### [TC-004] Unauthenticated state shows no action buttons (Logout not visible)
-**Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+**Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `partial`
+
+**Coverage Note**: *Some deployments moderate or queue submitted reviews and/or asynchronously process uploaded images. The success notification can be shown while the review is not immediately visible in the public Reviews section; image thumbnails may appear after processing.*
 
 **Original Steps:**
 1. 1. Ensure the user is signed out (no active session)
@@ -977,29 +890,30 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Item Detail page -> Reviews section (or Dashboard -> My Reviews if item review appears there)`
+- **Navigate To**: `Item Detail page -> Reviews section (or Dashboard -> My Reviews)`
 - **Observe**:
-  - current count of reviews for the item (e.g., "X reviews")
-  - presence of any review authored by the current user (identify by user name/email or recent timestamp)
-  - for the most recent review entry: overall rating value, written feedback text, photo thumbnails (if any)
-  - for existing review entries: presence or absence of category-specific rating fields/labels (e.g., Cleanliness, Service, Location)
+  - record current total review count for the item
+  - no review entry exists matching the expected reviewer username and the expected written feedback text
+  - no recent review with the expected overall rating and photos (if photos will be uploaded)
 
 **Post-Check**
-- **Navigate To**: `Item Detail page -> Reviews section (refresh the page or navigate away and back to ensure backend state is loaded)`
+- **Navigate To**: `Item Detail page -> Reviews section (refresh the page if necessary)`
 - **Observe**:
-  - updated count of reviews for the item
-  - presence of a new review authored by the current user (matching the submission timestamp)
-  - the new review entry's overall rating value matches the submitted Overall Rating
-  - the new review entry's written feedback matches the submitted text
-  - the new review entry displays any uploaded photo thumbnails
-  - the new review entry does NOT display any category-specific rating fields/labels
+  - a new review entry exists matching the reviewer username
+  - the new review displays the entered overall rating value
+  - the new review displays the entered written feedback text
+  - any uploaded photos are shown as thumbnails or attachments on the review entry (if photos were uploaded)
+  - category-specific rating fields are not displayed on the review entry (since applicable categories are absent)
+  - total review count for the item has increased by 1 compared to pre_check (if the review is publicly visible)
 
-**Expected Change**: The reviews count for the item has increased by 1 and a new review authored by the current user appears; the new review displays the submitted Overall Rating, the submitted written feedback, and any uploaded photos, and does not show any category-specific rating fields (since applicable categories are absent).
+**Expected Change**: A new review is created and associated with the item: the Reviews section contains an entry showing the submitted Overall Rating, the provided written feedback, and any uploaded photos; category-specific rating fields are not present on the review entry. If moderation or asynchronous processing is enabled, the UI may still show the success notification while the review or photos appear after a delay.
 
 ---
 
 ### [TC-003] Attempt to invoke Logout action when user is not authenticated (precondition not met)
-**Category**: `negative` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+**Category**: `negative` | **Verification Type**: `other` | **Coverage**: `partial`
+
+**Coverage Note**: *The application displays an on-page success notification, but the persistent subscriber record is stored in backend systems or an external mailing service and there is no documented admin UI in the application to view subscriber lists. Delivery of a confirmation email can be checked in an external inbox, which provides partial verification of backend processing.*
 
 **Original Steps:**
 1. 1. Ensure the user is signed out (no active session)
@@ -1012,18 +926,19 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `User Dashboard -> Settings -> Notification Preferences`
+- **Navigate To**: `Offers page -> Newsletter subscription section`
 - **Observe**:
-  - newsletter subscription status (e.g., 'Subscribed' or 'Unsubscribed')
-  - email address on file / email used for newsletter
+  - Email input field is empty or does not contain the test email
+  - No on-page confirmation message reading 'subscribed to newsletter' is visible for the test email
+  - No visible 'Subscribed' indicator in My Profile (if a newsletter preference exists) for the test email
 
 **Post-Check**
-- **Navigate To**: `Offers page (Newsletter subscription section) and User Dashboard -> Settings -> Notification Preferences`
+- **Navigate To**: `Offers page -> Newsletter subscription section; additionally check the test user's external email inbox`
 - **Observe**:
-  - confirmation notification on Offers page with text 'subscribed to newsletter'
-  - newsletter subscription status in Notification Preferences is 'Subscribed' for the user's email
+  - On-page success notification with text 'subscribed to newsletter' is visible
+  - If the application sends a confirmation email, the test email inbox contains a new message from the application's email address referencing newsletter subscription (subject or body contains 'subscribe'/'subscription'/'newsletter')
 
-**Expected Change**: A confirmation notification 'subscribed to newsletter' is displayed on the Offers page immediately after subscribing, and the user's Notification Preferences now show the newsletter subscription status as 'Subscribed' for the email used.
+**Expected Change**: After submitting the newsletter form the Offers page displays a 'subscribed to newsletter' confirmation notification and the test email receives a confirmation email if the system sends one; this provides partial evidence that the subscription was processed by the backend, but the actual subscriber record in the backend or external mailing list cannot be inspected within the application.
 
 ---
 
@@ -1040,21 +955,21 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `User Dashboard (e.g., My Bookings / Account Dashboard)`
+- **Navigate To**: `User Dashboard / My Bookings (an authenticated-only page)`
 - **Observe**:
-  - user avatar or account name displayed in the top navigation
-  - Logout button present in action bar/account menu
-  - Dashboard content visible (e.g., list of bookings, booking reference numbers, profile link)
+  - Top navigation shows authenticated user menu/avatar or 'My Account' label
+  - Logout button is present in the user menu or header
+  - Dashboard content (e.g., booking list, profile summary) is visible
+  - Protected actions/links (My Bookings, Wallet, Settings) are accessible
 
 **Post-Check**
-- **Navigate To**: `Home Page (then attempt to access a protected page: Dashboard / My Bookings)`
+- **Navigate To**: `Home page, then attempt to open a protected page (e.g., My Bookings or Dashboard)`
 - **Observe**:
-  - Home page main content visible (search widget, public navigation items like Hotels/Flights/Cars)
-  - Login/Signup button visible in top navigation
-  - user avatar or account name NOT present in top navigation; Logout button NOT present
-  - When navigating to Dashboard / My Bookings: browser is redirected to Login page (login form visible with Email and Password fields and Login button) OR a login prompt is shown
-  - Attempting to load a protected URL does not display booking details or user-specific data
+  - User is on the Home page (hero content or landing elements visible)
+  - Top navigation shows Login and Signup links (no user avatar or 'My Account' menu)
+  - Logout button is no longer present
+  - Direct navigation to a protected URL (Dashboard / My Bookings) redirects to the Login page or shows an authentication prompt
 
-**Expected Change**: The user's authenticated session is terminated: the top navigation no longer shows user-specific UI (avatar/account name) or Logout; the Home page is displayed after logout; direct navigation to protected pages (Dashboard/My Bookings) results in a redirect to the Login page and protected content is no longer accessible.
+**Expected Change**: The user session is terminated: the UI returns to the Home page showing unauthenticated navigation (Login/Signup) and user-specific menu/Logout are removed; attempts to access protected pages redirect to the Login page, confirming the session was cleared.
 
 ---

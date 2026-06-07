@@ -16,18 +16,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Accounts Overview`
+- **Navigate To**: `Login page`
 - **Observe**:
-  - welcome message
-  - list of accounts
+  - Login form is displayed
+  - No user account exists for the provided email
 
 **Post-Check**
-- **Navigate To**: `Accounts Overview`
+- **Navigate To**: `Login page`
 - **Observe**:
-  - welcome message
-  - list of accounts
+  - Login form is displayed
+  - User can now log in with the new account credentials
 
-**Expected Change**: A new account appears in the list of accounts with the correct details.
+**Expected Change**: The user can log in with the newly registered account using the provided credentials.
 
 ---
 
@@ -49,16 +49,15 @@
 **Pre-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - list of accounts
-  - total balance
+  - account list does not contain the new Checking account
 
 **Post-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - list of accounts
-  - total balance
+  - account list contains the new Checking account
+  - status badge is 'Active'
 
-**Expected Change**: A new Checking account appears in the list of accounts with a balance of $25, and the total balance has increased by $25.
+**Expected Change**: A new Checking account entry is created with an initial deposit of $25 and is marked as 'Active'.
 
 ---
 
@@ -81,16 +80,16 @@
 **Pre-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - list of accounts
-  - total balance
+  - list of accounts does not include the new Savings account
 
 **Post-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - list of accounts
-  - total balance
+  - list of accounts includes the new Savings account
+  - Savings account balance is $100
+  - Status is 'Active'
 
-**Expected Change**: A new Savings account appears in the list of accounts with a balance of 100, and the total balance has increased accordingly.
+**Expected Change**: A new Savings account is created with an initial deposit of $100 and is displayed in the accounts overview.
 
 ---
 
@@ -112,16 +111,15 @@
 **Pre-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - balance of Checking account
-  - total balance across all accounts
+  - balance of Checking account before transfer
 
 **Post-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - balance of Checking account
-  - total balance across all accounts
+  - balance of Checking account after transfer
+  - transaction history shows recent transfer
 
-**Expected Change**: Checking account balance decreased by the transfer amount; total balance across all accounts remains unchanged.
+**Expected Change**: The Checking account balance is decreased by the transfer amount, and a new transaction entry is created in the transaction history.
 
 ---
 
@@ -144,47 +142,14 @@
 **Pre-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - balance of Savings account
-  - transaction history
+  - Savings account balance
 
 **Post-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - balance of Savings account
-  - transaction history
+  - Savings account balance has decreased by <valid amount>
 
-**Expected Change**: Savings account balance decreased by the transfer amount; transaction history includes a new entry for the external transfer.
-
----
-
-### [TC-001] Send a secure message successfully
-**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
-
-**Original Steps:**
-1. 1. Enter <valid subject> in the Subject field
-2. 2. Select 'Technical' from the Category dropdown
-3. 3. Enter <valid message body> in the Message Body field
-4. 4. Click 'Send Message'
-
-**Original Expected Result:** Message sent successfully with ticket ID
-
----
-
-#### Verification Plan
-
-**Pre-Check**
-- **Navigate To**: `Payments Overview`
-- **Observe**:
-  - payment history
-  - current balance of source account
-
-**Post-Check**
-- **Navigate To**: `Payments Overview`
-- **Observe**:
-  - payment history
-  - current balance of source account
-
-**Expected Change**: Payment history includes the new payment entry with the correct reference code, and the current balance of the source account reflects the deducted payment amount.
+**Expected Change**: The Savings account balance reflects the deducted transfer amount to the external account.
 
 ---
 
@@ -206,16 +171,46 @@
 **Pre-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - total balance across all accounts
-  - loan account section
+  - source account balance before payment
 
 **Post-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - total balance across all accounts
-  - loan account section
+  - source account balance after payment
+  - payment transaction in transaction history
 
-**Expected Change**: A new loan account appears in the loan account section with the correct loan amount and status.
+**Expected Change**: The source account balance is reduced by the payment amount, and a new transaction entry is created in the transaction history.
+
+---
+
+### [TC-001] Send a secure message successfully
+**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+
+**Original Steps:**
+1. 1. Enter <valid subject> in the Subject field
+2. 2. Select 'Technical' from the Category dropdown
+3. 3. Enter <valid message body> in the Message Body field
+4. 4. Click 'Send Message'
+
+**Original Expected Result:** Message sent successfully with ticket ID
+
+---
+
+#### Verification Plan
+
+**Pre-Check**
+- **Navigate To**: `Accounts Overview`
+- **Observe**:
+  - loan account not listed
+
+**Post-Check**
+- **Navigate To**: `Accounts Overview`
+- **Observe**:
+  - loan account listed
+  - loan amount matches submitted amount
+  - status is 'Active'
+
+**Expected Change**: A new personal loan account is created with the correct loan amount and status.
 
 ---
 
@@ -238,16 +233,16 @@
 **Pre-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - loan account section
-  - total balance across all accounts
+  - loan account not listed
+  - total balance unchanged
 
 **Post-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - loan account section
-  - total balance across all accounts
+  - new auto loan account listed
+  - total balance reflects new loan amount
 
-**Expected Change**: A new loan account appears in the loan account section, and the total balance across all accounts reflects the new loan amount.
+**Expected Change**: A new auto loan account is created and displayed in the Accounts Overview with the correct loan amount and down payment reflected in the total balance.
 
 ---
 
@@ -268,16 +263,17 @@
 **Pre-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - loan account details
-  - total balance
+  - list of existing loan accounts
+  - loan amount not equal to the submitted amount
 
 **Post-Check**
 - **Navigate To**: `Accounts Overview`
 - **Observe**:
-  - loan account details
-  - total balance
+  - list of existing loan accounts
+  - new home loan entry with the correct amount
+  - status badge is 'Active'
 
-**Expected Change**: A new loan account appears in the Accounts Overview with the correct loan amount and the total balance reflects the new loan.
+**Expected Change**: A new home loan entry is created with the submitted loan amount and down payment.
 
 ---
 
@@ -297,28 +293,28 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Customer Profile`
+- **Navigate To**: `User Dashboard -> Update Contact Info`
 - **Observe**:
-  - First Name
-  - Last Name
-  - Street Address
-  - City
-  - State
-  - ZIP Code
-  - Phone Number
+  - First Name field contains existing value
+  - Last Name field contains existing value
+  - Street Address field contains existing value
+  - City field contains existing value
+  - State dropdown is pre-selected
+  - ZIP Code field contains existing value
+  - Phone Number field contains existing value
 
 **Post-Check**
-- **Navigate To**: `Customer Profile`
+- **Navigate To**: `User Dashboard -> Update Contact Info`
 - **Observe**:
-  - First Name
-  - Last Name
-  - Street Address
-  - City
-  - State
-  - ZIP Code
-  - Phone Number
+  - First Name field contains <valid first name>
+  - Last Name field contains <valid last name>
+  - Street Address field contains <valid street address>
+  - City field contains <valid city>
+  - State dropdown is set to <valid state>
+  - ZIP Code field contains <valid ZIP code>
+  - Phone Number field contains <valid phone number>
 
-**Expected Change**: All fields reflect the updated contact information entered by the user.
+**Expected Change**: The profile information is updated with the new values entered by the user.
 
 ---
 
@@ -340,18 +336,15 @@
 **Pre-Check**
 - **Navigate To**: `Manage Cards`
 - **Observe**:
-  - Card request form
-  - Shipping Address field
-  - Account to Link field
+  - no pending card requests
 
 **Post-Check**
 - **Navigate To**: `Manage Cards`
 - **Observe**:
-  - Card request form
-  - Shipping Address field
-  - Account to Link field
+  - pending card request listed
+  - status is 'Pending'
 
-**Expected Change**: A new card request is submitted and the user receives a confirmation message indicating 'Card request submitted successfully.'
+**Expected Change**: A new card request entry is created with the correct details and status.
 
 ---
 
@@ -374,18 +367,15 @@
 **Pre-Check**
 - **Navigate To**: `Manage Cards`
 - **Observe**:
-  - current spending limit of selected card
-  - current travel notice
-  - current card status
+  - current spending limit for the selected card
 
 **Post-Check**
 - **Navigate To**: `Manage Cards`
 - **Observe**:
-  - new spending limit of selected card
-  - updated travel notice
-  - updated card status
+  - updated spending limit for the selected card
+  - travel notice details
 
-**Expected Change**: Spending limit updated to the new value; travel notice reflects the entered date range and destination; card status is now 'Active'.
+**Expected Change**: The spending limit for the selected card is updated to the new valid limit, and the travel notice details are correctly reflected.
 
 ---
 
@@ -405,20 +395,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Investments`
+- **Navigate To**: `Investments -> Portfolio Snapshot`
 - **Observe**:
-  - current fund holdings
-  - market value
-  - unrealised gain or loss
+  - portfolio balance
+  - recent trades list does not contain the new trade
 
 **Post-Check**
-- **Navigate To**: `Investments`
+- **Navigate To**: `Investments -> Portfolio Snapshot`
 - **Observe**:
-  - current fund holdings
-  - market value
-  - unrealised gain or loss
+  - portfolio balance reflects the new trade
+  - recent trades list contains the new trade with order ID
 
-**Expected Change**: The current fund holdings reflect the newly executed trade, updating the market value and unrealised gain or loss accordingly.
+**Expected Change**: The portfolio balance is updated to reflect the executed trade, and the recent trades list includes the new trade entry.
 
 ---
 
@@ -439,18 +427,20 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Investments`
+- **Navigate To**: `Investments -> Recurring Investment Plans`
 - **Observe**:
-  - current fund holdings
-  - recurring investment plans section
+  - no plans listed
 
 **Post-Check**
-- **Navigate To**: `Investments`
+- **Navigate To**: `Investments -> Recurring Investment Plans`
 - **Observe**:
-  - current fund holdings
-  - recurring investment plans section
+  - new recurring investment plan listed
+  - fund symbol
+  - contribution amount
+  - frequency
+  - start date
 
-**Expected Change**: A new recurring investment plan appears in the recurring investment plans section with the correct fund symbol, contribution amount, frequency, and start date.
+**Expected Change**: A new recurring investment plan is created with the specified fund symbol, contribution amount, frequency, and start date.
 
 ---
 
@@ -471,18 +461,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `e-Statement Preference section`
+- **Navigate To**: `User Profile -> Security Settings`
 - **Observe**:
-  - current e-Statement preference status
-  - current email address
+  - paperless checkbox is unchecked
+  - email field is empty
 
 **Post-Check**
-- **Navigate To**: `e-Statement Preference section`
+- **Navigate To**: `User Profile -> Security Settings`
 - **Observe**:
-  - updated e-Statement preference status
-  - updated email address
+  - paperless checkbox is checked
+  - email field contains the valid email address
 
-**Expected Change**: e-Statement preference status changed to 'Opted into Paperless' and email address updated to the new value.
+**Expected Change**: The e-Statement preference is updated to opt into paperless statements with the provided email address.
 
 ---
 
@@ -502,20 +492,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Security Settings`
+- **Navigate To**: `Security Settings -> Change Password`
 - **Observe**:
-  - Current Password field
-  - New Password field
-  - Confirm New Password field
+  - Current Password field is empty
+  - New Password field is empty
+  - Confirm New Password field is empty
 
 **Post-Check**
-- **Navigate To**: `Security Settings`
+- **Navigate To**: `Login page`
 - **Observe**:
-  - Current Password field
-  - New Password field
-  - Confirm New Password field
+  - UI displays 'Password changed successfully.' message
 
-**Expected Change**: User is able to log in with the new password, confirming that the password has been successfully changed.
+**Expected Change**: The user can now log in with the new password, confirming that the password has been successfully updated.
 
 ---
 
@@ -535,19 +523,18 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Support Center`
+- **Navigate To**: `Support Center -> My Messages`
 - **Observe**:
-  - Subject field
-  - Category dropdown
-  - Message Body field
+  - no recent messages
 
 **Post-Check**
-- **Navigate To**: `Support Center`
+- **Navigate To**: `Support Center -> My Messages`
 - **Observe**:
-  - Message sent successfully.
-  - Ticket ID
+  - message with ticket ID
+  - subject matches <valid subject>
+  - category is 'Technical'
 
-**Expected Change**: A confirmation message appears indicating the message was sent successfully along with a ticket ID.
+**Expected Change**: A new message entry is created with the correct subject and category, and a ticket ID is generated.
 
 ---
 
@@ -568,17 +555,16 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Support Center`
+- **Navigate To**: `Support Center -> Schedule Callback`
 - **Observe**:
-  - callback request form
-  - existing callback requests
+  - Phone Number field is pre-filled with user's phone number
 
 **Post-Check**
-- **Navigate To**: `Support Center`
+- **Navigate To**: `Support Center -> Scheduled Callbacks`
 - **Observe**:
-  - existing callback requests
-  - email confirmation
+  - Callback request listed with correct details
+  - Confirmation email received
 
-**Expected Change**: A new callback request appears in the existing requests list, and an email confirmation is received.
+**Expected Change**: A new callback request is displayed in the Scheduled Callbacks section, confirming the user's request.
 
 ---

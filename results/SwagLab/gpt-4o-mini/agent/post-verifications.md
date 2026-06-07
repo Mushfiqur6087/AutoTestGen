@@ -13,16 +13,17 @@
 #### Verification Plan
 
 **Pre-Check**
-- **Navigate To**: `Product Inventory`
+- **Navigate To**: `User Dashboard -> Shopping Cart`
 - **Observe**:
-  - cart badge count
+  - cart is empty
 
 **Post-Check**
-- **Navigate To**: `Product Inventory`
+- **Navigate To**: `User Dashboard -> Shopping Cart`
 - **Observe**:
-  - cart badge count
+  - cart contains the added product
+  - cart badge shows '1'
 
-**Expected Change**: Cart badge count increased by one, indicating the product was successfully added to the cart.
+**Expected Change**: The cart now contains the newly added product, and the cart badge reflects the correct item count.
 
 ---
 
@@ -41,160 +42,160 @@
 **Pre-Check**
 - **Navigate To**: `Shopping Cart`
 - **Observe**:
-  - item description
-  - quantity
-  - cart badge count
+  - product listed in cart
+
+**Post-Check**
+- **Navigate To**: `Shopping Cart`
+- **Observe**:
+  - product not listed in cart
+  - cart badge shows updated count
+
+**Expected Change**: The product is removed from the cart, and the cart badge reflects the correct number of items.
+
+---
+
+### [TC-001] Reset App State functionality
+**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+
+**Original Steps:**
+1. 1. Click Reset App State Button
+
+**Original Expected Result:** clears the cart and resets in-app state
+
+---
+
+#### Verification Plan
+
+**Pre-Check**
+- **Navigate To**: `User Dashboard -> Shopping Cart`
+- **Observe**:
+  - cart is empty
+  - cart badge shows '0'
+
+**Post-Check**
+- **Navigate To**: `User Dashboard -> Shopping Cart`
+- **Observe**:
+  - cart contains the newly added product
+  - cart badge shows '1'
+
+**Expected Change**: The cart now contains the newly added product, and the cart badge reflects the correct item count.
+
+---
+
+### [TC-003] Attempt to logout when not logged in
+**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+
+**Original Steps:**
+1. 1. Click the Logout button
+
+**Original Expected Result:** Logout action is blocked; user remains on the current page with no session ended.
+
+---
+
+#### Verification Plan
+
+**Pre-Check**
+- **Navigate To**: `Shopping Cart`
+- **Observe**:
+  - item is present in the cart
+  - Remove button is visible for the item
+
+**Post-Check**
+- **Navigate To**: `Shopping Cart`
+- **Observe**:
+  - item is no longer present in the cart
+  - Remove button is no longer visible for the item
+
+**Expected Change**: The item has been successfully removed from the cart.
+
+---
+
+### [TC-001] Reset App State functionality
+**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+
+**Original Steps:**
+1. 1. Click Reset App State Button
+
+**Original Expected Result:** clears the cart and resets in-app state
+
+---
+
+#### Verification Plan
+
+**Pre-Check**
+- **Navigate To**: `Checkout Information page`
+- **Observe**:
+  - First Name field is empty
+  - Last Name field is empty
+  - Zip/Postal Code field is empty
+
+**Post-Check**
+- **Navigate To**: `Checkout Overview page`
+- **Observe**:
+  - Order summary displayed
+  - Item total is correct
+  - Tax is calculated
+  - Total is correct
+
+**Expected Change**: The user is navigated to the Checkout Overview page, where the order summary and totals are displayed correctly.
+
+---
+
+### [TC-001] Reset App State functionality
+**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+
+**Original Steps:**
+1. 1. Click Reset App State Button
+
+**Original Expected Result:** clears the cart and resets in-app state
+
+---
+
+#### Verification Plan
+
+**Pre-Check**
+- **Navigate To**: `Checkout Overview`
+- **Observe**:
+  - order summary
+  - item totals
+  - tax amount
+  - total amount
+
+**Post-Check**
+- **Navigate To**: `Checkout Confirmation`
+- **Observe**:
+  - confirmation message
+  - thank you note
+  - order details
+
+**Expected Change**: The user is redirected to the confirmation page, and a confirmation message is displayed indicating the order has been successfully completed.
+
+---
+
+### [TC-001] Reset App State functionality
+**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
+
+**Original Steps:**
+1. 1. Click Reset App State Button
+
+**Original Expected Result:** clears the cart and resets in-app state
+
+---
+
+#### Verification Plan
+
+**Pre-Check**
+- **Navigate To**: `Shopping Cart`
+- **Observe**:
+  - items displayed in cart
+  - cart badge shows item count
 
 **Post-Check**
 - **Navigate To**: `Shopping Cart`
 - **Observe**:
   - cart is empty
-  - cart badge count is 0
+  - cart badge is removed
 
-**Expected Change**: The item is removed from the cart, and the cart badge count is updated to reflect zero items.
-
----
-
-### [TC-001] Reset App State functionality
-**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
-
-**Original Steps:**
-1. 1. Click Reset App State Button
-
-**Original Expected Result:** clears the cart and resets in-app state
-
----
-
-#### Verification Plan
-
-**Pre-Check**
-- **Navigate To**: `Shopping Cart`
-- **Observe**:
-  - cart item count
-  - list of items in the cart
-
-**Post-Check**
-- **Navigate To**: `Shopping Cart`
-- **Observe**:
-  - cart item count
-  - list of items in the cart
-
-**Expected Change**: Cart item count increased by one and the newly added product appears in the list of items.
-
----
-
-### [TC-003] Attempt to logout when not logged in
-**Category**: `edge` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
-
-**Original Steps:**
-1. 1. Click the Logout button
-
-**Original Expected Result:** Logout action is blocked; user remains on the current page with no session ended.
-
----
-
-#### Verification Plan
-
-**Pre-Check**
-- **Navigate To**: `Shopping Cart`
-- **Observe**:
-  - list of items in the cart
-  - item description
-  - item quantity
-
-**Post-Check**
-- **Navigate To**: `Shopping Cart`
-- **Observe**:
-  - list of items in the cart
-
-**Expected Change**: The item that was removed is no longer listed in the cart.
-
----
-
-### [TC-001] Reset App State functionality
-**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
-
-**Original Steps:**
-1. 1. Click Reset App State Button
-
-**Original Expected Result:** clears the cart and resets in-app state
-
----
-
-#### Verification Plan
-
-**Pre-Check**
-- **Navigate To**: `Checkout - Information`
-- **Observe**:
-  - First Name field
-  - Last Name field
-  - Zip/Postal Code field
-
-**Post-Check**
-- **Navigate To**: `Checkout - Overview`
-- **Observe**:
-  - order summary
-  - totals section
-  - payment and shipping information
-
-**Expected Change**: User is redirected to the overview step with a summary of the cart items displayed.
-
----
-
-### [TC-001] Reset App State functionality
-**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
-
-**Original Steps:**
-1. 1. Click Reset App State Button
-
-**Original Expected Result:** clears the cart and resets in-app state
-
----
-
-#### Verification Plan
-
-**Pre-Check**
-- **Navigate To**: `Checkout - Overview`
-- **Observe**:
-  - order summary
-  - item total
-  - tax
-  - total
-
-**Post-Check**
-- **Navigate To**: `Checkout - Confirmation`
-- **Observe**:
-  - success message
-  - order details
-
-**Expected Change**: User is navigated to the confirmation page displaying a success message and order details.
-
----
-
-### [TC-001] Reset App State functionality
-**Category**: `positive` | **Verification Type**: `same_actor_navigation` | **Coverage**: `verifiable`
-
-**Original Steps:**
-1. 1. Click Reset App State Button
-
-**Original Expected Result:** clears the cart and resets in-app state
-
----
-
-#### Verification Plan
-
-**Pre-Check**
-- **Navigate To**: `Product Inventory`
-- **Observe**:
-  - cart badge count
-  - Add to cart button states
-
-**Post-Check**
-- **Navigate To**: `Product Inventory`
-- **Observe**:
-  - cart badge count
-  - Add to cart button states
-
-**Expected Change**: Cart badge count is zero and all Add to cart buttons are in their default state.
+**Expected Change**: The cart is cleared and the cart badge is removed after resetting the app state.
 
 ---
