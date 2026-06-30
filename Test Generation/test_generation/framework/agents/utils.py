@@ -11,13 +11,18 @@ def build_test_prompt(
     ast: Dict[str, Any],
     description: str,
     workflows: Optional[List[Dict[str, Any]]] = None,
+    module_context: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Build the standard user prompt for all three test case generators.
 
-    Assembles the <module_name>, <ast>, <description>, and <workflows> blocks
+    Assembles the <module_context>, <module_name>, <ast>, <description>, and <workflows> blocks
     that every Stage 3 agent receives as its user message.
     """
-    prompt = (
+    prompt = ""
+    if module_context:
+        prompt += f"<module_context>\n{json.dumps(module_context, indent=2)}\n</module_context>\n\n"
+        
+    prompt += (
         f"<module_name>{module_title}</module_name>\n\n"
         f"<ast>\n{json.dumps(ast, indent=2)}\n</ast>\n\n"
         f"<description>\n{description}\n</description>"

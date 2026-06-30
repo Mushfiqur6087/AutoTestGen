@@ -14,6 +14,7 @@ from test_generation.framework.agents.positive_test_case_generator import Positi
 from test_generation.framework.agents.structural_model_generator import StructuralModelGeneratorAgent
 from test_generation.framework.agents.workflow_validator import WorkflowValidatorAgent
 from test_generation.framework.agents.workflow_extractor import WorkflowExtractorAgent
+from test_generation.framework.agents.module_context_extractor import ModuleContextExtractorAgent
 from test_generation.framework.orchestrator.state import PipelineState
 
 MAX_ATTEMPTS = 3
@@ -41,10 +42,63 @@ def _agent_kwargs(state: PipelineState, stage_file: str, module_debug_dir: str =
     return dict(api_key=state["api_key"], model=state["model"], debug=debug, debug_file=debug_file)
 
 
+async def extract_module_context_node(state: PipelineState) -> Dict[str, Any]:
+    t0 = time.time()
+    modules = state["functional_desc"].get("modules", [])
+    navigation_overview = state["functional_desc"].get("navigation_overview", "")
+    all_modules = [m["title"] for m in modules]
+    
+    # Check if we already have context (e.g. resuming)
+    if "module_context_results" in state and state["module_context_results"]:
+        print(f"\n[0/4] Module Context already extracted ({len(state['module_context_results'])} module(s)). Skipping.")
+        return {}
+
+    print(f"\n[0/4] Extracting Module Context ({len(modules)} module(s))...")
+
+    async def _process_module(module: Dict[str, Any]) -> Dict[str, Any]:
+        module_dir = _module_debug_dir(state, module["title"])
+        agent = ModuleContextExtractorAgent(**_agent_kwargs(state, "00_module_context_extractor.log", module_dir))
+        
+        try:
+            result = await agent.arun(
+                module_title=module["title"],
+                description=module["description"],
+                navigation_overview=navigation_overview,
+                all_modules=all_modules
+            )
+            print(f"  OK {module['title']}")
+            
+            # Ensure the output conforms to schema, adding module_id and module_title
+            return {
+                "module_id": module["id"],
+                "module_title": module["title"],
+                "summary": result.get("summary", ""),
+                "where_it_fits": result.get("where_it_fits", ""),
+                "assumed_state_on_entry": result.get("assumed_state_on_entry", ""),
+            }
+        except Exception as e:
+            print(f"  !! Failed for {module['title']}: {e}")
+            return {
+                "module_id": module["id"],
+                "module_title": module["title"],
+                "summary": "",
+                "where_it_fits": "",
+                "assumed_state_on_entry": "",
+                "error": str(e)
+            }
+
+    results = await asyncio.gather(*[_process_module(m) for m in modules])
+    
+    print(f"  Done in {time.time() - t0:.1f}s")
+    return {"module_context_results": list(results)}
+
+
 async def generate_and_critique_node(state: PipelineState) -> Dict[str, Any]:
     t0 = time.time()
     modules = state["functional_desc"].get("modules", [])
     desc_by_id = {m["id"]: m["description"] for m in modules}
+    module_contexts = state.get("module_context_results", [])
+    ctx_by_id = {c["module_id"]: c for c in module_contexts if "module_id" in c}
 
     print(f"\n[1/4] Generating Structural Model with critic-guided retry ({len(modules)} module(s))...")
 
@@ -53,6 +107,7 @@ async def generate_and_critique_node(state: PipelineState) -> Dict[str, Any]:
         ast_agent = StructuralModelGeneratorAgent(**_agent_kwargs(state, "01_structural_model.log", module_dir))
         critic_agent = StructuralModelValidatorAgent(**_agent_kwargs(state, "02_structural_model_validator.log", module_dir))
         desc = desc_by_id.get(module["id"], "")
+        ctx = ctx_by_id.get(module["id"])
         fixes: List[str] = []
         ast: Dict[str, Any] = {}
         critique: Dict[str, Any] = {}
@@ -66,6 +121,7 @@ async def generate_and_critique_node(state: PipelineState) -> Dict[str, Any]:
                 fixes=fixes if fixes else None,
                 attempt=attempt_number,
                 max_attempts=MAX_ATTEMPTS,
+                module_context=ctx,
             )
 
             critique = await critic_agent.arun(
@@ -73,6 +129,7 @@ async def generate_and_critique_node(state: PipelineState) -> Dict[str, Any]:
                 ast,
                 attempt=attempt_number,
                 max_attempts=MAX_ATTEMPTS,
+                module_context=ctx,
             )
             verdict = critique.get("verdict", "retry")
 
@@ -180,6 +237,8 @@ async def extract_workflows_node(state: PipelineState) -> Dict[str, Any]:
 
     ast_by_id = {r["module_id"]: r.get("ast", {}) for r in structural_model_results}
     desc_by_id = {m["id"]: m["description"] for m in modules}
+    module_contexts = state.get("module_context_results", [])
+    ctx_by_id = {c["module_id"]: c for c in module_contexts if "module_id" in c}
 
     # Only extract workflows for modules that have a valid AST
     runnable = [m for m in modules if ast_by_id.get(m["id"])]
@@ -192,6 +251,7 @@ async def extract_workflows_node(state: PipelineState) -> Dict[str, Any]:
         critic = WorkflowValidatorAgent(**_agent_kwargs(state, "02c_workflow_validator.log", module_dir))
         desc = desc_by_id.get(module["id"], "")
         ast = ast_by_id[module["id"]]
+        ctx = ctx_by_id.get(module["id"])
         fixes: List[str] = []
         workflows: List[Dict[str, Any]] = []
         critique: Dict[str, Any] = {}
@@ -207,6 +267,7 @@ async def extract_workflows_node(state: PipelineState) -> Dict[str, Any]:
                 fixes=fixes if fixes else None,
                 attempt=attempt_number,
                 max_attempts=MAX_ATTEMPTS,
+                module_context=ctx,
             )
             workflows = result.get("workflows", [])
 
@@ -216,6 +277,7 @@ async def extract_workflows_node(state: PipelineState) -> Dict[str, Any]:
                 workflows,
                 attempt=attempt_number,
                 max_attempts=MAX_ATTEMPTS,
+                module_context=ctx,
             )
             verdict = critique.get("verdict", "retry")
 
@@ -324,6 +386,8 @@ async def generate_tests_node(state: PipelineState) -> Dict[str, Any]:
     ast_by_id = {r["module_id"]: r.get("ast", {}) for r in structural_model_results}
     desc_by_id = {m["id"]: m["description"] for m in modules}
     workflows_by_id = {r["module_id"]: r.get("workflows", []) for r in workflow_results}
+    module_contexts = state.get("module_context_results", [])
+    ctx_by_id = {c["module_id"]: c for c in module_contexts if "module_id" in c}
 
     test_types = state.get("test_types") or {"positive", "negative", "edge"}
 
@@ -342,13 +406,14 @@ async def generate_tests_node(state: PipelineState) -> Dict[str, Any]:
         ast = ast_by_id[module["id"]]
         desc = desc_by_id.get(module["id"], "")
         workflows = workflows_by_id.get(module["id"], [])
+        ctx = ctx_by_id.get(module["id"])
         module_dir = _module_debug_dir(state, title)
 
         async def _run_if(agent_cls, log_file, type_name):
             if type_name not in test_types:
                 return None
             agent = agent_cls(**_agent_kwargs(state, log_file, module_dir))
-            return await agent.arun(title, ast, desc, workflows=workflows)
+            return await agent.arun(title, ast, desc, workflows=workflows, module_context=ctx)
 
         pos, neg, edge = await asyncio.gather(
             _run_if(PositiveTestCaseGeneratorAgent, "03_positive_test_case_generator.log", "positive"),
@@ -443,6 +508,19 @@ def finalize_node(state: PipelineState) -> Dict[str, Any]:
         "modules": state.get("structural_model_results", []),
     }
 
+    module_context_results = state.get("module_context_results")
+    if module_context_results is not None:
+        context_output = {
+            "project_name": functional_desc.get("project_name", ""),
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "model": state.get("model", ""),
+            "modules": module_context_results,
+        }
+        context_path = os.path.join(output_dir, "module-context.json")
+        with open(context_path, "w", encoding="utf-8") as f:
+            json.dump(context_output, f, indent=2)
+        print(f"  Saved Module Context to:       {context_path}")
+
     structural_model_path = os.path.join(output_dir, "structural-model.json")
     with open(structural_model_path, "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2)
@@ -476,6 +554,7 @@ def finalize_node(state: PipelineState) -> Dict[str, Any]:
             "generated_at": datetime.utcnow().isoformat() + "Z",
             "model": state.get("model", ""),
             "modules": test_results,
+            "module_context": module_context_results,
             "total_summary": {
                 "total_modules": len(test_results),
                 "total_tests": total_tests,

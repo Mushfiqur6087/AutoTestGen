@@ -19,6 +19,10 @@ Every item above is a confirmed error from the previous attempt. Do not repeat t
 
 **INPUT:**
 
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
 <module_name>{Module name}</module_name>
 
 <ast>
@@ -107,6 +111,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
 3. Are two workflows identical in `conditional_branch` AND `terminal_action`? If yes → merge them into one.
 4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
+5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
 
 ---
 

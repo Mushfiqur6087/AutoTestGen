@@ -68,12 +68,13 @@ class WorkflowExtractorAgent(BaseAgent):
         fixes: Optional[List[str]] = None,
         attempt: int = 1,
         max_attempts: int = 3,
+        module_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         self._active_system_prompt = _render_extractor_system_prompt(
             attempt, max_attempts, fixes or []
         )
         return self.call_llm_json(
-            self._build_prompt(module_title, ast, description),
+            self._build_prompt(module_title, ast, description, module_context),
             temperature=0.2,
             max_tokens=8192,
         )
@@ -86,12 +87,13 @@ class WorkflowExtractorAgent(BaseAgent):
         fixes: Optional[List[str]] = None,
         attempt: int = 1,
         max_attempts: int = 3,
+        module_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         self._active_system_prompt = _render_extractor_system_prompt(
             attempt, max_attempts, fixes or []
         )
         return await self.acall_llm_json(
-            self._build_prompt(module_title, ast, description),
+            self._build_prompt(module_title, ast, description, module_context),
             temperature=0.2,
             max_tokens=8192,
         )
@@ -101,12 +103,16 @@ class WorkflowExtractorAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_prompt(module_title: str, ast: Dict[str, Any], description: str) -> str:
-        return (
+    def _build_prompt(module_title: str, ast: Dict[str, Any], description: str, module_context: Optional[Dict[str, Any]] = None) -> str:
+        prompt = ""
+        if module_context:
+            prompt += f"<module_context>\n{json.dumps(module_context, indent=2)}\n</module_context>\n\n"
+        prompt += (
             f"<module_name>{module_title}</module_name>\n\n"
             f"<ast>\n{json.dumps(ast, indent=2)}\n</ast>\n\n"
             f"<description>\n{description}\n</description>"
         )
+        return prompt
 
     @staticmethod
     def format_workflows_block(workflows: Optional[List[Dict[str, Any]]]) -> str:

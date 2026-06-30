@@ -16,6 +16,10 @@ Otherwise remove it.]
 INPUT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
 <description>
 {description}
 </description>
@@ -66,6 +70,7 @@ Walk every `form` node in the AST. For each entry in `submit_actions[]`, there m
 
 **Check 2 — Missing state-machine workflows.**
 Walk every `state_bound_action_bar` node. For each state key in `states{}`, for each entry in `available_actions[]`, there must be one workflow with `terminal_action` matching that action and `conditional_branch` containing `entity_state == <state>`. Flag any missing state × action pairs. Classify each as critical.
+If a `<module_context>` block is present, use its `assumed_state_on_entry` to confirm that the entry state named in the context is represented as a workflow's starting condition where applicable.
 
 **Check 3 — Missing data table workflows.**
 Walk every `data_table` node. For each entry in `row_actions[]` and `bulk_actions[]`, there must be one workflow with `terminal_action` matching that action. Flag any missing entries. This includes read-only actions like View/Details. Classify bulk_actions as critical; row_actions as minor if read-only, critical otherwise.

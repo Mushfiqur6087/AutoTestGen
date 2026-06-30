@@ -19,16 +19,16 @@ class EdgeTestCaseGeneratorAgent(BaseAgent):
     def system_prompt(self) -> str:
         return _PROMPT
 
-    def run(self, module_title: str, ast: Dict[str, Any], description: str, workflows: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    def run(self, module_title: str, ast: Dict[str, Any], description: str, workflows: Optional[List[Dict[str, Any]]] = None, module_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         return self.call_llm_json(
-            build_test_prompt(module_title, ast, description, workflows),
+            build_test_prompt(module_title, ast, description, workflows, module_context),
             temperature=0.3,
             max_tokens=16384,
         )
 
-    async def arun(self, module_title: str, ast: Dict[str, Any], description: str, workflows: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    async def arun(self, module_title: str, ast: Dict[str, Any], description: str, workflows: Optional[List[Dict[str, Any]]] = None, module_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         return await self.acall_llm_json(
-            build_test_prompt(module_title, ast, description, workflows),
+            build_test_prompt(module_title, ast, description, workflows, module_context),
             temperature=0.3,
             max_tokens=16384,
         )

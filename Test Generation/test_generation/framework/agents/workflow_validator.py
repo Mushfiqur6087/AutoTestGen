@@ -2,7 +2,7 @@
 
 import json
 from importlib import resources
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from test_generation.framework.agents.base import BaseAgent
 
@@ -57,10 +57,11 @@ class WorkflowValidatorAgent(BaseAgent):
         workflows: List[Dict[str, Any]],
         attempt: int = 1,
         max_attempts: int = 3,
+        module_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         self._active_system_prompt = _render_validator_system_prompt(attempt, max_attempts)
         return self.call_llm_json(
-            self._build_prompt(description, ast, workflows),
+            self._build_prompt(description, ast, workflows, module_context),
             temperature=0.1,
             max_tokens=4096,
             reasoning_effort="medium",
@@ -73,10 +74,11 @@ class WorkflowValidatorAgent(BaseAgent):
         workflows: List[Dict[str, Any]],
         attempt: int = 1,
         max_attempts: int = 3,
+        module_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         self._active_system_prompt = _render_validator_system_prompt(attempt, max_attempts)
         return await self.acall_llm_json(
-            self._build_prompt(description, ast, workflows),
+            self._build_prompt(description, ast, workflows, module_context),
             temperature=0.1,
             max_tokens=4096,
             reasoning_effort="medium",
@@ -87,9 +89,13 @@ class WorkflowValidatorAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_prompt(description: str, ast: Dict[str, Any], workflows: List[Dict[str, Any]]) -> str:
-        return (
+    def _build_prompt(description: str, ast: Dict[str, Any], workflows: List[Dict[str, Any]], module_context: Optional[Dict[str, Any]] = None) -> str:
+        prompt = ""
+        if module_context:
+            prompt += f"<module_context>\n{json.dumps(module_context, indent=2)}\n</module_context>\n\n"
+        prompt += (
             f"<description>\n{description}\n</description>\n\n"
             f"<ast>\n{json.dumps(ast, indent=2)}\n</ast>\n\n"
             f"<workflows>\n{json.dumps(workflows, indent=2)}\n</workflows>"
         )
+        return prompt

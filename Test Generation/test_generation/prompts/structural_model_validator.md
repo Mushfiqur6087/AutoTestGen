@@ -20,6 +20,10 @@ Otherwise remove it.]
 INPUT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
 <description>
 {description}
 </description>
@@ -118,6 +122,10 @@ Step 5 — Check structural integrity. Flag any of these as STRUCTURAL ERRORS:
   - Component or field names not in Pascal_Snake_Case
 
 Step 6 — Decide the verdict.
+
+Precondition note: If a `<module_context>` block is present, cross-check any
+`preconditions[]` in the AST against the `assumed_state_on_entry` value. A precondition
+that directly contradicts or wildly exceeds the described entry state is a CRITICAL phantom.
 
   yes                  Missing: 0–2 MINOR only
                        AND Phantoms: 0–2 MINOR only

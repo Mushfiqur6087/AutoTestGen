@@ -1,5 +1,6 @@
 import asyncio
 import json
+import random
 import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
@@ -11,6 +12,29 @@ import litellm  # type: ignore
 # Strip provider-incompatible params silently (e.g. temperature on o-series,
 # unsupported response_format dialects). LiteLLM handles per-model normalisation.
 litellm.drop_params = True
+
+# Backoff config for rate-limit errors (HTTP 429 / RateLimitError).
+# Waits: 2s, 4s, 8s … capped at 60s. A small random jitter (±20%) avoids
+# thundering-herd when many modules hit the limit simultaneously.
+_BACKOFF_BASE_SECONDS: float = 2.0
+_BACKOFF_MAX_SECONDS: float = 60.0
+_BACKOFF_MAX_RETRIES: int = 5
+
+
+def _is_rate_limit_error(err: Exception) -> bool:
+    """Return True if err is a provider rate-limit (HTTP 429) error."""
+    # LiteLLM raises litellm.RateLimitError for 429 responses.
+    if isinstance(err, litellm.RateLimitError):
+        return True
+    # Fallback: inspect the string representation for common patterns.
+    msg = str(err).lower()
+    return "rate limit" in msg or "429" in msg or "too many requests" in msg
+
+
+def _backoff_delay(attempt: int) -> float:
+    """Compute jittered exponential delay for the given attempt number (0-indexed)."""
+    base = min(_BACKOFF_BASE_SECONDS * (2 ** attempt), _BACKOFF_MAX_SECONDS)
+    return base * (0.8 + 0.4 * random.random())  # ±20% jitter
 
 
 # Module-level concurrency throttle for async LLM calls. Sized by
@@ -186,20 +210,34 @@ class BaseAgent(ABC):
         response_format: Optional[Dict] = None,
         reasoning_effort: Optional[str] = None,
     ) -> str:
-        """Call the LLM synchronously via LiteLLM and return response content."""
+        """Call the LLM synchronously via LiteLLM with exponential backoff on rate limits."""
         self._log_request(user_prompt)
-        t0 = time.time()
         kwargs = self._build_completion_kwargs(user_prompt, temperature, max_tokens, response_format, reasoning_effort)
-        try:
-            response = litellm.completion(**kwargs)
-        except Exception as err:
-            elapsed = time.time() - t0
-            msg = f"LiteLLM error ({type(err).__name__}): {err}"
-            print(f"    [{self._ts()}] !! {self.name} | {msg} after {elapsed:.1f}s")
-            if self.debug:
-                self._log_debug("ERROR", msg)
-            raise
-        return self._log_response(response, time.time() - t0)
+        for attempt in range(_BACKOFF_MAX_RETRIES + 1):
+            t0 = time.time()
+            try:
+                response = litellm.completion(**kwargs)
+                return self._log_response(response, time.time() - t0)
+            except Exception as err:
+                elapsed = time.time() - t0
+                if _is_rate_limit_error(err) and attempt < _BACKOFF_MAX_RETRIES:
+                    delay = _backoff_delay(attempt)
+                    print(
+                        f"    [{self._ts()}] ~~ {self.name} | rate-limit hit "
+                        f"(attempt {attempt + 1}/{_BACKOFF_MAX_RETRIES}) — "
+                        f"backing off {delay:.1f}s..."
+                    )
+                    if self.debug:
+                        self._log_debug("RATE LIMIT BACKOFF", f"attempt={attempt+1} delay={delay:.1f}s")
+                    time.sleep(delay)
+                    continue
+                msg = f"LiteLLM error ({type(err).__name__}): {err}"
+                print(f"    [{self._ts()}] !! {self.name} | {msg} after {elapsed:.1f}s")
+                if self.debug:
+                    self._log_debug("ERROR", msg)
+                raise
+        # Should never reach here
+        raise RuntimeError(f"{self.name}: exhausted {_BACKOFF_MAX_RETRIES} rate-limit retries")
 
     async def acall_llm(
         self,
@@ -209,21 +247,34 @@ class BaseAgent(ABC):
         response_format: Optional[Dict] = None,
         reasoning_effort: Optional[str] = None,
     ) -> str:
-        """Call the LLM asynchronously via LiteLLM, throttled by the module semaphore."""
+        """Call the LLM asynchronously via LiteLLM with exponential backoff on rate limits."""
         self._log_request(user_prompt)
         kwargs = self._build_completion_kwargs(user_prompt, temperature, max_tokens, response_format, reasoning_effort)
         async with _get_llm_semaphore():
-            t0 = time.time()
-            try:
-                response = await litellm.acompletion(**kwargs)
-            except Exception as err:
-                elapsed = time.time() - t0
-                msg = f"LiteLLM error ({type(err).__name__}): {err}"
-                print(f"    [{self._ts()}] !! {self.name} | {msg} after {elapsed:.1f}s")
-                if self.debug:
-                    self._log_debug("ERROR", msg)
-                raise
-            return self._log_response(response, time.time() - t0)
+            for attempt in range(_BACKOFF_MAX_RETRIES + 1):
+                t0 = time.time()
+                try:
+                    response = await litellm.acompletion(**kwargs)
+                    return self._log_response(response, time.time() - t0)
+                except Exception as err:
+                    elapsed = time.time() - t0
+                    if _is_rate_limit_error(err) and attempt < _BACKOFF_MAX_RETRIES:
+                        delay = _backoff_delay(attempt)
+                        print(
+                            f"    [{self._ts()}] ~~ {self.name} | rate-limit hit "
+                            f"(attempt {attempt + 1}/{_BACKOFF_MAX_RETRIES}) — "
+                            f"backing off {delay:.1f}s..."
+                        )
+                        if self.debug:
+                            self._log_debug("RATE LIMIT BACKOFF", f"attempt={attempt+1} delay={delay:.1f}s")
+                        await asyncio.sleep(delay)
+                        continue
+                    msg = f"LiteLLM error ({type(err).__name__}): {err}"
+                    print(f"    [{self._ts()}] !! {self.name} | {msg} after {elapsed:.1f}s")
+                    if self.debug:
+                        self._log_debug("ERROR", msg)
+                    raise
+        raise RuntimeError(f"{self.name}: exhausted {_BACKOFF_MAX_RETRIES} rate-limit retries")
 
     def call_llm_json(
         self,

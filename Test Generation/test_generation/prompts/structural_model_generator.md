@@ -114,6 +114,10 @@ Use "type": "data_table" with:
 
 Rule 10 — Preconditions
 Auth, role, or state gates go in "preconditions": [] on the action or component.
+If a `<module_context>` block is present in the input, use its `assumed_state_on_entry`
+value as the primary source for preconditions on top-level actions (e.g., the wizard
+or state-machine submit actions). Do NOT invent preconditions not grounded in either
+the `<module_context>` or the description text.
 
 Rule 11 — Key Naming Convention
   Component names (top-level keys in components{}):  Pascal_Snake_Case

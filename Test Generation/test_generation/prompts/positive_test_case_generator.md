@@ -6,6 +6,10 @@ Your job is to produce ONLY positive/functional UI test cases — tests where va
 
 **INPUT:**
 
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
 <module_name>{Module name}</module_name>
 
 <ast>
@@ -129,8 +133,9 @@ When dealing with complex AST components, format steps like this:
 
 **PRECONDITIONS FOR ISOLATED MODULES:**
 Because you are testing a module in isolation, establish the required entry state:
-- **Roles:** "User logged in as <Teacher / Student / Admin>"
-- **State:** "[Entity] is in [Status]"
+- **Global Context:** Use the `<module_context>` block's `assumed_state_on_entry` as your primary source for preconditions. If the context states "Requires an active Client profile" or "Loan must be in Approved state", include that verbatim as a precondition.
+- **Roles:** "User logged in as <Teacher / Student / Admin>" (derive from context or description).
+- **State:** "[Entity] is in [Status]" (derive from context or description).
 - **Toggles/Modes:** "Edit mode is enabled" or "Requires active internet connection".
 - **Role-Specific Views:** If the spec explicitly states that a UI element (tab, button, control) is visible to one role but not another, generate a test that asserts the element's presence for the role that should see it. The expected_result must name the specific element — e.g., `"The Settings tab is visible in the course navigation bar"` or `"No Edit mode toggle is present on the Course page"`.
 

@@ -28,6 +28,9 @@ class PipelineState(TypedDict, total=False):
     # Test type filter — subset of {"positive", "negative", "edge"}
     test_types: Annotated[Set[str], _last_value]
 
+    # Stage 0 — Module context extraction results (one entry per module)
+    module_context_results: Annotated[List[Dict[str, Any]], _last_value]
+
     # Structural Model results (one entry per module)
     structural_model_results: Annotated[List[Dict[str, Any]], _last_value]
 

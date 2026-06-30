@@ -6,6 +6,10 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **INPUT:**
 
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
 <module_name>{Module name}</module_name>
 
 <ast>
@@ -137,6 +141,7 @@ Pick only the ones that match component types in this module's AST:
 Pick only what applies to this module:
 
 - **Rapid consecutive state transitions** (`state_bound_action_bar`): complete one transition → immediately attempt the next → assert the action succeeds or the expected blocking message is shown per spec
+- **State boundary condition:** If the `<module_context>` block specifies an `assumed_state_on_entry` that is on the boundary of an entity's lifecycle (e.g. "Newly created", "Pending Review"), generate an edge case testing an action immediately following that state entry.
 - **Date edges** (`date` fields): test today's date, yesterday, and a far future date — assert which are accepted per spec and describe the visible outcome for each
 - **Leap year date** (`date` fields, free-text entry only): enter February 29 on a non-leap year → assert error; on a leap year → assert accepted. *Skip this test if the field uses a calendar date picker — pickers remove February 29 from non-leap years at the UI level and the test is not UI-executable.*
 - **File at exact size limit** (`file_upload`): upload a file exactly at the stated size limit → assert accepted with a visible success indicator; upload a file one unit over the limit → assert a visible error naming the size constraint

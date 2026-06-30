@@ -69,12 +69,13 @@ class StructuralModelGeneratorAgent(BaseAgent):
         fixes: Optional[List[str]] = None,
         attempt: int = 1,
         max_attempts: int = 3,
+        module_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         self._active_system_prompt = _render_generator_system_prompt(
             attempt, max_attempts, fixes or []
         )
         return self.call_llm_json(
-            self._build_prompt(module),
+            self._build_prompt(module, module_context),
             temperature=0.1,
             max_tokens=8192,
             reasoning_effort="medium",
@@ -86,12 +87,13 @@ class StructuralModelGeneratorAgent(BaseAgent):
         fixes: Optional[List[str]] = None,
         attempt: int = 1,
         max_attempts: int = 3,
+        module_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         self._active_system_prompt = _render_generator_system_prompt(
             attempt, max_attempts, fixes or []
         )
         return await self.acall_llm_json(
-            self._build_prompt(module),
+            self._build_prompt(module, module_context),
             temperature=0.1,
             max_tokens=8192,
             reasoning_effort="medium",
@@ -102,5 +104,10 @@ class StructuralModelGeneratorAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_prompt(module: Dict[str, Any]) -> str:
-        return f"Module: {module['title']}\n\n{module['description']}"
+    def _build_prompt(module: Dict[str, Any], module_context: Optional[Dict[str, Any]] = None) -> str:
+        import json
+        prompt = ""
+        if module_context:
+            prompt += f"<module_context>\n{json.dumps(module_context, indent=2)}\n</module_context>\n\n"
+        prompt += f"Module: {module['title']}\n\n{module['description']}"
+        return prompt
