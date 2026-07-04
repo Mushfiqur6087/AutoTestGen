@@ -15,6 +15,11 @@ spec.md  (## Module sections)
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Test Generation Pipeline  (--generate)                             │
 │                                                                     │
+│  [0/4] extract_module_context (all modules run concurrently)        │
+│  │                                                                  │
+│  │  For each module:                                                │
+│  │    ModuleContextExtractorAgent ──► context block                 │
+│  │                           ↓                                      │
 │  [1/4] generate_and_critique  (all modules run concurrently)        │
 │  │                                                                  │
 │  │  For each module:                                                │
@@ -44,6 +49,8 @@ spec.md  (## Module sections)
 │  [4/4] finalize  ──► write JSON + markdown reports                  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+**Stage 0 — ModuleContextExtractorAgent** — For each module, synthesizes a global context block using the application navigation overview and the full module list to prevent precondition hallucination in later stages.
 
 **Stage 1 — StructuralModelGeneratorAgent + StructuralModelValidatorAgent** — For each module, the generator emits a UI component tree and the validator audits it with a `yes`, `retry`, or `needs_clarification` verdict. On retry, the validator's `fixes[]` array is injected directly into the generator's system prompt for the next attempt. Maximum 3 attempts per module, escalating with a severity-tagged report if exhausted.
 
