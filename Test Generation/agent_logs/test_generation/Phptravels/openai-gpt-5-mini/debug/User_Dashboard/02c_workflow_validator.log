@@ -1,0 +1,704 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:20:32.105794
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:21:16] Workflow-Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Validator. You receive (1) a raw functional description, (2) a Structural Model JSON, and (3) a generated workflow list for one module.
+
+Your single job: decide whether this workflow list is complete and correct, or whether it must be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the workflow list. You DO NOT generate new workflows. You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+<workflows>
+{workflows}
+</workflows>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**WHAT A WORKFLOW IS:**
+
+A workflow is one complete, executable interaction path through the module — from entry to one terminal action. Two workflows are distinct if they require different user actions to reach the terminal (different conditional branch, different state, different terminal button).
+
+MINOR missing
+  A non-critical row action (e.g., "View" on a data table) where omission does not
+  break any downstream state transition or form submission. Flag it; don't auto-retry
+  for it alone.
+
+CRITICAL missing
+  Any of: a form submit_action with no matching workflow, a state × action pair with
+  no workflow, a bulk_action with no workflow, any submit path through a conditional
+  branch with no workflow.
+
+MINOR phantom
+  A workflow whose terminal_action is not literally named in the AST but is so
+  universally implied by the component type that its presence is unsurprising
+  (e.g., a "Search" workflow when the table has `searchable: true`). Flag it;
+  don't auto-retry for it alone.
+
+CRITICAL phantom
+  A workflow whose terminal_action cannot be traced to any AST node's
+  submit_actions[], available_actions[], row_actions[], or bulk_actions[] —
+  and is not an explicit action verb in the description text.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD — Seven Checks
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Check 1 — Missing form workflows.**
+Walk every `form` node in the AST. For each entry in `submit_actions[]`, there must be at least one workflow with a matching `terminal_action`. If the form has `visible_when` or `required_when` fields, there must be one workflow per unique condition combination × submit action. Flag any missing combinations. Classify each as critical or minor.
+
+**Check 2 — Missing state-machine workflows.**
+Walk every `state_bound_action_bar` node. For each state key in `states{}`, for each entry in `available_actions[]`, there must be one workflow with `terminal_action` matching that action and `conditional_branch` containing `entity_state == <state>`. Flag any missing state × action pairs. Classify each as critical.
+If a `<module_context>` block is present, use its `assumed_state_on_entry` to confirm that the entry state named in the context is represented as a workflow's starting condition where applicable.
+
+**Check 3 — Missing data table workflows.**
+Walk every `data_table` node. For each entry in `row_actions[]` and `bulk_actions[]`, there must be one workflow with `terminal_action` matching that action. Flag any missing entries. This includes read-only actions like View/Details. Classify bulk_actions as critical; row_actions as minor if read-only, critical otherwise.
+
+**Check 4 — Phantom workflows.**
+A workflow is a phantom if its `terminal_action` cannot be found in any AST node's `submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`, or as an explicit action verb in the description text. Classify each as critical or minor per the definitions above.
+
+**Check 5 — Wrong conditional branch.**
+If a workflow has a non-null `conditional_branch`, verify the condition references a real field name that appears in the AST under `visible_when`, `required_when`, or a real state key in `state_bound_action_bar`. Flag any condition that references a field or state that does not exist. Classify as structural error.
+
+**Check 6 — Empty or generic on_success.**
+If a workflow's `on_success` is empty, null, "success", "done", or any single-word generic string, and the AST has a concrete `on_success` value for that action, flag it. The `on_success` must reflect what the AST or description says actually happens. Classify as structural error.
+
+**Check 7 — Zero workflows when module clearly has actions.**
+If the workflow list is empty (total = 0) but the AST contains any `form`, `wizard`, `state_bound_action_bar`, or `data_table` component, that is a critical failure — flag it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERDICT RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Check 5, 6)
+                       AND Check 7 passes
+                       → fixes must be []
+
+  retry                Any CRITICAL missing workflow
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any structural error (wrong conditional, generic on_success)
+                       OR Check 7 failure
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       interaction path exists — not a close call, but truly unresolvable
+                       from the text and AST alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "AST path or state×action pair",
+      "severity": "critical | minor",
+      "reason": "<why this workflow is expected from the AST/description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "WF-NNN terminal_action=X",
+      "severity": "critical | minor",
+      "reason": "<why this workflow has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Check 5/6 violation and the affected workflow>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact missing path or phantom to remove>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+
+------------------------------------------------------------
+[21:21:16] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 14,
+  "module_title": "User Dashboard",
+  "summary": "A post-authentication hub that displays and manages a user\u2019s bookings, profile, wallet/credits, wishlist, reviews, and account settings in one place.",
+  "where_it_fits": "Reached from the top navigation Account/Login after successful authentication, the Dashboard is the central user area following activity initiated from Home (search widget) or section-specific flows like Hotels, Flights, Tours, and Cars; it acts as the lifecycle hub for managing bookings, payments, and account preferences.",
+  "assumed_state_on_entry": "Authenticated (logged-in) user with an active session."
+}
+</module_context>
+
+<description>
+
+The dashboard is organized into the following sections. My Bookings displays all past and upcoming bookings across Hotels, Flights, Tours, and Cars, with booking reference, service type, travel dates, status (Pending, Confirmed, Cancelled), and action buttons for View Details, Cancel, and Modify where the booking type and cancellation policy permit; users can also download confirmations, invoices, or vouchers. My Profile shows personal information with an Edit button. Wallet/Credits shows available credit balance and full transaction history. Wishlist shows saved hotels, tours, or flights. Reviews allows rating and reviewing completed bookings. Settings provides controls for changing password, notification preferences, and default currency and language. Logout ends the session.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "User Dashboard",
+  "components": {
+    "My_Bookings": {
+      "type": "data_table",
+      "row_actions": [
+        {
+          "action_name": "View Details"
+        },
+        {
+          "action_name": "Cancel",
+          "preconditions": [
+            "cancellation allowed by booking type and cancellation policy"
+          ]
+        },
+        {
+          "action_name": "Modify",
+          "preconditions": [
+            "modification allowed by booking type and cancellation policy"
+          ]
+        },
+        {
+          "action_name": "Download Confirmation"
+        },
+        {
+          "action_name": "Download Invoice"
+        },
+        {
+          "action_name": "Download Voucher"
+        }
+      ]
+    },
+    "My_Profile": {
+      "type": "panel",
+      "actions": [
+        {
+          "action_name": "Edit",
+          "opens_form": "Edit_Profile_Form"
+        }
+      ]
+    },
+    "Edit_Profile_Form": {
+      "type": "form",
+      "fields": {}
+    },
+    "Wallet_Credits": {
+      "type": "panel",
+      "fields": {}
+    },
+    "Wishlist": {
+      "type": "panel",
+      "fields": {}
+    },
+    "Reviews": {
+      "type": "panel",
+      "actions": [
+        {
+          "action_name": "Write Review",
+          "preconditions": [
+            "booking is completed"
+          ],
+          "opens_form": "Write_Review_Form"
+        }
+      ]
+    },
+    "Write_Review_Form": {
+      "type": "form",
+      "fields": {
+        "Rating": {
+          "type": "unspecified"
+        },
+        "Review_Text": {
+          "type": "unspecified"
+        }
+      }
+    },
+    "Settings": {
+      "type": "form",
+      "fields": {
+        "Notification_Preferences": {
+          "type": "unspecified"
+        },
+        "Default_Currency": {
+          "type": "unspecified"
+        },
+        "Default_Language": {
+          "type": "unspecified"
+        }
+      },
+      "actions": [
+        {
+          "action_name": "Change Password",
+          "opens_form": "Change_Password_Form"
+        },
+        {
+          "action_name": "Logout",
+          "preconditions": [
+            "user must be logged in"
+          ]
+        }
+      ]
+    },
+    "Change_Password_Form": {
+      "type": "form",
+      "fields": {
+        "Current_Password": {
+          "type": "password",
+          "required": true
+        },
+        "New_Password": {
+          "type": "password",
+          "required": true
+        },
+        "Confirm_New_Password": {
+          "type": "password",
+          "required": true
+        }
+      }
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "View booking details",
+    "actor": "Authenticated user",
+    "conditional_branch": null,
+    "terminal_action": "View Details",
+    "on_success": "Booking details are displayed (details modal or details page shown)"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Cancel booking (allowed by policy)",
+    "actor": "Authenticated user",
+    "conditional_branch": "cancellation allowed by booking type and cancellation policy",
+    "terminal_action": "Cancel",
+    "on_success": "Booking is cancelled; booking status updated and cancellation confirmation is shown"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Modify booking (allowed by policy)",
+    "actor": "Authenticated user",
+    "conditional_branch": "modification allowed by booking type and cancellation policy",
+    "terminal_action": "Modify",
+    "on_success": "Booking modification flow or UI is opened for the selected booking"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Download booking confirmation",
+    "actor": "Authenticated user",
+    "conditional_branch": null,
+    "terminal_action": "Download Confirmation",
+    "on_success": "Booking confirmation file is downloaded"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Download booking invoice",
+    "actor": "Authenticated user",
+    "conditional_branch": null,
+    "terminal_action": "Download Invoice",
+    "on_success": "Booking invoice file is downloaded"
+  },
+  {
+    "wf_id": "WF-006",
+    "name": "Download booking voucher",
+    "actor": "Authenticated user",
+    "conditional_branch": null,
+    "terminal_action": "Download Voucher",
+    "on_success": "Booking voucher file is downloaded"
+  },
+  {
+    "wf_id": "WF-007",
+    "name": "Open Edit Profile form",
+    "actor": "Authenticated user",
+    "conditional_branch": null,
+    "terminal_action": "Edit",
+    "on_success": "Edit profile form is opened"
+  },
+  {
+    "wf_id": "WF-008",
+    "name": "Open Write Review form (completed booking)",
+    "actor": "Authenticated user",
+    "conditional_branch": "booking is completed",
+    "terminal_action": "Write Review",
+    "on_success": "Write review form is opened for the completed booking"
+  },
+  {
+    "wf_id": "WF-009",
+    "name": "Open Change Password form",
+    "actor": "Authenticated user",
+    "conditional_branch": null,
+    "terminal_action": "Change Password",
+    "on_success": "Change password form is opened"
+  },
+  {
+    "wf_id": "WF-010",
+    "name": "Logout (end session)",
+    "actor": "Authenticated user",
+    "conditional_branch": "user must be logged in",
+    "terminal_action": "Logout",
+    "on_success": "User session is ended and the user is logged out"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:21:53] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "Several workflows include conditional_branch strings that are not defined as visible_when/required_when fields or state keys in the AST, which is a structural error and requires correction.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "WF-002: conditional_branch 'cancellation allowed by booking type and cancellation policy' is not a visible_when/required_when field nor a state key in the AST (it appears only as a precondition text on the My_Bookings row action). conditional_branch must reference a real field or state.",
+    "WF-003: conditional_branch 'modification allowed by booking type and cancellation policy' is not a visible_when/required_when field nor a state key in the AST (it appears only as a precondition text on the My_Bookings row action). conditional_branch must reference a real field or state.",
+    "WF-008: conditional_branch 'booking is completed' is not a visible_when/required_when field nor a state key in the AST (it appears only as a precondition text on the Reviews action). conditional_branch must reference a real field or state.",
+    "WF-010: conditional_branch 'user must be logged in' is not a visible_when/required_when field nor a state key in the AST (it appears only as a precondition text on the Settings action). conditional_branch must reference a real field or state."
+  ],
+  "fixes": [
+    "WF-002: Either add a visible_when/required_when field or a state key to the AST that represents 'cancellation allowed by booking type and cancellation policy' (e.g., My_Bookings.row_actions[Cancel].visible_when: 'cancellation_allowed == true'), or change WF-002.conditional_branch to reference an existing AST field/state or remove the conditional_branch if not needed.",
+    "WF-003: Either add a visible_when/required_when field or a state key to the AST that represents 'modification allowed by booking type and cancellation policy' (e.g., My_Bookings.row_actions[Modify].visible_when: 'modification_allowed == true'), or change WF-003.conditional_branch to reference an existing AST field/state or remove the conditional_branch if not needed.",
+    "WF-008: Either add a visible_when/required_when field or a state key to the AST that represents 'booking is completed' (e.g., Reviews.actions[Write Review].visible_when: 'booking_status == \"completed\"'), or change WF-008.conditional_branch to reference an existing AST field/state or remove the conditional_branch if not needed.",
+    "WF-010: Either add a visible_when/required_when field or a state key to the AST that represents 'user must be logged in' (e.g., module-level state 'Authenticated' or Settings.actions[Logout].visible_when: 'is_logged_in == true'), or change WF-010.conditional_branch to reference an existing AST field/state or remove the conditional_branch if not needed."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:21:53] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "Several workflows include conditional_branch strings that are not defined as visible_when/required_when fields or state keys in the AST, which is a structural error and requires correction.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "WF-002: conditional_branch 'cancellation allowed by booking type and cancellation policy' is not a visible_when/required_when field nor a state key in the AST (it appears only as a precondition text on the My_Bookings row action). conditional_branch must reference a real field or state.",
+    "WF-003: conditional_branch 'modification allowed by booking type and cancellation policy' is not a visible_when/required_when field nor a state key in the AST (it appears only as a precondition text on the My_Bookings row action). conditional_branch must reference a real field or state.",
+    "WF-008: conditional_branch 'booking is completed' is not a visible_when/required_when field nor a state key in the AST (it appears only as a precondition text on the Reviews action). conditional_branch must reference a real field or state.",
+    "WF-010: conditional_branch 'user must be logged in' is not a visible_when/required_when field nor a state key in the AST (it appears only as a precondition text on the Settings action). conditional_branch must reference a real field or state."
+  ],
+  "fixes": [
+    "WF-002: Either add a visible_when/required_when field or a state key to the AST that represents 'cancellation allowed by booking type and cancellation policy' (e.g., My_Bookings.row_actions[Cancel].visible_when: 'cancellation_allowed == true'), or change WF-002.conditional_branch to reference an existing AST field/state or remove the conditional_branch if not needed.",
+    "WF-003: Either add a visible_when/required_when field or a state key to the AST that represents 'modification allowed by booking type and cancellation policy' (e.g., My_Bookings.row_actions[Modify].visible_when: 'modification_allowed == true'), or change WF-003.conditional_branch to reference an existing AST field/state or remove the conditional_branch if not needed.",
+    "WF-008: Either add a visible_when/required_when field or a state key to the AST that represents 'booking is completed' (e.g., Reviews.actions[Write Review].visible_when: 'booking_status == \"completed\"'), or change WF-008.conditional_branch to reference an existing AST field/state or remove the conditional_branch if not needed.",
+    "WF-010: Either add a visible_when/required_when field or a state key to the AST that represents 'user must be logged in' (e.g., module-level state 'Authenticated' or Settings.actions[Logout].visible_when: 'is_logged_in == true'), or change WF-010.conditional_branch to reference an existing AST field/state or remove the conditional_branch if not needed."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:22:26] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 14,
+  "module_title": "User Dashboard",
+  "summary": "A post-authentication hub that displays and manages a user\u2019s bookings, profile, wallet/credits, wishlist, reviews, and account settings in one place.",
+  "where_it_fits": "Reached from the top navigation Account/Login after successful authentication, the Dashboard is the central user area following activity initiated from Home (search widget) or section-specific flows like Hotels, Flights, Tours, and Cars; it acts as the lifecycle hub for managing bookings, payments, and account preferences.",
+  "assumed_state_on_entry": "Authenticated (logged-in) user with an active session."
+}
+</module_context>
+
+<description>
+
+The dashboard is organized into the following sections. My Bookings displays all past and upcoming bookings across Hotels, Flights, Tours, and Cars, with booking reference, service type, travel dates, status (Pending, Confirmed, Cancelled), and action buttons for View Details, Cancel, and Modify where the booking type and cancellation policy permit; users can also download confirmations, invoices, or vouchers. My Profile shows personal information with an Edit button. Wallet/Credits shows available credit balance and full transaction history. Wishlist shows saved hotels, tours, or flights. Reviews allows rating and reviewing completed bookings. Settings provides controls for changing password, notification preferences, and default currency and language. Logout ends the session.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "User Dashboard",
+  "components": {
+    "My_Bookings": {
+      "type": "data_table",
+      "row_actions": [
+        {
+          "action_name": "View Details"
+        },
+        {
+          "action_name": "Cancel",
+          "preconditions": [
+            "cancellation allowed by booking type and cancellation policy"
+          ]
+        },
+        {
+          "action_name": "Modify",
+          "preconditions": [
+            "modification allowed by booking type and cancellation policy"
+          ]
+        },
+        {
+          "action_name": "Download Confirmation"
+        },
+        {
+          "action_name": "Download Invoice"
+        },
+        {
+          "action_name": "Download Voucher"
+        }
+      ]
+    },
+    "My_Profile": {
+      "type": "panel",
+      "actions": [
+        {
+          "action_name": "Edit",
+          "opens_form": "Edit_Profile_Form"
+        }
+      ]
+    },
+    "Edit_Profile_Form": {
+      "type": "form",
+      "fields": {}
+    },
+    "Wallet_Credits": {
+      "type": "panel",
+      "fields": {}
+    },
+    "Wishlist": {
+      "type": "panel",
+      "fields": {}
+    },
+    "Reviews": {
+      "type": "panel",
+      "actions": [
+        {
+          "action_name": "Write Review",
+          "preconditions": [
+            "booking is completed"
+          ],
+          "opens_form": "Write_Review_Form"
+        }
+      ]
+    },
+    "Write_Review_Form": {
+      "type": "form",
+      "fields": {
+        "Rating": {
+          "type": "unspecified"
+        },
+        "Review_Text": {
+          "type": "unspecified"
+        }
+      }
+    },
+    "Settings": {
+      "type": "form",
+      "fields": {
+        "Notification_Preferences": {
+          "type": "unspecified"
+        },
+        "Default_Currency": {
+          "type": "unspecified"
+        },
+        "Default_Language": {
+          "type": "unspecified"
+        }
+      },
+      "actions": [
+        {
+          "action_name": "Change Password",
+          "opens_form": "Change_Password_Form"
+        },
+        {
+          "action_name": "Logout",
+          "preconditions": [
+            "user must be logged in"
+          ]
+        }
+      ]
+    },
+    "Change_Password_Form": {
+      "type": "form",
+      "fields": {
+        "Current_Password": {
+          "type": "password",
+          "required": true
+        },
+        "New_Password": {
+          "type": "password",
+          "required": true
+        },
+        "Confirm_New_Password": {
+          "type": "password",
+          "required": true
+        }
+      }
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "View booking details",
+    "actor": "Authenticated user",
+    "conditional_branch": null,
+    "terminal_action": "View Details",
+    "on_success": "Booking details displayed"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Cancel booking when cancellation allowed",
+    "actor": "Authenticated user",
+    "conditional_branch": "cancellation allowed by booking type and cancellation policy",
+    "terminal_action": "Cancel",
+    "on_success": "Booking cancelled; booking status updated; confirmation shown"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Modify booking when modification allowed",
+    "actor": "Authenticated user",
+    "conditional_branch": "modification allowed by booking type and cancellation policy",
+    "terminal_action": "Modify",
+    "on_success": "Booking modification flow opened"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Download booking confirmation",
+    "actor": "Authenticated user",
+    "conditional_branch": null,
+    "terminal_action": "Download Confirmation",
+    "on_success": "Booking confirmation file downloaded"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Download invoice for booking",
+    "actor": "Authenticated user",
+    "conditional_branch": null,
+    "terminal_action": "Download Invoice",
+    "on_success": "Invoice file downloaded"
+  },
+  {
+    "wf_id": "WF-006",
+    "name": "Download voucher for booking",
+    "actor": "Authenticated user",
+    "conditional_branch": null,
+    "terminal_action": "Download Voucher",
+    "on_success": "Voucher file downloaded"
+  },
+  {
+    "wf_id": "WF-007",
+    "name": "Edit profile (open edit form)",
+    "actor": "Authenticated user",
+    "conditional_branch": null,
+    "terminal_action": "Edit",
+    "on_success": "Edit_Profile_Form opened"
+  },
+  {
+    "wf_id": "WF-008",
+    "name": "Write review for completed booking",
+    "actor": "Authenticated user",
+    "conditional_branch": "booking is completed",
+    "terminal_action": "Write Review",
+    "on_success": "Write_Review_Form opened"
+  },
+  {
+    "wf_id": "WF-009",
+    "name": "Open change password form",
+    "actor": "Authenticated user",
+    "conditional_branch": null,
+    "terminal_action": "Change Password",
+    "on_success": "Change_Password_Form opened"
+  },
+  {
+    "wf_id": "WF-010",
+    "name": "Logout (end session)",
+    "actor": "Authenticated user",
+    "conditional_branch": "user must be logged in",
+    "terminal_action": "Logout",
+    "on_success": "User session ended; user logged out"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:22:44] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "The provided workflows cover all actions defined in the AST (data_table row_actions and panel/form actions), with no missing or phantom workflows and no structural errors.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:22:44] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "The provided workflows cover all actions defined in the AST (data_table row_actions and panel/form actions), with no missing or phantom workflows and no structural errors.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}

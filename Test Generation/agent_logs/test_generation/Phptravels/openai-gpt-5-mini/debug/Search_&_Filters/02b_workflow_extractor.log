@@ -1,0 +1,681 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:20:32.122876
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:20:32] Workflow-Extractor - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Extractor. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to enumerate every distinct, executable interaction path through this module — one entry per workflow.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ATTEMPT CONTEXT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Attempt: 1 of 3
+
+
+
+---
+
+**INPUT:**
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+---
+
+## What is a Workflow?
+
+A **workflow** is one complete, executable interaction path — from the user entering the module to completing **one terminal action** within it.
+
+Two workflows are **distinct** if they require different user actions to reach the terminal — i.e. they activate a different conditional branch, follow a different wizard step set, target a different state, or end on a different terminal action.
+
+### Strict Rules
+
+1. **Strictly intra-module.** A workflow step is an action within this module only. If submitting redirects to another page, the redirect is the **exit** — not a step.
+2. **No invented paths.** Only enumerate paths that are traceable to AST nodes or explicit description text. No UX intuition, no assumed flows.
+3. **Minimal fields.** A workflow carries only what downstream agents actually need: who does it, what makes it distinct, what it ends with, what success looks like.
+4. **No step-by-step instructions.** Workflows do NOT spell out the full step sequence — the agents already have the AST for that. A workflow names the path, not the actions.
+
+---
+
+## What Paths to Enumerate
+
+Enumerate **all** distinct paths — not one-per-type. The rule: if two paths require the user to do something different to reach the terminal action, they are separate workflows.
+
+| AST node type | What to enumerate |
+|---|---|
+| `form` with no conditionals | One workflow per `submit_actions[]` entry |
+| `form` with `visible_when` fields | One workflow per unique combination of conditional branches activated, times each `submit_actions[]` entry |
+| `wizard` | One workflow per distinct step sequence (if all steps are linear, one workflow per `submit_actions[]`; if any step is conditional, enumerate each branch) |
+| `state_bound_action_bar` | One workflow per `available_actions[]` entry per state (state × action = one workflow) |
+| `data_table` | One workflow per `row_actions[]` entry + one per `bulk_actions[]` entry (include View, Edit, Delete, and all others) |
+| `tab_container` | One workflow per tab that contains a form with a submit action |
+| `repeating_group` | Not a standalone workflow source — it is part of a form workflow that activates it |
+
+**Include all data table row actions** — View, Edit, Delete, and any others. Even read-only row actions (e.g., "View") must be included because they still require a positive test case.
+
+---
+
+## Field Definitions
+
+| Field | Type | Rule |
+|---|---|---|
+| `wf_id` | `"WF-NNN"` | Sequential within this module, starting at WF-001 |
+| `name` | string | Short human name for the path — what makes it distinct |
+| `actor` | string | Role who performs this path — use `<role>` placeholder if spec doesn't specify |
+| `conditional_branch` | string or `null` | The condition(s) that activate this path's unique branch. `null` if no conditionals apply |
+| `terminal_action` | string | Exact name of the button/action that ends this workflow (matches AST `action_name` or `element_name`) |
+| `on_success` | string | Verbatim from AST `on_success` field if available; otherwise derived from description |
+
+**`conditional_branch` format:**
+- Single condition: `"Submission_Type == File_Upload"`
+- Multiple: `"Submission_Type == File_Upload AND Grade_Type == Points"`
+- State condition: `"entity_state == Draft"`
+- `null` if this is the base path with no conditionals
+
+---
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SELF-CHECK — VERIFY EVERY ITEM BEFORE OUTPUTTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Go through these one by one. If any check fails, fix it before outputting.
+
+□ 1. Every `submit_actions[]` entry in every form/wizard has at least one workflow.
+□ 2. Every state × action pair in every `state_bound_action_bar` has exactly one workflow.
+□ 3. Every `row_actions[]` and `bulk_actions[]` entry in every `data_table` has one workflow.
+□ 4. Every tab with a form submission in a `tab_container` has one workflow.
+□ 5. `wf_id` numbering is sequential (WF-001, WF-002, ...) with no gaps.
+□ 6. Every `terminal_action` matches an exact `action_name` or `element_name` from the AST.
+□ 7. No two workflows share the same `conditional_branch` AND `terminal_action`.
+□ 8. No workflow crosses module boundaries (steps in another module).
+□ 9. Every `on_success` reflects the AST or description — no generic "success" strings.
+
+---
+
+## Anti-Hallucination Gate (run after self-check)
+
+1. Does each workflow trace back to a specific AST node (`submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`) or an explicit action described in the description text? If no → delete it.
+2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
+3. Are two workflows identical in `conditional_branch` AND `terminal_action`? If yes → merge them into one.
+4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
+5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
+
+---
+
+## Calibration
+
+- Simple form module (no conditionals, one submit): 1–3 workflows
+- Form with conditionals: 3–8 workflows
+- Module with state machine: add 1 per (state × action) combination
+- Module with data table: add 1 per row_action + 1 per bulk_action
+
+---
+
+## OUTPUT — JSON only, no prose, no markdown fencing:
+
+{
+  "module": "Module Name",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Short human name — what makes this path distinct",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Submit",
+      "on_success": "Verbatim on_success from AST or derived from description"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Submit with File Upload submission type",
+      "actor": "<role>",
+      "conditional_branch": "Submission_Type == File_Upload",
+      "terminal_action": "Submit",
+      "on_success": "Assignment created; success message shown"
+    }
+  ],
+  "total": 2
+}
+
+
+------------------------------------------------------------
+[21:20:32] Workflow-Extractor - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 18,
+  "module_title": "Search & Filters",
+  "summary": "Provides a consistent set of dynamic filtering and sorting controls for listing result pages, allowing users to narrow results by common and listing-specific criteria and see real-time result counts and active-filter summaries.",
+  "where_it_fits": "This module appears on listing pages reached from the top navigation (Hotels, Flights, Tours, Cars) and from the home page search widget; it augments search results by offering left\u2011sidebar filters, sorting controls above results, and active-filter summaries during the browsing and booking discovery flow.",
+  "assumed_state_on_entry": "A search has been performed and listing results for a selected category (Hotels, Flights, Tours, or Cars) are displayed"
+}
+</module_context>
+
+<module_name>Search & Filters</module_name>
+
+<ast>
+{
+  "module_name": "Search & Filters",
+  "components": {
+    "Filters_Sidebar": {
+      "type": "sidebar",
+      "preconditions": [
+        "A search has been performed and listing results for a selected category (Hotels, Flights, Tours, or Cars) are displayed"
+      ],
+      "behavior": {
+        "results_update": "dynamic",
+        "on_change": "updates results and result count in real time"
+      },
+      "sections": [
+        {
+          "section_name": "Common Filters",
+          "collapsible": true,
+          "fields": {
+            "Price_Range": {
+              "type": "unspecified",
+              "control": "slider",
+              "on_change": "updates results and result count"
+            },
+            "Star_Or_Review_Ratings": {
+              "type": "unspecified",
+              "control": "rating_selector",
+              "on_change": "updates results and result count"
+            }
+          }
+        },
+        {
+          "section_name": "Hotels",
+          "collapsible": true,
+          "visible_when": "Selected_Category == Hotels",
+          "fields": {
+            "Facilities_Amenities": {
+              "type": "unspecified",
+              "on_change": "updates results and result count"
+            },
+            "Hotel_Type": {
+              "type": "unspecified",
+              "on_change": "updates results and result count"
+            },
+            "Board_Basis": {
+              "type": "unspecified",
+              "on_change": "updates results and result count"
+            },
+            "Location_Area": {
+              "type": "unspecified",
+              "on_change": "updates results and result count"
+            }
+          }
+        },
+        {
+          "section_name": "Flights",
+          "collapsible": true,
+          "visible_when": "Selected_Category == Flights",
+          "fields": {
+            "Airlines": {
+              "type": "unspecified",
+              "on_change": "updates results and result count"
+            },
+            "Number_Of_Stops": {
+              "type": "unspecified",
+              "on_change": "updates results and result count"
+            },
+            "Departure_Time_Range": {
+              "type": "unspecified",
+              "control": "time_range",
+              "on_change": "updates results and result count"
+            },
+            "Arrival_Time_Range": {
+              "type": "unspecified",
+              "control": "time_range",
+              "on_change": "updates results and result count"
+            }
+          }
+        },
+        {
+          "section_name": "Tours",
+          "collapsible": true,
+          "visible_when": "Selected_Category == Tours",
+          "fields": {
+            "Tour_Type": {
+              "type": "unspecified",
+              "on_change": "updates results and result count"
+            },
+            "Duration": {
+              "type": "unspecified",
+              "on_change": "updates results and result count"
+            },
+            "Departure_Dates": {
+              "type": "unspecified",
+              "control": "date_range",
+              "on_change": "updates results and result count"
+            }
+          }
+        },
+        {
+          "section_name": "Cars",
+          "collapsible": true,
+          "visible_when": "Selected_Category == Cars",
+          "fields": {
+            "Car_Type": {
+              "type": "unspecified",
+              "on_change": "updates results and result count"
+            },
+            "Transmission": {
+              "type": "unspecified",
+              "on_change": "updates results and result count"
+            },
+            "Fuel_Policy": {
+              "type": "unspecified",
+              "on_change": "updates results and result count"
+            },
+            "Rental_Company": {
+              "type": "unspecified",
+              "on_change": "updates results and result count"
+            }
+          }
+        }
+      ]
+    },
+    "Sorting_Controls": {
+      "type": "toolbar",
+      "preconditions": [
+        "A search has been performed and listing results for a selected category (Hotels, Flights, Tours, or Cars) are displayed"
+      ],
+      "fields": {
+        "Sort_By": {
+          "type": "dropdown",
+          "on_change": "updates results and result count"
+        }
+      }
+    },
+    "Active_Filters_Summary": {
+      "type": "active_filters_summary",
+      "preconditions": [
+        "A search has been performed and listing results for a selected category (Hotels, Flights, Tours, or Cars) are displayed"
+      ],
+      "fields": {
+        "Reset_All_Filters": {
+          "type": "button",
+          "action_name": "Reset all filters",
+          "on_success": "clears all filters and updates results and result count"
+        },
+        "Active_Filters": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Remove": {
+              "type": "button",
+              "action_name": "Remove Filter",
+              "on_success": "removes this filter and updates results and result count"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+</ast>
+
+<description>
+
+All listing pages include a left sidebar with collapsible filter sections and sorting controls above the results grid. Common filters across all listing types include price range (slider) and star or review ratings. Listing-specific filters are available for Hotels (facilities/amenities, hotel type, board basis, location/area), Flights (airlines, number of stops, departure and arrival time ranges), Tours (tour type, duration, departure dates), and Cars (car type, transmission, fuel policy, rental company). Results update dynamically as filters are adjusted, with the result count updating accordingly. Active filters are summarized at the top with individual remove buttons and a Reset all filters control.
+
+---
+
+
+</description>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:21:28] Workflow-Extractor - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Search & Filters",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Adjust Price Range filter",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Price_Range",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Select Star or Review Ratings filter",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Star_Or_Review_Ratings",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Filter by Hotels - Facilities/Amenities",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Hotels",
+      "terminal_action": "Facilities_Amenities",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Filter by Hotels - Hotel Type",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Hotels",
+      "terminal_action": "Hotel_Type",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Filter by Hotels - Board Basis",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Hotels",
+      "terminal_action": "Board_Basis",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Filter by Hotels - Location/Area",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Hotels",
+      "terminal_action": "Location_Area",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-007",
+      "name": "Filter by Flights - Airlines",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Flights",
+      "terminal_action": "Airlines",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-008",
+      "name": "Filter by Flights - Number Of Stops",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Flights",
+      "terminal_action": "Number_Of_Stops",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-009",
+      "name": "Filter by Flights - Departure Time Range",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Flights",
+      "terminal_action": "Departure_Time_Range",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-010",
+      "name": "Filter by Flights - Arrival Time Range",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Flights",
+      "terminal_action": "Arrival_Time_Range",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-011",
+      "name": "Filter by Tours - Tour Type",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Tours",
+      "terminal_action": "Tour_Type",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-012",
+      "name": "Filter by Tours - Duration",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Tours",
+      "terminal_action": "Duration",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-013",
+      "name": "Filter by Tours - Departure Dates",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Tours",
+      "terminal_action": "Departure_Dates",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-014",
+      "name": "Filter by Cars - Car Type",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Cars",
+      "terminal_action": "Car_Type",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-015",
+      "name": "Filter by Cars - Transmission",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Cars",
+      "terminal_action": "Transmission",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-016",
+      "name": "Filter by Cars - Fuel Policy",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Cars",
+      "terminal_action": "Fuel_Policy",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-017",
+      "name": "Filter by Cars - Rental Company",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Cars",
+      "terminal_action": "Rental_Company",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-018",
+      "name": "Change Sort By control",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Sort_By",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-019",
+      "name": "Reset all filters",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Reset all filters",
+      "on_success": "clears all filters and updates results and result count"
+    },
+    {
+      "wf_id": "WF-020",
+      "name": "Remove a single active filter",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Remove Filter",
+      "on_success": "removes this filter and updates results and result count"
+    }
+  ],
+  "total": 20
+}
+
+------------------------------------------------------------
+[21:21:28] Workflow-Extractor - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Search & Filters",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Adjust Price Range filter",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Price_Range",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Select Star or Review Ratings filter",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Star_Or_Review_Ratings",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Filter by Hotels - Facilities/Amenities",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Hotels",
+      "terminal_action": "Facilities_Amenities",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Filter by Hotels - Hotel Type",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Hotels",
+      "terminal_action": "Hotel_Type",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Filter by Hotels - Board Basis",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Hotels",
+      "terminal_action": "Board_Basis",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Filter by Hotels - Location/Area",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Hotels",
+      "terminal_action": "Location_Area",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-007",
+      "name": "Filter by Flights - Airlines",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Flights",
+      "terminal_action": "Airlines",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-008",
+      "name": "Filter by Flights - Number Of Stops",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Flights",
+      "terminal_action": "Number_Of_Stops",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-009",
+      "name": "Filter by Flights - Departure Time Range",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Flights",
+      "terminal_action": "Departure_Time_Range",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-010",
+      "name": "Filter by Flights - Arrival Time Range",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Flights",
+      "terminal_action": "Arrival_Time_Range",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-011",
+      "name": "Filter by Tours - Tour Type",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Tours",
+      "terminal_action": "Tour_Type",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-012",
+      "name": "Filter by Tours - Duration",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Tours",
+      "terminal_action": "Duration",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-013",
+      "name": "Filter by Tours - Departure Dates",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Tours",
+      "terminal_action": "Departure_Dates",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-014",
+      "name": "Filter by Cars - Car Type",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Cars",
+      "terminal_action": "Car_Type",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-015",
+      "name": "Filter by Cars - Transmission",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Cars",
+      "terminal_action": "Transmission",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-016",
+      "name": "Filter by Cars - Fuel Policy",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Cars",
+      "terminal_action": "Fuel_Policy",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-017",
+      "name": "Filter by Cars - Rental Company",
+      "actor": "<role>",
+      "conditional_branch": "Selected_Category == Cars",
+      "terminal_action": "Rental_Company",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-018",
+      "name": "Change Sort By control",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Sort_By",
+      "on_success": "updates results and result count"
+    },
+    {
+      "wf_id": "WF-019",
+      "name": "Reset all filters",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Reset all filters",
+      "on_success": "clears all filters and updates results and result count"
+    },
+    {
+      "wf_id": "WF-020",
+      "name": "Remove a single active filter",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Remove Filter",
+      "on_success": "removes this filter and updates results and result count"
+    }
+  ],
+  "total": 20
+}

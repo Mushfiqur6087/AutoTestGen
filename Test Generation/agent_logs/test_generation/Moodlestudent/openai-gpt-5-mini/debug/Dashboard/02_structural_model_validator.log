@@ -1,0 +1,658 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:07:46.225263
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:08:22] Structural Model Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Structural Model Validator. You receive (1) a raw functional description and
+(2) a generated Structural Model JSON.
+
+Your single job: decide whether this AST is good enough to use, or whether it should
+be regenerated.
+
+You DO NOT modify the JSON.
+You DO NOT generate a new JSON.
+You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CANONICAL SCOPE — IDENTICAL TO THE GENERATOR'S SCOPE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+IN SCOPE — an element qualifies if a user can:
+  (a) Input or edit a value: form fields, checkboxes, file uploads, search inputs, toggles
+  (b) Trigger an action: buttons, links, row actions, bulk actions, submit actions
+  (c) Navigate: tabs, sub-tabs, wizard steps
+  (d) Action metadata on interactive elements: on_success, preconditions, state
+      transitions, validation constraints
+
+OUT OF SCOPE — do NOT expect these in the AST:
+  - Passive display labels: "the page shows client name, account number, status badge"
+    → 0 expected items. The AST is correct to omit them.
+  - Chip colors, badge styles, decorative icons, visual styling
+  - Read-only info panels with no interactive element
+  - Display-formatting or rendering rules applied to a passive (non-interactive) value —
+    e.g. masking ("showing only last 4 digits"), truncation, currency/number formatting,
+    default sort order of a read-only column → 0 expected items. These are NOT validation
+    constraints. Do not expect a field/column AST node, a "constraints" entry, or a
+    "columns" block created solely to house one of these rules.
+
+STATE (Pending / Active / Closed) is a routing key in state_bound_action_bar.states{},
+NOT a display field. Do not expect it anywhere else.
+
+"Constraint" (as used everywhere below) means a rule that governs INPUT or ACTION
+behavior — required-ness, format, bounds, uniqueness, cross-field ordering, state
+preconditions. A rule that only describes how an already-displayed, non-interactive
+value is rendered (masked, truncated, formatted, sorted) is a display-formatting rule,
+not a constraint, even if the description uses words like "must" or states a concrete
+detail (e.g. "must show only last 4 digits"). Do not upgrade a display-formatting rule
+to CRITICAL missing just because it is stated precisely.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MINOR missing
+  An optional field (no "required": true, no required_when) with no business logic,
+  state transition, or action consequence attached. Losing it doesn't break any flow.
+  Example: an unlabeled optional "Notes" textarea on a secondary form.
+
+MINOR phantom
+  An element not named in the description but so universally implied by the component
+  type that its presence is unsurprising — e.g., a "Cancel" button on a modal the
+  description never explicitly names. Flag it; don't auto-retry for it alone.
+
+CRITICAL missing
+  Any of: a required field, any state key in a state_bound_action_bar, any submit
+  action, any named tab or wizard step, any element with a stated precondition or
+  on_success consequence, any INTERACTIVE field with a stated constraint (see the
+  constraint definition above — a display-formatting rule on a passive field does
+  NOT qualify and must never be flagged as critical missing).
+
+CRITICAL phantom
+  Any of: a field invented inside a generic-name tab (Add_Note in a Notes tab,
+  Upload_Document in a Documents tab) when the description only names the tab;
+  a passive display field appearing as an AST node — including a "columns" block,
+  or any field/column entry, added only to carry a masking/truncation/formatting rule
+  for a non-interactive value; a constraint with no textual anchor; a display_fields
+  block anywhere in the output; "required": false anywhere.
+
+WORKED EXAMPLE — display-formatting rule, NOT a critical missing:
+
+Description: "Each row shows Account Number (clickable but not implemented yet),
+Account Type, Current Balance, Account Status, and Open Date. Account numbers are
+masked for security (showing only last 4 digits as ****5001)."
+
+AST under review:
+{
+  "Accounts_Table": {
+    "type": "data_table",
+    "row_actions": [
+      { "action_name": "Account Number", "constraints": ["clickable but not implemented yet"] }
+    ]
+  }
+}
+
+CORRECT verdict: the masking rule and the other four listed fields (Account Type,
+Current Balance, Account Status, Open Date) are passive display labels — 0 expected
+AST items for them, per the OUT OF SCOPE rule above. The only interactive element is
+the Account Number click, and it is already present. Do NOT flag
+"components.Accounts_Table.columns.Account_Number" (or any columns block) as a
+CRITICAL missing item. Do NOT instruct the generator to add a "columns" block with
+typed entries (e.g. "Open_Date": {"type": "date"}) — that fabricates interactive
+field types for read-only data and will cause downstream test generators to invent
+boundary/date tests against a page that has none.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Step 1 — Walk the description. List every expected interactive element.
+Apply the canonical scope above. A sentence that only displays data produces 0 expected
+items. For each tab or step named with no described fields, expected output is
+"fields": {} — do NOT expect fields there.
+
+Step 2 — Walk the AST. Check for MISSING elements.
+For each expected element from Step 1, confirm it exists at the correct path.
+Classify each missing item as critical or minor using the definitions above.
+
+Step 3 — Walk the AST. Check for PHANTOMS.
+Flag any AST element with no textual anchor in the description.
+Classify each phantom as critical or minor using the definitions above.
+
+Step 4 — Check conditional logic.
+Count a conditional as EXPECTED only if the description contains an explicit trigger
+phrase. Both affirmative and negative phrasings qualify:
+
+  Affirmative: "when X is selected/checked/chosen", "if X then Y", "Y appears when X",
+               "selecting X reveals Y", "required if X", "enabled when X", "only if X",
+               "Y is shown for X"
+  Negative:    "unless X", "except when X", "disabled if X", "not shown when X",
+               "hidden when X", "required for non-X", "only for X users"
+  Abbreviated: "required for minors", "admin only", "international trips only"
+               → treat as conditional even without explicit trigger syntax
+
+If a visible_when / required_when / enabled_when appears in the AST but no trigger
+phrase (affirmative or negative) exists in the description: flag as critical phantom.
+If a trigger phrase exists in the description but no conditional appears in the AST:
+flag as critical missing.
+
+Step 5 — Check structural integrity. Flag any of these as STRUCTURAL ERRORS:
+  - A constraint floating at form/component level when the description attached it to
+    a specific field or action
+  - Sub-tabs or sub-steps described as nested but flattened in the AST
+  - State keys in state_bound_action_bar that don't match exact status names in the
+    description
+  - A display_fields block anywhere in the AST
+  - "required": false appearing anywhere in the AST
+  - Component or field names not in Pascal_Snake_Case
+
+Step 6 — Decide the verdict.
+
+Precondition note: If a `<module_context>` block is present, cross-check any
+`preconditions[]` in the AST against the `assumed_state_on_entry` value. A precondition
+that directly contradicts or wildly exceeds the described entry state is a CRITICAL phantom.
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Step 5)
+                       → fixes must be []
+
+  retry                Any CRITICAL missing element
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any Step 5 structural error
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       element is interactive — not a close call, but truly unresolvable
+                       from the text alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "Component.path.to.element",
+      "severity": "critical | minor",
+      "reason": "<why this element is expected from the description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "Component.path.to.element",
+      "severity": "critical | minor",
+      "reason": "<why this element has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Step 5 violation and its AST path>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact JSON path and required change>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+------------------------------------------------------------
+[21:08:22] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 2,
+  "module_title": "Dashboard",
+  "summary": "The Dashboard presents a personalized overview containing a Timeline of upcoming activities and deadlines and a Calendar with month navigation and course filtering.",
+  "where_it_fits": "Accessible from the top navigation bar via the Dashboard link, this module is the user's landing/overview page that aggregates information across My Courses and links into course-level views (e.g., Course Page and full calendar). It sits early in the user session lifecycle as the central hub users consult after signing in.",
+  "assumed_state_on_entry": "User is logged in (authenticated); user has at least one enrolled course or a valid personal calendar."
+}
+</module_context>
+
+<description>
+
+The Dashboard displays a personalized greeting at the top. The main content area contains two blocks side by side: the Timeline block and the Calendar block. The Timeline block shows upcoming activities and deadlines across all enrolled courses. It includes a time range dropdown (e.g., "Next 7 days"), a sort order dropdown, and a search field to find activities by name or type. When no items exist within the selected range, an empty state is shown. The Calendar block shows a monthly view with the current month and year as a heading. It includes an "All courses" dropdown to filter events by course, a "New event" button to create personal calendar entries, and left/right arrows to navigate between months. The current date is highlighted, and dates with events display their names inline. Two links at the bottom — "Full calendar" and "Import or export calendars" — open the dedicated calendar view and calendar data management respectively. When Edit mode is toggled on, a "Reset page to default" button appears at the top right and a "+ Add a block" button appears below the Dashboard heading, opening a page listing all available block types. In Edit mode, each existing block shows a move icon and a three-dot menu for configure, move, and delete actions.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Dashboard",
+  "components": {
+    "Dashboard_Page": {
+      "type": "page",
+      "preconditions": [
+        "User is logged in (authenticated)"
+      ],
+      "fields": {
+        "Edit_Mode": {
+          "type": "checkbox"
+        },
+        "Add_A_Block": {
+          "type": "button",
+          "action_name": "+ Add a block",
+          "visible_when": "Edit_Mode == true",
+          "on_success": "opens block type list"
+        },
+        "Reset_Page_to_Default": {
+          "type": "button",
+          "action_name": "Reset page to default",
+          "visible_when": "Edit_Mode == true"
+        }
+      }
+    },
+    "Timeline_Block": {
+      "type": "block",
+      "fields": {
+        "Time_Range": {
+          "type": "dropdown"
+        },
+        "Sort_Order": {
+          "type": "dropdown"
+        },
+        "Search_Activities": {
+          "type": "search",
+          "constraints": [
+            "searches activities by name or type"
+          ]
+        }
+      },
+      "block_actions": [
+        {
+          "action_name": "move",
+          "type": "icon",
+          "visible_when": "Edit_Mode == true"
+        },
+        {
+          "action_name": "Three_Dot_Menu",
+          "type": "menu",
+          "visible_when": "Edit_Mode == true",
+          "item_actions": [
+            {
+              "action_name": "configure"
+            },
+            {
+              "action_name": "move"
+            },
+            {
+              "action_name": "delete"
+            }
+          ]
+        }
+      ]
+    },
+    "Calendar_Block": {
+      "type": "block",
+      "fields": {
+        "All_Courses": {
+          "type": "dropdown"
+        },
+        "Month_Nav_Left": {
+          "type": "button",
+          "action_name": "Previous month"
+        },
+        "Month_Nav_Right": {
+          "type": "button",
+          "action_name": "Next month"
+        },
+        "New_Event": {
+          "type": "button",
+          "action_name": "New event",
+          "on_success": "opens personal event creation",
+          "preconditions": [
+            "User is logged in (authenticated)"
+          ]
+        }
+      },
+      "links": [
+        {
+          "action_name": "Full calendar",
+          "type": "link",
+          "preconditions": [
+            "User is logged in (authenticated)"
+          ]
+        },
+        {
+          "action_name": "Import or export calendars",
+          "type": "link",
+          "preconditions": [
+            "User is logged in (authenticated)"
+          ]
+        }
+      ],
+      "block_actions": [
+        {
+          "action_name": "move",
+          "type": "icon",
+          "visible_when": "Edit_Mode == true"
+        },
+        {
+          "action_name": "Three_Dot_Menu",
+          "type": "menu",
+          "visible_when": "Edit_Mode == true",
+          "item_actions": [
+            {
+              "action_name": "configure"
+            },
+            {
+              "action_name": "move"
+            },
+            {
+              "action_name": "delete"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:08:42] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "The AST is mostly complete but is missing the Timeline empty-state conditional required by the description.",
+  "missing": [
+    {
+      "path": "components.Timeline_Block.fields.Empty_State",
+      "severity": "critical",
+      "reason": "The description states 'When no items exist within the selected range, an empty state is shown.' A conditional empty-state element (with a visible_when tied to the Time_Range selection having no items) is required but not present in the AST."
+    }
+  ],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [
+    "Add a field at components.Timeline_Block.fields.Empty_State with a type indicating an empty-state display (e.g., \"type\": \"empty_state\") and a conditional visibility expression tied to the timeline contents for the selected Time_Range, for example: { \"type\": \"empty_state\", \"visible_when\": \"Timeline_Block.items_in_range == 0\", \"message\": \"No upcoming activities in the selected range\" }"
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:08:42] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "The AST is mostly complete but is missing the Timeline empty-state conditional required by the description.",
+  "missing": [
+    {
+      "path": "components.Timeline_Block.fields.Empty_State",
+      "severity": "critical",
+      "reason": "The description states 'When no items exist within the selected range, an empty state is shown.' A conditional empty-state element (with a visible_when tied to the Time_Range selection having no items) is required but not present in the AST."
+    }
+  ],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [
+    "Add a field at components.Timeline_Block.fields.Empty_State with a type indicating an empty-state display (e.g., \"type\": \"empty_state\") and a conditional visibility expression tied to the timeline contents for the selected Time_Range, for example: { \"type\": \"empty_state\", \"visible_when\": \"Timeline_Block.items_in_range == 0\", \"message\": \"No upcoming activities in the selected range\" }"
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:09:20] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 2,
+  "module_title": "Dashboard",
+  "summary": "The Dashboard presents a personalized overview containing a Timeline of upcoming activities and deadlines and a Calendar with month navigation and course filtering.",
+  "where_it_fits": "Accessible from the top navigation bar via the Dashboard link, this module is the user's landing/overview page that aggregates information across My Courses and links into course-level views (e.g., Course Page and full calendar). It sits early in the user session lifecycle as the central hub users consult after signing in.",
+  "assumed_state_on_entry": "User is logged in (authenticated); user has at least one enrolled course or a valid personal calendar."
+}
+</module_context>
+
+<description>
+
+The Dashboard displays a personalized greeting at the top. The main content area contains two blocks side by side: the Timeline block and the Calendar block. The Timeline block shows upcoming activities and deadlines across all enrolled courses. It includes a time range dropdown (e.g., "Next 7 days"), a sort order dropdown, and a search field to find activities by name or type. When no items exist within the selected range, an empty state is shown. The Calendar block shows a monthly view with the current month and year as a heading. It includes an "All courses" dropdown to filter events by course, a "New event" button to create personal calendar entries, and left/right arrows to navigate between months. The current date is highlighted, and dates with events display their names inline. Two links at the bottom — "Full calendar" and "Import or export calendars" — open the dedicated calendar view and calendar data management respectively. When Edit mode is toggled on, a "Reset page to default" button appears at the top right and a "+ Add a block" button appears below the Dashboard heading, opening a page listing all available block types. In Edit mode, each existing block shows a move icon and a three-dot menu for configure, move, and delete actions.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Dashboard",
+  "components": {
+    "Dashboard_Page": {
+      "type": "page",
+      "preconditions": [
+        "user must be logged in"
+      ],
+      "fields": {
+        "Edit_Mode": {
+          "type": "checkbox"
+        },
+        "Add_A_Block": {
+          "type": "button",
+          "action_name": "+ Add a block",
+          "visible_when": "Edit_Mode == true",
+          "on_success": "opens Block_Type_Chooser_Page",
+          "preconditions": [
+            "user must be logged in"
+          ]
+        },
+        "Reset_Page_To_Default": {
+          "type": "button",
+          "action_name": "Reset page to default",
+          "visible_when": "Edit_Mode == true",
+          "preconditions": [
+            "user must be logged in"
+          ]
+        }
+      },
+      "blocks": [
+        "Timeline_Block",
+        "Calendar_Block"
+      ]
+    },
+    "Timeline_Block": {
+      "type": "block",
+      "fields": {
+        "Time_Range": {
+          "type": "dropdown"
+        },
+        "Sort_Order": {
+          "type": "dropdown"
+        },
+        "Search_Activities": {
+          "type": "search"
+        },
+        "Empty_State": {
+          "type": "empty_state",
+          "visible_when": "Timeline_Block.items_in_range == 0",
+          "message": "No upcoming activities in the selected range"
+        },
+        "Edit_Controls": {
+          "type": "group",
+          "visible_when": "Edit_Mode == true",
+          "fields": {
+            "Move_Icon": {
+              "type": "button",
+              "action_name": "Move"
+            },
+            "More_Menu": {
+              "type": "menu",
+              "actions": [
+                {
+                  "action_name": "Configure"
+                },
+                {
+                  "action_name": "Move"
+                },
+                {
+                  "action_name": "Delete"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "Calendar_Block": {
+      "type": "block",
+      "fields": {
+        "All_Courses_Filter": {
+          "type": "dropdown"
+        },
+        "New_Event": {
+          "type": "button",
+          "action_name": "New event",
+          "on_success": "opens new personal event modal",
+          "preconditions": [
+            "user must be logged in"
+          ]
+        },
+        "Previous_Month": {
+          "type": "button",
+          "action_name": "Previous month"
+        },
+        "Next_Month": {
+          "type": "button",
+          "action_name": "Next month"
+        },
+        "Full_Calendar_Link": {
+          "type": "link",
+          "action_name": "Full calendar",
+          "on_click": "navigate to full calendar view",
+          "preconditions": [
+            "user must be logged in"
+          ]
+        },
+        "Import_Export_Calendars_Link": {
+          "type": "link",
+          "action_name": "Import or export calendars",
+          "on_click": "navigate to calendar data management",
+          "preconditions": [
+            "user must be logged in"
+          ]
+        },
+        "Edit_Controls": {
+          "type": "group",
+          "visible_when": "Edit_Mode == true",
+          "fields": {
+            "Move_Icon": {
+              "type": "button",
+              "action_name": "Move"
+            },
+            "More_Menu": {
+              "type": "menu",
+              "actions": [
+                {
+                  "action_name": "Configure"
+                },
+                {
+                  "action_name": "Move"
+                },
+                {
+                  "action_name": "Delete"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "Block_Type_Chooser_Page": {
+      "type": "page",
+      "preconditions": [
+        "user must be logged in"
+      ],
+      "fields": {
+        "Block_Types": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Block_Type_Name": {
+              "type": "unspecified"
+            },
+            "Add_Block": {
+              "type": "button",
+              "action_name": "Add"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:09:37] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "The AST includes all interactive elements and conditionals described (timeline controls, calendar filters/navigation/links, edit-mode controls, and the block chooser page) with no structural errors.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:09:37] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "The AST includes all interactive elements and conditionals described (timeline controls, calendar filters/navigation/links, edit-mode controls, and the block chooser page) with no structural errors.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}

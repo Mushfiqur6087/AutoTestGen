@@ -1,0 +1,422 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:20:32.008916
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:20:57] Workflow-Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Validator. You receive (1) a raw functional description, (2) a Structural Model JSON, and (3) a generated workflow list for one module.
+
+Your single job: decide whether this workflow list is complete and correct, or whether it must be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the workflow list. You DO NOT generate new workflows. You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+<workflows>
+{workflows}
+</workflows>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**WHAT A WORKFLOW IS:**
+
+A workflow is one complete, executable interaction path through the module — from entry to one terminal action. Two workflows are distinct if they require different user actions to reach the terminal (different conditional branch, different state, different terminal button).
+
+MINOR missing
+  A non-critical row action (e.g., "View" on a data table) where omission does not
+  break any downstream state transition or form submission. Flag it; don't auto-retry
+  for it alone.
+
+CRITICAL missing
+  Any of: a form submit_action with no matching workflow, a state × action pair with
+  no workflow, a bulk_action with no workflow, any submit path through a conditional
+  branch with no workflow.
+
+MINOR phantom
+  A workflow whose terminal_action is not literally named in the AST but is so
+  universally implied by the component type that its presence is unsurprising
+  (e.g., a "Search" workflow when the table has `searchable: true`). Flag it;
+  don't auto-retry for it alone.
+
+CRITICAL phantom
+  A workflow whose terminal_action cannot be traced to any AST node's
+  submit_actions[], available_actions[], row_actions[], or bulk_actions[] —
+  and is not an explicit action verb in the description text.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD — Seven Checks
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Check 1 — Missing form workflows.**
+Walk every `form` node in the AST. For each entry in `submit_actions[]`, there must be at least one workflow with a matching `terminal_action`. If the form has `visible_when` or `required_when` fields, there must be one workflow per unique condition combination × submit action. Flag any missing combinations. Classify each as critical or minor.
+
+**Check 2 — Missing state-machine workflows.**
+Walk every `state_bound_action_bar` node. For each state key in `states{}`, for each entry in `available_actions[]`, there must be one workflow with `terminal_action` matching that action and `conditional_branch` containing `entity_state == <state>`. Flag any missing state × action pairs. Classify each as critical.
+If a `<module_context>` block is present, use its `assumed_state_on_entry` to confirm that the entry state named in the context is represented as a workflow's starting condition where applicable.
+
+**Check 3 — Missing data table workflows.**
+Walk every `data_table` node. For each entry in `row_actions[]` and `bulk_actions[]`, there must be one workflow with `terminal_action` matching that action. Flag any missing entries. This includes read-only actions like View/Details. Classify bulk_actions as critical; row_actions as minor if read-only, critical otherwise.
+
+**Check 4 — Phantom workflows.**
+A workflow is a phantom if its `terminal_action` cannot be found in any AST node's `submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`, or as an explicit action verb in the description text. Classify each as critical or minor per the definitions above.
+
+**Check 5 — Wrong conditional branch.**
+If a workflow has a non-null `conditional_branch`, verify the condition references a real field name that appears in the AST under `visible_when`, `required_when`, or a real state key in `state_bound_action_bar`. Flag any condition that references a field or state that does not exist. Classify as structural error.
+
+**Check 6 — Empty or generic on_success.**
+If a workflow's `on_success` is empty, null, "success", "done", or any single-word generic string, and the AST has a concrete `on_success` value for that action, flag it. The `on_success` must reflect what the AST or description says actually happens. Classify as structural error.
+
+**Check 7 — Zero workflows when module clearly has actions.**
+If the workflow list is empty (total = 0) but the AST contains any `form`, `wizard`, `state_bound_action_bar`, or `data_table` component, that is a critical failure — flag it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERDICT RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Check 5, 6)
+                       AND Check 7 passes
+                       → fixes must be []
+
+  retry                Any CRITICAL missing workflow
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any structural error (wrong conditional, generic on_success)
+                       OR Check 7 failure
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       interaction path exists — not a close call, but truly unresolvable
+                       from the text and AST alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "AST path or state×action pair",
+      "severity": "critical | minor",
+      "reason": "<why this workflow is expected from the AST/description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "WF-NNN terminal_action=X",
+      "severity": "critical | minor",
+      "reason": "<why this workflow has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Check 5/6 violation and the affected workflow>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact missing path or phantom to remove>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+
+------------------------------------------------------------
+[21:20:57] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 4,
+  "module_title": "Forgot Password",
+  "summary": "Allows users to request a password reset by submitting their email so the system sends a 24-hour time-limited reset link if the address exists.",
+  "where_it_fits": "Accessible from the top navigation's Account/Login area, this module is part of the authentication lifecycle alongside User Login and User Registration and leads to the password reset page and back to Login after completion.",
+  "assumed_state_on_entry": "User is unauthenticated and has access to the Account/Login area and the email address associated with their account (or is attempting recovery for an unknown address)."
+}
+</module_context>
+
+<description>
+
+The page presents an Email field and a Reset Password button. If the email exists in the system, a reset link is sent to that address and a confirmation message is shown. The reset link expires after 24 hours. Clicking the link takes the user to a password reset page where they enter and confirm a new password; after a successful change, they are redirected to the login page with a success message. If the email is not found, an error is shown and the form remains editable.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Forgot Password",
+  "components": {
+    "Forgot_Password_Form": {
+      "type": "form",
+      "fields": {
+        "Email": {
+          "type": "email"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Reset Password",
+          "preconditions": [
+            "User is unauthenticated and has access to the Account/Login area"
+          ],
+          "on_success": "sends a password reset link to the provided email (link expires after 24 hours) and shows a confirmation message",
+          "on_failure": "shows an error if the email is not found and keeps the form editable"
+        }
+      ]
+    },
+    "Password_Reset_Form": {
+      "type": "form",
+      "fields": {
+        "New_Password": {
+          "type": "password",
+          "required": true
+        },
+        "Confirm_New_Password": {
+          "type": "password",
+          "required": true,
+          "constraints": [
+            "must match New_Password"
+          ]
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Change Password",
+          "preconditions": [
+            "reset link (token) must be valid and not expired"
+          ],
+          "on_success": "updates the user's password and redirects to the Login page with a success message"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Request password reset by email",
+    "actor": "Unauthenticated user",
+    "conditional_branch": null,
+    "terminal_action": "Reset Password",
+    "on_success": "sends a password reset link to the provided email (link expires after 24 hours) and shows a confirmation message"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Change password using valid reset link",
+    "actor": "Unauthenticated user",
+    "conditional_branch": "reset link (token) must be valid and not expired",
+    "terminal_action": "Change Password",
+    "on_success": "updates the user's password and redirects to the Login page with a success message"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:21:36] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "WF-002 includes a non-null conditional_branch that does not reference any visible_when/required_when field or state key in the AST (Check 5), so the workflows must be corrected.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "WF-002: conditional_branch 'reset link (token) must be valid and not expired' does not reference a visible_when/required_when field or a state key in the AST; conditional_branch must reference a real field or state as defined in the AST."
+  ],
+  "fixes": [
+    "Edit workflow WF-002 (wf_id WF-002) to remove or set conditional_branch to null so the submit precondition in components.Password_Reset_Form.submit_actions[0] ('reset link (token) must be valid and not expired') is used instead.",
+    "Or, if a conditional_branch is required, add a corresponding condition to the AST (for example, add components.Password_Reset_Form.visible_when or required_when with a concrete field such as 'token_valid') and then change WF-002.conditional_branch to reference that field exactly (e.g., 'token_valid == true').",
+    "Or model token validity as a state: add a state_bound_action_bar with an appropriate state key (e.g., 'token_valid') in the AST and then change WF-002.conditional_branch to reference that state (e.g., 'entity_state == token_valid')."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:21:36] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "WF-002 includes a non-null conditional_branch that does not reference any visible_when/required_when field or state key in the AST (Check 5), so the workflows must be corrected.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "WF-002: conditional_branch 'reset link (token) must be valid and not expired' does not reference a visible_when/required_when field or a state key in the AST; conditional_branch must reference a real field or state as defined in the AST."
+  ],
+  "fixes": [
+    "Edit workflow WF-002 (wf_id WF-002) to remove or set conditional_branch to null so the submit precondition in components.Password_Reset_Form.submit_actions[0] ('reset link (token) must be valid and not expired') is used instead.",
+    "Or, if a conditional_branch is required, add a corresponding condition to the AST (for example, add components.Password_Reset_Form.visible_when or required_when with a concrete field such as 'token_valid') and then change WF-002.conditional_branch to reference that field exactly (e.g., 'token_valid == true').",
+    "Or model token validity as a state: add a state_bound_action_bar with an appropriate state key (e.g., 'token_valid') in the AST and then change WF-002.conditional_branch to reference that state (e.g., 'entity_state == token_valid')."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:21:58] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 4,
+  "module_title": "Forgot Password",
+  "summary": "Allows users to request a password reset by submitting their email so the system sends a 24-hour time-limited reset link if the address exists.",
+  "where_it_fits": "Accessible from the top navigation's Account/Login area, this module is part of the authentication lifecycle alongside User Login and User Registration and leads to the password reset page and back to Login after completion.",
+  "assumed_state_on_entry": "User is unauthenticated and has access to the Account/Login area and the email address associated with their account (or is attempting recovery for an unknown address)."
+}
+</module_context>
+
+<description>
+
+The page presents an Email field and a Reset Password button. If the email exists in the system, a reset link is sent to that address and a confirmation message is shown. The reset link expires after 24 hours. Clicking the link takes the user to a password reset page where they enter and confirm a new password; after a successful change, they are redirected to the login page with a success message. If the email is not found, an error is shown and the form remains editable.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Forgot Password",
+  "components": {
+    "Forgot_Password_Form": {
+      "type": "form",
+      "fields": {
+        "Email": {
+          "type": "email"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Reset Password",
+          "preconditions": [
+            "User is unauthenticated and has access to the Account/Login area"
+          ],
+          "on_success": "sends a password reset link to the provided email (link expires after 24 hours) and shows a confirmation message",
+          "on_failure": "shows an error if the email is not found and keeps the form editable"
+        }
+      ]
+    },
+    "Password_Reset_Form": {
+      "type": "form",
+      "fields": {
+        "New_Password": {
+          "type": "password",
+          "required": true
+        },
+        "Confirm_New_Password": {
+          "type": "password",
+          "required": true,
+          "constraints": [
+            "must match New_Password"
+          ]
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Change Password",
+          "preconditions": [
+            "reset link (token) must be valid and not expired"
+          ],
+          "on_success": "updates the user's password and redirects to the Login page with a success message"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Request password reset via email",
+    "actor": "Unauthenticated user",
+    "conditional_branch": null,
+    "terminal_action": "Reset Password",
+    "on_success": "sends a password reset link to the provided email (link expires after 24 hours) and shows a confirmation message"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Change password using valid reset link",
+    "actor": "Unauthenticated user",
+    "conditional_branch": null,
+    "terminal_action": "Change Password",
+    "on_success": "updates the user's password and redirects to the Login page with a success message"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:22:07] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "All form submit actions in the AST have matching workflows, no state/data-table actions are present or missing, and there are no structural errors.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:22:07] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "All form submit actions in the AST have matching workflows, no state/data-table actions are present or missing, and there are no structural errors.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}

@@ -1,0 +1,535 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:04:20.726470
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:04:20] Test-Negative - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Negative Testing:**
+
+The AST represents every interactive element in the module. Each node type has a corresponding failure category:
+
+| AST node / field | What to test for failure |
+|---|---|
+| `required: true` field | Leave it blank and submit — inline validation error |
+| `constraints: []` on a field or action | One TC per unique constraint: violate it specifically |
+| `preconditions: []` on an action | One TC attempting the action when the precondition is NOT met |
+| `visible_when` / `required_when` conditional field | Trigger the condition, then submit the revealed field blank or invalid |
+| `state_bound_action_bar` states | Attempt an action from the wrong state (e.g., Approve an already-Active entity) |
+| `on_success` with quoted text | The negative expected_result is the *blocking* behavior — the entity stays unchanged |
+| `submit_actions[]` | If any button has `preconditions`, test that button when precondition fails |
+
+> If a module has no `form`, no `wizard`, no `state_bound_action_bar`, and no `constraints` — it is display-only. Generate at most 1–2 tests (unauthenticated access, or a non-implemented link if described). Do not invent validation scenarios.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — Name the field, the violated rule, and the visible error indicator.**
+Never write a vague expected result. Always specify what the tester sees.
+
+- ❌ `"Validation error shown"` — too vague
+- ❌ `"Error is displayed"` — too vague
+- ✅ `"Inline validation error appears on the <Field Name> field indicating it is required"`
+- ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
+- ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
+
+**Rule B — Quote exact error text when the spec provides it.**
+If the description quotes a specific error string, copy it verbatim into the expected_result.
+- ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
+- ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+
+**Rule C — Assert the blocking behavior, not just the error.**
+The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
+- ❌ `"Error shown"` (doesn't confirm the action was blocked)
+- ✅ `"Form does not submit; <Entity> is not created; error shown on <Field>"`
+- ✅ `"Status remains <Current State>; no transition occurs"`
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Use generic placeholders in angle brackets.
+
+- ✅ `"Enter <invalid email format> in the Email field"`
+- ✅ `"Enter <amount exceeding available balance> in the Amount field"`
+- ✅ `"Enter <password shorter than minimum length> in the Password field"`
+- ❌ `"Enter 'notanemail' in the Email field"`
+- ❌ `"Enter 'abc123' in the Password field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic user action — one field, one click, one navigation. No grouping.
+
+- ✅ `"1. Leave the <Required Field> blank"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill all fields except <Required Field> and submit"`
+
+---
+
+**SCOPE GATE (run before writing any test):**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact sentence in the description or field/constraint/state in the AST justifies this test? If you cannot point to one → delete it.
+2. **UI-executable:** Can a tester trigger this by clicking, typing, selecting, or navigating in a browser? If verification requires dev tools, DOM inspection, concurrent users, API calls, or server-side error simulation → out of scope.
+3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
+
+Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Required field representatives (deduplicated by field type):**
+
+Group required fields by type: `text/unspecified`, `email`, `password`, `number`, `date`, `dropdown`, `file_upload`. Generate:
+- ONE "leave blank and submit" test per **type group** (not per field) — use the most prominent field as representative
+- ONE "submit with ALL required fields empty" test
+
+Do NOT generate a separate blank-field test for every required field. If 5 text fields are all required, one representative covers them all.
+
+**Action dialog required fields — NOT subject to cross-form deduplication:**
+If a `state_bound_action_bar` action opens a dialog with its own required `fields{}` (e.g., Activate requires Activation Date, Reject requires a Reason, Withdraw requires a Reason, Close requires a Closure Reason), each such dialog is its own testing scope. Generate ONE "leave the required dialog field blank and submit" test per distinct action dialog. These are HIGH priority — they block state transitions and are common defect sites. Do not suppress them because the main wizard already has a blank-field test.
+
+**2. Format violations:**
+
+For fields with type-specific format rules (from AST type or description):
+- `email` → one test with invalid format
+- `number` → one test with non-numeric input
+- `date` → one test with invalid/impossible date
+- `password` → ONE representative test for policy violation (not one per sub-rule — see Deduplication)
+
+Only generate if the spec or AST implies format validation for that field.
+
+**3. Numeric bounds and balance violations:**
+
+If the spec describes minimum/maximum values, amount ranges, or balance checks:
+- One test per distinct bound violation (e.g., amount below minimum, amount above maximum, amount exceeding available balance)
+- Use `<amount below minimum>`, `<amount exceeding available balance>` as placeholders
+
+Examples across the dataset:
+- Transfer amount > available balance → error
+- Loan amount outside product min/max → error
+- Deposit below minimum requirement → error
+
+**4. Constraint violations:**
+
+For each unique `constraints[]` entry in the AST, and for cross-field rules described in the spec:
+- `"must be unique"` → submit with a duplicate value
+- `"must match"` (confirm fields) → enter mismatched values
+- `"must not be same as current"` → select the current value
+- `"cannot perform <action> while <condition>"` → attempt the action when the condition is true
+- `"<date> must be after <other date>"` → enter reversed dates
+
+One test per unique constraint. Do not duplicate the same mechanism.
+
+**Constraint timing tests:** If the spec states an action is blocked by a pre-existing system state (e.g., "cannot close with active accounts", "cannot transfer to the same office"), generate TWO tests:
+1. The standard constraint violation test (user opens the dialog, fills required fields, submits → blocked).
+2. A constraint-timing test: user opens the dialog WITHOUT filling required fields → assert whether the block is shown immediately on dialog open (before the user fills anything) OR only on submit. This distinguishes whether the UI enforces the constraint eagerly or lazily. Steps: open the dialog, observe the state → assert what is visible before any interaction. If the spec is silent on timing, generate only the first test.
+
+**5. Precondition violations (auth, role, and state):**
+
+For each `preconditions[]` entry on any action — and for auth/role/state rules described in the spec or the `<module_context>` block:
+
+- **Global Context constraints:** If the `<module_context>` block's `assumed_state_on_entry` explicitly lists required states (e.g., "Requires an active Client profile"), generate one test attempting the module's core action when that precondition fails (e.g., Client profile is missing or inactive).
+- **Unauthenticated access:** If any page or action requires login, generate one test: an unauthenticated user attempts to access it and is redirected to the login page.
+- **Wrong role:** If the spec explicitly states a feature is restricted to a specific role (e.g., Teacher only, Admin only), generate one test: a user of the wrong role attempts the action and is blocked or the control is not visible.
+- **Precondition not met:** For each AST `preconditions[]` entry, attempt the action when that precondition is not satisfied.
+
+**6. State-machine violations:**
+
+From `state_bound_action_bar` nodes:
+- **Every defined state must have at least one wrong-state test.** For each state, identify at least one action that is NOT in its `available_actions` list and generate a test attempting that action from that state.
+- If a state has an empty `available_actions` array, generate one test verifying no action buttons are visible in that state.
+- **Do not stop after 1–2 representative examples** when the module defines 4+ distinct states. The states Active, Pending, Closed, Rejected, and Withdrawn each have different action sets — each must be independently verified.
+- One test per state is sufficient — pick the most distinct unavailable action for that state. Do not enumerate every action × every state (that would be exponential).
+
+---
+
+**DEDUPLICATION GATE (run before outputting):**
+
+1. **Required field dedup:** Multiple required text fields in the **same form or dialog** → ONE representative test, not one per field.
+2. **Sub-rule dedup:** A field with multiple validation sub-rules (e.g., password: length + uppercase + lowercase + number + special char) → ONE representative violation test, not one per sub-rule.
+3. **Cross-form dedup:** If two **main forms** in the same module share the same validation mechanism → test it on the primary form only. **Exception: action dialogs are never suppressed by cross-form dedup** — each action dialog with a required field gets its own blank-field test regardless.
+4. **Uniqueness check:** Before outputting, ask for each TC: "Does this test catch a bug that NO other test in this module would catch?" If no → remove it.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (standard CRUD form, form with constraints): **4–8 tests**
+- Complex module (state machine, multi-form, wizard with many constraints): **10–16 tests**
+
+For modules with a `state_bound_action_bar` defining 4+ states, the state-machine violation tests alone will produce 4–5 tests. This is expected and correct — do not suppress them to hit a lower target.
+
+If you exceed the upper range, apply the deduplication gate again before outputting.
+
+---
+
+**PRIORITY:**
+
+- **High:** State precondition violations, constraint violations that could corrupt data, unauthenticated access, required field representatives
+- **Medium:** Format violations, cross-field validation, numeric bounds, wrong-role access, wrong-state action attempts
+
+---
+
+**WORKFLOW-AWARE FAILURE INJECTION (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow that contains a form interaction (terminal action is a submit/save/create/approve button):
+  - Identify the most **critical blocking failure** for that workflow's `conditional_branch`.
+  - If that failure mode is NOT already covered by another workflow's negative test, generate one negative TC for it.
+- **Do NOT generate one negative TC per workflow mechanically.** Apply the existing deduplication gate first — only add a TC if it catches a bug that no other test would catch.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a workflow. Set `"wf_ref": null` for generic validation tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "What error/block should occur, naming the field and indicator",
+      "priority": "high | medium"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "high_priority": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[21:04:20] Test-Negative - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 2,
+  "module_title": "Product Inventory",
+  "summary": "Displays a list of products with name, description, price, sorting controls, and buttons to add or remove items from the shopping cart.",
+  "where_it_fits": "This is the main landing page after successful sign-in (Sign-in \u2192 Product Inventory) and acts as the central browsing hub with a persistent header and hamburger menu; from here users can open Product Detail, add items which update the cart badge, navigate to the Shopping Cart, and continue the Checkout flow (Information \u2192 Overview \u2192 Confirmation).",
+  "assumed_state_on_entry": "User is logged in (post-sign-in) with an active session."
+}
+</module_context>
+
+<module_name>Product Inventory</module_name>
+
+<ast>
+{
+  "module_name": "Product Inventory",
+  "components": {
+    "Product_Inventory_Page": {
+      "type": "page",
+      "preconditions": [
+        "User is logged in (post-sign-in) with an active session."
+      ],
+      "fields": {
+        "Sort_By": {
+          "type": "dropdown",
+          "options": [
+            "Name (A\u2013Z)",
+            "Name (Z\u2013A)",
+            "Price (Low\u2013High)",
+            "Price (High\u2013Low)"
+          ]
+        },
+        "Products_List": {
+          "type": "data_table",
+          "row_actions": [
+            {
+              "action_name": "Open Product Detail",
+              "action_type": "link",
+              "on_success": "navigates to Product Detail page"
+            },
+            {
+              "action_name": "Add to cart",
+              "visible_when": "In_Cart == false",
+              "preconditions": [
+                "User is logged in (post-sign-in) with an active session."
+              ],
+              "on_success": "increments cart badge count and toggles row action to Remove"
+            },
+            {
+              "action_name": "Remove",
+              "visible_when": "In_Cart == true",
+              "preconditions": [
+                "User is logged in (post-sign-in) with an active session."
+              ],
+              "on_success": "decrements cart badge count and toggles row action to Add to cart"
+            }
+          ]
+        }
+      }
+    },
+    "Header_Actions": {
+      "type": "action_bar",
+      "fields": {
+        "Shopping_Cart": {
+          "type": "link",
+          "action_name": "Shopping Cart",
+          "preconditions": [
+            "User is logged in (post-sign-in) with an active session."
+          ],
+          "on_success": "navigates to Shopping Cart"
+        }
+      }
+    }
+  }
+}
+</ast>
+
+<description>
+
+After login, the Product Inventory page lists all products with name, description, price, and an "Add to cart" button. A sort dropdown allows sorting by name (A–Z, Z–A) and price (low–high, high–low). Clicking a product name or image opens the Product Detail page. Clicking "Add to cart" adds the item and changes the button to "Remove"; the cart badge count updates accordingly. Clicking "Remove" reverses the action.
+
+
+</description>
+
+<workflows>
+WF-001 | Open Product Detail from product row | actor: User | branch: none | terminal: Open Product Detail | on_success: navigates to Product Detail page
+WF-002 | Add product to cart (product not in cart) | actor: User | branch: In_Cart == false | terminal: Add to cart | on_success: increments cart badge count and toggles row action to Remove
+WF-003 | Remove product from cart (product already in cart) | actor: User | branch: In_Cart == true | terminal: Remove | on_success: decrements cart badge count and toggles row action to Add to cart
+WF-004 | Open Shopping Cart from header | actor: User | branch: none | terminal: Shopping Cart | on_success: navigates to Shopping Cart
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:04:46] Test-Negative - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Product Inventory",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Access Product Inventory page while not logged in",
+      "preconditions": [
+        "User is logged out (no active session)"
+      ],
+      "steps": [
+        "1. Open the Product Inventory page URL in a browser while not signed in"
+      ],
+      "expected_result": "User is redirected to the Login page; Product Inventory content (product list, sort dropdown, row actions) is not visible.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": "WF-002",
+      "test_case": "Attempt to 'Add to cart' when product is already in cart (In_Cart == true)",
+      "preconditions": [
+        "User is logged in",
+        "A product row is in state In_Cart == true (row shows 'Remove')"
+      ],
+      "steps": [
+        "1. Locate a product row where the row action displays 'Remove' (product is already in cart)",
+        "2. Attempt to click an 'Add to cart' row action for that same product (attempt to find/click Add)"
+      ],
+      "expected_result": "'Add to cart' row action is not present for that product row; user cannot click it; cart badge count remains unchanged; the row continues to show 'Remove'.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-003",
+      "test_case": "Attempt to 'Remove' when product is not in cart (In_Cart == false)",
+      "preconditions": [
+        "User is logged in",
+        "A product row is in state In_Cart == false (row shows 'Add to cart')"
+      ],
+      "steps": [
+        "1. Locate a product row where the row action displays 'Add to cart' (product is not in cart)",
+        "2. Attempt to click a 'Remove' row action for that same product (attempt to find/click Remove)"
+      ],
+      "expected_result": "'Remove' row action is not present for that product row; user cannot click it; cart badge count remains unchanged; the row continues to show 'Add to cart'.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-004",
+      "test_case": "Click 'Shopping Cart' header link while not logged in",
+      "preconditions": [
+        "User is logged out (no active session)"
+      ],
+      "steps": [
+        "1. While logged out, click the Shopping Cart link in the header/action bar"
+      ],
+      "expected_result": "User is redirected to the Login page; Shopping Cart page is not displayed and cart contents are not accessible.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-001",
+      "test_case": "Open Product Detail from product row while not logged in",
+      "preconditions": [
+        "User is logged out (no active session)"
+      ],
+      "steps": [
+        "1. While logged out, click a product name or image in the product list"
+      ],
+      "expected_result": "User is redirected to the Login page; Product Detail page does not open and product detail content is not visible.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": null,
+      "test_case": "Attempt 'Add to cart' after session has expired (precondition: active session not met)",
+      "preconditions": [
+        "User was previously logged in but session has expired (no active session)"
+      ],
+      "steps": [
+        "1. With the Product Inventory page open from a previous session, cause the session to expire (e.g., sign out in another tab or wait until session times out)",
+        "2. Click the 'Add to cart' button on a product row"
+      ],
+      "expected_result": "The action is blocked: the user is redirected to the Login page or shown the sign-in prompt; cart badge is not incremented; product remains not added to cart.",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 6,
+    "high_priority": 6,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+------------------------------------------------------------
+[21:04:46] Test-Negative - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Product Inventory",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Access Product Inventory page while not logged in",
+      "preconditions": [
+        "User is logged out (no active session)"
+      ],
+      "steps": [
+        "1. Open the Product Inventory page URL in a browser while not signed in"
+      ],
+      "expected_result": "User is redirected to the Login page; Product Inventory content (product list, sort dropdown, row actions) is not visible.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": "WF-002",
+      "test_case": "Attempt to 'Add to cart' when product is already in cart (In_Cart == true)",
+      "preconditions": [
+        "User is logged in",
+        "A product row is in state In_Cart == true (row shows 'Remove')"
+      ],
+      "steps": [
+        "1. Locate a product row where the row action displays 'Remove' (product is already in cart)",
+        "2. Attempt to click an 'Add to cart' row action for that same product (attempt to find/click Add)"
+      ],
+      "expected_result": "'Add to cart' row action is not present for that product row; user cannot click it; cart badge count remains unchanged; the row continues to show 'Remove'.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-003",
+      "test_case": "Attempt to 'Remove' when product is not in cart (In_Cart == false)",
+      "preconditions": [
+        "User is logged in",
+        "A product row is in state In_Cart == false (row shows 'Add to cart')"
+      ],
+      "steps": [
+        "1. Locate a product row where the row action displays 'Add to cart' (product is not in cart)",
+        "2. Attempt to click a 'Remove' row action for that same product (attempt to find/click Remove)"
+      ],
+      "expected_result": "'Remove' row action is not present for that product row; user cannot click it; cart badge count remains unchanged; the row continues to show 'Add to cart'.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-004",
+      "test_case": "Click 'Shopping Cart' header link while not logged in",
+      "preconditions": [
+        "User is logged out (no active session)"
+      ],
+      "steps": [
+        "1. While logged out, click the Shopping Cart link in the header/action bar"
+      ],
+      "expected_result": "User is redirected to the Login page; Shopping Cart page is not displayed and cart contents are not accessible.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-001",
+      "test_case": "Open Product Detail from product row while not logged in",
+      "preconditions": [
+        "User is logged out (no active session)"
+      ],
+      "steps": [
+        "1. While logged out, click a product name or image in the product list"
+      ],
+      "expected_result": "User is redirected to the Login page; Product Detail page does not open and product detail content is not visible.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": null,
+      "test_case": "Attempt 'Add to cart' after session has expired (precondition: active session not met)",
+      "preconditions": [
+        "User was previously logged in but session has expired (no active session)"
+      ],
+      "steps": [
+        "1. With the Product Inventory page open from a previous session, cause the session to expire (e.g., sign out in another tab or wait until session times out)",
+        "2. Click the 'Add to cart' button on a product row"
+      ],
+      "expected_result": "The action is blocked: the user is redirected to the Login page or shown the sign-in prompt; cart badge is not incremented; product remains not added to cart.",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 6,
+    "high_priority": 6,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}

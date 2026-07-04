@@ -1,0 +1,582 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:12:33.217473
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:12:33] Test-Negative - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Negative Testing:**
+
+The AST represents every interactive element in the module. Each node type has a corresponding failure category:
+
+| AST node / field | What to test for failure |
+|---|---|
+| `required: true` field | Leave it blank and submit — inline validation error |
+| `constraints: []` on a field or action | One TC per unique constraint: violate it specifically |
+| `preconditions: []` on an action | One TC attempting the action when the precondition is NOT met |
+| `visible_when` / `required_when` conditional field | Trigger the condition, then submit the revealed field blank or invalid |
+| `state_bound_action_bar` states | Attempt an action from the wrong state (e.g., Approve an already-Active entity) |
+| `on_success` with quoted text | The negative expected_result is the *blocking* behavior — the entity stays unchanged |
+| `submit_actions[]` | If any button has `preconditions`, test that button when precondition fails |
+
+> If a module has no `form`, no `wizard`, no `state_bound_action_bar`, and no `constraints` — it is display-only. Generate at most 1–2 tests (unauthenticated access, or a non-implemented link if described). Do not invent validation scenarios.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — Name the field, the violated rule, and the visible error indicator.**
+Never write a vague expected result. Always specify what the tester sees.
+
+- ❌ `"Validation error shown"` — too vague
+- ❌ `"Error is displayed"` — too vague
+- ✅ `"Inline validation error appears on the <Field Name> field indicating it is required"`
+- ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
+- ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
+
+**Rule B — Quote exact error text when the spec provides it.**
+If the description quotes a specific error string, copy it verbatim into the expected_result.
+- ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
+- ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+
+**Rule C — Assert the blocking behavior, not just the error.**
+The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
+- ❌ `"Error shown"` (doesn't confirm the action was blocked)
+- ✅ `"Form does not submit; <Entity> is not created; error shown on <Field>"`
+- ✅ `"Status remains <Current State>; no transition occurs"`
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Use generic placeholders in angle brackets.
+
+- ✅ `"Enter <invalid email format> in the Email field"`
+- ✅ `"Enter <amount exceeding available balance> in the Amount field"`
+- ✅ `"Enter <password shorter than minimum length> in the Password field"`
+- ❌ `"Enter 'notanemail' in the Email field"`
+- ❌ `"Enter 'abc123' in the Password field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic user action — one field, one click, one navigation. No grouping.
+
+- ✅ `"1. Leave the <Required Field> blank"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill all fields except <Required Field> and submit"`
+
+---
+
+**SCOPE GATE (run before writing any test):**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact sentence in the description or field/constraint/state in the AST justifies this test? If you cannot point to one → delete it.
+2. **UI-executable:** Can a tester trigger this by clicking, typing, selecting, or navigating in a browser? If verification requires dev tools, DOM inspection, concurrent users, API calls, or server-side error simulation → out of scope.
+3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
+
+Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Required field representatives (deduplicated by field type):**
+
+Group required fields by type: `text/unspecified`, `email`, `password`, `number`, `date`, `dropdown`, `file_upload`. Generate:
+- ONE "leave blank and submit" test per **type group** (not per field) — use the most prominent field as representative
+- ONE "submit with ALL required fields empty" test
+
+Do NOT generate a separate blank-field test for every required field. If 5 text fields are all required, one representative covers them all.
+
+**Action dialog required fields — NOT subject to cross-form deduplication:**
+If a `state_bound_action_bar` action opens a dialog with its own required `fields{}` (e.g., Activate requires Activation Date, Reject requires a Reason, Withdraw requires a Reason, Close requires a Closure Reason), each such dialog is its own testing scope. Generate ONE "leave the required dialog field blank and submit" test per distinct action dialog. These are HIGH priority — they block state transitions and are common defect sites. Do not suppress them because the main wizard already has a blank-field test.
+
+**2. Format violations:**
+
+For fields with type-specific format rules (from AST type or description):
+- `email` → one test with invalid format
+- `number` → one test with non-numeric input
+- `date` → one test with invalid/impossible date
+- `password` → ONE representative test for policy violation (not one per sub-rule — see Deduplication)
+
+Only generate if the spec or AST implies format validation for that field.
+
+**3. Numeric bounds and balance violations:**
+
+If the spec describes minimum/maximum values, amount ranges, or balance checks:
+- One test per distinct bound violation (e.g., amount below minimum, amount above maximum, amount exceeding available balance)
+- Use `<amount below minimum>`, `<amount exceeding available balance>` as placeholders
+
+Examples across the dataset:
+- Transfer amount > available balance → error
+- Loan amount outside product min/max → error
+- Deposit below minimum requirement → error
+
+**4. Constraint violations:**
+
+For each unique `constraints[]` entry in the AST, and for cross-field rules described in the spec:
+- `"must be unique"` → submit with a duplicate value
+- `"must match"` (confirm fields) → enter mismatched values
+- `"must not be same as current"` → select the current value
+- `"cannot perform <action> while <condition>"` → attempt the action when the condition is true
+- `"<date> must be after <other date>"` → enter reversed dates
+
+One test per unique constraint. Do not duplicate the same mechanism.
+
+**Constraint timing tests:** If the spec states an action is blocked by a pre-existing system state (e.g., "cannot close with active accounts", "cannot transfer to the same office"), generate TWO tests:
+1. The standard constraint violation test (user opens the dialog, fills required fields, submits → blocked).
+2. A constraint-timing test: user opens the dialog WITHOUT filling required fields → assert whether the block is shown immediately on dialog open (before the user fills anything) OR only on submit. This distinguishes whether the UI enforces the constraint eagerly or lazily. Steps: open the dialog, observe the state → assert what is visible before any interaction. If the spec is silent on timing, generate only the first test.
+
+**5. Precondition violations (auth, role, and state):**
+
+For each `preconditions[]` entry on any action — and for auth/role/state rules described in the spec or the `<module_context>` block:
+
+- **Global Context constraints:** If the `<module_context>` block's `assumed_state_on_entry` explicitly lists required states (e.g., "Requires an active Client profile"), generate one test attempting the module's core action when that precondition fails (e.g., Client profile is missing or inactive).
+- **Unauthenticated access:** If any page or action requires login, generate one test: an unauthenticated user attempts to access it and is redirected to the login page.
+- **Wrong role:** If the spec explicitly states a feature is restricted to a specific role (e.g., Teacher only, Admin only), generate one test: a user of the wrong role attempts the action and is blocked or the control is not visible.
+- **Precondition not met:** For each AST `preconditions[]` entry, attempt the action when that precondition is not satisfied.
+
+**6. State-machine violations:**
+
+From `state_bound_action_bar` nodes:
+- **Every defined state must have at least one wrong-state test.** For each state, identify at least one action that is NOT in its `available_actions` list and generate a test attempting that action from that state.
+- If a state has an empty `available_actions` array, generate one test verifying no action buttons are visible in that state.
+- **Do not stop after 1–2 representative examples** when the module defines 4+ distinct states. The states Active, Pending, Closed, Rejected, and Withdrawn each have different action sets — each must be independently verified.
+- One test per state is sufficient — pick the most distinct unavailable action for that state. Do not enumerate every action × every state (that would be exponential).
+
+---
+
+**DEDUPLICATION GATE (run before outputting):**
+
+1. **Required field dedup:** Multiple required text fields in the **same form or dialog** → ONE representative test, not one per field.
+2. **Sub-rule dedup:** A field with multiple validation sub-rules (e.g., password: length + uppercase + lowercase + number + special char) → ONE representative violation test, not one per sub-rule.
+3. **Cross-form dedup:** If two **main forms** in the same module share the same validation mechanism → test it on the primary form only. **Exception: action dialogs are never suppressed by cross-form dedup** — each action dialog with a required field gets its own blank-field test regardless.
+4. **Uniqueness check:** Before outputting, ask for each TC: "Does this test catch a bug that NO other test in this module would catch?" If no → remove it.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (standard CRUD form, form with constraints): **4–8 tests**
+- Complex module (state machine, multi-form, wizard with many constraints): **10–16 tests**
+
+For modules with a `state_bound_action_bar` defining 4+ states, the state-machine violation tests alone will produce 4–5 tests. This is expected and correct — do not suppress them to hit a lower target.
+
+If you exceed the upper range, apply the deduplication gate again before outputting.
+
+---
+
+**PRIORITY:**
+
+- **High:** State precondition violations, constraint violations that could corrupt data, unauthenticated access, required field representatives
+- **Medium:** Format violations, cross-field validation, numeric bounds, wrong-role access, wrong-state action attempts
+
+---
+
+**WORKFLOW-AWARE FAILURE INJECTION (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow that contains a form interaction (terminal action is a submit/save/create/approve button):
+  - Identify the most **critical blocking failure** for that workflow's `conditional_branch`.
+  - If that failure mode is NOT already covered by another workflow's negative test, generate one negative TC for it.
+- **Do NOT generate one negative TC per workflow mechanically.** Apply the existing deduplication gate first — only add a TC if it catches a bug that no other test would catch.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a workflow. Set `"wf_ref": null` for generic validation tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "What error/block should occur, naming the field and indicator",
+      "priority": "high | medium"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "high_priority": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[21:12:33] Test-Negative - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 11,
+  "module_title": "Assignment Submissions",
+  "summary": "Displays a searchable and filterable table of all student submission records for an assignment, including submission and grading statuses, timestamps, previews, feedback, and quick-grading inline controls.",
+  "where_it_fits": "Accessible from an assignment's activity page within a course (reachable via the Course tab and course breadcrumbs or the Course Index sidebar), this view is part of the teacher/grader workflow for reviewing and grading student work after submissions have been made. It sits downstream of Assignment Creation and is used prior to or during updating the Gradebook.",
+  "assumed_state_on_entry": "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
+}
+</module_context>
+
+<module_name>Assignment Submissions</module_name>
+
+<ast>
+{
+  "module_name": "Assignment Submissions",
+  "components": {
+    "Submissions_Search_Filters": {
+      "type": "form",
+      "fields": {
+        "Student_Search": {
+          "type": "search"
+        },
+        "Submission_Status_Filter": {
+          "type": "dropdown",
+          "options": [
+            "Submitted for grading",
+            "No submission",
+            "Draft \u2014 not submitted"
+          ]
+        },
+        "Grading_Status_Filter": {
+          "type": "dropdown",
+          "options": [
+            "Graded",
+            "Not graded"
+          ]
+        },
+        "Quick_Grading_Mode": {
+          "type": "checkbox",
+          "description": "Enables inline grade entry directly in the table"
+        }
+      },
+      "preconditions": [
+        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
+      ]
+    },
+    "Submissions_Table": {
+      "type": "data_table",
+      "searchable": true,
+      "filterable_columns": [
+        "Submission_Status",
+        "Grading_Status"
+      ],
+      "row_fields": {
+        "Student_Identity": {
+          "type": "link",
+          "description": "Student name and initials icon; link opens student profile"
+        },
+        "Online_Text_Preview": {
+          "type": "link",
+          "description": "Opens an inline preview of online text submission"
+        },
+        "File_Submissions": {
+          "type": "link",
+          "description": "Links to submitted files for download/view"
+        },
+        "Submission_Comments": {
+          "type": "link",
+          "description": "Opens submission comments thread or modal"
+        },
+        "Feedback_Comments": {
+          "type": "link",
+          "description": "Opens or adds feedback comments"
+        },
+        "Feedback_Files": {
+          "type": "link",
+          "description": "Links to feedback files (download or view)"
+        },
+        "Final_Grade": {
+          "type": "unspecified",
+          "editable": true,
+          "enabled_when": "Quick_Grading_Mode == true",
+          "description": "Inline editable final grade when Quick Grading Mode is enabled"
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "Open Grading Workflow",
+          "on_click": "opens the grading workflow for the selected student"
+        }
+      ],
+      "preconditions": [
+        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Submissions view presents a table of all student submission records. Search and filter controls above the table allow narrowing by student name, submission status, and grading status. The table columns are: Student identity (name and initials icon, links to profile), Submission status (e.g., Submitted for grading, No submission, Draft — not submitted), Grading status (e.g., Graded, Not graded), Submission date/time, Time since submission, Online text preview, File submission links, Submission comments, Feedback comments, Feedback files, and Final grade. Each row has an action menu to open the grading workflow for that student. A "Quick grading" mode can be enabled to allow inline grade entry directly in the table.
+
+---
+
+
+
+</description>
+
+<workflows>
+WF-001 | Search by student name | actor: teacher or grader | branch: none | terminal: Student_Search | on_success: Table is filtered to match the student search query, narrowing visible submissions.
+WF-002 | Filter by submission status | actor: teacher or grader | branch: none | terminal: Submission_Status_Filter | on_success: Table is filtered by the selected Submission Status (e.g., Submitted for grading, No submission, Draft — not submitted).
+WF-003 | Filter by grading status | actor: teacher or grader | branch: none | terminal: Grading_Status_Filter | on_success: Table is filtered by the selected Grading Status (Graded or Not graded).
+WF-004 | Enable Quick Grading mode | actor: teacher or grader | branch: none | terminal: Quick_Grading_Mode | on_success: Quick Grading Mode enabled; inline grade entry (Final_Grade) becomes editable directly in the table.
+WF-005 | Open student profile from row | actor: teacher or grader | branch: none | terminal: Student_Identity | on_success: Link opens the student's profile.
+WF-006 | Open online text preview | actor: teacher or grader | branch: none | terminal: Online_Text_Preview | on_success: Opens an inline preview of the student's online text submission.
+WF-007 | Open submitted files | actor: teacher or grader | branch: none | terminal: File_Submissions | on_success: Links to submitted files are opened for download or viewing.
+WF-008 | Open submission comments | actor: teacher or grader | branch: none | terminal: Submission_Comments | on_success: Opens the submission comments thread or modal.
+WF-009 | Open or add feedback comments | actor: teacher or grader | branch: none | terminal: Feedback_Comments | on_success: Opens or allows adding feedback comments for the submission.
+WF-010 | Open feedback files | actor: teacher or grader | branch: none | terminal: Feedback_Files | on_success: Links to feedback files are opened for download or viewing.
+WF-011 | Open grading workflow for a student | actor: teacher or grader | branch: none | terminal: Open Grading Workflow | on_success: Opens the grading workflow for the selected student.
+WF-012 | Edit final grade inline (Quick Grading enabled) | actor: teacher or grader | branch: Quick_Grading_Mode == true | terminal: Final_Grade | on_success: Final grade is edited inline in the table when Quick Grading Mode is enabled.
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:15:09] Test-Negative - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Assignment Submissions",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user cannot access the Submissions view",
+      "preconditions": ["User is not signed in", "Assignment exists in a course"],
+      "steps": [
+        "1. As <unauthenticated user> navigate to the Assignment Submissions URL for <assignment>",
+        "2. Observe the page that loads"
+      ],
+      "expected_result": "Access is blocked: the application redirects to the login page (login form is shown); the Submissions table and its search/filters (Student_Search, Submission_Status_Filter, Grading_Status_Filter, Quick_Grading_Mode) are not visible or accessible.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": null,
+      "test_case": "User without grading permissions (student role) is blocked from Submissions controls",
+      "preconditions": ["Login as <student user> (no grading permissions)", "Assignment exists and may have submissions"],
+      "steps": [
+        "1. Sign in as <student user>",
+        "2. Navigate to the Assignment Submissions view for <assignment>",
+        "3. Inspect the page area where search filters and the submissions table would appear"
+      ],
+      "expected_result": "Access is blocked/limited: the Submissions table and search/filters are not available to the user; grading-specific controls (Quick_Grading_Mode toggle, editable Final_Grade cells, row action 'Open Grading Workflow') are not visible or are disabled, and the page displays an access-denied notice or equivalent UI indicating the user lacks permission to view/manage submissions.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-012",
+      "test_case": "Cannot edit Final Grade inline when Quick Grading mode is disabled",
+      "preconditions": ["Login as <teacher or grader user> with grading permissions", "Assignment exists and has at least one student submission", "Quick_Grading_Mode is unchecked/disabled"],
+      "steps": [
+        "1. Sign in as <teacher or grader user>",
+        "2. Navigate to the Assignment Submissions view for <assignment>",
+        "3. Verify Quick_Grading_Mode checkbox is unchecked",
+        "4. Click the Final_Grade cell for <a student row> in the submissions table"
+      ],
+      "expected_result": "Inline edit is blocked: the Final_Grade cell remains read-only; clicking it does not open an inline editor (no input field, no Save/Cancel controls appear), and the grade value remains unchanged.",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-011",
+      "test_case": "Open Grading Workflow action is not available when assignment has no submissions",
+      "preconditions": ["Login as <teacher or grader user> with grading permissions", "Assignment exists but has <no student submissions>"],
+      "steps": [
+        "1. Sign in as <teacher or grader user>",
+        "2. Navigate to the Assignment Submissions view for <assignment with no submissions>",
+        "3. Inspect the submissions table and any row action menus"
+      ],
+      "expected_result": "Action is blocked: the submissions table shows no submission rows (or a 'No submissions' empty state) and the per-row 'Open Grading Workflow' action/menu is not present or is disabled; attempting to open the grading workflow is not possible and no grading workflow opens.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-006",
+      "test_case": "Online text preview should not open for rows filtered to 'No submission'",
+      "preconditions": ["Login as <teacher or grader user> with grading permissions", "Assignment exists and roster includes students with 'No submission' status"],
+      "steps": [
+        "1. Sign in as <teacher or grader user>",
+        "2. Navigate to the Assignment Submissions view for <assignment>",
+        "3. Set Submission_Status_Filter to 'No submission'",
+        "4. Locate a row shown with Submission_Status = 'No submission'",
+        "5. Attempt to click the Online_Text_Preview area/link for that row"
+      ],
+      "expected_result": "Preview is blocked: no Online Text Preview link/control is present for rows with Submission_Status = 'No submission'; clicking the preview area does not open a preview modal or viewer and no preview content appears.",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": "WF-004",
+      "test_case": "Quick Grading toggle is not actionable when user lacks grading permission (precondition failure on control)",
+      "preconditions": ["Login as <user who previously had access but whose grading permission was revoked> OR login as <user without grading permissions>", "Assignment exists"],
+      "steps": [
+        "1. Sign in as <user without grading permissions>",
+        "2. Navigate to the Assignment Submissions view for <assignment>",
+        "3. Attempt to toggle the Quick_Grading_Mode checkbox"
+      ],
+      "expected_result": "Toggle is blocked: the Quick_Grading_Mode checkbox is not shown or is disabled; attempting to toggle it has no effect, inline Final_Grade controls do not become editable, and the UI displays that grading controls are unavailable due to insufficient permissions.",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 6,
+    "high_priority": 4,
+    "medium_priority": 2,
+    "low_priority": 0
+  }
+}
+
+------------------------------------------------------------
+[21:15:09] Test-Negative - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Assignment Submissions",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user cannot access the Submissions view",
+      "preconditions": [
+        "User is not signed in",
+        "Assignment exists in a course"
+      ],
+      "steps": [
+        "1. As <unauthenticated user> navigate to the Assignment Submissions URL for <assignment>",
+        "2. Observe the page that loads"
+      ],
+      "expected_result": "Access is blocked: the application redirects to the login page (login form is shown); the Submissions table and its search/filters (Student_Search, Submission_Status_Filter, Grading_Status_Filter, Quick_Grading_Mode) are not visible or accessible.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": null,
+      "test_case": "User without grading permissions (student role) is blocked from Submissions controls",
+      "preconditions": [
+        "Login as <student user> (no grading permissions)",
+        "Assignment exists and may have submissions"
+      ],
+      "steps": [
+        "1. Sign in as <student user>",
+        "2. Navigate to the Assignment Submissions view for <assignment>",
+        "3. Inspect the page area where search filters and the submissions table would appear"
+      ],
+      "expected_result": "Access is blocked/limited: the Submissions table and search/filters are not available to the user; grading-specific controls (Quick_Grading_Mode toggle, editable Final_Grade cells, row action 'Open Grading Workflow') are not visible or are disabled, and the page displays an access-denied notice or equivalent UI indicating the user lacks permission to view/manage submissions.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-012",
+      "test_case": "Cannot edit Final Grade inline when Quick Grading mode is disabled",
+      "preconditions": [
+        "Login as <teacher or grader user> with grading permissions",
+        "Assignment exists and has at least one student submission",
+        "Quick_Grading_Mode is unchecked/disabled"
+      ],
+      "steps": [
+        "1. Sign in as <teacher or grader user>",
+        "2. Navigate to the Assignment Submissions view for <assignment>",
+        "3. Verify Quick_Grading_Mode checkbox is unchecked",
+        "4. Click the Final_Grade cell for <a student row> in the submissions table"
+      ],
+      "expected_result": "Inline edit is blocked: the Final_Grade cell remains read-only; clicking it does not open an inline editor (no input field, no Save/Cancel controls appear), and the grade value remains unchanged.",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-011",
+      "test_case": "Open Grading Workflow action is not available when assignment has no submissions",
+      "preconditions": [
+        "Login as <teacher or grader user> with grading permissions",
+        "Assignment exists but has <no student submissions>"
+      ],
+      "steps": [
+        "1. Sign in as <teacher or grader user>",
+        "2. Navigate to the Assignment Submissions view for <assignment with no submissions>",
+        "3. Inspect the submissions table and any row action menus"
+      ],
+      "expected_result": "Action is blocked: the submissions table shows no submission rows (or a 'No submissions' empty state) and the per-row 'Open Grading Workflow' action/menu is not present or is disabled; attempting to open the grading workflow is not possible and no grading workflow opens.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-006",
+      "test_case": "Online text preview should not open for rows filtered to 'No submission'",
+      "preconditions": [
+        "Login as <teacher or grader user> with grading permissions",
+        "Assignment exists and roster includes students with 'No submission' status"
+      ],
+      "steps": [
+        "1. Sign in as <teacher or grader user>",
+        "2. Navigate to the Assignment Submissions view for <assignment>",
+        "3. Set Submission_Status_Filter to 'No submission'",
+        "4. Locate a row shown with Submission_Status = 'No submission'",
+        "5. Attempt to click the Online_Text_Preview area/link for that row"
+      ],
+      "expected_result": "Preview is blocked: no Online Text Preview link/control is present for rows with Submission_Status = 'No submission'; clicking the preview area does not open a preview modal or viewer and no preview content appears.",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": "WF-004",
+      "test_case": "Quick Grading toggle is not actionable when user lacks grading permission (precondition failure on control)",
+      "preconditions": [
+        "Login as <user who previously had access but whose grading permission was revoked> OR login as <user without grading permissions>",
+        "Assignment exists"
+      ],
+      "steps": [
+        "1. Sign in as <user without grading permissions>",
+        "2. Navigate to the Assignment Submissions view for <assignment>",
+        "3. Attempt to toggle the Quick_Grading_Mode checkbox"
+      ],
+      "expected_result": "Toggle is blocked: the Quick_Grading_Mode checkbox is not shown or is disabled; attempting to toggle it has no effect, inline Final_Grade controls do not become editable, and the UI displays that grading controls are unavailable due to insufficient permissions.",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 6,
+    "high_priority": 4,
+    "medium_priority": 2,
+    "low_priority": 0
+  }
+}

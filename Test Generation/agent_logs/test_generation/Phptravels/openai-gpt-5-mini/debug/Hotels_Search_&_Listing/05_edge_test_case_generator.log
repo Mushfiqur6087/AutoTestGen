@@ -1,0 +1,716 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:24:13.821173
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:24:13] Test-Edge - SYSTEM PROMPT
+------------------------------------------------------------
+You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
+
+You are NOT producing happy paths (positive prompt) or standard validation failures (negative prompt). You are finding the cracks between valid and invalid, and the unusual paths real users take.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Edge Testing:**
+
+| AST node / field | What to look for |
+|---|---|
+| `constraints: []` with numeric/date/count threshold | The boundary values — test AT and JUST PAST each limit |
+| `repeating_group` with `max` | Test adding exactly `max` entries (should succeed) then one more (should block) |
+| `visible_when` / `required_when` | Edge: trigger condition, fill revealed field with boundary value |
+| `state_bound_action_bar` | State edges: rapid consecutive state transitions, transition from a boundary state |
+
+| `type: "date"` fields | Data edges: today, yesterday, far future, Feb 29 leap year |
+| `type: "file_upload"` | Edge: file exactly at size limit, file at 1 byte over limit |
+
+> If the module has no `constraints`, no `repeating_group`, no `date` or `number` fields, and no `state_bound_action_bar` — it has minimal edge surface. Produce 1–3 generic input edge cases (long text, special characters) and stop. Do not invent boundary tests where no boundary exists.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — State clearly whether the boundary value should PASS or FAIL.**
+Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+- ❌ `"System handles the input"` — ambiguous
+- ✅ `"Form submits successfully; entity is created with the <minimum value>"`
+- ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
+
+**Rule B — For edge cases, describe the precise visible outcome.**
+Same rule as the positive/negative prompts — name the UI element that changes.
+- ❌ `"Edge case handled correctly"`
+- ✅ `"Second submission attempt is blocked; only one record appears in the table"`
+- ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
+
+**Rule C — Quote exact error text when the spec provides it.**
+If the description states a specific error string for a boundary violation, use it verbatim.
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Express boundary values relative to the constraint.
+
+- ✅ `"Enter <minimum allowed value> in the <field>"`
+- ✅ `"Enter <one unit below minimum> in the <field>"`
+- ✅ `"Enter <maximum length string> in the <text field>"`
+- ✅ `"Add <maximum allowed entries + 1> rows to the repeating group"`
+- ❌ `"Enter '$25' in the Amount field"`
+- ❌ `"Enter 'aaaaaaaaaa' (10 chars) in the field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic action — one field, one click, one navigation. No grouping.
+- ✅ `"1. Enter <minimum allowed value> in the <Amount> field"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill the form with minimum value and submit"`
+
+---
+
+**SCOPE GATE:**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
+2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
+3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Boundary Tests (from AST constraints):**
+
+Scan every `constraints: []` array and every numeric/date/count threshold mentioned in the description. For each threshold:
+
+| Constraint | Boundary (should PASS) | Past-boundary (should FAIL) |
+|---|---|---|
+| `"minimum <X>"` | Enter exactly `<minimum value>` | Enter `<one unit below minimum>` |
+| `"maximum <N> entries"` | Add exactly `<N>` entries | Attempt to add `<N+1>` entry |
+| `"<date A> must not be before <date B>"` | `<date A>` = `<date B>` (same day) | `<date A>` = `<date B>` minus 1 day |
+| `"<X>–<Y> range"` | Enter `<X>` → pass; enter `<Y>` → pass | Enter `<X-1>` → fail; enter `<Y+1>` → fail |
+| `"at least <N> characters"` | Enter exactly `<N>` characters | Enter `<N-1>` characters |
+| `"must be ≥ <P>% of <reference>"` | Enter exactly `<P>%` | Enter `<P minus small delta>%` |
+
+Rules:
+- If a constraint has both a minimum AND maximum, test both ends (up to 4 tests total for that constraint).
+- If a constraint has no numeric/date/count threshold (e.g., "must be unique", "cannot transition while children exist") → **skip it** — it belongs in negative tests, not boundary tests.
+- Generate zero boundary tests if zero thresholds exist — do not invent them.
+
+**Cross-field boundary tests** (only if the description/AST shows a field ordering constraint — e.g., date A must not be before date B, closing date must be after opening date):
+- ONE test where field A equals field B exactly (same-day / same-value boundary) → assert this **succeeds** per spec
+- ONE test where field A is one unit before field B → assert **blocked with a visible error**
+
+**2. Input Edge Cases:**
+
+Pick only the ones that apply to field types present in this module's AST:
+
+- **Long text** (any `text/unspecified` or `textarea` field): enter a very long string (200+ characters) → assert it is either accepted or truncated/rejected with a visible indicator
+- **Special characters / emoji / unicode** (free-text fields): enter special chars → assert accepted or a specific error shown
+- **Leading/trailing whitespace** (text inputs): enter value with leading/trailing spaces → assert trimmed in saved output shown on the detail page, or an inline error shown
+- **Zero as numeric input** (number fields where zero is ambiguous): if the spec states a minimum > 0, assert `0` is blocked with a visible error; if the spec permits zero, assert the form submits successfully and the saved record displays `0`
+- **Decimal precision** (financial/numeric fields): enter a value with more decimal places than the field supports → assert rounding behavior is visible in the saved output, or an inline error is shown
+
+**3. Interaction Edge Cases:**
+
+Pick only the ones that match component types in this module's AST:
+
+- **Rapid re-submission after redirect** (any form that redirects to a detail page on success): after a successful submit, press the browser back button → assert the creation form is shown blank (not pre-filled) OR the user is redirected to the detail page without a second entity being created
+- **Wizard step skip — enforced navigation** (wizard where steps must be completed sequentially): attempt to click a later step tab directly without completing earlier steps → assert navigation is blocked and the earlier step remains active
+- **Wizard step skip — free navigation** (wizard that allows free tab navigation): navigate to a later step without filling earlier steps → assert the later step displays and returning to the earlier step shows fields blank (no data was lost from the later step)
+- **Repeating group: add then remove all** (any `repeating_group`): add entries → remove all entries → submit → assert behavior: if spec states no minimum, form submits successfully; if spec requires at least one entry, a visible error is shown
+
+**4. State / Data Edge Cases:**
+
+Pick only what applies to this module:
+
+- **Rapid consecutive state transitions** (`state_bound_action_bar`): complete one transition → immediately attempt the next → assert the action succeeds or the expected blocking message is shown per spec
+- **State boundary condition:** If the `<module_context>` block specifies an `assumed_state_on_entry` that is on the boundary of an entity's lifecycle (e.g. "Newly created", "Pending Review"), generate an edge case testing an action immediately following that state entry.
+- **Date edges** (`date` fields): test today's date, yesterday, and a far future date — assert which are accepted per spec and describe the visible outcome for each
+- **Leap year date** (`date` fields, free-text entry only): enter February 29 on a non-leap year → assert error; on a leap year → assert accepted. *Skip this test if the field uses a calendar date picker — pickers remove February 29 from non-leap years at the UI level and the test is not UI-executable.*
+- **File at exact size limit** (`file_upload`): upload a file exactly at the stated size limit → assert accepted with a visible success indicator; upload a file one unit over the limit → assert a visible error naming the size constraint
+
+**RELEVANCE RULE:** Only generate edge cases that match component types present in this module's AST. A login form does not need repeating-group edge cases. A data table does not need wizard-step-skip tests.
+
+**`visible_when` fields:** If the spec reveals a conditional field via a toggle/dropdown, test a boundary value in that revealed field. If the revealed field has no numeric or date constraint, generate one `input_edge` test using a long-text or special-character value instead.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (form with numeric/date constraints): **4–8 tests**
+- Complex module (state machine, wizard, repeating groups): **6–10 tests**
+
+If you exceed these, you are generating generic edges that don't apply to this module. Apply the relevance rule and scope gate again.
+
+---
+
+**MINIMUM OUTPUT RULE:**
+
+If the module has any numeric/date/count threshold in the AST or description, produce at least 2 boundary tests. Zero boundary tests when thresholds exist is a generation failure.
+
+---
+
+**PRIORITY:**
+
+- **High:** None — edge tests are secondary to core functionality
+- **Medium:** Boundary tests at thresholds (financial amounts, date ordering, count limits, file size limits)
+- **Low:** Input edge cases (long text, special chars, whitespace, decimal precision), interaction edge cases (browser back, wizard skip)
+
+---
+
+**WORKFLOW-AWARE BOUNDARY SCOPING (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow where `conditional_branch` activates a numeric or date field, check if that field has a boundary (a numeric/date threshold in the AST `constraints` or description).
+- If yes, that workflow's branch is a **candidate for a boundary edge test** — add or confirm a boundary TC exists for it.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a specific workflow's boundary. Set `"wf_ref": null` for generic input/interaction edge tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "wf_ref": null,
+      "subcategory": "boundary | input_edge | interaction_edge | state_edge | data_edge",
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "Precise visible outcome — state pass or fail explicitly for boundary tests",
+      "priority": "medium | low"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "boundary": 0,
+    "input_edge": 0,
+    "interaction_edge": 0,
+    "state_edge": 0,
+    "data_edge": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[21:24:13] Test-Edge - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 5,
+  "module_title": "Hotels Search & Listing",
+  "summary": "Provides a hotel search form and dynamic listing of matching hotels with filters, sorting, and booking entry points.",
+  "where_it_fits": "Accessible from the site's main navigation under Hotels or via the Home page search widget tabs, this module serves as the entry point for discovering available hotels and precedes the Hotel Details & Booking and Payment Processing flows in the booking lifecycle.",
+  "assumed_state_on_entry": "User is on the Home or Hotels section and has specified search parameters (destination and dates) or is prepared to enter them; user may be guest or authenticated."
+}
+</module_context>
+
+<module_name>Hotels Search & Listing</module_name>
+
+<ast>
+{
+  "module_name": "Hotels Search & Listing",
+  "components": {
+    "Hotels_Search_Form": {
+      "type": "form",
+      "fields": {
+        "Destination": {
+          "type": "unspecified"
+        },
+        "Check_In": {
+          "type": "date"
+        },
+        "Check_Out": {
+          "type": "date"
+        },
+        "Number_Of_Rooms": {
+          "type": "number"
+        },
+        "Adults": {
+          "type": "number"
+        },
+        "Children": {
+          "type": "number"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Search",
+          "on_success": "redirects to Hotels_Listing_Page",
+          "preconditions": [
+            "User is on the Home or Hotels section and has specified search parameters (destination and dates) or is prepared to enter them"
+          ]
+        }
+      ]
+    },
+    "Left_Sidebar_Filters": {
+      "type": "filter_panel",
+      "filters": {
+        "Price_Range": {
+          "type": "group",
+          "collapsible": true,
+          "item_fields": {
+            "Min_Price": {
+              "type": "number",
+              "on_change": "updates results dynamically"
+            },
+            "Max_Price": {
+              "type": "number",
+              "on_change": "updates results dynamically"
+            }
+          }
+        },
+        "Star_Rating": {
+          "type": "unspecified",
+          "collapsible": true,
+          "on_change": "updates results dynamically"
+        },
+        "Facilities_Amenities": {
+          "type": "unspecified",
+          "collapsible": true,
+          "on_change": "updates results dynamically"
+        },
+        "Hotel_Type": {
+          "type": "unspecified",
+          "collapsible": true,
+          "on_change": "updates results dynamically"
+        },
+        "Board_Basis": {
+          "type": "unspecified",
+          "collapsible": true,
+          "on_change": "updates results dynamically"
+        }
+      }
+    },
+    "Active_Filters_Bar": {
+      "type": "action_bar",
+      "actions": [
+        {
+          "action_name": "Remove Filter",
+          "fields": {
+            "Filter_Key": {
+              "type": "unspecified"
+            }
+          },
+          "on_success": "removes the specified filter and updates results dynamically"
+        },
+        {
+          "action_name": "Reset all",
+          "on_success": "clears all filters and updates results dynamically"
+        }
+      ]
+    },
+    "Sort_Control": {
+      "type": "dropdown",
+      "field_name": "Sort_By",
+      "options": [
+        "Price: Low to High",
+        "Price: High to Low",
+        "Star Rating",
+        "Guest Rating"
+      ],
+      "on_change": "reorders results dynamically"
+    },
+    "Hotels_Listing_Page": {
+      "type": "page",
+      "children_components": [
+        "Left_Sidebar_Filters",
+        "Active_Filters_Bar",
+        "Sort_Control",
+        "Hotels_Listing"
+      ]
+    },
+    "Hotels_Listing": {
+      "type": "list",
+      "item_actions": [
+        {
+          "action_name": "Book Now",
+          "on_click": "initiates Hotel Details & Booking entry point"
+        }
+      ],
+      "updated_by": [
+        "Left_Sidebar_Filters",
+        "Sort_Control",
+        "Active_Filters_Bar"
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The hotels search form collects destination, check-in/check-out dates, number of rooms, and guest count (adults and children). On success, users are redirected to the listing page, where each hotel card shows name, location, star rating, thumbnail image, starting price per night, amenity icons, and a Book Now button. A left sidebar provides collapsible filters for price range, star rating, facilities/amenities, hotel type, and board basis. Filters update results dynamically, with active filters summarized at the top with individual remove buttons and a Reset all control. Results can be sorted by price (low to high or high to low), star rating, or guest rating.
+
+---
+
+
+</description>
+
+<workflows>
+WF-001 | Perform hotel search | actor: <role> | branch: none | terminal: Search | on_success: redirects to Hotels_Listing_Page
+WF-002 | Adjust minimum price filter | actor: <role> | branch: none | terminal: Min_Price | on_success: updates results dynamically
+WF-003 | Adjust maximum price filter | actor: <role> | branch: none | terminal: Max_Price | on_success: updates results dynamically
+WF-004 | Change star rating filter | actor: <role> | branch: none | terminal: Star_Rating | on_success: updates results dynamically
+WF-005 | Toggle facilities/amenities filter | actor: <role> | branch: none | terminal: Facilities_Amenities | on_success: updates results dynamically
+WF-006 | Select hotel type filter | actor: <role> | branch: none | terminal: Hotel_Type | on_success: updates results dynamically
+WF-007 | Select board basis filter | actor: <role> | branch: none | terminal: Board_Basis | on_success: updates results dynamically
+WF-008 | Remove an active filter | actor: <role> | branch: none | terminal: Remove Filter | on_success: removes the specified filter and updates results dynamically
+WF-009 | Reset all filters | actor: <role> | branch: none | terminal: Reset all | on_success: clears all filters and updates results dynamically
+WF-010 | Change sort order | actor: <role> | branch: none | terminal: Sort_By | on_success: reorders results dynamically
+WF-011 | Initiate booking from a listing | actor: <role> | branch: none | terminal: Book Now | on_success: initiates Hotel Details & Booking entry point
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:25:46] Test-Edge - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Hotels Search & Listing",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "wf_ref": "WF-001",
+      "subcategory": "data_edge",
+      "test_case": "Check-In set to today succeeds",
+      "preconditions": [
+        "User is on the Hotels Search form"
+      ],
+      "steps": [
+        "1. Open the Hotels Search form",
+        "2. Enter <today's date> in the Check_In field",
+        "3. Enter <one day after today> in the Check_Out field",
+        "4. Enter a valid value in Destination",
+        "5. Click the Search action"
+      ],
+      "expected_result": "Search submits successfully; user is redirected to Hotels_Listing_Page; the search summary on the listing page displays Check-In = <today> and results are returned for the specified dates (succeeds)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-002",
+      "wf_ref": "WF-001",
+      "subcategory": "data_edge",
+      "test_case": "Check-In set to yesterday is blocked",
+      "preconditions": [
+        "User is on the Hotels Search form"
+      ],
+      "steps": [
+        "1. Open the Hotels Search form",
+        "2. Enter <yesterday's date> in the Check_In field",
+        "3. Enter a date after <yesterday's date> in the Check_Out field",
+        "4. Enter a valid value in Destination",
+        "5. Click the Search action"
+      ],
+      "expected_result": "Search is blocked; the Check_In field displays an inline error (visible next to the field) indicating the date is in the past and must be corrected before search can proceed (is blocked / error shown)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-003",
+      "wf_ref": "WF-001",
+      "subcategory": "data_edge",
+      "test_case": "Enter Feb 29 on a leap year in Check-In succeeds",
+      "preconditions": [
+        "User is on the Hotels Search form",
+        "The date entry method allows direct entry of February 29 for a leap year"
+      ],
+      "steps": [
+        "1. Open the Hotels Search form",
+        "2. Enter February 29 of a known leap year in the Check_In field",
+        "3. Enter a date after February 29 of the same year in the Check_Out field",
+        "4. Enter a valid value in Destination",
+        "5. Click the Search action"
+      ],
+      "expected_result": "Search submits successfully; user is redirected to Hotels_Listing_Page; the search summary displays Check-In = Feb 29 (leap year) and results are returned for the specified dates (succeeds)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-004",
+      "wf_ref": "WF-001",
+      "subcategory": "input_edge",
+      "test_case": "Very long Destination input (200+ chars) is accepted and displayed/truncated in summary",
+      "preconditions": [
+        "User is on the Hotels Search form"
+      ],
+      "steps": [
+        "1. Open the Hotels Search form",
+        "2. Enter a very long string (200+ characters) in the Destination field",
+        "3. Enter valid dates in Check_In and Check_Out",
+        "4. Click the Search action"
+      ],
+      "expected_result": "Form submits successfully; user is redirected to Hotels_Listing_Page; the search summary displays the destination text (UI truncates or ellipsizes the displayed string for layout) and no inline error is shown (succeeds)",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-005",
+      "wf_ref": "WF-001",
+      "subcategory": "input_edge",
+      "test_case": "Decimal value entered in Adults field is rejected",
+      "preconditions": [
+        "User is on the Hotels Search form"
+      ],
+      "steps": [
+        "1. Open the Hotels Search form",
+        "2. Enter a decimal value (e.g., one with fractional part) in the Adults field",
+        "3. Enter valid values for other required fields (Destination, dates)",
+        "4. Click the Search action"
+      ],
+      "expected_result": "Submission is blocked; the Adults field shows an inline validation error indicating a whole number is required (e.g., 'Please enter a whole number') and the search does not proceed until corrected (is blocked / error shown)",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-006",
+      "wf_ref": "WF-002",
+      "subcategory": "boundary",
+      "test_case": "Set Min_Price greater than Max_Price is blocked",
+      "preconditions": [
+        "User is on the Hotels Listing page with Left_Sidebar_Filters visible"
+      ],
+      "steps": [
+        "1. Open the Price_Range filter in the Left_Sidebar_Filters",
+        "2. Enter a numeric value in Min_Price",
+        "3. Enter a smaller numeric value in Max_Price so that Min_Price > Max_Price",
+        "4. Observe the results area and filter inputs"
+      ],
+      "expected_result": "The Min_Price input shows an inline error indicating Min price cannot be greater than Max price and results are not updated while the invalid relationship exists (is blocked / error shown)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-007",
+      "wf_ref": "WF-002",
+      "subcategory": "boundary",
+      "test_case": "Set Min_Price equal to Max_Price applies filter (boundary equality)",
+      "preconditions": [
+        "User is on the Hotels Listing page with Left_Sidebar_Filters visible"
+      ],
+      "steps": [
+        "1. Open the Price_Range filter in the Left_Sidebar_Filters",
+        "2. Enter the same numeric value in Min_Price and Max_Price",
+        "3. Observe the results area"
+      ],
+      "expected_result": "Filter applies successfully; results update dynamically without an error (may return hotels that match that exact price or an empty result set) and the UI reflects the applied equality filter (succeeds)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-008",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid re-submit after redirect (back button) preserves correct search and avoids duplicates",
+      "preconditions": [
+        "User can perform searches and is on the Hotels Listing page after an initial search"
+      ],
+      "steps": [
+        "1. Open the Hotels Search form",
+        "2. Enter valid Destination and dates",
+        "3. Click the Search action and wait for redirect to Hotels_Listing_Page",
+        "4. Immediately click the browser Back button to return to the search form",
+        "5. Without waiting, click the Search action again"
+      ],
+      "expected_result": "Second submission succeeds; user is redirected to Hotels_Listing_Page for the most recent parameters; UI shows results for the latest search and no duplicate hotel cards or duplicate navigation entries are created (succeeds)",
+      "priority": "medium"
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "boundary": 2,
+    "input_edge": 2,
+    "interaction_edge": 1,
+    "state_edge": 0,
+    "data_edge": 3,
+    "medium_priority": 6,
+    "low_priority": 2
+  }
+}
+
+------------------------------------------------------------
+[21:25:46] Test-Edge - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Hotels Search & Listing",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "wf_ref": "WF-001",
+      "subcategory": "data_edge",
+      "test_case": "Check-In set to today succeeds",
+      "preconditions": [
+        "User is on the Hotels Search form"
+      ],
+      "steps": [
+        "1. Open the Hotels Search form",
+        "2. Enter <today's date> in the Check_In field",
+        "3. Enter <one day after today> in the Check_Out field",
+        "4. Enter a valid value in Destination",
+        "5. Click the Search action"
+      ],
+      "expected_result": "Search submits successfully; user is redirected to Hotels_Listing_Page; the search summary on the listing page displays Check-In = <today> and results are returned for the specified dates (succeeds)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-002",
+      "wf_ref": "WF-001",
+      "subcategory": "data_edge",
+      "test_case": "Check-In set to yesterday is blocked",
+      "preconditions": [
+        "User is on the Hotels Search form"
+      ],
+      "steps": [
+        "1. Open the Hotels Search form",
+        "2. Enter <yesterday's date> in the Check_In field",
+        "3. Enter a date after <yesterday's date> in the Check_Out field",
+        "4. Enter a valid value in Destination",
+        "5. Click the Search action"
+      ],
+      "expected_result": "Search is blocked; the Check_In field displays an inline error (visible next to the field) indicating the date is in the past and must be corrected before search can proceed (is blocked / error shown)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-003",
+      "wf_ref": "WF-001",
+      "subcategory": "data_edge",
+      "test_case": "Enter Feb 29 on a leap year in Check-In succeeds",
+      "preconditions": [
+        "User is on the Hotels Search form",
+        "The date entry method allows direct entry of February 29 for a leap year"
+      ],
+      "steps": [
+        "1. Open the Hotels Search form",
+        "2. Enter February 29 of a known leap year in the Check_In field",
+        "3. Enter a date after February 29 of the same year in the Check_Out field",
+        "4. Enter a valid value in Destination",
+        "5. Click the Search action"
+      ],
+      "expected_result": "Search submits successfully; user is redirected to Hotels_Listing_Page; the search summary displays Check-In = Feb 29 (leap year) and results are returned for the specified dates (succeeds)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-004",
+      "wf_ref": "WF-001",
+      "subcategory": "input_edge",
+      "test_case": "Very long Destination input (200+ chars) is accepted and displayed/truncated in summary",
+      "preconditions": [
+        "User is on the Hotels Search form"
+      ],
+      "steps": [
+        "1. Open the Hotels Search form",
+        "2. Enter a very long string (200+ characters) in the Destination field",
+        "3. Enter valid dates in Check_In and Check_Out",
+        "4. Click the Search action"
+      ],
+      "expected_result": "Form submits successfully; user is redirected to Hotels_Listing_Page; the search summary displays the destination text (UI truncates or ellipsizes the displayed string for layout) and no inline error is shown (succeeds)",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-005",
+      "wf_ref": "WF-001",
+      "subcategory": "input_edge",
+      "test_case": "Decimal value entered in Adults field is rejected",
+      "preconditions": [
+        "User is on the Hotels Search form"
+      ],
+      "steps": [
+        "1. Open the Hotels Search form",
+        "2. Enter a decimal value (e.g., one with fractional part) in the Adults field",
+        "3. Enter valid values for other required fields (Destination, dates)",
+        "4. Click the Search action"
+      ],
+      "expected_result": "Submission is blocked; the Adults field shows an inline validation error indicating a whole number is required (e.g., 'Please enter a whole number') and the search does not proceed until corrected (is blocked / error shown)",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-006",
+      "wf_ref": "WF-002",
+      "subcategory": "boundary",
+      "test_case": "Set Min_Price greater than Max_Price is blocked",
+      "preconditions": [
+        "User is on the Hotels Listing page with Left_Sidebar_Filters visible"
+      ],
+      "steps": [
+        "1. Open the Price_Range filter in the Left_Sidebar_Filters",
+        "2. Enter a numeric value in Min_Price",
+        "3. Enter a smaller numeric value in Max_Price so that Min_Price > Max_Price",
+        "4. Observe the results area and filter inputs"
+      ],
+      "expected_result": "The Min_Price input shows an inline error indicating Min price cannot be greater than Max price and results are not updated while the invalid relationship exists (is blocked / error shown)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-007",
+      "wf_ref": "WF-002",
+      "subcategory": "boundary",
+      "test_case": "Set Min_Price equal to Max_Price applies filter (boundary equality)",
+      "preconditions": [
+        "User is on the Hotels Listing page with Left_Sidebar_Filters visible"
+      ],
+      "steps": [
+        "1. Open the Price_Range filter in the Left_Sidebar_Filters",
+        "2. Enter the same numeric value in Min_Price and Max_Price",
+        "3. Observe the results area"
+      ],
+      "expected_result": "Filter applies successfully; results update dynamically without an error (may return hotels that match that exact price or an empty result set) and the UI reflects the applied equality filter (succeeds)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-008",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid re-submit after redirect (back button) preserves correct search and avoids duplicates",
+      "preconditions": [
+        "User can perform searches and is on the Hotels Listing page after an initial search"
+      ],
+      "steps": [
+        "1. Open the Hotels Search form",
+        "2. Enter valid Destination and dates",
+        "3. Click the Search action and wait for redirect to Hotels_Listing_Page",
+        "4. Immediately click the browser Back button to return to the search form",
+        "5. Without waiting, click the Search action again"
+      ],
+      "expected_result": "Second submission succeeds; user is redirected to Hotels_Listing_Page for the most recent parameters; UI shows results for the latest search and no duplicate hotel cards or duplicate navigation entries are created (succeeds)",
+      "priority": "medium"
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "boundary": 2,
+    "input_edge": 2,
+    "interaction_edge": 1,
+    "state_edge": 0,
+    "data_edge": 3,
+    "medium_priority": 6,
+    "low_priority": 2
+  }
+}

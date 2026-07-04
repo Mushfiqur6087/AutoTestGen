@@ -1,0 +1,1096 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:10:13.992787
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:10:53] Workflow-Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Validator. You receive (1) a raw functional description, (2) a Structural Model JSON, and (3) a generated workflow list for one module.
+
+Your single job: decide whether this workflow list is complete and correct, or whether it must be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the workflow list. You DO NOT generate new workflows. You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+<workflows>
+{workflows}
+</workflows>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**WHAT A WORKFLOW IS:**
+
+A workflow is one complete, executable interaction path through the module — from entry to one terminal action. Two workflows are distinct if they require different user actions to reach the terminal (different conditional branch, different state, different terminal button).
+
+MINOR missing
+  A non-critical row action (e.g., "View" on a data table) where omission does not
+  break any downstream state transition or form submission. Flag it; don't auto-retry
+  for it alone.
+
+CRITICAL missing
+  Any of: a form submit_action with no matching workflow, a state × action pair with
+  no workflow, a bulk_action with no workflow, any submit path through a conditional
+  branch with no workflow.
+
+MINOR phantom
+  A workflow whose terminal_action is not literally named in the AST but is so
+  universally implied by the component type that its presence is unsurprising
+  (e.g., a "Search" workflow when the table has `searchable: true`). Flag it;
+  don't auto-retry for it alone.
+
+CRITICAL phantom
+  A workflow whose terminal_action cannot be traced to any AST node's
+  submit_actions[], available_actions[], row_actions[], or bulk_actions[] —
+  and is not an explicit action verb in the description text.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD — Seven Checks
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Check 1 — Missing form workflows.**
+Walk every `form` node in the AST. For each entry in `submit_actions[]`, there must be at least one workflow with a matching `terminal_action`. If the form has `visible_when` or `required_when` fields, there must be one workflow per unique condition combination × submit action. Flag any missing combinations. Classify each as critical or minor.
+
+**Check 2 — Missing state-machine workflows.**
+Walk every `state_bound_action_bar` node. For each state key in `states{}`, for each entry in `available_actions[]`, there must be one workflow with `terminal_action` matching that action and `conditional_branch` containing `entity_state == <state>`. Flag any missing state × action pairs. Classify each as critical.
+If a `<module_context>` block is present, use its `assumed_state_on_entry` to confirm that the entry state named in the context is represented as a workflow's starting condition where applicable.
+
+**Check 3 — Missing data table workflows.**
+Walk every `data_table` node. For each entry in `row_actions[]` and `bulk_actions[]`, there must be one workflow with `terminal_action` matching that action. Flag any missing entries. This includes read-only actions like View/Details. Classify bulk_actions as critical; row_actions as minor if read-only, critical otherwise.
+
+**Check 4 — Phantom workflows.**
+A workflow is a phantom if its `terminal_action` cannot be found in any AST node's `submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`, or as an explicit action verb in the description text. Classify each as critical or minor per the definitions above.
+
+**Check 5 — Wrong conditional branch.**
+If a workflow has a non-null `conditional_branch`, verify the condition references a real field name that appears in the AST under `visible_when`, `required_when`, or a real state key in `state_bound_action_bar`. Flag any condition that references a field or state that does not exist. Classify as structural error.
+
+**Check 6 — Empty or generic on_success.**
+If a workflow's `on_success` is empty, null, "success", "done", or any single-word generic string, and the AST has a concrete `on_success` value for that action, flag it. The `on_success` must reflect what the AST or description says actually happens. Classify as structural error.
+
+**Check 7 — Zero workflows when module clearly has actions.**
+If the workflow list is empty (total = 0) but the AST contains any `form`, `wizard`, `state_bound_action_bar`, or `data_table` component, that is a critical failure — flag it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERDICT RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Check 5, 6)
+                       AND Check 7 passes
+                       → fixes must be []
+
+  retry                Any CRITICAL missing workflow
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any structural error (wrong conditional, generic on_success)
+                       OR Check 7 failure
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       interaction path exists — not a close call, but truly unresolvable
+                       from the text and AST alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "AST path or state×action pair",
+      "severity": "critical | minor",
+      "reason": "<why this workflow is expected from the AST/description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "WF-NNN terminal_action=X",
+      "severity": "critical | minor",
+      "reason": "<why this workflow has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Check 5/6 violation and the affected workflow>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact missing path or phantom to remove>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+
+------------------------------------------------------------
+[21:10:53] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 6,
+  "module_title": "Course Edit Mode and Activity Chooser",
+  "summary": "Enables an authoring interface on a Course page with inline controls for editing, managing sections and activities, bulk actions, and an Activity Chooser modal for adding activities and resources.",
+  "where_it_fits": "This module is activated on a Course Page (reached via My Courses or Dashboard \u2192 select course) and switches the course view into edit mode for content creation and organization; it is primarily used by teachers during course setup and ongoing content edits (the Settings tab is visible to teachers).",
+  "assumed_state_on_entry": "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+}
+</module_context>
+
+<description>
+
+Enabling Edit mode turns the Course page into an authoring interface. Each section and activity row gains inline controls: an edit icon for quick renaming, a section-level three-dot menu (edit, duplicate, hide, delete, move), an activity-level three-dot menu (edit settings, move, duplicate, hide, set access restrictions, delete), and a bulk actions toolbar for batch operations on multiple selected activities. An "+ Add an activity or resource" button appears at the bottom of each section, and an "+ Add a subsection" control allows nesting content hierarchically. Clicking "+ Add an activity or resource" opens the Activity Chooser modal, which contains a category filter bar (All, Activities, Resources, Recommended), a search field, and a grid of activity/resource tiles including Assignment, Forum, Quiz, File, Page, Lesson, SCORM, URL, and Workshop. Each tile has a star/favorite toggle for quick access. Selecting a tile and clicking "Add" opens that activity's creation form.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Course Edit Mode and Activity Chooser",
+  "components": {
+    "Course_Edit_Mode": {
+      "type": "container",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+      ],
+      "fields": {
+        "Sections": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Quick_Rename": {
+              "type": "unspecified"
+            },
+            "Section_Menu": {
+              "type": "menu",
+              "row_actions": [
+                {
+                  "action_name": "edit"
+                },
+                {
+                  "action_name": "duplicate"
+                },
+                {
+                  "action_name": "hide"
+                },
+                {
+                  "action_name": "delete"
+                },
+                {
+                  "action_name": "move"
+                }
+              ]
+            },
+            "Activities": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Select_For_Bulk": {
+                  "type": "checkbox"
+                },
+                "Quick_Rename": {
+                  "type": "unspecified"
+                },
+                "Activity_Menu": {
+                  "type": "menu",
+                  "row_actions": [
+                    {
+                      "action_name": "edit settings"
+                    },
+                    {
+                      "action_name": "move"
+                    },
+                    {
+                      "action_name": "duplicate"
+                    },
+                    {
+                      "action_name": "hide"
+                    },
+                    {
+                      "action_name": "set access restrictions"
+                    },
+                    {
+                      "action_name": "delete"
+                    }
+                  ]
+                }
+              }
+            },
+            "Add_Activity_Button": {
+              "type": "button",
+              "action_name": "+ Add an activity or resource",
+              "on_success": "opens Activity_Chooser_Modal"
+            },
+            "Add_Subsection": {
+              "type": "button",
+              "action_name": "+ Add a subsection"
+            }
+          }
+        },
+        "Bulk_Actions_Toolbar": {
+          "type": "bulk_action_bar",
+          "visible_when": "one or more Select_For_Bulk == true",
+          "bulk_actions": [
+            {
+              "action_name": "Delete Selected"
+            },
+            {
+              "action_name": "Move Selected"
+            },
+            {
+              "action_name": "Duplicate Selected"
+            },
+            {
+              "action_name": "Hide Selected"
+            },
+            {
+              "action_name": "Set access restrictions"
+            }
+          ]
+        }
+      }
+    },
+    "Activity_Chooser_Modal": {
+      "type": "modal",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+      ],
+      "fields": {
+        "Category_Filter": {
+          "type": "dropdown",
+          "options": [
+            "All",
+            "Activities",
+            "Resources",
+            "Recommended"
+          ]
+        },
+        "Search": {
+          "type": "search"
+        },
+        "Activity_Tiles": {
+          "type": "repeating_group",
+          "options": [
+            "Assignment",
+            "Forum",
+            "Quiz",
+            "File",
+            "Page",
+            "Lesson",
+            "SCORM",
+            "URL",
+            "Workshop"
+          ],
+          "item_fields": {
+            "Favorite": {
+              "type": "checkbox"
+            },
+            "Select": {
+              "type": "radio"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Add",
+          "on_success": "opens selected activity creation form",
+          "preconditions": [
+            "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Section menu \u2014 edit",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "edit",
+    "on_success": "opens inline edit/rename for the section"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Section menu \u2014 duplicate",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "duplicate",
+    "on_success": "duplicates the section"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Section menu \u2014 hide",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "hide",
+    "on_success": "marks the section as hidden"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Section menu \u2014 delete",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "delete",
+    "on_success": "deletes the section"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Section menu \u2014 move",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "move",
+    "on_success": "opens move controls to reposition the section"
+  },
+  {
+    "wf_id": "WF-006",
+    "name": "Activity row menu \u2014 edit settings",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "edit settings",
+    "on_success": "opens activity settings editor"
+  },
+  {
+    "wf_id": "WF-007",
+    "name": "Activity row menu \u2014 move",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "move",
+    "on_success": "opens move controls to reposition the activity"
+  },
+  {
+    "wf_id": "WF-008",
+    "name": "Activity row menu \u2014 duplicate",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "duplicate",
+    "on_success": "duplicates the activity"
+  },
+  {
+    "wf_id": "WF-009",
+    "name": "Activity row menu \u2014 hide",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "hide",
+    "on_success": "marks the activity as hidden"
+  },
+  {
+    "wf_id": "WF-010",
+    "name": "Activity row menu \u2014 set access restrictions",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "set access restrictions",
+    "on_success": "opens access restrictions dialog for the activity"
+  },
+  {
+    "wf_id": "WF-011",
+    "name": "Activity row menu \u2014 delete",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "delete",
+    "on_success": "deletes the activity"
+  },
+  {
+    "wf_id": "WF-012",
+    "name": "Add an activity or resource button (opens chooser)",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "+ Add an activity or resource",
+    "on_success": "opens Activity_Chooser_Modal"
+  },
+  {
+    "wf_id": "WF-013",
+    "name": "Add a subsection",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "+ Add a subsection",
+    "on_success": "adds a subsection within the section"
+  },
+  {
+    "wf_id": "WF-014",
+    "name": "Bulk action \u2014 Delete Selected",
+    "actor": "Teacher",
+    "conditional_branch": "one or more Select_For_Bulk == true",
+    "terminal_action": "Delete Selected",
+    "on_success": "deletes the selected activities"
+  },
+  {
+    "wf_id": "WF-015",
+    "name": "Bulk action \u2014 Move Selected",
+    "actor": "Teacher",
+    "conditional_branch": "one or more Select_For_Bulk == true",
+    "terminal_action": "Move Selected",
+    "on_success": "opens move controls for the selected activities"
+  },
+  {
+    "wf_id": "WF-016",
+    "name": "Bulk action \u2014 Duplicate Selected",
+    "actor": "Teacher",
+    "conditional_branch": "one or more Select_For_Bulk == true",
+    "terminal_action": "Duplicate Selected",
+    "on_success": "duplicates the selected activities"
+  },
+  {
+    "wf_id": "WF-017",
+    "name": "Bulk action \u2014 Hide Selected",
+    "actor": "Teacher",
+    "conditional_branch": "one or more Select_For_Bulk == true",
+    "terminal_action": "Hide Selected",
+    "on_success": "marks the selected activities as hidden"
+  },
+  {
+    "wf_id": "WF-018",
+    "name": "Bulk action \u2014 Set access restrictions",
+    "actor": "Teacher",
+    "conditional_branch": "one or more Select_For_Bulk == true",
+    "terminal_action": "Set access restrictions",
+    "on_success": "opens access restrictions dialog for the selected activities"
+  },
+  {
+    "wf_id": "WF-019",
+    "name": "Activity Chooser \u2014 Add selected Assignment",
+    "actor": "Teacher",
+    "conditional_branch": "Selected_Activity == Assignment",
+    "terminal_action": "Add",
+    "on_success": "opens selected activity creation form"
+  },
+  {
+    "wf_id": "WF-020",
+    "name": "Activity Chooser \u2014 Add selected Forum",
+    "actor": "Teacher",
+    "conditional_branch": "Selected_Activity == Forum",
+    "terminal_action": "Add",
+    "on_success": "opens selected activity creation form"
+  },
+  {
+    "wf_id": "WF-021",
+    "name": "Activity Chooser \u2014 Add selected Quiz",
+    "actor": "Teacher",
+    "conditional_branch": "Selected_Activity == Quiz",
+    "terminal_action": "Add",
+    "on_success": "opens selected activity creation form"
+  },
+  {
+    "wf_id": "WF-022",
+    "name": "Activity Chooser \u2014 Add selected File",
+    "actor": "Teacher",
+    "conditional_branch": "Selected_Activity == File",
+    "terminal_action": "Add",
+    "on_success": "opens selected activity creation form"
+  },
+  {
+    "wf_id": "WF-023",
+    "name": "Activity Chooser \u2014 Add selected Page",
+    "actor": "Teacher",
+    "conditional_branch": "Selected_Activity == Page",
+    "terminal_action": "Add",
+    "on_success": "opens selected activity creation form"
+  },
+  {
+    "wf_id": "WF-024",
+    "name": "Activity Chooser \u2014 Add selected Lesson",
+    "actor": "Teacher",
+    "conditional_branch": "Selected_Activity == Lesson",
+    "terminal_action": "Add",
+    "on_success": "opens selected activity creation form"
+  },
+  {
+    "wf_id": "WF-025",
+    "name": "Activity Chooser \u2014 Add selected SCORM",
+    "actor": "Teacher",
+    "conditional_branch": "Selected_Activity == SCORM",
+    "terminal_action": "Add",
+    "on_success": "opens selected activity creation form"
+  },
+  {
+    "wf_id": "WF-026",
+    "name": "Activity Chooser \u2014 Add selected URL",
+    "actor": "Teacher",
+    "conditional_branch": "Selected_Activity == URL",
+    "terminal_action": "Add",
+    "on_success": "opens selected activity creation form"
+  },
+  {
+    "wf_id": "WF-027",
+    "name": "Activity Chooser \u2014 Add selected Workshop",
+    "actor": "Teacher",
+    "conditional_branch": "Selected_Activity == Workshop",
+    "terminal_action": "Add",
+    "on_success": "opens selected activity creation form"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:11:30] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "Workflows cover most actions but there is a structural error in conditional_branch naming for Activity Chooser Add flows and several minor interactive controls (inline quick-rename and tile favorite) are missing — regeneration required.",
+  "missing": [
+    {
+      "path": "Course_Edit_Mode.Sections.item_fields.Quick_Rename (section inline rename)",
+      "severity": "minor",
+      "reason": "AST defines a Quick_Rename control for sections but no workflow covers the inline rename action."
+    },
+    {
+      "path": "Course_Edit_Mode.Sections.item_fields.Activities.item_fields.Quick_Rename (activity inline rename)",
+      "severity": "minor",
+      "reason": "AST defines a Quick_Rename control for activities but no workflow covers the inline rename action."
+    },
+    {
+      "path": "Activity_Chooser_Modal.Activity_Tiles.item_fields.Favorite (tile favorite toggle)",
+      "severity": "minor",
+      "reason": "AST defines a Favorite checkbox on each activity tile but there is no workflow for toggling a tile's favorite state."
+    }
+  ],
+  "phantoms": [],
+  "structural_errors": [
+    "Workflows WF-019 through WF-027 use conditional_branch expressions like 'Selected_Activity == Assignment' but the AST does not define a field named Selected_Activity. The Activity_Tiles item_field for selection is named 'Select' (radio). Either the workflows' conditional_branch must reference the actual field (e.g., Activity_Tiles.Select == 'Assignment' in an appropriate scoping syntax) or the AST must be updated to define Selected_Activity; as-is the conditional references a non-existent field and is invalid."
+  ],
+  "fixes": [
+    "Correct the Activity Chooser Add workflows (WF-019..WF-027) so their conditional_branch references the real AST field for tile selection (e.g., reference the Activity_Tiles Select radio field) OR add a concrete Selected_Activity field to the AST; ensure the conditional expression matches the AST naming and scoping.",
+    "Add a workflow for the section inline rename action: path Course_Edit_Mode.Sections.item_fields.Quick_Rename with terminal_action name matching the UI control (e.g., 'Quick_Rename' or 'rename') and on_success describing the inline rename completion.",
+    "Add a workflow for the activity inline rename action: path Course_Edit_Mode.Sections.item_fields.Activities.item_fields.Quick_Rename with terminal_action name matching the UI control and on_success describing the inline rename completion.",
+    "Add a workflow for toggling the Favorite checkbox on Activity_Chooser_Modal.Activity_Tiles.item_fields.Favorite (terminal_action e.g., 'toggle favorite' or 'favorite') with on_success reflecting the favorited state change."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:11:30] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "Workflows cover most actions but there is a structural error in conditional_branch naming for Activity Chooser Add flows and several minor interactive controls (inline quick-rename and tile favorite) are missing \u2014 regeneration required.",
+  "missing": [
+    {
+      "path": "Course_Edit_Mode.Sections.item_fields.Quick_Rename (section inline rename)",
+      "severity": "minor",
+      "reason": "AST defines a Quick_Rename control for sections but no workflow covers the inline rename action."
+    },
+    {
+      "path": "Course_Edit_Mode.Sections.item_fields.Activities.item_fields.Quick_Rename (activity inline rename)",
+      "severity": "minor",
+      "reason": "AST defines a Quick_Rename control for activities but no workflow covers the inline rename action."
+    },
+    {
+      "path": "Activity_Chooser_Modal.Activity_Tiles.item_fields.Favorite (tile favorite toggle)",
+      "severity": "minor",
+      "reason": "AST defines a Favorite checkbox on each activity tile but there is no workflow for toggling a tile's favorite state."
+    }
+  ],
+  "phantoms": [],
+  "structural_errors": [
+    "Workflows WF-019 through WF-027 use conditional_branch expressions like 'Selected_Activity == Assignment' but the AST does not define a field named Selected_Activity. The Activity_Tiles item_field for selection is named 'Select' (radio). Either the workflows' conditional_branch must reference the actual field (e.g., Activity_Tiles.Select == 'Assignment' in an appropriate scoping syntax) or the AST must be updated to define Selected_Activity; as-is the conditional references a non-existent field and is invalid."
+  ],
+  "fixes": [
+    "Correct the Activity Chooser Add workflows (WF-019..WF-027) so their conditional_branch references the real AST field for tile selection (e.g., reference the Activity_Tiles Select radio field) OR add a concrete Selected_Activity field to the AST; ensure the conditional expression matches the AST naming and scoping.",
+    "Add a workflow for the section inline rename action: path Course_Edit_Mode.Sections.item_fields.Quick_Rename with terminal_action name matching the UI control (e.g., 'Quick_Rename' or 'rename') and on_success describing the inline rename completion.",
+    "Add a workflow for the activity inline rename action: path Course_Edit_Mode.Sections.item_fields.Activities.item_fields.Quick_Rename with terminal_action name matching the UI control and on_success describing the inline rename completion.",
+    "Add a workflow for toggling the Favorite checkbox on Activity_Chooser_Modal.Activity_Tiles.item_fields.Favorite (terminal_action e.g., 'toggle favorite' or 'favorite') with on_success reflecting the favorited state change."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:12:16] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 6,
+  "module_title": "Course Edit Mode and Activity Chooser",
+  "summary": "Enables an authoring interface on a Course page with inline controls for editing, managing sections and activities, bulk actions, and an Activity Chooser modal for adding activities and resources.",
+  "where_it_fits": "This module is activated on a Course Page (reached via My Courses or Dashboard \u2192 select course) and switches the course view into edit mode for content creation and organization; it is primarily used by teachers during course setup and ongoing content edits (the Settings tab is visible to teachers).",
+  "assumed_state_on_entry": "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+}
+</module_context>
+
+<description>
+
+Enabling Edit mode turns the Course page into an authoring interface. Each section and activity row gains inline controls: an edit icon for quick renaming, a section-level three-dot menu (edit, duplicate, hide, delete, move), an activity-level three-dot menu (edit settings, move, duplicate, hide, set access restrictions, delete), and a bulk actions toolbar for batch operations on multiple selected activities. An "+ Add an activity or resource" button appears at the bottom of each section, and an "+ Add a subsection" control allows nesting content hierarchically. Clicking "+ Add an activity or resource" opens the Activity Chooser modal, which contains a category filter bar (All, Activities, Resources, Recommended), a search field, and a grid of activity/resource tiles including Assignment, Forum, Quiz, File, Page, Lesson, SCORM, URL, and Workshop. Each tile has a star/favorite toggle for quick access. Selecting a tile and clicking "Add" opens that activity's creation form.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Course Edit Mode and Activity Chooser",
+  "components": {
+    "Course_Edit_Mode": {
+      "type": "container",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+      ],
+      "fields": {
+        "Sections": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Quick_Rename": {
+              "type": "unspecified"
+            },
+            "Section_Menu": {
+              "type": "menu",
+              "row_actions": [
+                {
+                  "action_name": "edit"
+                },
+                {
+                  "action_name": "duplicate"
+                },
+                {
+                  "action_name": "hide"
+                },
+                {
+                  "action_name": "delete"
+                },
+                {
+                  "action_name": "move"
+                }
+              ]
+            },
+            "Activities": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Select_For_Bulk": {
+                  "type": "checkbox"
+                },
+                "Quick_Rename": {
+                  "type": "unspecified"
+                },
+                "Activity_Menu": {
+                  "type": "menu",
+                  "row_actions": [
+                    {
+                      "action_name": "edit settings"
+                    },
+                    {
+                      "action_name": "move"
+                    },
+                    {
+                      "action_name": "duplicate"
+                    },
+                    {
+                      "action_name": "hide"
+                    },
+                    {
+                      "action_name": "set access restrictions"
+                    },
+                    {
+                      "action_name": "delete"
+                    }
+                  ]
+                }
+              }
+            },
+            "Add_Activity_Button": {
+              "type": "button",
+              "action_name": "+ Add an activity or resource",
+              "on_success": "opens Activity_Chooser_Modal"
+            },
+            "Add_Subsection": {
+              "type": "button",
+              "action_name": "+ Add a subsection"
+            }
+          }
+        },
+        "Bulk_Actions_Toolbar": {
+          "type": "bulk_action_bar",
+          "visible_when": "one or more Select_For_Bulk == true",
+          "bulk_actions": [
+            {
+              "action_name": "Delete Selected"
+            },
+            {
+              "action_name": "Move Selected"
+            },
+            {
+              "action_name": "Duplicate Selected"
+            },
+            {
+              "action_name": "Hide Selected"
+            },
+            {
+              "action_name": "Set access restrictions"
+            }
+          ]
+        }
+      }
+    },
+    "Activity_Chooser_Modal": {
+      "type": "modal",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+      ],
+      "fields": {
+        "Category_Filter": {
+          "type": "dropdown",
+          "options": [
+            "All",
+            "Activities",
+            "Resources",
+            "Recommended"
+          ]
+        },
+        "Search": {
+          "type": "search"
+        },
+        "Activity_Tiles": {
+          "type": "repeating_group",
+          "options": [
+            "Assignment",
+            "Forum",
+            "Quiz",
+            "File",
+            "Page",
+            "Lesson",
+            "SCORM",
+            "URL",
+            "Workshop"
+          ],
+          "item_fields": {
+            "Favorite": {
+              "type": "checkbox"
+            },
+            "Select": {
+              "type": "radio"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Add",
+          "on_success": "opens selected activity creation form",
+          "preconditions": [
+            "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Section inline quick rename",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "Quick_Rename",
+    "on_success": "Section renamed inline."
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Section menu - edit",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "edit",
+    "on_success": "section edit selected (edit action invoked for section)"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Section menu - duplicate",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "duplicate",
+    "on_success": "section duplicated"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Section menu - hide",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "hide",
+    "on_success": "section hidden"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Section menu - delete",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "delete",
+    "on_success": "section deleted"
+  },
+  {
+    "wf_id": "WF-006",
+    "name": "Section menu - move",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "move",
+    "on_success": "section move initiated"
+  },
+  {
+    "wf_id": "WF-007",
+    "name": "Add an activity or resource (open chooser)",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "+ Add an activity or resource",
+    "on_success": "opens Activity_Chooser_Modal"
+  },
+  {
+    "wf_id": "WF-008",
+    "name": "Add a subsection",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "+ Add a subsection",
+    "on_success": "subsection added"
+  },
+  {
+    "wf_id": "WF-009",
+    "name": "Activity inline quick rename",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "Quick_Rename",
+    "on_success": "Activity renamed inline."
+  },
+  {
+    "wf_id": "WF-010",
+    "name": "Activity menu - edit settings",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "edit settings",
+    "on_success": "activity settings edit selected (opens activity settings)"
+  },
+  {
+    "wf_id": "WF-011",
+    "name": "Activity menu - move",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "move",
+    "on_success": "activity move initiated"
+  },
+  {
+    "wf_id": "WF-012",
+    "name": "Activity menu - duplicate",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "duplicate",
+    "on_success": "activity duplicated"
+  },
+  {
+    "wf_id": "WF-013",
+    "name": "Activity menu - hide",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "hide",
+    "on_success": "activity hidden"
+  },
+  {
+    "wf_id": "WF-014",
+    "name": "Activity menu - set access restrictions",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "set access restrictions",
+    "on_success": "activity access restrictions selected (opens access restrictions dialog)"
+  },
+  {
+    "wf_id": "WF-015",
+    "name": "Activity menu - delete",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "delete",
+    "on_success": "activity deleted"
+  },
+  {
+    "wf_id": "WF-016",
+    "name": "Bulk action - Delete Selected",
+    "actor": "Teacher",
+    "conditional_branch": "one or more Select_For_Bulk == true",
+    "terminal_action": "Delete Selected",
+    "on_success": "selected activities deleted"
+  },
+  {
+    "wf_id": "WF-017",
+    "name": "Bulk action - Move Selected",
+    "actor": "Teacher",
+    "conditional_branch": "one or more Select_For_Bulk == true",
+    "terminal_action": "Move Selected",
+    "on_success": "move selected activities initiated"
+  },
+  {
+    "wf_id": "WF-018",
+    "name": "Bulk action - Duplicate Selected",
+    "actor": "Teacher",
+    "conditional_branch": "one or more Select_For_Bulk == true",
+    "terminal_action": "Duplicate Selected",
+    "on_success": "selected activities duplicated"
+  },
+  {
+    "wf_id": "WF-019",
+    "name": "Bulk action - Hide Selected",
+    "actor": "Teacher",
+    "conditional_branch": "one or more Select_For_Bulk == true",
+    "terminal_action": "Hide Selected",
+    "on_success": "selected activities hidden"
+  },
+  {
+    "wf_id": "WF-020",
+    "name": "Bulk action - Set access restrictions",
+    "actor": "Teacher",
+    "conditional_branch": "one or more Select_For_Bulk == true",
+    "terminal_action": "Set access restrictions",
+    "on_success": "access restrictions set for selected activities"
+  },
+  {
+    "wf_id": "WF-021",
+    "name": "Activity tile favorite toggle",
+    "actor": "Teacher",
+    "conditional_branch": null,
+    "terminal_action": "Favorite",
+    "on_success": "activity tile favorite state toggled"
+  },
+  {
+    "wf_id": "WF-022",
+    "name": "Activity Chooser Add - Assignment selected",
+    "actor": "Teacher",
+    "conditional_branch": "Activity_Tiles.Select == Assignment",
+    "terminal_action": "Add",
+    "on_success": "opens selected activity creation form"
+  },
+  {
+    "wf_id": "WF-023",
+    "name": "Activity Chooser Add - Forum selected",
+    "actor": "Teacher",
+    "conditional_branch": "Activity_Tiles.Select == Forum",
+    "terminal_action": "Add",
+    "on_success": "opens selected activity creation form"
+  },
+  {
+    "wf_id": "WF-024",
+    "name": "Activity Chooser Add - Quiz selected",
+    "actor": "Teacher",
+    "conditional_branch": "Activity_Tiles.Select == Quiz",
+    "terminal_action": "Add",
+    "on_success": "opens selected activity creation form"
+  },
+  {
+    "wf_id": "WF-025",
+    "name": "Activity Chooser Add - File selected",
+    "actor": "Teacher",
+    "conditional_branch": "Activity_Tiles.Select == File",
+    "terminal_action": "Add",
+    "on_success": "opens selected activity creation form"
+  },
+  {
+    "wf_id": "WF-026",
+    "name": "Activity Chooser Add - Page selected",
+    "actor": "Teacher",
+    "conditional_branch": "Activity_Tiles.Select == Page",
+    "terminal_action": "Add",
+    "on_success": "opens selected activity creation form"
+  },
+  {
+    "wf_id": "WF-027",
+    "name": "Activity Chooser Add - Lesson selected",
+    "actor": "Teacher",
+    "conditional_branch": "Activity_Tiles.Select == Lesson",
+    "terminal_action": "Add",
+    "on_success": "opens selected activity creation form"
+  },
+  {
+    "wf_id": "WF-028",
+    "name": "Activity Chooser Add - SCORM selected",
+    "actor": "Teacher",
+    "conditional_branch": "Activity_Tiles.Select == SCORM",
+    "terminal_action": "Add",
+    "on_success": "opens selected activity creation form"
+  },
+  {
+    "wf_id": "WF-029",
+    "name": "Activity Chooser Add - URL selected",
+    "actor": "Teacher",
+    "conditional_branch": "Activity_Tiles.Select == URL",
+    "terminal_action": "Add",
+    "on_success": "opens selected activity creation form"
+  },
+  {
+    "wf_id": "WF-030",
+    "name": "Activity Chooser Add - Workshop selected",
+    "actor": "Teacher",
+    "conditional_branch": "Activity_Tiles.Select == Workshop",
+    "terminal_action": "Add",
+    "on_success": "opens selected activity creation form"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:12:33] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "Workflows cover all AST actions (section/activity menus, quick rename, bulk actions, activity chooser Add per tile, and favorite toggle); no critical or structural issues found.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:12:33] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "Workflows cover all AST actions (section/activity menus, quick rename, bulk actions, activity chooser Add per tile, and favorite toggle); no critical or structural issues found.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}

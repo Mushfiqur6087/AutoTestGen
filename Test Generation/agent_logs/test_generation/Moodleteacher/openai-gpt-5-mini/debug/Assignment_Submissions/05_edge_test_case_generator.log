@@ -1,0 +1,560 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:12:33.220291
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:12:33] Test-Edge - SYSTEM PROMPT
+------------------------------------------------------------
+You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
+
+You are NOT producing happy paths (positive prompt) or standard validation failures (negative prompt). You are finding the cracks between valid and invalid, and the unusual paths real users take.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Edge Testing:**
+
+| AST node / field | What to look for |
+|---|---|
+| `constraints: []` with numeric/date/count threshold | The boundary values — test AT and JUST PAST each limit |
+| `repeating_group` with `max` | Test adding exactly `max` entries (should succeed) then one more (should block) |
+| `visible_when` / `required_when` | Edge: trigger condition, fill revealed field with boundary value |
+| `state_bound_action_bar` | State edges: rapid consecutive state transitions, transition from a boundary state |
+
+| `type: "date"` fields | Data edges: today, yesterday, far future, Feb 29 leap year |
+| `type: "file_upload"` | Edge: file exactly at size limit, file at 1 byte over limit |
+
+> If the module has no `constraints`, no `repeating_group`, no `date` or `number` fields, and no `state_bound_action_bar` — it has minimal edge surface. Produce 1–3 generic input edge cases (long text, special characters) and stop. Do not invent boundary tests where no boundary exists.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — State clearly whether the boundary value should PASS or FAIL.**
+Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+- ❌ `"System handles the input"` — ambiguous
+- ✅ `"Form submits successfully; entity is created with the <minimum value>"`
+- ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
+
+**Rule B — For edge cases, describe the precise visible outcome.**
+Same rule as the positive/negative prompts — name the UI element that changes.
+- ❌ `"Edge case handled correctly"`
+- ✅ `"Second submission attempt is blocked; only one record appears in the table"`
+- ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
+
+**Rule C — Quote exact error text when the spec provides it.**
+If the description states a specific error string for a boundary violation, use it verbatim.
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Express boundary values relative to the constraint.
+
+- ✅ `"Enter <minimum allowed value> in the <field>"`
+- ✅ `"Enter <one unit below minimum> in the <field>"`
+- ✅ `"Enter <maximum length string> in the <text field>"`
+- ✅ `"Add <maximum allowed entries + 1> rows to the repeating group"`
+- ❌ `"Enter '$25' in the Amount field"`
+- ❌ `"Enter 'aaaaaaaaaa' (10 chars) in the field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic action — one field, one click, one navigation. No grouping.
+- ✅ `"1. Enter <minimum allowed value> in the <Amount> field"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill the form with minimum value and submit"`
+
+---
+
+**SCOPE GATE:**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
+2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
+3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Boundary Tests (from AST constraints):**
+
+Scan every `constraints: []` array and every numeric/date/count threshold mentioned in the description. For each threshold:
+
+| Constraint | Boundary (should PASS) | Past-boundary (should FAIL) |
+|---|---|---|
+| `"minimum <X>"` | Enter exactly `<minimum value>` | Enter `<one unit below minimum>` |
+| `"maximum <N> entries"` | Add exactly `<N>` entries | Attempt to add `<N+1>` entry |
+| `"<date A> must not be before <date B>"` | `<date A>` = `<date B>` (same day) | `<date A>` = `<date B>` minus 1 day |
+| `"<X>–<Y> range"` | Enter `<X>` → pass; enter `<Y>` → pass | Enter `<X-1>` → fail; enter `<Y+1>` → fail |
+| `"at least <N> characters"` | Enter exactly `<N>` characters | Enter `<N-1>` characters |
+| `"must be ≥ <P>% of <reference>"` | Enter exactly `<P>%` | Enter `<P minus small delta>%` |
+
+Rules:
+- If a constraint has both a minimum AND maximum, test both ends (up to 4 tests total for that constraint).
+- If a constraint has no numeric/date/count threshold (e.g., "must be unique", "cannot transition while children exist") → **skip it** — it belongs in negative tests, not boundary tests.
+- Generate zero boundary tests if zero thresholds exist — do not invent them.
+
+**Cross-field boundary tests** (only if the description/AST shows a field ordering constraint — e.g., date A must not be before date B, closing date must be after opening date):
+- ONE test where field A equals field B exactly (same-day / same-value boundary) → assert this **succeeds** per spec
+- ONE test where field A is one unit before field B → assert **blocked with a visible error**
+
+**2. Input Edge Cases:**
+
+Pick only the ones that apply to field types present in this module's AST:
+
+- **Long text** (any `text/unspecified` or `textarea` field): enter a very long string (200+ characters) → assert it is either accepted or truncated/rejected with a visible indicator
+- **Special characters / emoji / unicode** (free-text fields): enter special chars → assert accepted or a specific error shown
+- **Leading/trailing whitespace** (text inputs): enter value with leading/trailing spaces → assert trimmed in saved output shown on the detail page, or an inline error shown
+- **Zero as numeric input** (number fields where zero is ambiguous): if the spec states a minimum > 0, assert `0` is blocked with a visible error; if the spec permits zero, assert the form submits successfully and the saved record displays `0`
+- **Decimal precision** (financial/numeric fields): enter a value with more decimal places than the field supports → assert rounding behavior is visible in the saved output, or an inline error is shown
+
+**3. Interaction Edge Cases:**
+
+Pick only the ones that match component types in this module's AST:
+
+- **Rapid re-submission after redirect** (any form that redirects to a detail page on success): after a successful submit, press the browser back button → assert the creation form is shown blank (not pre-filled) OR the user is redirected to the detail page without a second entity being created
+- **Wizard step skip — enforced navigation** (wizard where steps must be completed sequentially): attempt to click a later step tab directly without completing earlier steps → assert navigation is blocked and the earlier step remains active
+- **Wizard step skip — free navigation** (wizard that allows free tab navigation): navigate to a later step without filling earlier steps → assert the later step displays and returning to the earlier step shows fields blank (no data was lost from the later step)
+- **Repeating group: add then remove all** (any `repeating_group`): add entries → remove all entries → submit → assert behavior: if spec states no minimum, form submits successfully; if spec requires at least one entry, a visible error is shown
+
+**4. State / Data Edge Cases:**
+
+Pick only what applies to this module:
+
+- **Rapid consecutive state transitions** (`state_bound_action_bar`): complete one transition → immediately attempt the next → assert the action succeeds or the expected blocking message is shown per spec
+- **State boundary condition:** If the `<module_context>` block specifies an `assumed_state_on_entry` that is on the boundary of an entity's lifecycle (e.g. "Newly created", "Pending Review"), generate an edge case testing an action immediately following that state entry.
+- **Date edges** (`date` fields): test today's date, yesterday, and a far future date — assert which are accepted per spec and describe the visible outcome for each
+- **Leap year date** (`date` fields, free-text entry only): enter February 29 on a non-leap year → assert error; on a leap year → assert accepted. *Skip this test if the field uses a calendar date picker — pickers remove February 29 from non-leap years at the UI level and the test is not UI-executable.*
+- **File at exact size limit** (`file_upload`): upload a file exactly at the stated size limit → assert accepted with a visible success indicator; upload a file one unit over the limit → assert a visible error naming the size constraint
+
+**RELEVANCE RULE:** Only generate edge cases that match component types present in this module's AST. A login form does not need repeating-group edge cases. A data table does not need wizard-step-skip tests.
+
+**`visible_when` fields:** If the spec reveals a conditional field via a toggle/dropdown, test a boundary value in that revealed field. If the revealed field has no numeric or date constraint, generate one `input_edge` test using a long-text or special-character value instead.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (form with numeric/date constraints): **4–8 tests**
+- Complex module (state machine, wizard, repeating groups): **6–10 tests**
+
+If you exceed these, you are generating generic edges that don't apply to this module. Apply the relevance rule and scope gate again.
+
+---
+
+**MINIMUM OUTPUT RULE:**
+
+If the module has any numeric/date/count threshold in the AST or description, produce at least 2 boundary tests. Zero boundary tests when thresholds exist is a generation failure.
+
+---
+
+**PRIORITY:**
+
+- **High:** None — edge tests are secondary to core functionality
+- **Medium:** Boundary tests at thresholds (financial amounts, date ordering, count limits, file size limits)
+- **Low:** Input edge cases (long text, special chars, whitespace, decimal precision), interaction edge cases (browser back, wizard skip)
+
+---
+
+**WORKFLOW-AWARE BOUNDARY SCOPING (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow where `conditional_branch` activates a numeric or date field, check if that field has a boundary (a numeric/date threshold in the AST `constraints` or description).
+- If yes, that workflow's branch is a **candidate for a boundary edge test** — add or confirm a boundary TC exists for it.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a specific workflow's boundary. Set `"wf_ref": null` for generic input/interaction edge tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "wf_ref": null,
+      "subcategory": "boundary | input_edge | interaction_edge | state_edge | data_edge",
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "Precise visible outcome — state pass or fail explicitly for boundary tests",
+      "priority": "medium | low"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "boundary": 0,
+    "input_edge": 0,
+    "interaction_edge": 0,
+    "state_edge": 0,
+    "data_edge": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[21:12:33] Test-Edge - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 11,
+  "module_title": "Assignment Submissions",
+  "summary": "Displays a searchable and filterable table of all student submission records for an assignment, including submission and grading statuses, timestamps, previews, feedback, and quick-grading inline controls.",
+  "where_it_fits": "Accessible from an assignment's activity page within a course (reachable via the Course tab and course breadcrumbs or the Course Index sidebar), this view is part of the teacher/grader workflow for reviewing and grading student work after submissions have been made. It sits downstream of Assignment Creation and is used prior to or during updating the Gradebook.",
+  "assumed_state_on_entry": "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
+}
+</module_context>
+
+<module_name>Assignment Submissions</module_name>
+
+<ast>
+{
+  "module_name": "Assignment Submissions",
+  "components": {
+    "Submissions_Search_Filters": {
+      "type": "form",
+      "fields": {
+        "Student_Search": {
+          "type": "search"
+        },
+        "Submission_Status_Filter": {
+          "type": "dropdown",
+          "options": [
+            "Submitted for grading",
+            "No submission",
+            "Draft \u2014 not submitted"
+          ]
+        },
+        "Grading_Status_Filter": {
+          "type": "dropdown",
+          "options": [
+            "Graded",
+            "Not graded"
+          ]
+        },
+        "Quick_Grading_Mode": {
+          "type": "checkbox",
+          "description": "Enables inline grade entry directly in the table"
+        }
+      },
+      "preconditions": [
+        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
+      ]
+    },
+    "Submissions_Table": {
+      "type": "data_table",
+      "searchable": true,
+      "filterable_columns": [
+        "Submission_Status",
+        "Grading_Status"
+      ],
+      "row_fields": {
+        "Student_Identity": {
+          "type": "link",
+          "description": "Student name and initials icon; link opens student profile"
+        },
+        "Online_Text_Preview": {
+          "type": "link",
+          "description": "Opens an inline preview of online text submission"
+        },
+        "File_Submissions": {
+          "type": "link",
+          "description": "Links to submitted files for download/view"
+        },
+        "Submission_Comments": {
+          "type": "link",
+          "description": "Opens submission comments thread or modal"
+        },
+        "Feedback_Comments": {
+          "type": "link",
+          "description": "Opens or adds feedback comments"
+        },
+        "Feedback_Files": {
+          "type": "link",
+          "description": "Links to feedback files (download or view)"
+        },
+        "Final_Grade": {
+          "type": "unspecified",
+          "editable": true,
+          "enabled_when": "Quick_Grading_Mode == true",
+          "description": "Inline editable final grade when Quick Grading Mode is enabled"
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "Open Grading Workflow",
+          "on_click": "opens the grading workflow for the selected student"
+        }
+      ],
+      "preconditions": [
+        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Submissions view presents a table of all student submission records. Search and filter controls above the table allow narrowing by student name, submission status, and grading status. The table columns are: Student identity (name and initials icon, links to profile), Submission status (e.g., Submitted for grading, No submission, Draft — not submitted), Grading status (e.g., Graded, Not graded), Submission date/time, Time since submission, Online text preview, File submission links, Submission comments, Feedback comments, Feedback files, and Final grade. Each row has an action menu to open the grading workflow for that student. A "Quick grading" mode can be enabled to allow inline grade entry directly in the table.
+
+---
+
+
+
+</description>
+
+<workflows>
+WF-001 | Search by student name | actor: teacher or grader | branch: none | terminal: Student_Search | on_success: Table is filtered to match the student search query, narrowing visible submissions.
+WF-002 | Filter by submission status | actor: teacher or grader | branch: none | terminal: Submission_Status_Filter | on_success: Table is filtered by the selected Submission Status (e.g., Submitted for grading, No submission, Draft — not submitted).
+WF-003 | Filter by grading status | actor: teacher or grader | branch: none | terminal: Grading_Status_Filter | on_success: Table is filtered by the selected Grading Status (Graded or Not graded).
+WF-004 | Enable Quick Grading mode | actor: teacher or grader | branch: none | terminal: Quick_Grading_Mode | on_success: Quick Grading Mode enabled; inline grade entry (Final_Grade) becomes editable directly in the table.
+WF-005 | Open student profile from row | actor: teacher or grader | branch: none | terminal: Student_Identity | on_success: Link opens the student's profile.
+WF-006 | Open online text preview | actor: teacher or grader | branch: none | terminal: Online_Text_Preview | on_success: Opens an inline preview of the student's online text submission.
+WF-007 | Open submitted files | actor: teacher or grader | branch: none | terminal: File_Submissions | on_success: Links to submitted files are opened for download or viewing.
+WF-008 | Open submission comments | actor: teacher or grader | branch: none | terminal: Submission_Comments | on_success: Opens the submission comments thread or modal.
+WF-009 | Open or add feedback comments | actor: teacher or grader | branch: none | terminal: Feedback_Comments | on_success: Opens or allows adding feedback comments for the submission.
+WF-010 | Open feedback files | actor: teacher or grader | branch: none | terminal: Feedback_Files | on_success: Links to feedback files are opened for download or viewing.
+WF-011 | Open grading workflow for a student | actor: teacher or grader | branch: none | terminal: Open Grading Workflow | on_success: Opens the grading workflow for the selected student.
+WF-012 | Edit final grade inline (Quick Grading enabled) | actor: teacher or grader | branch: Quick_Grading_Mode == true | terminal: Final_Grade | on_success: Final grade is edited inline in the table when Quick Grading Mode is enabled.
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:15:09] Test-Edge - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Assignment Submissions",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "wf_ref": "WF-004",
+      "subcategory": "interaction_edge",
+      "test_case": "Final_Grade remains non-editable when Quick Grading is disabled",
+      "preconditions": [
+        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available).",
+        "Quick_Grading_Mode is currently unchecked/disabled."
+      ],
+      "steps": [
+        "1. Locate a row in the Submissions_Table with a visible Final_Grade cell.",
+        "2. Click the Final_Grade cell for that student row."
+      ],
+      "expected_result": "Clicking the Final_Grade cell is blocked; the cell does not become editable and no inline edit controls appear (Final_Grade remains read-only).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-002",
+      "wf_ref": "WF-012",
+      "subcategory": "state_edge",
+      "test_case": "Enabling Quick Grading makes Final_Grade editable and inline edit succeeds",
+      "preconditions": [
+        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available).",
+        "Quick_Grading_Mode is currently unchecked/disabled."
+      ],
+      "steps": [
+        "1. Check the Quick_Grading_Mode checkbox to enable Quick Grading.",
+        "2. Locate a row in the Submissions_Table and click into the Final_Grade cell for that student.",
+        "3. Type a new grade value into the inline edit control.",
+        "4. Commit the change (press Enter or click the Save/commit control in the inline editor if present)."
+      ],
+      "expected_result": "Enabling Quick Grading succeeds; the Final_Grade cell becomes editable. The inline edit succeeds and the updated grade value is saved and displayed in the table row.",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-003",
+      "wf_ref": "WF-004",
+      "subcategory": "interaction_edge",
+      "test_case": "Disable Quick Grading while an inline edit is active — unsaved edit cancellation",
+      "preconditions": [
+        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available).",
+        "Quick_Grading_Mode is currently unchecked/disabled."
+      ],
+      "steps": [
+        "1. Check the Quick_Grading_Mode checkbox to enable Quick Grading.",
+        "2. Click into the Final_Grade cell for a student row and begin typing a new value, but do not commit/save.",
+        "3. While the inline edit control is still active (before saving), uncheck the Quick_Grading_Mode checkbox to disable Quick Grading.",
+        "4. Observe the Final_Grade cell for that row."
+      ],
+      "expected_result": "Disabling Quick Grading while an inline edit is active is blocked from leaving the inline edit in an ambiguous state: the active inline edit is cancelled and no change is saved; the Final_Grade cell returns to non-editable/read-only state and shows the previously saved value (change not saved).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-004",
+      "wf_ref": "WF-001",
+      "subcategory": "input_edge",
+      "test_case": "Student search with leading and trailing whitespace is handled (trimmed)",
+      "preconditions": [
+        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available).",
+        "There is at least one known student submission whose student name is available to search."
+      ],
+      "steps": [
+        "1. In the Student_Search field, enter a known student's exact name surrounded by leading and trailing whitespace.",
+        "2. Press Enter or activate the search control to perform the search."
+      ],
+      "expected_result": "Search succeeds; the table is filtered to show matching submission(s) as if leading and trailing whitespace were trimmed (matching rows for the student are visible).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-005",
+      "wf_ref": "WF-001",
+      "subcategory": "input_edge",
+      "test_case": "Student search with special characters and emoji does not crash the UI",
+      "preconditions": [
+        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
+      ],
+      "steps": [
+        "1. In the Student_Search field, enter a query containing special characters and emoji (e.g., punctuation, symbols, emoji).",
+        "2. Press Enter or activate the search control to perform the search."
+      ],
+      "expected_result": "Search succeeds (UI remains responsive); the application does not display an error page or crash. The table either shows matching submission rows if matches exist, or displays the 'no matching submissions' / empty-results state — no runtime error is shown.",
+      "priority": "low"
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "boundary": 0,
+    "input_edge": 2,
+    "interaction_edge": 2,
+    "state_edge": 1,
+    "data_edge": 0,
+    "medium_priority": 4,
+    "low_priority": 1
+  }
+}
+
+------------------------------------------------------------
+[21:15:09] Test-Edge - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Assignment Submissions",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "wf_ref": "WF-004",
+      "subcategory": "interaction_edge",
+      "test_case": "Final_Grade remains non-editable when Quick Grading is disabled",
+      "preconditions": [
+        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available).",
+        "Quick_Grading_Mode is currently unchecked/disabled."
+      ],
+      "steps": [
+        "1. Locate a row in the Submissions_Table with a visible Final_Grade cell.",
+        "2. Click the Final_Grade cell for that student row."
+      ],
+      "expected_result": "Clicking the Final_Grade cell is blocked; the cell does not become editable and no inline edit controls appear (Final_Grade remains read-only).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-002",
+      "wf_ref": "WF-012",
+      "subcategory": "state_edge",
+      "test_case": "Enabling Quick Grading makes Final_Grade editable and inline edit succeeds",
+      "preconditions": [
+        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available).",
+        "Quick_Grading_Mode is currently unchecked/disabled."
+      ],
+      "steps": [
+        "1. Check the Quick_Grading_Mode checkbox to enable Quick Grading.",
+        "2. Locate a row in the Submissions_Table and click into the Final_Grade cell for that student.",
+        "3. Type a new grade value into the inline edit control.",
+        "4. Commit the change (press Enter or click the Save/commit control in the inline editor if present)."
+      ],
+      "expected_result": "Enabling Quick Grading succeeds; the Final_Grade cell becomes editable. The inline edit succeeds and the updated grade value is saved and displayed in the table row.",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-003",
+      "wf_ref": "WF-004",
+      "subcategory": "interaction_edge",
+      "test_case": "Disable Quick Grading while an inline edit is active \u2014 unsaved edit cancellation",
+      "preconditions": [
+        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available).",
+        "Quick_Grading_Mode is currently unchecked/disabled."
+      ],
+      "steps": [
+        "1. Check the Quick_Grading_Mode checkbox to enable Quick Grading.",
+        "2. Click into the Final_Grade cell for a student row and begin typing a new value, but do not commit/save.",
+        "3. While the inline edit control is still active (before saving), uncheck the Quick_Grading_Mode checkbox to disable Quick Grading.",
+        "4. Observe the Final_Grade cell for that row."
+      ],
+      "expected_result": "Disabling Quick Grading while an inline edit is active is blocked from leaving the inline edit in an ambiguous state: the active inline edit is cancelled and no change is saved; the Final_Grade cell returns to non-editable/read-only state and shows the previously saved value (change not saved).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-004",
+      "wf_ref": "WF-001",
+      "subcategory": "input_edge",
+      "test_case": "Student search with leading and trailing whitespace is handled (trimmed)",
+      "preconditions": [
+        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available).",
+        "There is at least one known student submission whose student name is available to search."
+      ],
+      "steps": [
+        "1. In the Student_Search field, enter a known student's exact name surrounded by leading and trailing whitespace.",
+        "2. Press Enter or activate the search control to perform the search."
+      ],
+      "expected_result": "Search succeeds; the table is filtered to show matching submission(s) as if leading and trailing whitespace were trimmed (matching rows for the student are visible).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-005",
+      "wf_ref": "WF-001",
+      "subcategory": "input_edge",
+      "test_case": "Student search with special characters and emoji does not crash the UI",
+      "preconditions": [
+        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
+      ],
+      "steps": [
+        "1. In the Student_Search field, enter a query containing special characters and emoji (e.g., punctuation, symbols, emoji).",
+        "2. Press Enter or activate the search control to perform the search."
+      ],
+      "expected_result": "Search succeeds (UI remains responsive); the application does not display an error page or crash. The table either shows matching submission rows if matches exist, or displays the 'no matching submissions' / empty-results state \u2014 no runtime error is shown.",
+      "priority": "low"
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "boundary": 0,
+    "input_edge": 2,
+    "interaction_edge": 2,
+    "state_edge": 1,
+    "data_edge": 0,
+    "medium_priority": 4,
+    "low_priority": 1
+  }
+}

@@ -1,0 +1,798 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:20:32.084539
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:21:18] Workflow-Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Validator. You receive (1) a raw functional description, (2) a Structural Model JSON, and (3) a generated workflow list for one module.
+
+Your single job: decide whether this workflow list is complete and correct, or whether it must be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the workflow list. You DO NOT generate new workflows. You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+<workflows>
+{workflows}
+</workflows>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**WHAT A WORKFLOW IS:**
+
+A workflow is one complete, executable interaction path through the module — from entry to one terminal action. Two workflows are distinct if they require different user actions to reach the terminal (different conditional branch, different state, different terminal button).
+
+MINOR missing
+  A non-critical row action (e.g., "View" on a data table) where omission does not
+  break any downstream state transition or form submission. Flag it; don't auto-retry
+  for it alone.
+
+CRITICAL missing
+  Any of: a form submit_action with no matching workflow, a state × action pair with
+  no workflow, a bulk_action with no workflow, any submit path through a conditional
+  branch with no workflow.
+
+MINOR phantom
+  A workflow whose terminal_action is not literally named in the AST but is so
+  universally implied by the component type that its presence is unsurprising
+  (e.g., a "Search" workflow when the table has `searchable: true`). Flag it;
+  don't auto-retry for it alone.
+
+CRITICAL phantom
+  A workflow whose terminal_action cannot be traced to any AST node's
+  submit_actions[], available_actions[], row_actions[], or bulk_actions[] —
+  and is not an explicit action verb in the description text.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD — Seven Checks
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Check 1 — Missing form workflows.**
+Walk every `form` node in the AST. For each entry in `submit_actions[]`, there must be at least one workflow with a matching `terminal_action`. If the form has `visible_when` or `required_when` fields, there must be one workflow per unique condition combination × submit action. Flag any missing combinations. Classify each as critical or minor.
+
+**Check 2 — Missing state-machine workflows.**
+Walk every `state_bound_action_bar` node. For each state key in `states{}`, for each entry in `available_actions[]`, there must be one workflow with `terminal_action` matching that action and `conditional_branch` containing `entity_state == <state>`. Flag any missing state × action pairs. Classify each as critical.
+If a `<module_context>` block is present, use its `assumed_state_on_entry` to confirm that the entry state named in the context is represented as a workflow's starting condition where applicable.
+
+**Check 3 — Missing data table workflows.**
+Walk every `data_table` node. For each entry in `row_actions[]` and `bulk_actions[]`, there must be one workflow with `terminal_action` matching that action. Flag any missing entries. This includes read-only actions like View/Details. Classify bulk_actions as critical; row_actions as minor if read-only, critical otherwise.
+
+**Check 4 — Phantom workflows.**
+A workflow is a phantom if its `terminal_action` cannot be found in any AST node's `submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`, or as an explicit action verb in the description text. Classify each as critical or minor per the definitions above.
+
+**Check 5 — Wrong conditional branch.**
+If a workflow has a non-null `conditional_branch`, verify the condition references a real field name that appears in the AST under `visible_when`, `required_when`, or a real state key in `state_bound_action_bar`. Flag any condition that references a field or state that does not exist. Classify as structural error.
+
+**Check 6 — Empty or generic on_success.**
+If a workflow's `on_success` is empty, null, "success", "done", or any single-word generic string, and the AST has a concrete `on_success` value for that action, flag it. The `on_success` must reflect what the AST or description says actually happens. Classify as structural error.
+
+**Check 7 — Zero workflows when module clearly has actions.**
+If the workflow list is empty (total = 0) but the AST contains any `form`, `wizard`, `state_bound_action_bar`, or `data_table` component, that is a critical failure — flag it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERDICT RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Check 5, 6)
+                       AND Check 7 passes
+                       → fixes must be []
+
+  retry                Any CRITICAL missing workflow
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any structural error (wrong conditional, generic on_success)
+                       OR Check 7 failure
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       interaction path exists — not a close call, but truly unresolvable
+                       from the text and AST alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "AST path or state×action pair",
+      "severity": "critical | minor",
+      "reason": "<why this workflow is expected from the AST/description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "WF-NNN terminal_action=X",
+      "severity": "critical | minor",
+      "reason": "<why this workflow has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Check 5/6 violation and the affected workflow>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact missing path or phantom to remove>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+
+------------------------------------------------------------
+[21:21:18] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 11,
+  "module_title": "Cars Search & Listing",
+  "summary": "Provides a car rental search form and a dynamic listing of available vehicles grouped by category with detailed attributes, pricing, and filtering options.",
+  "where_it_fits": "Accessible from the main navigation under Cars or via the home page search widget's Cars tab, this module handles the search input and displays results before booking and payment flows; it sits alongside other transport modules like Flights and Tours and feeds into the Car Booking and Payment Processing modules.",
+  "assumed_state_on_entry": "Visitor has selected the Cars section (or used the home search widget) and has provided pick-up/drop-off locations and dates/times; user may be guest or authenticated."
+}
+</module_context>
+
+<description>
+
+The car rental search form collects pick-up and drop-off location, pick-up and drop-off date and time, and driver age. On success, users are redirected to the listing page, where vehicles are grouped by category (Economy, Compact, SUV, Luxury, Van). Each listing shows vehicle image, make and model, transmission type (Automatic/Manual), fuel policy, seating and luggage capacity, feature icons (AC, GPS, etc.), price per day, total rental cost for the selected period, and a Book Now button. Sidebar filters include car type, transmission, fuel policy, rental company, and price range. Filters update results dynamically.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Cars Search & Listing",
+  "components": {
+    "Cars_Search_Form": {
+      "type": "form",
+      "fields": {
+        "Pick_Up_Location": {
+          "type": "unspecified"
+        },
+        "Drop_Off_Location": {
+          "type": "unspecified"
+        },
+        "Pick_Up_Date": {
+          "type": "date"
+        },
+        "Pick_Up_Time": {
+          "type": "unspecified"
+        },
+        "Drop_Off_Date": {
+          "type": "date"
+        },
+        "Drop_Off_Time": {
+          "type": "unspecified"
+        },
+        "Driver_Age": {
+          "type": "number"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Search",
+          "on_success": "redirect to Cars_Listing_Page"
+        }
+      ]
+    },
+    "Listing_Sidebar_Filters": {
+      "type": "filters",
+      "dynamic": true,
+      "fields": {
+        "Car_Type": {
+          "type": "dropdown",
+          "options": [
+            "Economy",
+            "Compact",
+            "SUV",
+            "Luxury",
+            "Van"
+          ],
+          "on_change": "update_results"
+        },
+        "Transmission": {
+          "type": "dropdown",
+          "options": [
+            "Automatic",
+            "Manual"
+          ],
+          "on_change": "update_results"
+        },
+        "Fuel_Policy": {
+          "type": "unspecified",
+          "on_change": "update_results"
+        },
+        "Rental_Company": {
+          "type": "unspecified",
+          "on_change": "update_results"
+        },
+        "Price_Range": {
+          "type": "unspecified",
+          "on_change": "update_results"
+        }
+      }
+    },
+    "Cars_Listing_Page": {
+      "type": "grouped_list",
+      "preconditions": [
+        "pick-up/drop-off locations and dates/times provided"
+      ],
+      "groups": [
+        {
+          "group_name": "Economy",
+          "fields": {},
+          "item_actions": [
+            {
+              "action_name": "Book Now",
+              "preconditions": [
+                "pick-up/drop-off locations and dates/times provided"
+              ],
+              "on_success": "navigate to Car Booking module"
+            }
+          ]
+        },
+        {
+          "group_name": "Compact",
+          "fields": {},
+          "item_actions": [
+            {
+              "action_name": "Book Now",
+              "preconditions": [
+                "pick-up/drop-off locations and dates/times provided"
+              ],
+              "on_success": "navigate to Car Booking module"
+            }
+          ]
+        },
+        {
+          "group_name": "SUV",
+          "fields": {},
+          "item_actions": [
+            {
+              "action_name": "Book Now",
+              "preconditions": [
+                "pick-up/drop-off locations and dates/times provided"
+              ],
+              "on_success": "navigate to Car Booking module"
+            }
+          ]
+        },
+        {
+          "group_name": "Luxury",
+          "fields": {},
+          "item_actions": [
+            {
+              "action_name": "Book Now",
+              "preconditions": [
+                "pick-up/drop-off locations and dates/times provided"
+              ],
+              "on_success": "navigate to Car Booking module"
+            }
+          ]
+        },
+        {
+          "group_name": "Van",
+          "fields": {},
+          "item_actions": [
+            {
+              "action_name": "Book Now",
+              "preconditions": [
+                "pick-up/drop-off locations and dates/times provided"
+              ],
+              "on_success": "navigate to Car Booking module"
+            }
+          ]
+        }
+      ],
+      "filters_component": "Listing_Sidebar_Filters"
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Submit search form",
+    "actor": "Visitor",
+    "conditional_branch": null,
+    "terminal_action": "Search",
+    "on_success": "redirect to Cars_Listing_Page"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Apply Car Type filter (dynamic)",
+    "actor": "Visitor",
+    "conditional_branch": "Filter == Car_Type",
+    "terminal_action": "update_results",
+    "on_success": "update_results"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Apply Transmission filter (dynamic)",
+    "actor": "Visitor",
+    "conditional_branch": "Filter == Transmission",
+    "terminal_action": "update_results",
+    "on_success": "update_results"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Apply Fuel Policy filter (dynamic)",
+    "actor": "Visitor",
+    "conditional_branch": "Filter == Fuel_Policy",
+    "terminal_action": "update_results",
+    "on_success": "update_results"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Apply Rental Company filter (dynamic)",
+    "actor": "Visitor",
+    "conditional_branch": "Filter == Rental_Company",
+    "terminal_action": "update_results",
+    "on_success": "update_results"
+  },
+  {
+    "wf_id": "WF-006",
+    "name": "Apply Price Range filter (dynamic)",
+    "actor": "Visitor",
+    "conditional_branch": "Filter == Price_Range",
+    "terminal_action": "update_results",
+    "on_success": "update_results"
+  },
+  {
+    "wf_id": "WF-007",
+    "name": "Book Now from Economy group",
+    "actor": "Visitor",
+    "conditional_branch": "Car_Group == Economy AND pick-up/drop-off locations and dates/times provided",
+    "terminal_action": "Book Now",
+    "on_success": "navigate to Car Booking module"
+  },
+  {
+    "wf_id": "WF-008",
+    "name": "Book Now from Compact group",
+    "actor": "Visitor",
+    "conditional_branch": "Car_Group == Compact AND pick-up/drop-off locations and dates/times provided",
+    "terminal_action": "Book Now",
+    "on_success": "navigate to Car Booking module"
+  },
+  {
+    "wf_id": "WF-009",
+    "name": "Book Now from SUV group",
+    "actor": "Visitor",
+    "conditional_branch": "Car_Group == SUV AND pick-up/drop-off locations and dates/times provided",
+    "terminal_action": "Book Now",
+    "on_success": "navigate to Car Booking module"
+  },
+  {
+    "wf_id": "WF-010",
+    "name": "Book Now from Luxury group",
+    "actor": "Visitor",
+    "conditional_branch": "Car_Group == Luxury AND pick-up/drop-off locations and dates/times provided",
+    "terminal_action": "Book Now",
+    "on_success": "navigate to Car Booking module"
+  },
+  {
+    "wf_id": "WF-011",
+    "name": "Book Now from Van group",
+    "actor": "Visitor",
+    "conditional_branch": "Car_Group == Van AND pick-up/drop-off locations and dates/times provided",
+    "terminal_action": "Book Now",
+    "on_success": "navigate to Car Booking module"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:22:06] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "Several workflows contain conditional_branch expressions that reference non-existent fields/variables in the AST (structural errors); update those conditions before accepting the workflows.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "WF-002 conditional_branch 'Filter == Car_Type' references variable 'Filter' which does not exist in the AST (Listing_Sidebar_Filters.fields contains 'Car_Type' but there is no 'Filter' variable).",
+    "WF-003 conditional_branch 'Filter == Transmission' references variable 'Filter' which does not exist in the AST (Listing_Sidebar_Filters.fields contains 'Transmission' but there is no 'Filter' variable).",
+    "WF-004 conditional_branch 'Filter == Fuel_Policy' references variable 'Filter' which does not exist in the AST (Listing_Sidebar_Filters.fields contains 'Fuel_Policy' but there is no 'Filter' variable).",
+    "WF-005 conditional_branch 'Filter == Rental_Company' references variable 'Filter' which does not exist in the AST (Listing_Sidebar_Filters.fields contains 'Rental_Company' but there is no 'Filter' variable).",
+    "WF-006 conditional_branch 'Filter == Price_Range' references variable 'Filter' which does not exist in the AST (Listing_Sidebar_Filters.fields contains 'Price_Range' but there is no 'Filter' variable).",
+    "WF-007 conditional_branch 'Car_Group == Economy AND pick-up/drop-off locations and dates/times provided' references 'Car_Group' which is not a defined field/state in the AST (groups are named via 'group_name' but there is no 'Car_Group' field).",
+    "WF-008 conditional_branch 'Car_Group == Compact AND pick-up/drop-off locations and dates/times provided' references 'Car_Group' which is not a defined field/state in the AST (groups are named via 'group_name' but there is no 'Car_Group' field).",
+    "WF-009 conditional_branch 'Car_Group == SUV AND pick-up/drop-off locations and dates/times provided' references 'Car_Group' which is not a defined field/state in the AST (groups are named via 'group_name' but there is no 'Car_Group' field).",
+    "WF-010 conditional_branch 'Car_Group == Luxury AND pick-up/drop-off locations and dates/times provided' references 'Car_Group' which is not a defined field/state in the AST (groups are named via 'group_name' but there is no 'Car_Group' field).",
+    "WF-011 conditional_branch 'Car_Group == Van AND pick-up/drop-off locations and dates/times provided' references 'Car_Group' which is not a defined field/state in the AST (groups are named via 'group_name' but there is no 'Car_Group' field)."
+  ],
+  "fixes": [
+    "WF-002: Replace conditional_branch 'Filter == Car_Type' with a condition referencing the actual AST field, e.g. 'Listing_Sidebar_Filters.fields.Car_Type selected' or 'Car_Type changed' (or remove conditional_branch if unnecessary).",
+    "WF-003: Replace conditional_branch 'Filter == Transmission' with 'Listing_Sidebar_Filters.fields.Transmission selected' or similar (or remove conditional_branch if unnecessary).",
+    "WF-004: Replace conditional_branch 'Filter == Fuel_Policy' with 'Listing_Sidebar_Filters.fields.Fuel_Policy selected' or similar (or remove conditional_branch if unnecessary).",
+    "WF-005: Replace conditional_branch 'Filter == Rental_Company' with 'Listing_Sidebar_Filters.fields.Rental_Company selected' or similar (or remove conditional_branch if unnecessary).",
+    "WF-006: Replace conditional_branch 'Filter == Price_Range' with 'Listing_Sidebar_Filters.fields.Price_Range changed' or similar (or remove conditional_branch if unnecessary).",
+    "WF-007: Replace conditional_branch 'Car_Group == Economy AND pick-up/drop-off locations and dates/times provided' with a condition that references the group's actual identifier, e.g. 'Cars_Listing_Page.groups[\"Economy\"].selected AND preconditions satisfied' or simply 'group_name == \"Economy\" AND preconditions satisfied'.",
+    "WF-008: Replace conditional_branch 'Car_Group == Compact AND pick-up/drop-off locations and dates/times provided' with 'Cars_Listing_Page.groups[\"Compact\"].selected AND preconditions satisfied' or 'group_name == \"Compact\" AND preconditions satisfied'.",
+    "WF-009: Replace conditional_branch 'Car_Group == SUV AND pick-up/drop-off locations and dates/times provided' with 'Cars_Listing_Page.groups[\"SUV\"].selected AND preconditions satisfied' or 'group_name == \"SUV\" AND preconditions satisfied'.",
+    "WF-010: Replace conditional_branch 'Car_Group == Luxury AND pick-up/drop-off locations and dates/times provided' with 'Cars_Listing_Page.groups[\"Luxury\"].selected AND preconditions satisfied' or 'group_name == \"Luxury\" AND preconditions satisfied'.",
+    "WF-011: Replace conditional_branch 'Car_Group == Van AND pick-up/drop-off locations and dates/times provided' with 'Cars_Listing_Page.groups[\"Van\"].selected AND preconditions satisfied' or 'group_name == \"Van\" AND preconditions satisfied'."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:22:06] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "Several workflows contain conditional_branch expressions that reference non-existent fields/variables in the AST (structural errors); update those conditions before accepting the workflows.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "WF-002 conditional_branch 'Filter == Car_Type' references variable 'Filter' which does not exist in the AST (Listing_Sidebar_Filters.fields contains 'Car_Type' but there is no 'Filter' variable).",
+    "WF-003 conditional_branch 'Filter == Transmission' references variable 'Filter' which does not exist in the AST (Listing_Sidebar_Filters.fields contains 'Transmission' but there is no 'Filter' variable).",
+    "WF-004 conditional_branch 'Filter == Fuel_Policy' references variable 'Filter' which does not exist in the AST (Listing_Sidebar_Filters.fields contains 'Fuel_Policy' but there is no 'Filter' variable).",
+    "WF-005 conditional_branch 'Filter == Rental_Company' references variable 'Filter' which does not exist in the AST (Listing_Sidebar_Filters.fields contains 'Rental_Company' but there is no 'Filter' variable).",
+    "WF-006 conditional_branch 'Filter == Price_Range' references variable 'Filter' which does not exist in the AST (Listing_Sidebar_Filters.fields contains 'Price_Range' but there is no 'Filter' variable).",
+    "WF-007 conditional_branch 'Car_Group == Economy AND pick-up/drop-off locations and dates/times provided' references 'Car_Group' which is not a defined field/state in the AST (groups are named via 'group_name' but there is no 'Car_Group' field).",
+    "WF-008 conditional_branch 'Car_Group == Compact AND pick-up/drop-off locations and dates/times provided' references 'Car_Group' which is not a defined field/state in the AST (groups are named via 'group_name' but there is no 'Car_Group' field).",
+    "WF-009 conditional_branch 'Car_Group == SUV AND pick-up/drop-off locations and dates/times provided' references 'Car_Group' which is not a defined field/state in the AST (groups are named via 'group_name' but there is no 'Car_Group' field).",
+    "WF-010 conditional_branch 'Car_Group == Luxury AND pick-up/drop-off locations and dates/times provided' references 'Car_Group' which is not a defined field/state in the AST (groups are named via 'group_name' but there is no 'Car_Group' field).",
+    "WF-011 conditional_branch 'Car_Group == Van AND pick-up/drop-off locations and dates/times provided' references 'Car_Group' which is not a defined field/state in the AST (groups are named via 'group_name' but there is no 'Car_Group' field)."
+  ],
+  "fixes": [
+    "WF-002: Replace conditional_branch 'Filter == Car_Type' with a condition referencing the actual AST field, e.g. 'Listing_Sidebar_Filters.fields.Car_Type selected' or 'Car_Type changed' (or remove conditional_branch if unnecessary).",
+    "WF-003: Replace conditional_branch 'Filter == Transmission' with 'Listing_Sidebar_Filters.fields.Transmission selected' or similar (or remove conditional_branch if unnecessary).",
+    "WF-004: Replace conditional_branch 'Filter == Fuel_Policy' with 'Listing_Sidebar_Filters.fields.Fuel_Policy selected' or similar (or remove conditional_branch if unnecessary).",
+    "WF-005: Replace conditional_branch 'Filter == Rental_Company' with 'Listing_Sidebar_Filters.fields.Rental_Company selected' or similar (or remove conditional_branch if unnecessary).",
+    "WF-006: Replace conditional_branch 'Filter == Price_Range' with 'Listing_Sidebar_Filters.fields.Price_Range changed' or similar (or remove conditional_branch if unnecessary).",
+    "WF-007: Replace conditional_branch 'Car_Group == Economy AND pick-up/drop-off locations and dates/times provided' with a condition that references the group's actual identifier, e.g. 'Cars_Listing_Page.groups[\"Economy\"].selected AND preconditions satisfied' or simply 'group_name == \"Economy\" AND preconditions satisfied'.",
+    "WF-008: Replace conditional_branch 'Car_Group == Compact AND pick-up/drop-off locations and dates/times provided' with 'Cars_Listing_Page.groups[\"Compact\"].selected AND preconditions satisfied' or 'group_name == \"Compact\" AND preconditions satisfied'.",
+    "WF-009: Replace conditional_branch 'Car_Group == SUV AND pick-up/drop-off locations and dates/times provided' with 'Cars_Listing_Page.groups[\"SUV\"].selected AND preconditions satisfied' or 'group_name == \"SUV\" AND preconditions satisfied'.",
+    "WF-010: Replace conditional_branch 'Car_Group == Luxury AND pick-up/drop-off locations and dates/times provided' with 'Cars_Listing_Page.groups[\"Luxury\"].selected AND preconditions satisfied' or 'group_name == \"Luxury\" AND preconditions satisfied'.",
+    "WF-011: Replace conditional_branch 'Car_Group == Van AND pick-up/drop-off locations and dates/times provided' with 'Cars_Listing_Page.groups[\"Van\"].selected AND preconditions satisfied' or 'group_name == \"Van\" AND preconditions satisfied'."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:22:35] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 11,
+  "module_title": "Cars Search & Listing",
+  "summary": "Provides a car rental search form and a dynamic listing of available vehicles grouped by category with detailed attributes, pricing, and filtering options.",
+  "where_it_fits": "Accessible from the main navigation under Cars or via the home page search widget's Cars tab, this module handles the search input and displays results before booking and payment flows; it sits alongside other transport modules like Flights and Tours and feeds into the Car Booking and Payment Processing modules.",
+  "assumed_state_on_entry": "Visitor has selected the Cars section (or used the home search widget) and has provided pick-up/drop-off locations and dates/times; user may be guest or authenticated."
+}
+</module_context>
+
+<description>
+
+The car rental search form collects pick-up and drop-off location, pick-up and drop-off date and time, and driver age. On success, users are redirected to the listing page, where vehicles are grouped by category (Economy, Compact, SUV, Luxury, Van). Each listing shows vehicle image, make and model, transmission type (Automatic/Manual), fuel policy, seating and luggage capacity, feature icons (AC, GPS, etc.), price per day, total rental cost for the selected period, and a Book Now button. Sidebar filters include car type, transmission, fuel policy, rental company, and price range. Filters update results dynamically.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Cars Search & Listing",
+  "components": {
+    "Cars_Search_Form": {
+      "type": "form",
+      "fields": {
+        "Pick_Up_Location": {
+          "type": "unspecified"
+        },
+        "Drop_Off_Location": {
+          "type": "unspecified"
+        },
+        "Pick_Up_Date": {
+          "type": "date"
+        },
+        "Pick_Up_Time": {
+          "type": "unspecified"
+        },
+        "Drop_Off_Date": {
+          "type": "date"
+        },
+        "Drop_Off_Time": {
+          "type": "unspecified"
+        },
+        "Driver_Age": {
+          "type": "number"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Search",
+          "on_success": "redirect to Cars_Listing_Page"
+        }
+      ]
+    },
+    "Listing_Sidebar_Filters": {
+      "type": "filters",
+      "dynamic": true,
+      "fields": {
+        "Car_Type": {
+          "type": "dropdown",
+          "options": [
+            "Economy",
+            "Compact",
+            "SUV",
+            "Luxury",
+            "Van"
+          ],
+          "on_change": "update_results"
+        },
+        "Transmission": {
+          "type": "dropdown",
+          "options": [
+            "Automatic",
+            "Manual"
+          ],
+          "on_change": "update_results"
+        },
+        "Fuel_Policy": {
+          "type": "unspecified",
+          "on_change": "update_results"
+        },
+        "Rental_Company": {
+          "type": "unspecified",
+          "on_change": "update_results"
+        },
+        "Price_Range": {
+          "type": "unspecified",
+          "on_change": "update_results"
+        }
+      }
+    },
+    "Cars_Listing_Page": {
+      "type": "grouped_list",
+      "preconditions": [
+        "pick-up/drop-off locations and dates/times provided"
+      ],
+      "groups": [
+        {
+          "group_name": "Economy",
+          "fields": {},
+          "item_actions": [
+            {
+              "action_name": "Book Now",
+              "preconditions": [
+                "pick-up/drop-off locations and dates/times provided"
+              ],
+              "on_success": "navigate to Car Booking module"
+            }
+          ]
+        },
+        {
+          "group_name": "Compact",
+          "fields": {},
+          "item_actions": [
+            {
+              "action_name": "Book Now",
+              "preconditions": [
+                "pick-up/drop-off locations and dates/times provided"
+              ],
+              "on_success": "navigate to Car Booking module"
+            }
+          ]
+        },
+        {
+          "group_name": "SUV",
+          "fields": {},
+          "item_actions": [
+            {
+              "action_name": "Book Now",
+              "preconditions": [
+                "pick-up/drop-off locations and dates/times provided"
+              ],
+              "on_success": "navigate to Car Booking module"
+            }
+          ]
+        },
+        {
+          "group_name": "Luxury",
+          "fields": {},
+          "item_actions": [
+            {
+              "action_name": "Book Now",
+              "preconditions": [
+                "pick-up/drop-off locations and dates/times provided"
+              ],
+              "on_success": "navigate to Car Booking module"
+            }
+          ]
+        },
+        {
+          "group_name": "Van",
+          "fields": {},
+          "item_actions": [
+            {
+              "action_name": "Book Now",
+              "preconditions": [
+                "pick-up/drop-off locations and dates/times provided"
+              ],
+              "on_success": "navigate to Car Booking module"
+            }
+          ]
+        }
+      ],
+      "filters_component": "Listing_Sidebar_Filters"
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Submit Cars search form",
+    "actor": "Visitor",
+    "conditional_branch": null,
+    "terminal_action": "Search",
+    "on_success": "redirect to Cars_Listing_Page"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Filter by Car Type (select option)",
+    "actor": "Visitor",
+    "conditional_branch": "Listing_Sidebar_Filters.fields.Car_Type selected",
+    "terminal_action": "update_results",
+    "on_success": "Listing results updated dynamically"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Filter by Transmission (select option)",
+    "actor": "Visitor",
+    "conditional_branch": "Listing_Sidebar_Filters.fields.Transmission selected",
+    "terminal_action": "update_results",
+    "on_success": "Listing results updated dynamically"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Filter by Fuel Policy (select option)",
+    "actor": "Visitor",
+    "conditional_branch": "Listing_Sidebar_Filters.fields.Fuel_Policy selected",
+    "terminal_action": "update_results",
+    "on_success": "Listing results updated dynamically"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Filter by Rental Company (select option)",
+    "actor": "Visitor",
+    "conditional_branch": "Listing_Sidebar_Filters.fields.Rental_Company selected",
+    "terminal_action": "update_results",
+    "on_success": "Listing results updated dynamically"
+  },
+  {
+    "wf_id": "WF-006",
+    "name": "Adjust Price Range filter (change)",
+    "actor": "Visitor",
+    "conditional_branch": "Listing_Sidebar_Filters.fields.Price_Range changed",
+    "terminal_action": "update_results",
+    "on_success": "Listing results updated dynamically"
+  },
+  {
+    "wf_id": "WF-007",
+    "name": "Book Now from Economy group",
+    "actor": "Visitor",
+    "conditional_branch": "Cars_Listing_Page.groups[\"Economy\"].selected AND preconditions satisfied",
+    "terminal_action": "Book Now",
+    "on_success": "navigate to Car Booking module"
+  },
+  {
+    "wf_id": "WF-008",
+    "name": "Book Now from Compact group",
+    "actor": "Visitor",
+    "conditional_branch": "Cars_Listing_Page.groups[\"Compact\"].selected AND preconditions satisfied",
+    "terminal_action": "Book Now",
+    "on_success": "navigate to Car Booking module"
+  },
+  {
+    "wf_id": "WF-009",
+    "name": "Book Now from SUV group",
+    "actor": "Visitor",
+    "conditional_branch": "Cars_Listing_Page.groups[\"SUV\"].selected AND preconditions satisfied",
+    "terminal_action": "Book Now",
+    "on_success": "navigate to Car Booking module"
+  },
+  {
+    "wf_id": "WF-010",
+    "name": "Book Now from Luxury group",
+    "actor": "Visitor",
+    "conditional_branch": "Cars_Listing_Page.groups[\"Luxury\"].selected AND preconditions satisfied",
+    "terminal_action": "Book Now",
+    "on_success": "navigate to Car Booking module"
+  },
+  {
+    "wf_id": "WF-011",
+    "name": "Book Now from Van group",
+    "actor": "Visitor",
+    "conditional_branch": "Cars_Listing_Page.groups[\"Van\"].selected AND preconditions satisfied",
+    "terminal_action": "Book Now",
+    "on_success": "navigate to Car Booking module"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:22:50] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "The workflow list correctly covers the form submit, all filter on_change actions, and each group's Book Now item_action with matching on_success handlers; no critical or structural issues found.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:22:50] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "The workflow list correctly covers the form submit, all filter on_change actions, and each group's Book Now item_action with matching on_success handlers; no critical or structural issues found.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}

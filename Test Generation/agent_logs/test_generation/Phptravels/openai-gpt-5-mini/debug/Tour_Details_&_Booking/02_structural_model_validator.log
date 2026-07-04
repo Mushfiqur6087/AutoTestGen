@@ -1,0 +1,537 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:17:53.300475
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:18:23] Structural Model Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Structural Model Validator. You receive (1) a raw functional description and
+(2) a generated Structural Model JSON.
+
+Your single job: decide whether this AST is good enough to use, or whether it should
+be regenerated.
+
+You DO NOT modify the JSON.
+You DO NOT generate a new JSON.
+You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CANONICAL SCOPE — IDENTICAL TO THE GENERATOR'S SCOPE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+IN SCOPE — an element qualifies if a user can:
+  (a) Input or edit a value: form fields, checkboxes, file uploads, search inputs, toggles
+  (b) Trigger an action: buttons, links, row actions, bulk actions, submit actions
+  (c) Navigate: tabs, sub-tabs, wizard steps
+  (d) Action metadata on interactive elements: on_success, preconditions, state
+      transitions, validation constraints
+
+OUT OF SCOPE — do NOT expect these in the AST:
+  - Passive display labels: "the page shows client name, account number, status badge"
+    → 0 expected items. The AST is correct to omit them.
+  - Chip colors, badge styles, decorative icons, visual styling
+  - Read-only info panels with no interactive element
+  - Display-formatting or rendering rules applied to a passive (non-interactive) value —
+    e.g. masking ("showing only last 4 digits"), truncation, currency/number formatting,
+    default sort order of a read-only column → 0 expected items. These are NOT validation
+    constraints. Do not expect a field/column AST node, a "constraints" entry, or a
+    "columns" block created solely to house one of these rules.
+
+STATE (Pending / Active / Closed) is a routing key in state_bound_action_bar.states{},
+NOT a display field. Do not expect it anywhere else.
+
+"Constraint" (as used everywhere below) means a rule that governs INPUT or ACTION
+behavior — required-ness, format, bounds, uniqueness, cross-field ordering, state
+preconditions. A rule that only describes how an already-displayed, non-interactive
+value is rendered (masked, truncated, formatted, sorted) is a display-formatting rule,
+not a constraint, even if the description uses words like "must" or states a concrete
+detail (e.g. "must show only last 4 digits"). Do not upgrade a display-formatting rule
+to CRITICAL missing just because it is stated precisely.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MINOR missing
+  An optional field (no "required": true, no required_when) with no business logic,
+  state transition, or action consequence attached. Losing it doesn't break any flow.
+  Example: an unlabeled optional "Notes" textarea on a secondary form.
+
+MINOR phantom
+  An element not named in the description but so universally implied by the component
+  type that its presence is unsurprising — e.g., a "Cancel" button on a modal the
+  description never explicitly names. Flag it; don't auto-retry for it alone.
+
+CRITICAL missing
+  Any of: a required field, any state key in a state_bound_action_bar, any submit
+  action, any named tab or wizard step, any element with a stated precondition or
+  on_success consequence, any INTERACTIVE field with a stated constraint (see the
+  constraint definition above — a display-formatting rule on a passive field does
+  NOT qualify and must never be flagged as critical missing).
+
+CRITICAL phantom
+  Any of: a field invented inside a generic-name tab (Add_Note in a Notes tab,
+  Upload_Document in a Documents tab) when the description only names the tab;
+  a passive display field appearing as an AST node — including a "columns" block,
+  or any field/column entry, added only to carry a masking/truncation/formatting rule
+  for a non-interactive value; a constraint with no textual anchor; a display_fields
+  block anywhere in the output; "required": false anywhere.
+
+WORKED EXAMPLE — display-formatting rule, NOT a critical missing:
+
+Description: "Each row shows Account Number (clickable but not implemented yet),
+Account Type, Current Balance, Account Status, and Open Date. Account numbers are
+masked for security (showing only last 4 digits as ****5001)."
+
+AST under review:
+{
+  "Accounts_Table": {
+    "type": "data_table",
+    "row_actions": [
+      { "action_name": "Account Number", "constraints": ["clickable but not implemented yet"] }
+    ]
+  }
+}
+
+CORRECT verdict: the masking rule and the other four listed fields (Account Type,
+Current Balance, Account Status, Open Date) are passive display labels — 0 expected
+AST items for them, per the OUT OF SCOPE rule above. The only interactive element is
+the Account Number click, and it is already present. Do NOT flag
+"components.Accounts_Table.columns.Account_Number" (or any columns block) as a
+CRITICAL missing item. Do NOT instruct the generator to add a "columns" block with
+typed entries (e.g. "Open_Date": {"type": "date"}) — that fabricates interactive
+field types for read-only data and will cause downstream test generators to invent
+boundary/date tests against a page that has none.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Step 1 — Walk the description. List every expected interactive element.
+Apply the canonical scope above. A sentence that only displays data produces 0 expected
+items. For each tab or step named with no described fields, expected output is
+"fields": {} — do NOT expect fields there.
+
+Step 2 — Walk the AST. Check for MISSING elements.
+For each expected element from Step 1, confirm it exists at the correct path.
+Classify each missing item as critical or minor using the definitions above.
+
+Step 3 — Walk the AST. Check for PHANTOMS.
+Flag any AST element with no textual anchor in the description.
+Classify each phantom as critical or minor using the definitions above.
+
+Step 4 — Check conditional logic.
+Count a conditional as EXPECTED only if the description contains an explicit trigger
+phrase. Both affirmative and negative phrasings qualify:
+
+  Affirmative: "when X is selected/checked/chosen", "if X then Y", "Y appears when X",
+               "selecting X reveals Y", "required if X", "enabled when X", "only if X",
+               "Y is shown for X"
+  Negative:    "unless X", "except when X", "disabled if X", "not shown when X",
+               "hidden when X", "required for non-X", "only for X users"
+  Abbreviated: "required for minors", "admin only", "international trips only"
+               → treat as conditional even without explicit trigger syntax
+
+If a visible_when / required_when / enabled_when appears in the AST but no trigger
+phrase (affirmative or negative) exists in the description: flag as critical phantom.
+If a trigger phrase exists in the description but no conditional appears in the AST:
+flag as critical missing.
+
+Step 5 — Check structural integrity. Flag any of these as STRUCTURAL ERRORS:
+  - A constraint floating at form/component level when the description attached it to
+    a specific field or action
+  - Sub-tabs or sub-steps described as nested but flattened in the AST
+  - State keys in state_bound_action_bar that don't match exact status names in the
+    description
+  - A display_fields block anywhere in the AST
+  - "required": false appearing anywhere in the AST
+  - Component or field names not in Pascal_Snake_Case
+
+Step 6 — Decide the verdict.
+
+Precondition note: If a `<module_context>` block is present, cross-check any
+`preconditions[]` in the AST against the `assumed_state_on_entry` value. A precondition
+that directly contradicts or wildly exceeds the described entry state is a CRITICAL phantom.
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Step 5)
+                       → fixes must be []
+
+  retry                Any CRITICAL missing element
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any Step 5 structural error
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       element is interactive — not a close call, but truly unresolvable
+                       from the text alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "Component.path.to.element",
+      "severity": "critical | minor",
+      "reason": "<why this element is expected from the description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "Component.path.to.element",
+      "severity": "critical | minor",
+      "reason": "<why this element has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Step 5 violation and its AST path>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact JSON path and required change>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+------------------------------------------------------------
+[21:18:23] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 10,
+  "module_title": "Tour Details & Booking",
+  "summary": "Displays full tour information including images, day-by-day itinerary, inclusions/exclusions, departure dates, pricing, reviews, terms, and a booking form for traveler details and cost breakdown.",
+  "where_it_fits": "Accessible from the top navigation under Tours or via the Tours Search & Listing results, this module presents detailed information after a tour is chosen and precedes the booking flow handled by Booking Management and Payment Processing. It is part of the user journey that starts from the Home search widget or Tours listing and moves toward account/checkout steps in the dashboard and payment modules.",
+  "assumed_state_on_entry": "A specific tour has been selected from Tours Search & Listing; the tour's availability and departure dates are loaded and the user session is either authenticated or will trigger a redirect to Login."
+}
+</module_context>
+
+<description>
+
+The tour details page displays a slideshow of images, a full day-by-day itinerary, inclusions and exclusions (meals, accommodation, activities, transportation), available departure dates, pricing per person for adults and children, location map, guest reviews, and terms and conditions. The user selects a departure date, specifies the number of travelers (adults and children), and clicks Book Now. The booking form collects traveler names, contact details, and special requirements, and displays the total cost breakdown. Unauthenticated users are redirected to the login page before proceeding.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Tour Details & Booking",
+  "components": {
+    "Tour_Details_Selection_Form": {
+      "type": "form",
+      "fields": {
+        "Departure_Date": {
+          "type": "date"
+        },
+        "Adults": {
+          "type": "number"
+        },
+        "Children": {
+          "type": "number"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Book Now",
+          "preconditions": [
+            "user must be logged in"
+          ],
+          "on_success": "open Booking Form"
+        }
+      ]
+    },
+    "Booking_Form": {
+      "type": "form",
+      "preconditions": [
+        "user must be logged in"
+      ],
+      "fields": {
+        "Travelers": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Full_Name": {
+              "type": "unspecified"
+            }
+          }
+        },
+        "Contact_Details": {
+          "type": "group",
+          "fields": {
+            "Contact_Name": {
+              "type": "unspecified"
+            },
+            "Phone": {
+              "type": "unspecified"
+            },
+            "Email": {
+              "type": "unspecified"
+            }
+          }
+        },
+        "Special_Requirements": {
+          "type": "unspecified"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Confirm Booking",
+          "preconditions": [
+            "user must be logged in"
+          ],
+          "on_success": "proceed to Payment Processing"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:19:35] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "The AST covers the form fields and actions but omits the explicit redirect-to-login consequence described for unauthenticated users (a critical required behavior).",
+  "missing": [
+    {
+      "path": "components.Tour_Details_Selection_Form.submit_actions[0].on_precondition_fail",
+      "severity": "critical",
+      "reason": "Description states unauthenticated users are redirected to the login page before proceeding; the Book Now submit action has a precondition but no explicit on_precondition_fail redirect."
+    },
+    {
+      "path": "components.Booking_Form.on_precondition_fail",
+      "severity": "critical",
+      "reason": "Description requires unauthenticated users to be redirected to login before accessing the booking form; the Booking_Form lists a precondition but does not specify the redirect behavior on precondition failure."
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "components.Booking_Form.submit_actions[0]",
+      "severity": "minor",
+      "reason": "The AST includes a 'Confirm Booking' submit action though the description never explicitly names a final 'Confirm Booking' button (the presence of a form submit is implied but this exact action name has no textual anchor)."
+    }
+  ],
+  "structural_errors": [],
+  "fixes": [
+    "Add an explicit on_precondition_fail redirect to the Book Now submit action: set components.Tour_Details_Selection_Form.submit_actions[0].on_precondition_fail = \"redirect to Login\" (or equivalent structured redirect object).",
+    "Add an explicit on_precondition_fail redirect to the Booking Form component: set components.Booking_Form.on_precondition_fail = \"redirect to Login\" (or equivalent structured redirect object)."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:19:35] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "The AST covers the form fields and actions but omits the explicit redirect-to-login consequence described for unauthenticated users (a critical required behavior).",
+  "missing": [
+    {
+      "path": "components.Tour_Details_Selection_Form.submit_actions[0].on_precondition_fail",
+      "severity": "critical",
+      "reason": "Description states unauthenticated users are redirected to the login page before proceeding; the Book Now submit action has a precondition but no explicit on_precondition_fail redirect."
+    },
+    {
+      "path": "components.Booking_Form.on_precondition_fail",
+      "severity": "critical",
+      "reason": "Description requires unauthenticated users to be redirected to login before accessing the booking form; the Booking_Form lists a precondition but does not specify the redirect behavior on precondition failure."
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "components.Booking_Form.submit_actions[0]",
+      "severity": "minor",
+      "reason": "The AST includes a 'Confirm Booking' submit action though the description never explicitly names a final 'Confirm Booking' button (the presence of a form submit is implied but this exact action name has no textual anchor)."
+    }
+  ],
+  "structural_errors": [],
+  "fixes": [
+    "Add an explicit on_precondition_fail redirect to the Book Now submit action: set components.Tour_Details_Selection_Form.submit_actions[0].on_precondition_fail = \"redirect to Login\" (or equivalent structured redirect object).",
+    "Add an explicit on_precondition_fail redirect to the Booking Form component: set components.Booking_Form.on_precondition_fail = \"redirect to Login\" (or equivalent structured redirect object)."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:20:15] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 10,
+  "module_title": "Tour Details & Booking",
+  "summary": "Displays full tour information including images, day-by-day itinerary, inclusions/exclusions, departure dates, pricing, reviews, terms, and a booking form for traveler details and cost breakdown.",
+  "where_it_fits": "Accessible from the top navigation under Tours or via the Tours Search & Listing results, this module presents detailed information after a tour is chosen and precedes the booking flow handled by Booking Management and Payment Processing. It is part of the user journey that starts from the Home search widget or Tours listing and moves toward account/checkout steps in the dashboard and payment modules.",
+  "assumed_state_on_entry": "A specific tour has been selected from Tours Search & Listing; the tour's availability and departure dates are loaded and the user session is either authenticated or will trigger a redirect to Login."
+}
+</module_context>
+
+<description>
+
+The tour details page displays a slideshow of images, a full day-by-day itinerary, inclusions and exclusions (meals, accommodation, activities, transportation), available departure dates, pricing per person for adults and children, location map, guest reviews, and terms and conditions. The user selects a departure date, specifies the number of travelers (adults and children), and clicks Book Now. The booking form collects traveler names, contact details, and special requirements, and displays the total cost breakdown. Unauthenticated users are redirected to the login page before proceeding.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Tour Details & Booking",
+  "components": {
+    "Tour_Details_Selection_Form": {
+      "type": "form",
+      "fields": {
+        "Departure_Date": {
+          "type": "date",
+          "required": true
+        },
+        "Adults": {
+          "type": "number",
+          "required": true,
+          "constraints": [
+            "minimum 1"
+          ]
+        },
+        "Children": {
+          "type": "number",
+          "constraints": [
+            "minimum 0"
+          ]
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Book Now",
+          "preconditions": [
+            "user must be logged in"
+          ],
+          "on_precondition_fail": "redirect to Login",
+          "on_success": "opens Booking Form"
+        }
+      ]
+    },
+    "Booking_Form": {
+      "type": "form",
+      "on_precondition_fail": "redirect to Login",
+      "preconditions": [
+        "user must be logged in"
+      ],
+      "fields": {
+        "Travelers": {
+          "type": "repeating_group",
+          "item_fields": {
+            "First_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Last_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Special_Requirements": {
+              "type": "unspecified"
+            }
+          }
+        },
+        "Contact_Email": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Contact_Phone": {
+          "type": "unspecified"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Confirm Booking",
+          "preconditions": [
+            "user must be logged in"
+          ],
+          "on_precondition_fail": "redirect to Login",
+          "on_success": "creates booking and proceeds to Payment Processing"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:20:31] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "AST includes the departure selection, traveler counts, Book Now action with login precondition, and the booking form with traveler names and contact fields matching the description; no critical elements are missing.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:20:31] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "AST includes the departure selection, traveler counts, Book Now action with login precondition, and the booking form with traveler names and contact fields matching the description; no critical elements are missing.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}

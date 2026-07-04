@@ -35,6 +35,15 @@ OUT OF SCOPE — exclude always, even if mentioned in the description:
     produces ZERO AST elements
   - Chip colors, badge styles, decorative icons, visual styling
   - Read-only header summaries or info panels with no interactive element inside them
+  - Display-formatting or rendering rules on a passive (non-interactive) value — e.g.
+    masking ("showing only last 4 digits"), truncation, currency/number formatting,
+    default sort order of a read-only column. These are NOT constraints, even when
+    stated precisely. Never create a "columns" block, a field entry, or a typed field
+    (e.g. "type": "date", "type": "number") solely to house one of these rules — not
+    even in response to a validator fix instruction. If a fixes[] item asks you to add
+    AST structure for a value that has no interactive behavior of its own (no input,
+    no click target, no state transition beyond what already exists), apply only the
+    part of the fix that references a genuinely interactive element and skip the rest.
 
 STATE is a routing key, not a display field. Entity states (Pending / Active / Closed)
 belong as keys in state_bound_action_bar.states{}, never in a display_fields block.
@@ -67,6 +76,9 @@ Rule 2 — Constraint Nesting
 Every validation rule, boundary, uniqueness, or business constraint MUST live inside the
 "constraints": [] array of the exact field or action it governs. Never produce floating
 rule lists. Cross-field constraints attach to the form or to the dependent field.
+Display-formatting/rendering rules on a passive field (masking, truncation, formatting,
+sort order — see CANONICAL SCOPE) are not constraints; do not nest them here, and do not
+create a field/column node just to hold one.
 
 Rule 3 — Conditional Logic
 If a field appears, becomes required, or is enabled based on another field's value,

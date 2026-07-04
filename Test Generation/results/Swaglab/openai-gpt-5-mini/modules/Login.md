@@ -1,0 +1,40 @@
+# Test Cases — Swaglab
+
+Generated: 2026-07-04T15:05:38.152771Z  
+Model: openai/gpt-5-mini  
+
+## Login
+
+Total: **15** (positive: 6, negative: 5, edge: 4)
+
+### Positive Tests
+
+| TC ID | WF Ref | Test Case | Preconditions | Steps | Expected Result | Priority |
+|-------|--------|-----------|---------------|-------|-----------------|----------|
+| TC-001 | WF-001 | Successful login with a valid test user | User is unauthenticated and at the sign-in page with Username and Password fields available. | 1. Enter standard_user in the Username field<br>2. Enter secret_sauce in the Password field<br>3. Click the Login button | redirects to the Product Inventory page; Product Inventory page header and hamburger menu are visible | high |
+| TC-002 | WF-002 | Login attempt by locked_out_user shows locked-out error | User is unauthenticated and at the sign-in page with Username and Password fields available. | 1. Enter locked_out_user in the Username field<br>2. Enter secret_sauce in the Password field<br>3. Click the Login button | Login page displays error banner 'Epic sadface: Sorry, this user has been locked out.' | high |
+| TC-003 | WF-003 | Login with invalid credentials displays mismatch error | User is unauthenticated and at the sign-in page with Username and Password fields available. | 1. Enter <unknown username> in the Username field<br>2. Enter <invalid password> in the Password field<br>3. Click the Login button | Login page displays error banner 'Epic sadface: Username and password do not match any user in this service.' | medium |
+| TC-004 | WF-004 | Submit with Username empty shows Username required error | User is unauthenticated and at the sign-in page with Username and Password fields available. | 1. Leave the Username field empty<br>2. Enter secret_sauce in the Password field<br>3. Click the Login button | Login page displays error banner 'Epic sadface: Username is required.' | medium |
+| TC-005 | WF-005 | Submit with Password empty shows Password required error | User is unauthenticated and at the sign-in page with Username and Password fields available. | 1. Enter standard_user in the Username field<br>2. Leave the Password field empty<br>3. Click the Login button | Login page displays error banner 'Epic sadface: Password is required.' | medium |
+| TC-006 | WF-006 | Submit with both Username and Password empty shows both required errors | User is unauthenticated and at the sign-in page with Username and Password fields available. | 1. Leave the Username field empty<br>2. Leave the Password field empty<br>3. Click the Login button | Login page displays error banners 'Epic sadface: Username is required.' and 'Epic sadface: Password is required.' | medium |
+
+### Negative Tests
+
+| TC ID | WF Ref | Test Case | Preconditions | Steps | Expected Result | Priority |
+|-------|--------|-----------|---------------|-------|-----------------|----------|
+| TC-007 | WF-004 | Submit with Username blank (required text field representative) | User is unauthenticated and at the sign-in page with Username and Password fields available. | 1. Leave the Username field blank<br>2. Enter 'secret_sauce' in the Password field<br>3. Click the Login button | Username field displays an inline/banner error: 'Epic sadface: Username is required.'; the form does not submit and the user remains on the sign-in page (no redirect to Product Inventory). | high |
+| TC-008 | WF-005 | Submit with Password blank (required password field representative) | User is unauthenticated and at the sign-in page with Username and Password fields available. | 1. Enter 'standard_user' in the Username field<br>2. Leave the Password field blank<br>3. Click the Login button | Password field displays an inline/banner error: 'Epic sadface: Password is required.'; the form does not submit and the user remains on the sign-in page (no redirect to Product Inventory). | high |
+| TC-009 | WF-006 | Submit with both Username and Password blank | User is unauthenticated and at the sign-in page with Username and Password fields available. | 1. Leave the Username field blank<br>2. Leave the Password field blank<br>3. Click the Login button | Both fields display errors: Username shows 'Epic sadface: Username is required.' and Password shows 'Epic sadface: Password is required.'; the form does not submit and the user remains on the sign-in page (no redirect). | high |
+| TC-010 | WF-003 | Submit with invalid credentials (unknown username or wrong password) shows generic invalid-credentials error | User is unauthenticated and at the sign-in page with Username and Password fields available. | 1. Enter <unknown username> in the Username field<br>2. Enter <any password> in the Password field (not 'secret_sauce' for a valid user)<br>3. Click the Login button | Page displays error banner: 'Epic sadface: Username and password do not match any user in this service.'; the form does not submit and the user remains on the sign-in page (no redirect to Product Inventory). | high |
+| TC-011 | WF-002 | Attempt login with locked_out_user account is blocked with locked-out error | User is unauthenticated and at the sign-in page with Username and Password fields available. | 1. Enter 'locked_out_user' in the Username field<br>2. Enter 'secret_sauce' in the Password field<br>3. Click the Login button | Page displays error banner: 'Epic sadface: Sorry, this user has been locked out.'; the form does not submit and the user remains on the sign-in page (no redirect to Product Inventory). | high |
+
+### Edge & Boundary Tests
+
+| TC ID | WF Ref | Test Case | Preconditions | Steps | Expected Result | Priority |
+|-------|--------|-----------|---------------|-------|-----------------|----------|
+| TC-012 (input_edge) | WF-001 | Username with leading/trailing whitespace is accepted (trimming behavior) | User is unauthenticated and at the sign-in page with Username and Password fields available. | 1. Enter " standard_user " (Username with one or more leading and trailing spaces) into the Username field<br>2. Enter "secret_sauce" into the Password field<br>3. Click the Login button | Form submits successfully; user is redirected to the Product Inventory page and persistent header is visible — login succeeds (trimming of Username is applied and credentials match). | medium |
+| TC-013 (input_edge) | WF-003 | Password with leading/trailing whitespace is not treated as equivalent to the exact secret (no trimming) | User is unauthenticated and at the sign-in page with Username and Password fields available. | 1. Enter "standard_user" into the Username field<br>2. Enter " secret_sauce " (Password with one or more leading and trailing spaces) into the Password field<br>3. Click the Login button | Login is blocked; the error banner displays: 'Epic sadface: Username and password do not match any user in this service.' (Password is not trimmed and does not match). | medium |
+| TC-014 (input_edge) | WF-003 | Very long Username (200+ characters) with valid Password is treated as non-matching | User is unauthenticated and at the sign-in page with Username and Password fields available. | 1. Enter a very long string (200+ characters) into the Username field<br>2. Enter "secret_sauce" into the Password field<br>3. Click the Login button | Login is blocked; the error banner displays: 'Epic sadface: Username and password do not match any user in this service.' (long Username does not match any accepted username). | medium |
+| TC-015 (input_edge) | WF-002 | Locked out user with surrounding whitespace still triggers locked-out error (trimming on Username causes locked-out branch) | User is unauthenticated and at the sign-in page with Username and Password fields available. | 1. Enter " locked_out_user " (Username with leading and trailing spaces) into the Username field<br>2. Enter "secret_sauce" into the Password field<br>3. Click the Login button | Login is blocked; the error banner displays: 'Epic sadface: Sorry, this user has been locked out.' (Username trimming results in locked_out_user branch and locked-out error is shown). | medium |
+
+---

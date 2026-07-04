@@ -1,0 +1,957 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:09:37.961222
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:09:37] Workflow-Extractor - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Extractor. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to enumerate every distinct, executable interaction path through this module — one entry per workflow.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ATTEMPT CONTEXT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Attempt: 1 of 3
+
+
+
+---
+
+**INPUT:**
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+---
+
+## What is a Workflow?
+
+A **workflow** is one complete, executable interaction path — from the user entering the module to completing **one terminal action** within it.
+
+Two workflows are **distinct** if they require different user actions to reach the terminal — i.e. they activate a different conditional branch, follow a different wizard step set, target a different state, or end on a different terminal action.
+
+### Strict Rules
+
+1. **Strictly intra-module.** A workflow step is an action within this module only. If submitting redirects to another page, the redirect is the **exit** — not a step.
+2. **No invented paths.** Only enumerate paths that are traceable to AST nodes or explicit description text. No UX intuition, no assumed flows.
+3. **Minimal fields.** A workflow carries only what downstream agents actually need: who does it, what makes it distinct, what it ends with, what success looks like.
+4. **No step-by-step instructions.** Workflows do NOT spell out the full step sequence — the agents already have the AST for that. A workflow names the path, not the actions.
+
+---
+
+## What Paths to Enumerate
+
+Enumerate **all** distinct paths — not one-per-type. The rule: if two paths require the user to do something different to reach the terminal action, they are separate workflows.
+
+| AST node type | What to enumerate |
+|---|---|
+| `form` with no conditionals | One workflow per `submit_actions[]` entry |
+| `form` with `visible_when` fields | One workflow per unique combination of conditional branches activated, times each `submit_actions[]` entry |
+| `wizard` | One workflow per distinct step sequence (if all steps are linear, one workflow per `submit_actions[]`; if any step is conditional, enumerate each branch) |
+| `state_bound_action_bar` | One workflow per `available_actions[]` entry per state (state × action = one workflow) |
+| `data_table` | One workflow per `row_actions[]` entry + one per `bulk_actions[]` entry (include View, Edit, Delete, and all others) |
+| `tab_container` | One workflow per tab that contains a form with a submit action |
+| `repeating_group` | Not a standalone workflow source — it is part of a form workflow that activates it |
+
+**Include all data table row actions** — View, Edit, Delete, and any others. Even read-only row actions (e.g., "View") must be included because they still require a positive test case.
+
+---
+
+## Field Definitions
+
+| Field | Type | Rule |
+|---|---|---|
+| `wf_id` | `"WF-NNN"` | Sequential within this module, starting at WF-001 |
+| `name` | string | Short human name for the path — what makes it distinct |
+| `actor` | string | Role who performs this path — use `<role>` placeholder if spec doesn't specify |
+| `conditional_branch` | string or `null` | The condition(s) that activate this path's unique branch. `null` if no conditionals apply |
+| `terminal_action` | string | Exact name of the button/action that ends this workflow (matches AST `action_name` or `element_name`) |
+| `on_success` | string | Verbatim from AST `on_success` field if available; otherwise derived from description |
+
+**`conditional_branch` format:**
+- Single condition: `"Submission_Type == File_Upload"`
+- Multiple: `"Submission_Type == File_Upload AND Grade_Type == Points"`
+- State condition: `"entity_state == Draft"`
+- `null` if this is the base path with no conditionals
+
+---
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SELF-CHECK — VERIFY EVERY ITEM BEFORE OUTPUTTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Go through these one by one. If any check fails, fix it before outputting.
+
+□ 1. Every `submit_actions[]` entry in every form/wizard has at least one workflow.
+□ 2. Every state × action pair in every `state_bound_action_bar` has exactly one workflow.
+□ 3. Every `row_actions[]` and `bulk_actions[]` entry in every `data_table` has one workflow.
+□ 4. Every tab with a form submission in a `tab_container` has one workflow.
+□ 5. `wf_id` numbering is sequential (WF-001, WF-002, ...) with no gaps.
+□ 6. Every `terminal_action` matches an exact `action_name` or `element_name` from the AST.
+□ 7. No two workflows share the same `conditional_branch` AND `terminal_action`.
+□ 8. No workflow crosses module boundaries (steps in another module).
+□ 9. Every `on_success` reflects the AST or description — no generic "success" strings.
+
+---
+
+## Anti-Hallucination Gate (run after self-check)
+
+1. Does each workflow trace back to a specific AST node (`submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`) or an explicit action described in the description text? If no → delete it.
+2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
+3. Are two workflows identical in `conditional_branch` AND `terminal_action`? If yes → merge them into one.
+4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
+5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
+
+---
+
+## Calibration
+
+- Simple form module (no conditionals, one submit): 1–3 workflows
+- Form with conditionals: 3–8 workflows
+- Module with state machine: add 1 per (state × action) combination
+- Module with data table: add 1 per row_action + 1 per bulk_action
+
+---
+
+## OUTPUT — JSON only, no prose, no markdown fencing:
+
+{
+  "module": "Module Name",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Short human name — what makes this path distinct",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Submit",
+      "on_success": "Verbatim on_success from AST or derived from description"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Submit with File Upload submission type",
+      "actor": "<role>",
+      "conditional_branch": "Submission_Type == File_Upload",
+      "terminal_action": "Submit",
+      "on_success": "Assignment created; success message shown"
+    }
+  ],
+  "total": 2
+}
+
+
+------------------------------------------------------------
+[21:09:37] Workflow-Extractor - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 9,
+  "module_title": "Profile",
+  "summary": "Displays the user's profile information including contact and privacy details, course links, activity and report summaries, and an editable profile form with collapsible panels for personal data and picture.",
+  "where_it_fits": "Reached from the top navigation user menu (User menu \u2192 Profile) alongside Grades, Calendar, Private Files and Preferences; it is part of the account area that complements Dashboard/My Courses and course-level views by surfacing personal settings and links to enrolled course profiles and reports.",
+  "assumed_state_on_entry": "Active authenticated session (logged in as the user whose profile is being viewed)"
+}
+</module_context>
+
+<module_name>Profile</module_name>
+
+<ast>
+{
+  "module_name": "Profile",
+  "components": {
+    "Profile_Page": {
+      "type": "page",
+      "fields": {
+        "Message": {
+          "type": "button",
+          "action_name": "Message"
+        },
+        "User_Details_Card": {
+          "type": "panel",
+          "fields": {
+            "Edit_Profile": {
+              "type": "link",
+              "action_name": "Edit profile",
+              "opens": "Edit_Profile_Form",
+              "preconditions": [
+                "Active authenticated session (logged in as the user whose profile is being viewed)",
+                "user must be the profile owner"
+              ]
+            }
+          }
+        },
+        "Privacy_And_Policies_Card": {
+          "type": "panel",
+          "fields": {
+            "Data_Retention_Summary": {
+              "type": "link",
+              "action_name": "Data retention summary"
+            }
+          }
+        },
+        "Course_Details_Card": {
+          "type": "panel",
+          "fields": {
+            "Course_Profile_Links": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Course_Profile_Link": {
+                  "type": "link"
+                }
+              }
+            }
+          }
+        },
+        "Miscellaneous_Card": {
+          "type": "panel",
+          "fields": {
+            "Blog_Entries_Link": {
+              "type": "link",
+              "action_name": "Blog entries"
+            },
+            "Forum_Posts_Link": {
+              "type": "link",
+              "action_name": "Forum posts"
+            },
+            "Forum_Discussions_Link": {
+              "type": "link",
+              "action_name": "Forum discussions"
+            },
+            "Learning_Plans_Link": {
+              "type": "link",
+              "action_name": "Learning plans"
+            }
+          }
+        },
+        "Reports_Card": {
+          "type": "panel",
+          "fields": {
+            "Browser_Sessions_Link": {
+              "type": "link",
+              "action_name": "Browser sessions"
+            },
+            "Grades_Overview_Link": {
+              "type": "link",
+              "action_name": "Grades overview"
+            }
+          }
+        },
+        "Login_Activity_Card": {
+          "type": "panel",
+          "fields": {}
+        }
+      }
+    },
+    "Edit_Profile_Form": {
+      "type": "form",
+      "preconditions": [
+        "Active authenticated session (logged in as the user whose profile is being viewed)",
+        "user must be the profile owner"
+      ],
+      "fields": {
+        "General": {
+          "type": "collapsible_panel",
+          "fields": {
+            "First_Name": {
+              "type": "unspecified"
+            },
+            "Last_Name": {
+              "type": "unspecified"
+            },
+            "Email_Address": {
+              "type": "email"
+            },
+            "Email_Visibility": {
+              "type": "dropdown"
+            },
+            "MoodleNet_Profile_ID": {
+              "type": "unspecified"
+            },
+            "City_Town": {
+              "type": "unspecified"
+            },
+            "Country": {
+              "type": "dropdown"
+            },
+            "Timezone": {
+              "type": "dropdown"
+            },
+            "Description": {
+              "type": "unspecified"
+            }
+          }
+        },
+        "User_Picture": {
+          "type": "collapsible_panel",
+          "fields": {
+            "New_Picture": {
+              "type": "file_upload"
+            },
+            "Picture_Description": {
+              "type": "unspecified"
+            }
+          }
+        },
+        "Additional_Names": {
+          "type": "collapsible_panel",
+          "fields": {}
+        },
+        "Interests": {
+          "type": "collapsible_panel",
+          "fields": {}
+        },
+        "Optional_Fields": {
+          "type": "collapsible_panel",
+          "fields": {}
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Update profile",
+          "constraints": [
+            "validates all required fields before saving"
+          ],
+          "preconditions": [
+            "Active authenticated session (logged in as the user whose profile is being viewed)",
+            "user must be the profile owner"
+          ],
+          "on_success": "saves changes to the user's profile"
+        },
+        {
+          "action_name": "Cancel",
+          "on_success": "exits without changes"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Profile page displays the student's circular initials icon, full name, a "Message" button, and an optional profile description. The page is organized into information cards: User details (email address, visibility note, timezone, and an "Edit profile" link), Privacy and policies (Data retention summary link), Course details (links to all enrolled course profiles), Miscellaneous (links to Blog entries, Forum posts, Forum discussions, and Learning plans), Reports (Browser sessions and Grades overview links), and Login activity (First and Last access to site with exact dates and relative time indicators). Clicking "Edit profile" opens the profile form, which contains collapsible panels for General (First name, Last name, Email address, Email visibility dropdown, MoodleNet profile ID, City/town, Country dropdown, Timezone dropdown, and Description), User picture (current picture, new picture upload, and picture description), Additional names, Interests, and Optional fields. "Update profile" validates all required fields before saving; "Cancel" exits without changes. Students can only modify their own profile.
+
+---
+
+
+</description>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:10:03] Workflow-Extractor - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Profile",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Send message from profile",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Message",
+      "on_success": "opens messaging interface"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Open Edit profile form",
+      "actor": "Profile owner",
+      "conditional_branch": "user_is_profile_owner == true",
+      "terminal_action": "Edit profile",
+      "on_success": "opens the Edit profile form"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Open Data retention summary",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Data retention summary",
+      "on_success": "navigates to Data retention summary"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Open Blog entries",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Blog entries",
+      "on_success": "navigates to Blog entries"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Open Forum posts",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Forum posts",
+      "on_success": "navigates to Forum posts"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Open Forum discussions",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Forum discussions",
+      "on_success": "navigates to Forum discussions"
+    },
+    {
+      "wf_id": "WF-007",
+      "name": "Open Learning plans",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Learning plans",
+      "on_success": "navigates to Learning plans"
+    },
+    {
+      "wf_id": "WF-008",
+      "name": "Open Browser sessions report",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Browser sessions",
+      "on_success": "navigates to Browser sessions"
+    },
+    {
+      "wf_id": "WF-009",
+      "name": "Open Grades overview",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Grades overview",
+      "on_success": "navigates to Grades overview"
+    },
+    {
+      "wf_id": "WF-010",
+      "name": "Save changes (Update profile)",
+      "actor": "Profile owner",
+      "conditional_branch": "user_is_profile_owner == true",
+      "terminal_action": "Update profile",
+      "on_success": "saves changes to the user's profile"
+    },
+    {
+      "wf_id": "WF-011",
+      "name": "Cancel profile edit",
+      "actor": "Profile owner",
+      "conditional_branch": "user_is_profile_owner == true",
+      "terminal_action": "Cancel",
+      "on_success": "exits without changes"
+    }
+  ],
+  "total": 11
+}
+
+------------------------------------------------------------
+[21:10:03] Workflow-Extractor - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Profile",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Send message from profile",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Message",
+      "on_success": "opens messaging interface"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Open Edit profile form",
+      "actor": "Profile owner",
+      "conditional_branch": "user_is_profile_owner == true",
+      "terminal_action": "Edit profile",
+      "on_success": "opens the Edit profile form"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Open Data retention summary",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Data retention summary",
+      "on_success": "navigates to Data retention summary"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Open Blog entries",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Blog entries",
+      "on_success": "navigates to Blog entries"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Open Forum posts",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Forum posts",
+      "on_success": "navigates to Forum posts"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Open Forum discussions",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Forum discussions",
+      "on_success": "navigates to Forum discussions"
+    },
+    {
+      "wf_id": "WF-007",
+      "name": "Open Learning plans",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Learning plans",
+      "on_success": "navigates to Learning plans"
+    },
+    {
+      "wf_id": "WF-008",
+      "name": "Open Browser sessions report",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Browser sessions",
+      "on_success": "navigates to Browser sessions"
+    },
+    {
+      "wf_id": "WF-009",
+      "name": "Open Grades overview",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Grades overview",
+      "on_success": "navigates to Grades overview"
+    },
+    {
+      "wf_id": "WF-010",
+      "name": "Save changes (Update profile)",
+      "actor": "Profile owner",
+      "conditional_branch": "user_is_profile_owner == true",
+      "terminal_action": "Update profile",
+      "on_success": "saves changes to the user's profile"
+    },
+    {
+      "wf_id": "WF-011",
+      "name": "Cancel profile edit",
+      "actor": "Profile owner",
+      "conditional_branch": "user_is_profile_owner == true",
+      "terminal_action": "Cancel",
+      "on_success": "exits without changes"
+    }
+  ],
+  "total": 11
+}
+
+------------------------------------------------------------
+[21:10:20] Workflow-Extractor - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 9,
+  "module_title": "Profile",
+  "summary": "Displays the user's profile information including contact and privacy details, course links, activity and report summaries, and an editable profile form with collapsible panels for personal data and picture.",
+  "where_it_fits": "Reached from the top navigation user menu (User menu \u2192 Profile) alongside Grades, Calendar, Private Files and Preferences; it is part of the account area that complements Dashboard/My Courses and course-level views by surfacing personal settings and links to enrolled course profiles and reports.",
+  "assumed_state_on_entry": "Active authenticated session (logged in as the user whose profile is being viewed)"
+}
+</module_context>
+
+<module_name>Profile</module_name>
+
+<ast>
+{
+  "module_name": "Profile",
+  "components": {
+    "Profile_Page": {
+      "type": "page",
+      "fields": {
+        "Message": {
+          "type": "button",
+          "action_name": "Message"
+        },
+        "User_Details_Card": {
+          "type": "panel",
+          "fields": {
+            "Edit_Profile": {
+              "type": "link",
+              "action_name": "Edit profile",
+              "opens": "Edit_Profile_Form",
+              "preconditions": [
+                "Active authenticated session (logged in as the user whose profile is being viewed)",
+                "user must be the profile owner"
+              ]
+            }
+          }
+        },
+        "Privacy_And_Policies_Card": {
+          "type": "panel",
+          "fields": {
+            "Data_Retention_Summary": {
+              "type": "link",
+              "action_name": "Data retention summary"
+            }
+          }
+        },
+        "Course_Details_Card": {
+          "type": "panel",
+          "fields": {
+            "Course_Profile_Links": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Course_Profile_Link": {
+                  "type": "link"
+                }
+              }
+            }
+          }
+        },
+        "Miscellaneous_Card": {
+          "type": "panel",
+          "fields": {
+            "Blog_Entries_Link": {
+              "type": "link",
+              "action_name": "Blog entries"
+            },
+            "Forum_Posts_Link": {
+              "type": "link",
+              "action_name": "Forum posts"
+            },
+            "Forum_Discussions_Link": {
+              "type": "link",
+              "action_name": "Forum discussions"
+            },
+            "Learning_Plans_Link": {
+              "type": "link",
+              "action_name": "Learning plans"
+            }
+          }
+        },
+        "Reports_Card": {
+          "type": "panel",
+          "fields": {
+            "Browser_Sessions_Link": {
+              "type": "link",
+              "action_name": "Browser sessions"
+            },
+            "Grades_Overview_Link": {
+              "type": "link",
+              "action_name": "Grades overview"
+            }
+          }
+        },
+        "Login_Activity_Card": {
+          "type": "panel",
+          "fields": {}
+        }
+      }
+    },
+    "Edit_Profile_Form": {
+      "type": "form",
+      "preconditions": [
+        "Active authenticated session (logged in as the user whose profile is being viewed)",
+        "user must be the profile owner"
+      ],
+      "fields": {
+        "General": {
+          "type": "collapsible_panel",
+          "fields": {
+            "First_Name": {
+              "type": "unspecified"
+            },
+            "Last_Name": {
+              "type": "unspecified"
+            },
+            "Email_Address": {
+              "type": "email"
+            },
+            "Email_Visibility": {
+              "type": "dropdown"
+            },
+            "MoodleNet_Profile_ID": {
+              "type": "unspecified"
+            },
+            "City_Town": {
+              "type": "unspecified"
+            },
+            "Country": {
+              "type": "dropdown"
+            },
+            "Timezone": {
+              "type": "dropdown"
+            },
+            "Description": {
+              "type": "unspecified"
+            }
+          }
+        },
+        "User_Picture": {
+          "type": "collapsible_panel",
+          "fields": {
+            "New_Picture": {
+              "type": "file_upload"
+            },
+            "Picture_Description": {
+              "type": "unspecified"
+            }
+          }
+        },
+        "Additional_Names": {
+          "type": "collapsible_panel",
+          "fields": {}
+        },
+        "Interests": {
+          "type": "collapsible_panel",
+          "fields": {}
+        },
+        "Optional_Fields": {
+          "type": "collapsible_panel",
+          "fields": {}
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Update profile",
+          "constraints": [
+            "validates all required fields before saving"
+          ],
+          "preconditions": [
+            "Active authenticated session (logged in as the user whose profile is being viewed)",
+            "user must be the profile owner"
+          ],
+          "on_success": "saves changes to the user's profile"
+        },
+        {
+          "action_name": "Cancel",
+          "on_success": "exits without changes"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Profile page displays the student's circular initials icon, full name, a "Message" button, and an optional profile description. The page is organized into information cards: User details (email address, visibility note, timezone, and an "Edit profile" link), Privacy and policies (Data retention summary link), Course details (links to all enrolled course profiles), Miscellaneous (links to Blog entries, Forum posts, Forum discussions, and Learning plans), Reports (Browser sessions and Grades overview links), and Login activity (First and Last access to site with exact dates and relative time indicators). Clicking "Edit profile" opens the profile form, which contains collapsible panels for General (First name, Last name, Email address, Email visibility dropdown, MoodleNet profile ID, City/town, Country dropdown, Timezone dropdown, and Description), User picture (current picture, new picture upload, and picture description), Additional names, Interests, and Optional fields. "Update profile" validates all required fields before saving; "Cancel" exits without changes. Students can only modify their own profile.
+
+---
+
+
+</description>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:10:54] Workflow-Extractor - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Profile",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Message button",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Message",
+      "on_success": "opens message composer for this user"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Open Edit profile form",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Edit profile",
+      "on_success": "opens Edit_Profile_Form"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Open Data retention summary",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Data retention summary",
+      "on_success": "navigates to data retention summary"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Open course profile link",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Course_Profile_Link",
+      "on_success": "navigates to the linked course profile"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Open Blog entries",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Blog entries",
+      "on_success": "navigates to blog entries list"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Open Forum posts",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Forum posts",
+      "on_success": "navigates to forum posts list"
+    },
+    {
+      "wf_id": "WF-007",
+      "name": "Open Forum discussions",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Forum discussions",
+      "on_success": "navigates to forum discussions list"
+    },
+    {
+      "wf_id": "WF-008",
+      "name": "Open Learning plans",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Learning plans",
+      "on_success": "navigates to learning plans"
+    },
+    {
+      "wf_id": "WF-009",
+      "name": "Open Browser sessions",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Browser sessions",
+      "on_success": "navigates to browser sessions report"
+    },
+    {
+      "wf_id": "WF-010",
+      "name": "Open Grades overview",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Grades overview",
+      "on_success": "navigates to grades overview"
+    },
+    {
+      "wf_id": "WF-011",
+      "name": "Update profile (save changes)",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Update profile",
+      "on_success": "saves changes to the user's profile"
+    },
+    {
+      "wf_id": "WF-012",
+      "name": "Cancel profile editing",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Cancel",
+      "on_success": "exits without changes"
+    }
+  ],
+  "total": 12
+}
+
+------------------------------------------------------------
+[21:10:54] Workflow-Extractor - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Profile",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Message button",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Message",
+      "on_success": "opens message composer for this user"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Open Edit profile form",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Edit profile",
+      "on_success": "opens Edit_Profile_Form"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Open Data retention summary",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Data retention summary",
+      "on_success": "navigates to data retention summary"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Open course profile link",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Course_Profile_Link",
+      "on_success": "navigates to the linked course profile"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Open Blog entries",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Blog entries",
+      "on_success": "navigates to blog entries list"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Open Forum posts",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Forum posts",
+      "on_success": "navigates to forum posts list"
+    },
+    {
+      "wf_id": "WF-007",
+      "name": "Open Forum discussions",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Forum discussions",
+      "on_success": "navigates to forum discussions list"
+    },
+    {
+      "wf_id": "WF-008",
+      "name": "Open Learning plans",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Learning plans",
+      "on_success": "navigates to learning plans"
+    },
+    {
+      "wf_id": "WF-009",
+      "name": "Open Browser sessions",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Browser sessions",
+      "on_success": "navigates to browser sessions report"
+    },
+    {
+      "wf_id": "WF-010",
+      "name": "Open Grades overview",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Grades overview",
+      "on_success": "navigates to grades overview"
+    },
+    {
+      "wf_id": "WF-011",
+      "name": "Update profile (save changes)",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Update profile",
+      "on_success": "saves changes to the user's profile"
+    },
+    {
+      "wf_id": "WF-012",
+      "name": "Cancel profile editing",
+      "actor": "Profile owner",
+      "conditional_branch": null,
+      "terminal_action": "Cancel",
+      "on_success": "exits without changes"
+    }
+  ],
+  "total": 12
+}

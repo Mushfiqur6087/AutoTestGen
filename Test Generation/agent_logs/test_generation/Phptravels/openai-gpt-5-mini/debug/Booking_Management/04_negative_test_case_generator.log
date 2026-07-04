@@ -1,0 +1,662 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:24:13.965753
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:24:13] Test-Negative - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Negative Testing:**
+
+The AST represents every interactive element in the module. Each node type has a corresponding failure category:
+
+| AST node / field | What to test for failure |
+|---|---|
+| `required: true` field | Leave it blank and submit — inline validation error |
+| `constraints: []` on a field or action | One TC per unique constraint: violate it specifically |
+| `preconditions: []` on an action | One TC attempting the action when the precondition is NOT met |
+| `visible_when` / `required_when` conditional field | Trigger the condition, then submit the revealed field blank or invalid |
+| `state_bound_action_bar` states | Attempt an action from the wrong state (e.g., Approve an already-Active entity) |
+| `on_success` with quoted text | The negative expected_result is the *blocking* behavior — the entity stays unchanged |
+| `submit_actions[]` | If any button has `preconditions`, test that button when precondition fails |
+
+> If a module has no `form`, no `wizard`, no `state_bound_action_bar`, and no `constraints` — it is display-only. Generate at most 1–2 tests (unauthenticated access, or a non-implemented link if described). Do not invent validation scenarios.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — Name the field, the violated rule, and the visible error indicator.**
+Never write a vague expected result. Always specify what the tester sees.
+
+- ❌ `"Validation error shown"` — too vague
+- ❌ `"Error is displayed"` — too vague
+- ✅ `"Inline validation error appears on the <Field Name> field indicating it is required"`
+- ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
+- ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
+
+**Rule B — Quote exact error text when the spec provides it.**
+If the description quotes a specific error string, copy it verbatim into the expected_result.
+- ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
+- ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+
+**Rule C — Assert the blocking behavior, not just the error.**
+The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
+- ❌ `"Error shown"` (doesn't confirm the action was blocked)
+- ✅ `"Form does not submit; <Entity> is not created; error shown on <Field>"`
+- ✅ `"Status remains <Current State>; no transition occurs"`
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Use generic placeholders in angle brackets.
+
+- ✅ `"Enter <invalid email format> in the Email field"`
+- ✅ `"Enter <amount exceeding available balance> in the Amount field"`
+- ✅ `"Enter <password shorter than minimum length> in the Password field"`
+- ❌ `"Enter 'notanemail' in the Email field"`
+- ❌ `"Enter 'abc123' in the Password field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic user action — one field, one click, one navigation. No grouping.
+
+- ✅ `"1. Leave the <Required Field> blank"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill all fields except <Required Field> and submit"`
+
+---
+
+**SCOPE GATE (run before writing any test):**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact sentence in the description or field/constraint/state in the AST justifies this test? If you cannot point to one → delete it.
+2. **UI-executable:** Can a tester trigger this by clicking, typing, selecting, or navigating in a browser? If verification requires dev tools, DOM inspection, concurrent users, API calls, or server-side error simulation → out of scope.
+3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
+
+Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Required field representatives (deduplicated by field type):**
+
+Group required fields by type: `text/unspecified`, `email`, `password`, `number`, `date`, `dropdown`, `file_upload`. Generate:
+- ONE "leave blank and submit" test per **type group** (not per field) — use the most prominent field as representative
+- ONE "submit with ALL required fields empty" test
+
+Do NOT generate a separate blank-field test for every required field. If 5 text fields are all required, one representative covers them all.
+
+**Action dialog required fields — NOT subject to cross-form deduplication:**
+If a `state_bound_action_bar` action opens a dialog with its own required `fields{}` (e.g., Activate requires Activation Date, Reject requires a Reason, Withdraw requires a Reason, Close requires a Closure Reason), each such dialog is its own testing scope. Generate ONE "leave the required dialog field blank and submit" test per distinct action dialog. These are HIGH priority — they block state transitions and are common defect sites. Do not suppress them because the main wizard already has a blank-field test.
+
+**2. Format violations:**
+
+For fields with type-specific format rules (from AST type or description):
+- `email` → one test with invalid format
+- `number` → one test with non-numeric input
+- `date` → one test with invalid/impossible date
+- `password` → ONE representative test for policy violation (not one per sub-rule — see Deduplication)
+
+Only generate if the spec or AST implies format validation for that field.
+
+**3. Numeric bounds and balance violations:**
+
+If the spec describes minimum/maximum values, amount ranges, or balance checks:
+- One test per distinct bound violation (e.g., amount below minimum, amount above maximum, amount exceeding available balance)
+- Use `<amount below minimum>`, `<amount exceeding available balance>` as placeholders
+
+Examples across the dataset:
+- Transfer amount > available balance → error
+- Loan amount outside product min/max → error
+- Deposit below minimum requirement → error
+
+**4. Constraint violations:**
+
+For each unique `constraints[]` entry in the AST, and for cross-field rules described in the spec:
+- `"must be unique"` → submit with a duplicate value
+- `"must match"` (confirm fields) → enter mismatched values
+- `"must not be same as current"` → select the current value
+- `"cannot perform <action> while <condition>"` → attempt the action when the condition is true
+- `"<date> must be after <other date>"` → enter reversed dates
+
+One test per unique constraint. Do not duplicate the same mechanism.
+
+**Constraint timing tests:** If the spec states an action is blocked by a pre-existing system state (e.g., "cannot close with active accounts", "cannot transfer to the same office"), generate TWO tests:
+1. The standard constraint violation test (user opens the dialog, fills required fields, submits → blocked).
+2. A constraint-timing test: user opens the dialog WITHOUT filling required fields → assert whether the block is shown immediately on dialog open (before the user fills anything) OR only on submit. This distinguishes whether the UI enforces the constraint eagerly or lazily. Steps: open the dialog, observe the state → assert what is visible before any interaction. If the spec is silent on timing, generate only the first test.
+
+**5. Precondition violations (auth, role, and state):**
+
+For each `preconditions[]` entry on any action — and for auth/role/state rules described in the spec or the `<module_context>` block:
+
+- **Global Context constraints:** If the `<module_context>` block's `assumed_state_on_entry` explicitly lists required states (e.g., "Requires an active Client profile"), generate one test attempting the module's core action when that precondition fails (e.g., Client profile is missing or inactive).
+- **Unauthenticated access:** If any page or action requires login, generate one test: an unauthenticated user attempts to access it and is redirected to the login page.
+- **Wrong role:** If the spec explicitly states a feature is restricted to a specific role (e.g., Teacher only, Admin only), generate one test: a user of the wrong role attempts the action and is blocked or the control is not visible.
+- **Precondition not met:** For each AST `preconditions[]` entry, attempt the action when that precondition is not satisfied.
+
+**6. State-machine violations:**
+
+From `state_bound_action_bar` nodes:
+- **Every defined state must have at least one wrong-state test.** For each state, identify at least one action that is NOT in its `available_actions` list and generate a test attempting that action from that state.
+- If a state has an empty `available_actions` array, generate one test verifying no action buttons are visible in that state.
+- **Do not stop after 1–2 representative examples** when the module defines 4+ distinct states. The states Active, Pending, Closed, Rejected, and Withdrawn each have different action sets — each must be independently verified.
+- One test per state is sufficient — pick the most distinct unavailable action for that state. Do not enumerate every action × every state (that would be exponential).
+
+---
+
+**DEDUPLICATION GATE (run before outputting):**
+
+1. **Required field dedup:** Multiple required text fields in the **same form or dialog** → ONE representative test, not one per field.
+2. **Sub-rule dedup:** A field with multiple validation sub-rules (e.g., password: length + uppercase + lowercase + number + special char) → ONE representative violation test, not one per sub-rule.
+3. **Cross-form dedup:** If two **main forms** in the same module share the same validation mechanism → test it on the primary form only. **Exception: action dialogs are never suppressed by cross-form dedup** — each action dialog with a required field gets its own blank-field test regardless.
+4. **Uniqueness check:** Before outputting, ask for each TC: "Does this test catch a bug that NO other test in this module would catch?" If no → remove it.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (standard CRUD form, form with constraints): **4–8 tests**
+- Complex module (state machine, multi-form, wizard with many constraints): **10–16 tests**
+
+For modules with a `state_bound_action_bar` defining 4+ states, the state-machine violation tests alone will produce 4–5 tests. This is expected and correct — do not suppress them to hit a lower target.
+
+If you exceed the upper range, apply the deduplication gate again before outputting.
+
+---
+
+**PRIORITY:**
+
+- **High:** State precondition violations, constraint violations that could corrupt data, unauthenticated access, required field representatives
+- **Medium:** Format violations, cross-field validation, numeric bounds, wrong-role access, wrong-state action attempts
+
+---
+
+**WORKFLOW-AWARE FAILURE INJECTION (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow that contains a form interaction (terminal action is a submit/save/create/approve button):
+  - Identify the most **critical blocking failure** for that workflow's `conditional_branch`.
+  - If that failure mode is NOT already covered by another workflow's negative test, generate one negative TC for it.
+- **Do NOT generate one negative TC per workflow mechanically.** Apply the existing deduplication gate first — only add a TC if it catches a bug that no other test would catch.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a workflow. Set `"wf_ref": null` for generic validation tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "What error/block should occur, naming the field and indicator",
+      "priority": "high | medium"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "high_priority": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[21:24:13] Test-Negative - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 15,
+  "module_title": "Booking Management",
+  "summary": "Displays detailed information for a specific booking (confirmation number, service and traveler details, payment and status) and provides options to modify or cancel the booking where permitted, with automated email notifications for status changes.",
+  "where_it_fits": "Accessible from the User Dashboard/Booking Management area after authentication, this module is part of the post-booking lifecycle for managing existing reservations discovered via the main navigation (Account/Login \u2192 Dashboard \u2192 Booking Management). It complements listing and detail flows for Hotels, Flights, Tours, and Cars by handling downstream changes and cancellations.",
+  "assumed_state_on_entry": "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)"
+}
+</module_context>
+
+<module_name>Booking Management</module_name>
+
+<ast>
+{
+  "module_name": "Booking Management",
+  "components": {
+    "Booking_Detail_Actions": {
+      "type": "action_bar",
+      "available_actions": [
+        {
+          "action_name": "Modify",
+          "preconditions": [
+            "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
+            "modification permitted by booking type and cancellation policy"
+          ],
+          "fields": {
+            "New_Travel_Dates": {
+              "type": "date",
+              "constraints": [
+                "subject to availability",
+                "may incur change fees"
+              ]
+            },
+            "Special_Requests": {
+              "type": "unspecified"
+            },
+            "Traveler_Updates": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Traveler_Identifier": {
+                  "type": "unspecified"
+                },
+                "Update_Details": {
+                  "type": "unspecified"
+                }
+              }
+            }
+          },
+          "submit_actions": [
+            {
+              "action_name": "Submit Changes",
+              "on_success": "updates booking and sends email notification for modification",
+              "constraints": [
+                "changes are subject to availability and applicable fees"
+              ],
+              "preconditions": [
+                "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
+                "modification permitted by booking type and cancellation policy"
+              ]
+            }
+          ]
+        },
+        {
+          "action_name": "Cancel",
+          "preconditions": [
+            "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
+            "cancellation permitted by booking type and cancellation policy"
+          ],
+          "fields": {
+            "Confirm_Cancellation": {
+              "type": "checkbox",
+              "required": true
+            }
+          },
+          "submit_actions": [
+            {
+              "action_name": "Confirm Cancellation",
+              "on_success": "processes cancellation, initiates refund to original payment method, and sends email notification for cancellation",
+              "constraints": [
+                "refund amount determined by applicable cancellation policy"
+              ],
+              "preconditions": [
+                "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
+                "cancellation permitted by booking type and cancellation policy",
+                "Confirm_Cancellation == true"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+Each booking's detail view shows confirmation number, full service information, traveler details, payment information, and current booking status. Where the booking type and cancellation policy permit, a Modify button allows changing travel dates (subject to availability and applicable fees), adding special requests, or updating traveler information. Clicking Cancel opens a cancellation confirmation flow showing the applicable refund amount; the user must explicitly confirm before the cancellation is processed and a refund is initiated to the original payment method. Email notifications are sent for all status changes including confirmation, modification, and cancellation.
+
+---
+
+
+</description>
+
+<workflows>
+WF-001 | Modify booking and submit changes | actor: Authenticated user | branch: none | terminal: Submit Changes | on_success: updates booking and sends email notification for modification
+WF-002 | Confirm cancellation (user checked confirmation) | actor: Authenticated user | branch: Confirm_Cancellation == true | terminal: Confirm Cancellation | on_success: processes cancellation, initiates refund to original payment method, and sends email notification for cancellation
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:27:37] Test-Negative - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Booking Management",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user cannot access Booking Detail page",
+      "preconditions": [
+        "User is not authenticated",
+        "Booking exists in system for a different user"
+      ],
+      "steps": [
+        "1. Navigate to the Booking Detail URL for an existing booking"
+      ],
+      "expected_result": "User is redirected to the login page and cannot view booking details; Booking Detail view is not displayed and Modify/Cancel actions are not visible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": null,
+      "test_case": "Modify action blocked when modification is not permitted by booking type/policy (blocked at dialog open)",
+      "preconditions": [
+        "Authenticated user",
+        "Booking selected where modification is not permitted by booking type or cancellation policy"
+      ],
+      "steps": [
+        "1. Click the Modify button on the Booking Detail view"
+      ],
+      "expected_result": "Modify dialog does not open; an inline or modal message is shown on the Booking Detail view indicating modification is not permitted by booking type/cancellation policy; no fields are editable and no changes can be submitted; booking remains unchanged",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-001",
+      "test_case": "Submit Changes blocked when New Travel Dates are unavailable (availability constraint)",
+      "preconditions": [
+        "Authenticated user",
+        "Booking selected where modification is permitted",
+        "Requested new travel dates are not available"
+      ],
+      "steps": [
+        "1. Click the Modify button on the Booking Detail view",
+        "2. Enter <unavailable dates> into the New Travel Dates field",
+        "3. Click Submit Changes"
+      ],
+      "expected_result": "New Travel Dates field displays an inline validation error indicating the selected dates are unavailable; Submit Changes does not complete; booking is not updated; no modification email is sent",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-001",
+      "test_case": "Invalid date format rejected in New Travel Dates",
+      "preconditions": [
+        "Authenticated user",
+        "Booking selected where modification is permitted"
+      ],
+      "steps": [
+        "1. Click the Modify button on the Booking Detail view",
+        "2. Enter <invalid date format> into the New Travel Dates field",
+        "3. Click Submit Changes"
+      ],
+      "expected_result": "New Travel Dates field displays an inline validation error indicating an invalid date format / 'Enter a valid date'; form does not submit; booking is not updated",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-001",
+      "test_case": "Submit Changes blocked when modification precondition fails at submit time",
+      "preconditions": [
+        "Authenticated user",
+        "Booking selected (booking type that may allow opening Modify but policy disallows final modification)"
+      ],
+      "steps": [
+        "1. Click the Modify button on the Booking Detail view",
+        "2. Enter valid values into editable fields (e.g., New Travel Dates = <valid available dates> if available, Special Requests = <text>)",
+        "3. Click Submit Changes"
+      ],
+      "expected_result": "Submission is rejected due to precondition failure (modification not permitted by booking type/cancellation policy); a clear error message is displayed (e.g., banner or dialog) stating modification is not permitted; booking remains unchanged and no modification email is sent",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": null,
+      "test_case": "Cancel dialog shows immediate block when cancellation is not permitted by policy (timing test)",
+      "preconditions": [
+        "Authenticated user",
+        "Booking selected where cancellation is not permitted by booking type or cancellation policy"
+      ],
+      "steps": [
+        "1. Click the Cancel button on the Booking Detail view"
+      ],
+      "expected_result": "Cancellation dialog opens (or a modal/inline message appears) showing a clear message that cancellation is not permitted by booking type/cancellation policy; the Confirm Cancellation checkbox and/or Confirm button are disabled or hidden; user cannot proceed and booking remains unchanged",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-002",
+      "test_case": "Confirm Cancellation blocked when required Confirm_Cancellation checkbox is not checked",
+      "preconditions": [
+        "Authenticated user",
+        "Booking selected where cancellation is permitted"
+      ],
+      "steps": [
+        "1. Click the Cancel button on the Booking Detail view",
+        "2. Ensure the Confirm_Cancellation checkbox remains unchecked",
+        "3. Click the Confirm Cancellation submit action"
+      ],
+      "expected_result": "Inline validation error appears on the Confirm_Cancellation checkbox indicating it is required; cancellation is not processed; booking status does not change; no refund is initiated; no cancellation email is sent",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-008",
+      "wf_ref": "WF-002",
+      "test_case": "Confirm Cancellation fails at submit when cancellation precondition is false (submit-time block)",
+      "preconditions": [
+        "Authenticated user",
+        "Booking selected where cancellation is not permitted by policy (precondition false) but UI allowed checking the box"
+      ],
+      "steps": [
+        "1. Click the Cancel button on the Booking Detail view",
+        "2. Check the Confirm_Cancellation checkbox",
+        "3. Click the Confirm Cancellation submit action"
+      ],
+      "expected_result": "Submission is rejected due to precondition failure (cancellation not permitted by booking type/cancellation policy); a clear error is displayed explaining cancellation is not allowed; booking remains unchanged; no refund or cancellation email is initiated",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-009",
+      "wf_ref": null,
+      "test_case": "Modify action not allowed when no booking is selected",
+      "preconditions": [
+        "Authenticated user",
+        "No booking is selected in the Booking Management area"
+      ],
+      "steps": [
+        "1. Attempt to click the Modify button from the Booking Management area without selecting a booking"
+      ],
+      "expected_result": "Modify action is disabled or clicking it shows an inline message 'No booking selected' (or equivalent); no Modify dialog opens; user cannot proceed and no changes occur",
+      "priority": "medium"
+    }
+  ],
+  "summary": {
+    "total": 9,
+    "high_priority": 7,
+    "medium_priority": 2,
+    "low_priority": 0
+  }
+}
+
+------------------------------------------------------------
+[21:27:37] Test-Negative - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Booking Management",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user cannot access Booking Detail page",
+      "preconditions": [
+        "User is not authenticated",
+        "Booking exists in system for a different user"
+      ],
+      "steps": [
+        "1. Navigate to the Booking Detail URL for an existing booking"
+      ],
+      "expected_result": "User is redirected to the login page and cannot view booking details; Booking Detail view is not displayed and Modify/Cancel actions are not visible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": null,
+      "test_case": "Modify action blocked when modification is not permitted by booking type/policy (blocked at dialog open)",
+      "preconditions": [
+        "Authenticated user",
+        "Booking selected where modification is not permitted by booking type or cancellation policy"
+      ],
+      "steps": [
+        "1. Click the Modify button on the Booking Detail view"
+      ],
+      "expected_result": "Modify dialog does not open; an inline or modal message is shown on the Booking Detail view indicating modification is not permitted by booking type/cancellation policy; no fields are editable and no changes can be submitted; booking remains unchanged",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-001",
+      "test_case": "Submit Changes blocked when New Travel Dates are unavailable (availability constraint)",
+      "preconditions": [
+        "Authenticated user",
+        "Booking selected where modification is permitted",
+        "Requested new travel dates are not available"
+      ],
+      "steps": [
+        "1. Click the Modify button on the Booking Detail view",
+        "2. Enter <unavailable dates> into the New Travel Dates field",
+        "3. Click Submit Changes"
+      ],
+      "expected_result": "New Travel Dates field displays an inline validation error indicating the selected dates are unavailable; Submit Changes does not complete; booking is not updated; no modification email is sent",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-001",
+      "test_case": "Invalid date format rejected in New Travel Dates",
+      "preconditions": [
+        "Authenticated user",
+        "Booking selected where modification is permitted"
+      ],
+      "steps": [
+        "1. Click the Modify button on the Booking Detail view",
+        "2. Enter <invalid date format> into the New Travel Dates field",
+        "3. Click Submit Changes"
+      ],
+      "expected_result": "New Travel Dates field displays an inline validation error indicating an invalid date format / 'Enter a valid date'; form does not submit; booking is not updated",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-001",
+      "test_case": "Submit Changes blocked when modification precondition fails at submit time",
+      "preconditions": [
+        "Authenticated user",
+        "Booking selected (booking type that may allow opening Modify but policy disallows final modification)"
+      ],
+      "steps": [
+        "1. Click the Modify button on the Booking Detail view",
+        "2. Enter valid values into editable fields (e.g., New Travel Dates = <valid available dates> if available, Special Requests = <text>)",
+        "3. Click Submit Changes"
+      ],
+      "expected_result": "Submission is rejected due to precondition failure (modification not permitted by booking type/cancellation policy); a clear error message is displayed (e.g., banner or dialog) stating modification is not permitted; booking remains unchanged and no modification email is sent",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": null,
+      "test_case": "Cancel dialog shows immediate block when cancellation is not permitted by policy (timing test)",
+      "preconditions": [
+        "Authenticated user",
+        "Booking selected where cancellation is not permitted by booking type or cancellation policy"
+      ],
+      "steps": [
+        "1. Click the Cancel button on the Booking Detail view"
+      ],
+      "expected_result": "Cancellation dialog opens (or a modal/inline message appears) showing a clear message that cancellation is not permitted by booking type/cancellation policy; the Confirm Cancellation checkbox and/or Confirm button are disabled or hidden; user cannot proceed and booking remains unchanged",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-002",
+      "test_case": "Confirm Cancellation blocked when required Confirm_Cancellation checkbox is not checked",
+      "preconditions": [
+        "Authenticated user",
+        "Booking selected where cancellation is permitted"
+      ],
+      "steps": [
+        "1. Click the Cancel button on the Booking Detail view",
+        "2. Ensure the Confirm_Cancellation checkbox remains unchecked",
+        "3. Click the Confirm Cancellation submit action"
+      ],
+      "expected_result": "Inline validation error appears on the Confirm_Cancellation checkbox indicating it is required; cancellation is not processed; booking status does not change; no refund is initiated; no cancellation email is sent",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-008",
+      "wf_ref": "WF-002",
+      "test_case": "Confirm Cancellation fails at submit when cancellation precondition is false (submit-time block)",
+      "preconditions": [
+        "Authenticated user",
+        "Booking selected where cancellation is not permitted by policy (precondition false) but UI allowed checking the box"
+      ],
+      "steps": [
+        "1. Click the Cancel button on the Booking Detail view",
+        "2. Check the Confirm_Cancellation checkbox",
+        "3. Click the Confirm Cancellation submit action"
+      ],
+      "expected_result": "Submission is rejected due to precondition failure (cancellation not permitted by booking type/cancellation policy); a clear error is displayed explaining cancellation is not allowed; booking remains unchanged; no refund or cancellation email is initiated",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-009",
+      "wf_ref": null,
+      "test_case": "Modify action not allowed when no booking is selected",
+      "preconditions": [
+        "Authenticated user",
+        "No booking is selected in the Booking Management area"
+      ],
+      "steps": [
+        "1. Attempt to click the Modify button from the Booking Management area without selecting a booking"
+      ],
+      "expected_result": "Modify action is disabled or clicking it shows an inline message 'No booking selected' (or equivalent); no Modify dialog opens; user cannot proceed and no changes occur",
+      "priority": "medium"
+    }
+  ],
+  "summary": {
+    "total": 9,
+    "high_priority": 7,
+    "medium_priority": 2,
+    "low_priority": 0
+  }
+}

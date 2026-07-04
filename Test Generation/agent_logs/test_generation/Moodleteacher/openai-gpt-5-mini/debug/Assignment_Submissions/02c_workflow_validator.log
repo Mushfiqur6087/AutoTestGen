@@ -1,0 +1,403 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:10:14.050191
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:10:57] Workflow-Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Validator. You receive (1) a raw functional description, (2) a Structural Model JSON, and (3) a generated workflow list for one module.
+
+Your single job: decide whether this workflow list is complete and correct, or whether it must be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the workflow list. You DO NOT generate new workflows. You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+<workflows>
+{workflows}
+</workflows>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**WHAT A WORKFLOW IS:**
+
+A workflow is one complete, executable interaction path through the module — from entry to one terminal action. Two workflows are distinct if they require different user actions to reach the terminal (different conditional branch, different state, different terminal button).
+
+MINOR missing
+  A non-critical row action (e.g., "View" on a data table) where omission does not
+  break any downstream state transition or form submission. Flag it; don't auto-retry
+  for it alone.
+
+CRITICAL missing
+  Any of: a form submit_action with no matching workflow, a state × action pair with
+  no workflow, a bulk_action with no workflow, any submit path through a conditional
+  branch with no workflow.
+
+MINOR phantom
+  A workflow whose terminal_action is not literally named in the AST but is so
+  universally implied by the component type that its presence is unsurprising
+  (e.g., a "Search" workflow when the table has `searchable: true`). Flag it;
+  don't auto-retry for it alone.
+
+CRITICAL phantom
+  A workflow whose terminal_action cannot be traced to any AST node's
+  submit_actions[], available_actions[], row_actions[], or bulk_actions[] —
+  and is not an explicit action verb in the description text.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD — Seven Checks
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Check 1 — Missing form workflows.**
+Walk every `form` node in the AST. For each entry in `submit_actions[]`, there must be at least one workflow with a matching `terminal_action`. If the form has `visible_when` or `required_when` fields, there must be one workflow per unique condition combination × submit action. Flag any missing combinations. Classify each as critical or minor.
+
+**Check 2 — Missing state-machine workflows.**
+Walk every `state_bound_action_bar` node. For each state key in `states{}`, for each entry in `available_actions[]`, there must be one workflow with `terminal_action` matching that action and `conditional_branch` containing `entity_state == <state>`. Flag any missing state × action pairs. Classify each as critical.
+If a `<module_context>` block is present, use its `assumed_state_on_entry` to confirm that the entry state named in the context is represented as a workflow's starting condition where applicable.
+
+**Check 3 — Missing data table workflows.**
+Walk every `data_table` node. For each entry in `row_actions[]` and `bulk_actions[]`, there must be one workflow with `terminal_action` matching that action. Flag any missing entries. This includes read-only actions like View/Details. Classify bulk_actions as critical; row_actions as minor if read-only, critical otherwise.
+
+**Check 4 — Phantom workflows.**
+A workflow is a phantom if its `terminal_action` cannot be found in any AST node's `submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`, or as an explicit action verb in the description text. Classify each as critical or minor per the definitions above.
+
+**Check 5 — Wrong conditional branch.**
+If a workflow has a non-null `conditional_branch`, verify the condition references a real field name that appears in the AST under `visible_when`, `required_when`, or a real state key in `state_bound_action_bar`. Flag any condition that references a field or state that does not exist. Classify as structural error.
+
+**Check 6 — Empty or generic on_success.**
+If a workflow's `on_success` is empty, null, "success", "done", or any single-word generic string, and the AST has a concrete `on_success` value for that action, flag it. The `on_success` must reflect what the AST or description says actually happens. Classify as structural error.
+
+**Check 7 — Zero workflows when module clearly has actions.**
+If the workflow list is empty (total = 0) but the AST contains any `form`, `wizard`, `state_bound_action_bar`, or `data_table` component, that is a critical failure — flag it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERDICT RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Check 5, 6)
+                       AND Check 7 passes
+                       → fixes must be []
+
+  retry                Any CRITICAL missing workflow
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any structural error (wrong conditional, generic on_success)
+                       OR Check 7 failure
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       interaction path exists — not a close call, but truly unresolvable
+                       from the text and AST alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "AST path or state×action pair",
+      "severity": "critical | minor",
+      "reason": "<why this workflow is expected from the AST/description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "WF-NNN terminal_action=X",
+      "severity": "critical | minor",
+      "reason": "<why this workflow has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Check 5/6 violation and the affected workflow>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact missing path or phantom to remove>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+
+------------------------------------------------------------
+[21:10:57] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 11,
+  "module_title": "Assignment Submissions",
+  "summary": "Displays a searchable and filterable table of all student submission records for an assignment, including submission and grading statuses, timestamps, previews, feedback, and quick-grading inline controls.",
+  "where_it_fits": "Accessible from an assignment's activity page within a course (reachable via the Course tab and course breadcrumbs or the Course Index sidebar), this view is part of the teacher/grader workflow for reviewing and grading student work after submissions have been made. It sits downstream of Assignment Creation and is used prior to or during updating the Gradebook.",
+  "assumed_state_on_entry": "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
+}
+</module_context>
+
+<description>
+
+The Submissions view presents a table of all student submission records. Search and filter controls above the table allow narrowing by student name, submission status, and grading status. The table columns are: Student identity (name and initials icon, links to profile), Submission status (e.g., Submitted for grading, No submission, Draft — not submitted), Grading status (e.g., Graded, Not graded), Submission date/time, Time since submission, Online text preview, File submission links, Submission comments, Feedback comments, Feedback files, and Final grade. Each row has an action menu to open the grading workflow for that student. A "Quick grading" mode can be enabled to allow inline grade entry directly in the table.
+
+---
+
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Assignment Submissions",
+  "components": {
+    "Submissions_Search_Filters": {
+      "type": "form",
+      "fields": {
+        "Student_Search": {
+          "type": "search"
+        },
+        "Submission_Status_Filter": {
+          "type": "dropdown",
+          "options": [
+            "Submitted for grading",
+            "No submission",
+            "Draft \u2014 not submitted"
+          ]
+        },
+        "Grading_Status_Filter": {
+          "type": "dropdown",
+          "options": [
+            "Graded",
+            "Not graded"
+          ]
+        },
+        "Quick_Grading_Mode": {
+          "type": "checkbox",
+          "description": "Enables inline grade entry directly in the table"
+        }
+      },
+      "preconditions": [
+        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
+      ]
+    },
+    "Submissions_Table": {
+      "type": "data_table",
+      "searchable": true,
+      "filterable_columns": [
+        "Submission_Status",
+        "Grading_Status"
+      ],
+      "row_fields": {
+        "Student_Identity": {
+          "type": "link",
+          "description": "Student name and initials icon; link opens student profile"
+        },
+        "Online_Text_Preview": {
+          "type": "link",
+          "description": "Opens an inline preview of online text submission"
+        },
+        "File_Submissions": {
+          "type": "link",
+          "description": "Links to submitted files for download/view"
+        },
+        "Submission_Comments": {
+          "type": "link",
+          "description": "Opens submission comments thread or modal"
+        },
+        "Feedback_Comments": {
+          "type": "link",
+          "description": "Opens or adds feedback comments"
+        },
+        "Feedback_Files": {
+          "type": "link",
+          "description": "Links to feedback files (download or view)"
+        },
+        "Final_Grade": {
+          "type": "unspecified",
+          "editable": true,
+          "enabled_when": "Quick_Grading_Mode == true",
+          "description": "Inline editable final grade when Quick Grading Mode is enabled"
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "Open Grading Workflow",
+          "on_click": "opens the grading workflow for the selected student"
+        }
+      ],
+      "preconditions": [
+        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
+      ]
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Search by student name",
+    "actor": "teacher or grader",
+    "conditional_branch": null,
+    "terminal_action": "Student_Search",
+    "on_success": "Table is filtered to match the student search query, narrowing visible submissions."
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Filter by submission status",
+    "actor": "teacher or grader",
+    "conditional_branch": null,
+    "terminal_action": "Submission_Status_Filter",
+    "on_success": "Table is filtered by the selected Submission Status (e.g., Submitted for grading, No submission, Draft \u2014 not submitted)."
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Filter by grading status",
+    "actor": "teacher or grader",
+    "conditional_branch": null,
+    "terminal_action": "Grading_Status_Filter",
+    "on_success": "Table is filtered by the selected Grading Status (Graded or Not graded)."
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Enable Quick Grading mode",
+    "actor": "teacher or grader",
+    "conditional_branch": null,
+    "terminal_action": "Quick_Grading_Mode",
+    "on_success": "Quick Grading Mode enabled; inline grade entry (Final_Grade) becomes editable directly in the table."
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Open student profile from row",
+    "actor": "teacher or grader",
+    "conditional_branch": null,
+    "terminal_action": "Student_Identity",
+    "on_success": "Link opens the student's profile."
+  },
+  {
+    "wf_id": "WF-006",
+    "name": "Open online text preview",
+    "actor": "teacher or grader",
+    "conditional_branch": null,
+    "terminal_action": "Online_Text_Preview",
+    "on_success": "Opens an inline preview of the student's online text submission."
+  },
+  {
+    "wf_id": "WF-007",
+    "name": "Open submitted files",
+    "actor": "teacher or grader",
+    "conditional_branch": null,
+    "terminal_action": "File_Submissions",
+    "on_success": "Links to submitted files are opened for download or viewing."
+  },
+  {
+    "wf_id": "WF-008",
+    "name": "Open submission comments",
+    "actor": "teacher or grader",
+    "conditional_branch": null,
+    "terminal_action": "Submission_Comments",
+    "on_success": "Opens the submission comments thread or modal."
+  },
+  {
+    "wf_id": "WF-009",
+    "name": "Open or add feedback comments",
+    "actor": "teacher or grader",
+    "conditional_branch": null,
+    "terminal_action": "Feedback_Comments",
+    "on_success": "Opens or allows adding feedback comments for the submission."
+  },
+  {
+    "wf_id": "WF-010",
+    "name": "Open feedback files",
+    "actor": "teacher or grader",
+    "conditional_branch": null,
+    "terminal_action": "Feedback_Files",
+    "on_success": "Links to feedback files are opened for download or viewing."
+  },
+  {
+    "wf_id": "WF-011",
+    "name": "Open grading workflow for a student",
+    "actor": "teacher or grader",
+    "conditional_branch": null,
+    "terminal_action": "Open Grading Workflow",
+    "on_success": "Opens the grading workflow for the selected student."
+  },
+  {
+    "wf_id": "WF-012",
+    "name": "Edit final grade inline (Quick Grading enabled)",
+    "actor": "teacher or grader",
+    "conditional_branch": "Quick_Grading_Mode == true",
+    "terminal_action": "Final_Grade",
+    "on_success": "Final grade is edited inline in the table when Quick Grading Mode is enabled."
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:11:09] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 1,
+  "summary": "Workflows cover all actionable fields, table row actions, and the conditional quick-grading path; no critical or structural issues found.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:11:09] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 1,
+  "summary": "Workflows cover all actionable fields, table row actions, and the conditional quick-grading path; no critical or structural issues found.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}

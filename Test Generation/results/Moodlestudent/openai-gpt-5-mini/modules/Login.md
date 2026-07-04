@@ -1,0 +1,40 @@
+# Test Cases — Moodlestudent
+
+Generated: 2026-07-04T15:14:26.541109Z  
+Model: openai/gpt-5-mini  
+
+## Login
+
+Total: **15** (positive: 4, negative: 7, edge: 4)
+
+### Positive Tests
+
+| TC ID | WF Ref | Test Case | Preconditions | Steps | Expected Result | Priority |
+|-------|--------|-----------|---------------|-------|-----------------|----------|
+| TC-001 | WF-001 | Successful login with valid credentials redirects to Dashboard | User is unauthenticated and at the login page (no active session) | 1. Enter <valid username> in the Username field<br>2. Enter <valid password> in the Password field<br>3. Click the 'Log in' button | redirects to Dashboard | high |
+| TC-002 | WF-002 | Attempt login with invalid credentials shows inline error and retains username | User is unauthenticated and at the login page (no active session) | 1. Enter <valid username> in the Username field<br>2. Enter <invalid password> in the Password field<br>3. Click the 'Log in' button | An inline error message is displayed indicating invalid credentials; the Password field is cleared; the Username field retains the entered value | medium |
+| TC-003 | WF-003 | Access as a guest grants unauthenticated browsing access | User is unauthenticated and at the login page (no active session) | 1. Click the 'Access as a guest' button | grants unauthenticated browsing access | medium |
+| TC-004 | WF-004 | View cookies notice displays cookie usage information | User is unauthenticated and at the login page (no active session) | 1. Click the 'Cookies notice' button | displays cookie usage information | low |
+
+### Negative Tests
+
+| TC ID | WF Ref | Test Case | Preconditions | Steps | Expected Result | Priority |
+|-------|--------|-----------|---------------|-------|-----------------|----------|
+| TC-005 |  | Submit with ALL required fields empty | User is unauthenticated and at the login page (no active session) | 1. Ensure Username field is empty<br>2. Ensure Password field is empty<br>3. Click the 'Log in' button | Inline validation errors appear on the Username and Password fields indicating they are required; the form does not submit; user remains on the login page (no redirect to Dashboard) | high |
+| TC-006 |  | Leave Username blank and submit (text/unspecified required-field representative) | User is unauthenticated and at the login page (no active session) | 1. Leave the Username field blank<br>2. Enter <valid password> in the Password field<br>3. Click the 'Log in' button | Username field displays an inline validation error indicating it is required; the form does not submit; user remains on the login page | high |
+| TC-007 |  | Leave Password blank and submit (password required-field representative) | User is unauthenticated and at the login page (no active session) | 1. Enter <valid username> in the Username field<br>2. Leave the Password field blank<br>3. Click the 'Log in' button | Password field displays an inline validation error indicating it is required; the form does not submit; user remains on the login page | high |
+| TC-008 | WF-002 | Submit with invalid credentials (failed login behavior) | User is unauthenticated and at the login page (no active session) | 1. Enter <valid username> in the Username field<br>2. Enter <incorrect password> in the Password field<br>3. Click the 'Log in' button | An inline error appears on the form indicating the credentials are invalid; the Password field is cleared; the Username field retains the entered username; the form does not redirect to the Dashboard (user remains on the login page) | high |
+| TC-009 |  | Attempt to use Log in when user already has an active authenticated session (precondition violation) | User is authenticated (has an active session) | 1. Establish an authenticated session as <existing user> (log in)<br>2. While still authenticated, navigate to the login page<br>3. Attempt to click the 'Log in' button or submit the login form | Login action is blocked: the application does not present a functional login form — the user is redirected to the Dashboard (or the login form is not accessible) and no additional login attempt is performed | high |
+| TC-010 | WF-003 | Attempt 'Access as a guest' while authenticated (precondition violation) | User is authenticated (has an active session) | 1. Establish an authenticated session as <existing user> (log in)<br>2. Navigate to the login page while authenticated<br>3. Attempt to click the 'Access as a guest' button | 'Access as a guest' control is not available for authenticated users (button is not visible or is disabled); clicking it has no effect and the user remains in their authenticated session (no unauthenticated guest browsing is granted) | high |
+| TC-011 |  | Use 'Lost password?' link when feature is disabled on this site | Login page is displayed, Password recovery feature is disabled on this test site | 1. Observe whether the 'Lost password?' link is present on the login page<br>2. If the link is present, attempt to click the 'Lost password?' link | The 'Lost password?' link is not available or is rendered disabled on this site; clicking it does not navigate to a password-reset flow (no password-reset page is opened) | medium |
+
+### Edge & Boundary Tests
+
+| TC ID | WF Ref | Test Case | Preconditions | Steps | Expected Result | Priority |
+|-------|--------|-----------|---------------|-------|-----------------|----------|
+| TC-012 (input_edge) | WF-002 | Very long Username retained after failed login | User is unauthenticated and at the login page (no active session) | 1. Focus the Username field<br>2. Enter a very long string (200+ characters) into the Username field<br>3. Focus the Password field<br>4. Enter an incorrect password into the Password field<br>5. Click the "Log in" button | Login attempt is blocked / error shown: an inline error is displayed; the Password field is cleared; the Username field retains the exact very-long string entered (no silent truncation visible in the field); no redirect to Dashboard occurs. | medium |
+| TC-013 (input_edge) | WF-002 | Unicode/emoji and special characters in Username and Password are retained on failure | User is unauthenticated and at the login page (no active session) | 1. Focus the Username field<br>2. Enter a string containing emoji and non-ASCII Unicode characters into the Username field<br>3. Focus the Password field<br>4. Enter a password containing emoji and special characters into the Password field<br>5. Click the "Log in" button | Login attempt is blocked / error shown: an inline error is displayed; the Password field is cleared; the Username field retains the exact Unicode/emoji characters as entered (no character loss or replacement visible in the field); no redirect to Dashboard occurs. | low |
+| TC-014 (input_edge) | WF-002 | Whitespace-only Username (border of 'empty') results in inline error and retained input | User is unauthenticated and at the login page (no active session) | 1. Focus the Username field<br>2. Enter a Username that consists only of whitespace characters<br>3. Focus the Password field<br>4. Enter a non-empty password into the Password field<br>5. Click the "Log in" button | Login attempt is blocked / error shown: an inline error is displayed (treated as invalid/empty); the Password field is cleared; the Username field retains the whitespace characters exactly as entered (no implicit trimming visible); no redirect to Dashboard occurs. | medium |
+| TC-015 (interaction_edge) |  | Clicking the disabled "Lost password?" link is blocked on this test site | User is unauthenticated and at the login page (no active session), The "Lost password?" feature is disabled on this test site | 1. Locate the "Lost password?" link on the login page<br>2. Click the "Lost password?" link | Click is blocked / error shown: no navigation or password-reset UI is displayed; the UI remains on the login page and the link does not open a modal or redirect. (Visible state indicates the link is disabled or no action occurs.) | medium |
+
+---

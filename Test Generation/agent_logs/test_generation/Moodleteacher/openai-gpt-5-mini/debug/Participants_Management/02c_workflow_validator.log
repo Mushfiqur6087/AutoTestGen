@@ -1,0 +1,487 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:10:14.031241
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:10:44] Workflow-Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Validator. You receive (1) a raw functional description, (2) a Structural Model JSON, and (3) a generated workflow list for one module.
+
+Your single job: decide whether this workflow list is complete and correct, or whether it must be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the workflow list. You DO NOT generate new workflows. You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+<workflows>
+{workflows}
+</workflows>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**WHAT A WORKFLOW IS:**
+
+A workflow is one complete, executable interaction path through the module — from entry to one terminal action. Two workflows are distinct if they require different user actions to reach the terminal (different conditional branch, different state, different terminal button).
+
+MINOR missing
+  A non-critical row action (e.g., "View" on a data table) where omission does not
+  break any downstream state transition or form submission. Flag it; don't auto-retry
+  for it alone.
+
+CRITICAL missing
+  Any of: a form submit_action with no matching workflow, a state × action pair with
+  no workflow, a bulk_action with no workflow, any submit path through a conditional
+  branch with no workflow.
+
+MINOR phantom
+  A workflow whose terminal_action is not literally named in the AST but is so
+  universally implied by the component type that its presence is unsurprising
+  (e.g., a "Search" workflow when the table has `searchable: true`). Flag it;
+  don't auto-retry for it alone.
+
+CRITICAL phantom
+  A workflow whose terminal_action cannot be traced to any AST node's
+  submit_actions[], available_actions[], row_actions[], or bulk_actions[] —
+  and is not an explicit action verb in the description text.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD — Seven Checks
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Check 1 — Missing form workflows.**
+Walk every `form` node in the AST. For each entry in `submit_actions[]`, there must be at least one workflow with a matching `terminal_action`. If the form has `visible_when` or `required_when` fields, there must be one workflow per unique condition combination × submit action. Flag any missing combinations. Classify each as critical or minor.
+
+**Check 2 — Missing state-machine workflows.**
+Walk every `state_bound_action_bar` node. For each state key in `states{}`, for each entry in `available_actions[]`, there must be one workflow with `terminal_action` matching that action and `conditional_branch` containing `entity_state == <state>`. Flag any missing state × action pairs. Classify each as critical.
+If a `<module_context>` block is present, use its `assumed_state_on_entry` to confirm that the entry state named in the context is represented as a workflow's starting condition where applicable.
+
+**Check 3 — Missing data table workflows.**
+Walk every `data_table` node. For each entry in `row_actions[]` and `bulk_actions[]`, there must be one workflow with `terminal_action` matching that action. Flag any missing entries. This includes read-only actions like View/Details. Classify bulk_actions as critical; row_actions as minor if read-only, critical otherwise.
+
+**Check 4 — Phantom workflows.**
+A workflow is a phantom if its `terminal_action` cannot be found in any AST node's `submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`, or as an explicit action verb in the description text. Classify each as critical or minor per the definitions above.
+
+**Check 5 — Wrong conditional branch.**
+If a workflow has a non-null `conditional_branch`, verify the condition references a real field name that appears in the AST under `visible_when`, `required_when`, or a real state key in `state_bound_action_bar`. Flag any condition that references a field or state that does not exist. Classify as structural error.
+
+**Check 6 — Empty or generic on_success.**
+If a workflow's `on_success` is empty, null, "success", "done", or any single-word generic string, and the AST has a concrete `on_success` value for that action, flag it. The `on_success` must reflect what the AST or description says actually happens. Classify as structural error.
+
+**Check 7 — Zero workflows when module clearly has actions.**
+If the workflow list is empty (total = 0) but the AST contains any `form`, `wizard`, `state_bound_action_bar`, or `data_table` component, that is a critical failure — flag it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERDICT RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Check 5, 6)
+                       AND Check 7 passes
+                       → fixes must be []
+
+  retry                Any CRITICAL missing workflow
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any structural error (wrong conditional, generic on_success)
+                       OR Check 7 failure
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       interaction path exists — not a close call, but truly unresolvable
+                       from the text and AST alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "AST path or state×action pair",
+      "severity": "critical | minor",
+      "reason": "<why this workflow is expected from the AST/description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "WF-NNN terminal_action=X",
+      "severity": "critical | minor",
+      "reason": "<why this workflow has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Check 5/6 violation and the affected workflow>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact missing path or phantom to remove>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+
+------------------------------------------------------------
+[21:10:44] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 9,
+  "module_title": "Participants Management",
+  "summary": "Lists and filters users enrolled in a course and provides per-user actions (view profile, edit role, message), bulk actions, and an enrolment dialog to add users with roles and durations.",
+  "where_it_fits": "Opened from a course's horizontal tab bar via the Participants tab (reachable from Home > My Courses > [Course] > Participants), it sits alongside Course, Grades and Activities and is used during course administration to manage enrolled users. The module complements course navigation (breadcrumbs and Course Index sidebar) by focusing on user-level management within a specific course.",
+  "assumed_state_on_entry": "User is logged in and viewing a specific course, with permission to view and manage participants (including enrolling users) when enrollment actions are required."
+}
+</module_context>
+
+<description>
+
+The Participants page lists all users enrolled in the course. An enrolled-users scope dropdown at the top filters the list by enrollment context, and an "Enrol users" button opens the enrollment dialog. A filter system below allows building conditions using an "Any" toggle, a Select attribute dropdown, and an "+ Add condition" link, with "Clear filters" and "Apply filters" buttons. Alphabetical filter buttons for First name and Last name (All and A–Z) allow quick initial-based filtering. The participants table contains columns for checkbox (bulk selection), First/Last name (sortable, links to profile), Email address, Roles, Groups, Last access to course, and Status. Each row has a three-dot action menu with options to view profile, edit role, and send a message. At the bottom, a "With selected users…" dropdown applies bulk actions to checked participants. The Enrol users dialog contains a user search field, a Role dropdown, and an optional Enrollment duration control. Confirming enrollment adds the user to the course at the specified role.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Participants Management",
+  "module_id": 9,
+  "components": {
+    "Enrolled_Users_Scope_Dropdown": {
+      "type": "dropdown"
+    },
+    "Filters_Form": {
+      "type": "form",
+      "fields": {
+        "Any_Toggle": {
+          "type": "checkbox",
+          "label": "Any"
+        },
+        "Attribute_Select": {
+          "type": "dropdown",
+          "label": "Select attribute"
+        },
+        "Add_Condition": {
+          "type": "link",
+          "action_name": "+ Add condition"
+        },
+        "Clear_Filters": {
+          "type": "button",
+          "action_name": "Clear filters"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Apply filters"
+        }
+      ]
+    },
+    "Alphabetical_Filters": {
+      "type": "filter_group",
+      "fields": {
+        "First_Name": {
+          "type": "button_group",
+          "label": "First name",
+          "options": [
+            "All",
+            "A",
+            "B",
+            "C",
+            "D",
+            "E",
+            "F",
+            "G",
+            "H",
+            "I",
+            "J",
+            "K",
+            "L",
+            "M",
+            "N",
+            "O",
+            "P",
+            "Q",
+            "R",
+            "S",
+            "T",
+            "U",
+            "V",
+            "W",
+            "X",
+            "Y",
+            "Z"
+          ]
+        },
+        "Last_Name": {
+          "type": "button_group",
+          "label": "Last name",
+          "options": [
+            "All",
+            "A",
+            "B",
+            "C",
+            "D",
+            "E",
+            "F",
+            "G",
+            "H",
+            "I",
+            "J",
+            "K",
+            "L",
+            "M",
+            "N",
+            "O",
+            "P",
+            "Q",
+            "R",
+            "S",
+            "T",
+            "U",
+            "V",
+            "W",
+            "X",
+            "Y",
+            "Z"
+          ]
+        }
+      }
+    },
+    "Enrol_Users_Button": {
+      "type": "button",
+      "action_name": "Enrol users",
+      "preconditions": [
+        "User is logged in and viewing a specific course, with permission to view and manage participants (including enrolling users) when enrollment actions are required."
+      ],
+      "opens": "Enrol_Users_Dialog"
+    },
+    "Participants_Table": {
+      "type": "data_table",
+      "has_checkbox_column": true,
+      "columns": {
+        "First_Name": {
+          "type": "link",
+          "label": "First name",
+          "action": "View profile",
+          "sortable": true
+        },
+        "Last_Name": {
+          "type": "link",
+          "label": "Last name",
+          "action": "View profile",
+          "sortable": true
+        }
+      },
+      "sortable_columns": [
+        "First name",
+        "Last name"
+      ],
+      "filterable_columns": [
+        "First name",
+        "Last name"
+      ],
+      "row_actions": [
+        {
+          "action_name": "View profile"
+        },
+        {
+          "action_name": "Edit role",
+          "preconditions": [
+            "User is logged in and viewing a specific course, with permission to view and manage participants (including enrolling users) when enrollment actions are required."
+          ]
+        },
+        {
+          "action_name": "Send message",
+          "preconditions": [
+            "User is logged in and viewing a specific course, with permission to view and manage participants (including enrolling users) when enrollment actions are required."
+          ]
+        }
+      ],
+      "bulk_actions": [
+        {
+          "action_name": "With selected users\u2026",
+          "type": "dropdown",
+          "preconditions": [
+            "User is logged in and viewing a specific course, with permission to view and manage participants (including enrolling users) when enrollment actions are required."
+          ]
+        }
+      ]
+    },
+    "Enrol_Users_Dialog": {
+      "type": "dialog",
+      "fields": {
+        "User_Search": {
+          "type": "search",
+          "label": "Search users"
+        },
+        "Role": {
+          "type": "dropdown",
+          "label": "Role"
+        },
+        "Enrollment_Duration": {
+          "type": "unspecified",
+          "label": "Enrollment duration",
+          "description": "optional"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Confirm enrollment",
+          "on_success": "adds the user to the course at the specified role",
+          "preconditions": [
+            "User is logged in and viewing a specific course, with permission to view and manage participants (including enrolling users) when enrollment actions are required."
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Apply filters",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Apply filters",
+    "on_success": "Filters applied; participants list updated to match filters"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Clear filters",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Clear filters",
+    "on_success": "Filters cleared; participants list reset to default"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Add another filter condition",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "+ Add condition",
+    "on_success": "Adds a new condition row to the filter builder"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Open enrol users dialog",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Enrol users",
+    "on_success": "Opens the Enrol users dialog"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Confirm enrollment in Enrol users dialog",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Confirm enrollment",
+    "on_success": "adds the user to the course at the specified role"
+  },
+  {
+    "wf_id": "WF-006",
+    "name": "View participant profile (row or name link)",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "View profile",
+    "on_success": "Participant's profile opened"
+  },
+  {
+    "wf_id": "WF-007",
+    "name": "Edit participant role",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Edit role",
+    "on_success": "Participant's role editor opened"
+  },
+  {
+    "wf_id": "WF-008",
+    "name": "Send message to participant",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Send message",
+    "on_success": "Message composer opened for the selected participant"
+  },
+  {
+    "wf_id": "WF-009",
+    "name": "Open bulk actions for selected users",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "With selected users\u2026",
+    "on_success": "Bulk actions menu opened for selected users"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:11:01] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 1,
+  "summary": "Workflows comprehensively cover all submit_actions, data_table row and bulk actions, and dialog submissions in the AST; no critical or structural issues found.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:11:01] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 1,
+  "summary": "Workflows comprehensively cover all submit_actions, data_table row and bulk actions, and dialog submissions in the AST; no critical or structural issues found.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}

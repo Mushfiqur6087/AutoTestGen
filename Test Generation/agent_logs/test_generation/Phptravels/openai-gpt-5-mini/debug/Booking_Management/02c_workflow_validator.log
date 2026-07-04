@@ -1,0 +1,482 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:20:32.110239
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:21:04] Workflow-Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Validator. You receive (1) a raw functional description, (2) a Structural Model JSON, and (3) a generated workflow list for one module.
+
+Your single job: decide whether this workflow list is complete and correct, or whether it must be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the workflow list. You DO NOT generate new workflows. You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+<workflows>
+{workflows}
+</workflows>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**WHAT A WORKFLOW IS:**
+
+A workflow is one complete, executable interaction path through the module — from entry to one terminal action. Two workflows are distinct if they require different user actions to reach the terminal (different conditional branch, different state, different terminal button).
+
+MINOR missing
+  A non-critical row action (e.g., "View" on a data table) where omission does not
+  break any downstream state transition or form submission. Flag it; don't auto-retry
+  for it alone.
+
+CRITICAL missing
+  Any of: a form submit_action with no matching workflow, a state × action pair with
+  no workflow, a bulk_action with no workflow, any submit path through a conditional
+  branch with no workflow.
+
+MINOR phantom
+  A workflow whose terminal_action is not literally named in the AST but is so
+  universally implied by the component type that its presence is unsurprising
+  (e.g., a "Search" workflow when the table has `searchable: true`). Flag it;
+  don't auto-retry for it alone.
+
+CRITICAL phantom
+  A workflow whose terminal_action cannot be traced to any AST node's
+  submit_actions[], available_actions[], row_actions[], or bulk_actions[] —
+  and is not an explicit action verb in the description text.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD — Seven Checks
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Check 1 — Missing form workflows.**
+Walk every `form` node in the AST. For each entry in `submit_actions[]`, there must be at least one workflow with a matching `terminal_action`. If the form has `visible_when` or `required_when` fields, there must be one workflow per unique condition combination × submit action. Flag any missing combinations. Classify each as critical or minor.
+
+**Check 2 — Missing state-machine workflows.**
+Walk every `state_bound_action_bar` node. For each state key in `states{}`, for each entry in `available_actions[]`, there must be one workflow with `terminal_action` matching that action and `conditional_branch` containing `entity_state == <state>`. Flag any missing state × action pairs. Classify each as critical.
+If a `<module_context>` block is present, use its `assumed_state_on_entry` to confirm that the entry state named in the context is represented as a workflow's starting condition where applicable.
+
+**Check 3 — Missing data table workflows.**
+Walk every `data_table` node. For each entry in `row_actions[]` and `bulk_actions[]`, there must be one workflow with `terminal_action` matching that action. Flag any missing entries. This includes read-only actions like View/Details. Classify bulk_actions as critical; row_actions as minor if read-only, critical otherwise.
+
+**Check 4 — Phantom workflows.**
+A workflow is a phantom if its `terminal_action` cannot be found in any AST node's `submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`, or as an explicit action verb in the description text. Classify each as critical or minor per the definitions above.
+
+**Check 5 — Wrong conditional branch.**
+If a workflow has a non-null `conditional_branch`, verify the condition references a real field name that appears in the AST under `visible_when`, `required_when`, or a real state key in `state_bound_action_bar`. Flag any condition that references a field or state that does not exist. Classify as structural error.
+
+**Check 6 — Empty or generic on_success.**
+If a workflow's `on_success` is empty, null, "success", "done", or any single-word generic string, and the AST has a concrete `on_success` value for that action, flag it. The `on_success` must reflect what the AST or description says actually happens. Classify as structural error.
+
+**Check 7 — Zero workflows when module clearly has actions.**
+If the workflow list is empty (total = 0) but the AST contains any `form`, `wizard`, `state_bound_action_bar`, or `data_table` component, that is a critical failure — flag it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERDICT RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Check 5, 6)
+                       AND Check 7 passes
+                       → fixes must be []
+
+  retry                Any CRITICAL missing workflow
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any structural error (wrong conditional, generic on_success)
+                       OR Check 7 failure
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       interaction path exists — not a close call, but truly unresolvable
+                       from the text and AST alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "AST path or state×action pair",
+      "severity": "critical | minor",
+      "reason": "<why this workflow is expected from the AST/description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "WF-NNN terminal_action=X",
+      "severity": "critical | minor",
+      "reason": "<why this workflow has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Check 5/6 violation and the affected workflow>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact missing path or phantom to remove>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+
+------------------------------------------------------------
+[21:21:04] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 15,
+  "module_title": "Booking Management",
+  "summary": "Displays detailed information for a specific booking (confirmation number, service and traveler details, payment and status) and provides options to modify or cancel the booking where permitted, with automated email notifications for status changes.",
+  "where_it_fits": "Accessible from the User Dashboard/Booking Management area after authentication, this module is part of the post-booking lifecycle for managing existing reservations discovered via the main navigation (Account/Login \u2192 Dashboard \u2192 Booking Management). It complements listing and detail flows for Hotels, Flights, Tours, and Cars by handling downstream changes and cancellations.",
+  "assumed_state_on_entry": "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)"
+}
+</module_context>
+
+<description>
+
+Each booking's detail view shows confirmation number, full service information, traveler details, payment information, and current booking status. Where the booking type and cancellation policy permit, a Modify button allows changing travel dates (subject to availability and applicable fees), adding special requests, or updating traveler information. Clicking Cancel opens a cancellation confirmation flow showing the applicable refund amount; the user must explicitly confirm before the cancellation is processed and a refund is initiated to the original payment method. Email notifications are sent for all status changes including confirmation, modification, and cancellation.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Booking Management",
+  "components": {
+    "Booking_Detail_Actions": {
+      "type": "action_bar",
+      "available_actions": [
+        {
+          "action_name": "Modify",
+          "preconditions": [
+            "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
+            "modification permitted by booking type and cancellation policy"
+          ],
+          "fields": {
+            "New_Travel_Dates": {
+              "type": "date",
+              "constraints": [
+                "subject to availability",
+                "may incur change fees"
+              ]
+            },
+            "Special_Requests": {
+              "type": "unspecified"
+            },
+            "Traveler_Updates": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Traveler_Identifier": {
+                  "type": "unspecified"
+                },
+                "Update_Details": {
+                  "type": "unspecified"
+                }
+              }
+            }
+          },
+          "submit_actions": [
+            {
+              "action_name": "Submit Changes",
+              "on_success": "updates booking and sends email notification for modification",
+              "constraints": [
+                "changes are subject to availability and applicable fees"
+              ],
+              "preconditions": [
+                "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
+                "modification permitted by booking type and cancellation policy"
+              ]
+            }
+          ]
+        },
+        {
+          "action_name": "Cancel",
+          "preconditions": [
+            "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
+            "cancellation permitted by booking type and cancellation policy"
+          ],
+          "fields": {
+            "Confirm_Cancellation": {
+              "type": "checkbox",
+              "required": true
+            }
+          },
+          "submit_actions": [
+            {
+              "action_name": "Confirm Cancellation",
+              "on_success": "processes cancellation, initiates refund to original payment method, and sends email notification for cancellation",
+              "constraints": [
+                "refund amount determined by applicable cancellation policy"
+              ],
+              "preconditions": [
+                "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
+                "cancellation permitted by booking type and cancellation policy",
+                "Confirm_Cancellation == true"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Modify booking \u2014 Submit Changes",
+    "actor": "Authenticated user",
+    "conditional_branch": null,
+    "terminal_action": "Submit Changes",
+    "on_success": "updates booking and sends email notification for modification"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Cancel booking \u2014 Confirm Cancellation",
+    "actor": "Authenticated user",
+    "conditional_branch": "Confirm_Cancellation == true AND cancellation permitted by booking type and cancellation policy",
+    "terminal_action": "Confirm Cancellation",
+    "on_success": "processes cancellation, initiates refund to original payment method, and sends email notification for cancellation"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:21:43] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "Workflows cover both submit_actions but WF-002's conditional_branch references a non-existent field/phrase and is a structural error; update required.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "WF-002 has conditional_branch 'Confirm_Cancellation == true AND cancellation permitted by booking type and cancellation policy' — the fragment 'cancellation permitted by booking type and cancellation policy' is a precondition phrase in the AST, not a real field name or state key; conditional_branch must reference actual AST field names or state keys."
+  ],
+  "fixes": [
+    "Update WF-002 conditional_branch to reference only real AST fields or add a concrete AST field for the permission check. For example either: (a) set conditional_branch to 'Confirm_Cancellation == true' (keeping permission as an action precondition, not a conditional expression), or (b) add a boolean field in the AST such as 'cancellation_permitted' and change the conditional_branch to 'Confirm_Cancellation == true AND cancellation_permitted == true'."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:21:43] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "Workflows cover both submit_actions but WF-002's conditional_branch references a non-existent field/phrase and is a structural error; update required.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "WF-002 has conditional_branch 'Confirm_Cancellation == true AND cancellation permitted by booking type and cancellation policy' \u2014 the fragment 'cancellation permitted by booking type and cancellation policy' is a precondition phrase in the AST, not a real field name or state key; conditional_branch must reference actual AST field names or state keys."
+  ],
+  "fixes": [
+    "Update WF-002 conditional_branch to reference only real AST fields or add a concrete AST field for the permission check. For example either: (a) set conditional_branch to 'Confirm_Cancellation == true' (keeping permission as an action precondition, not a conditional expression), or (b) add a boolean field in the AST such as 'cancellation_permitted' and change the conditional_branch to 'Confirm_Cancellation == true AND cancellation_permitted == true'."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:22:06] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 15,
+  "module_title": "Booking Management",
+  "summary": "Displays detailed information for a specific booking (confirmation number, service and traveler details, payment and status) and provides options to modify or cancel the booking where permitted, with automated email notifications for status changes.",
+  "where_it_fits": "Accessible from the User Dashboard/Booking Management area after authentication, this module is part of the post-booking lifecycle for managing existing reservations discovered via the main navigation (Account/Login \u2192 Dashboard \u2192 Booking Management). It complements listing and detail flows for Hotels, Flights, Tours, and Cars by handling downstream changes and cancellations.",
+  "assumed_state_on_entry": "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)"
+}
+</module_context>
+
+<description>
+
+Each booking's detail view shows confirmation number, full service information, traveler details, payment information, and current booking status. Where the booking type and cancellation policy permit, a Modify button allows changing travel dates (subject to availability and applicable fees), adding special requests, or updating traveler information. Clicking Cancel opens a cancellation confirmation flow showing the applicable refund amount; the user must explicitly confirm before the cancellation is processed and a refund is initiated to the original payment method. Email notifications are sent for all status changes including confirmation, modification, and cancellation.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Booking Management",
+  "components": {
+    "Booking_Detail_Actions": {
+      "type": "action_bar",
+      "available_actions": [
+        {
+          "action_name": "Modify",
+          "preconditions": [
+            "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
+            "modification permitted by booking type and cancellation policy"
+          ],
+          "fields": {
+            "New_Travel_Dates": {
+              "type": "date",
+              "constraints": [
+                "subject to availability",
+                "may incur change fees"
+              ]
+            },
+            "Special_Requests": {
+              "type": "unspecified"
+            },
+            "Traveler_Updates": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Traveler_Identifier": {
+                  "type": "unspecified"
+                },
+                "Update_Details": {
+                  "type": "unspecified"
+                }
+              }
+            }
+          },
+          "submit_actions": [
+            {
+              "action_name": "Submit Changes",
+              "on_success": "updates booking and sends email notification for modification",
+              "constraints": [
+                "changes are subject to availability and applicable fees"
+              ],
+              "preconditions": [
+                "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
+                "modification permitted by booking type and cancellation policy"
+              ]
+            }
+          ]
+        },
+        {
+          "action_name": "Cancel",
+          "preconditions": [
+            "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
+            "cancellation permitted by booking type and cancellation policy"
+          ],
+          "fields": {
+            "Confirm_Cancellation": {
+              "type": "checkbox",
+              "required": true
+            }
+          },
+          "submit_actions": [
+            {
+              "action_name": "Confirm Cancellation",
+              "on_success": "processes cancellation, initiates refund to original payment method, and sends email notification for cancellation",
+              "constraints": [
+                "refund amount determined by applicable cancellation policy"
+              ],
+              "preconditions": [
+                "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
+                "cancellation permitted by booking type and cancellation policy",
+                "Confirm_Cancellation == true"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Modify booking and submit changes",
+    "actor": "Authenticated user",
+    "conditional_branch": null,
+    "terminal_action": "Submit Changes",
+    "on_success": "updates booking and sends email notification for modification"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Confirm cancellation (user checked confirmation)",
+    "actor": "Authenticated user",
+    "conditional_branch": "Confirm_Cancellation == true",
+    "terminal_action": "Confirm Cancellation",
+    "on_success": "processes cancellation, initiates refund to original payment method, and sends email notification for cancellation"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:22:15] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "All submit actions in the AST have matching workflows and conditional branches align with defined fields; no missing or phantom workflows detected.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:22:15] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "All submit actions in the AST have matching workflows and conditional branches align with defined fields; no missing or phantom workflows detected.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}

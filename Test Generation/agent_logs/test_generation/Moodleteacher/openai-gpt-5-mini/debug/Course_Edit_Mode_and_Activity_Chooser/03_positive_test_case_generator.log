@@ -1,0 +1,1494 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:12:33.130674
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:12:33] Test-Positive - SYSTEM PROMPT
+------------------------------------------------------------
+You are an Expert UI Test Case Generator. You receive (1) a Structural Model JSON for one specific module and (2) the original functional description for that module.
+
+Your job is to produce ONLY positive/functional UI test cases — tests where valid input is provided and the specific module behaves correctly in isolation.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST Input:**
+
+The AST JSON you receive is a structured representation of every **interactive** element in the module. Each top-level key under `"components"` is a named UI component. Learn these node types before generating tests:
+
+| AST `type` | What it represents | What to test |
+|---|---|---|
+| `form` | A flat input form with a submit action | One happy-path TC per distinct `on_success` outcome; one extra TC per `visible_when` conditional field |
+| `wizard` | A multi-step form; `steps[]` = ordered panels | Navigate all steps in sequence; assert the final `on_success` from `submit_actions` |
+| `data_table` | A listing/grid of rows | One TC per entry in `row_actions`; one TC per `bulk_actions` entry; one TC for search/filter |
+| `tab_container` | Tabbed layout; `tabs[]` may nest sub-tabs | One navigation TC across all tabs; if different tabs have different submission forms, one TC per tab |
+| `state_bound_action_bar` | Action buttons that change by entity status; `states{}` map keys are the statuses | One TC per `available_actions` entry per state; precondition = that state |
+| `repeating_group` | "Add Row" pattern for dynamic lists of items | Step: "Click Add Row", then fill `item_fields` for the new row |
+
+Key fields to pay attention to inside any node:
+- **`on_success`** — use its value verbatim as (or as the basis for) your `expected_result`
+- **`visible_when` / `required_when`** — each unique condition = a separate TC
+- **`preconditions`** — translate directly into your TC's `preconditions` array
+- **`constraints`** — use in expected_result or steps when they describe observable UI behavior (e.g., inline validation)
+- **`submit_actions[]`** — if a form has multiple submit buttons, generate one TC per distinct `on_success`
+
+> If the AST is missing an action that the functional description explicitly describes (e.g., an action verb in a state-machine paragraph), trust the description and generate the TC anyway (see Coverage Completeness Gate).
+
+---
+
+**STRICT MODULE BOUNDARY RULE (CRITICAL):**
+You are writing "unit tests" for the UI. You must test ONLY the module provided in the input.
+- DO NOT write End-to-End (E2E) journeys across multiple pages.
+- DO NOT add steps to navigate to other modules to verify backend results.
+- **Cross-Module Redirects:** If clicking a submit button navigates the user to an entirely different module (e.g., from Booking to Payment, or Assignment Creation back to Course Page), the test ENDS with the assertion that the redirect occurred. Do not interact with the next page.
+- **Multi-Actor Flows:** If a downstream action requires a different user (e.g., a Checker approving a Maker's entry), do not include it.
+
+---
+
+**ASSERTION STYLE (CRITICAL — read every rule before writing any expected_result):**
+
+**Rule A — Assert the visible UI change, never the action itself.**
+The `expected_result` must describe exactly what a tester can *see or read on the screen* after the last step. It must NOT restate the action just performed.
+
+Banned patterns — if your expected_result matches any of these, rewrite it:
+- ❌ `"creates [entity]"` → name the row, badge, or notification that appears
+- ❌ `"updates [entity]"` → name the field or value that visibly changed
+- ❌ `"deletes [entity]"` → state that the row is no longer present in the table
+- ❌ `"[system] adjusts automatically"` → that is a backend side effect; assert only what is visible on the current screen immediately after the last step
+- ❌ `"[field] contains <value>"` after a filter action → assert that the *list/table* is filtered, not that the input field holds a value
+
+Good pattern examples:
+- ✅ `"New row appears in the [Table] with the entered [Field A] and [Field B]"`
+- ✅ `"Status badge updates to '[Status]' ([color]) on the [Entity] Detail page"`
+- ✅ `"[Table] displays only rows matching <filter term>; unrelated rows are no longer visible"`
+- ✅ `"A success notification is displayed; the [Field] on the detail page shows the updated value"`
+- ✅ `"File download is triggered in the browser"` (for export actions)
+
+**Rule B — One TC = one specific outcome. Never combine conditional branches.**
+If a feature has two distinct output paths (e.g., on-screen result vs. file export), generate TWO separate test cases, each with its own expected_result describing only that one path. Never write `"when X, result A; when Y, result B"` inside a single expected_result.
+
+**Rule C — When the description quotes exact success text, use it verbatim.**
+Always use the `on_success` value from the AST when available.
+
+**Rule D — If the module performs calculations or updates a status badge, explicitly assert that visual update** (badge color, calculated value, running balance change).
+Additionally: if the spec describes a **running total, summary row, price breakdown, or auto-calculated field** that derives its value from other inputs, the expected_result must assert that the calculated field *updates visibly* after the dependent inputs are filled — e.g., `"The Total field updates to reflect Base Price + Taxes + Fees"` or `"The Course Total row displays the aggregated grade across all weighted items"`.
+
+**Rule E — Quote exact success messages verbatim. Never paraphrase.**
+If the spec provides a quoted success string (e.g., `"Account opened successfully!"`), copy it character-for-character into the expected_result — including punctuation and capitalisation.
+- ❌ `"a success message is shown"` when spec says `"Transfer completed successfully."`
+- ❌ `"a confirmation is displayed"` when spec says `"Payment submitted successfully."`
+- ✅ `"Page shows 'Transfer completed successfully.' with a transaction ID"`
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+Never invent specific data values in steps or preconditions unless the spec mandates a hardcoded system value (e.g., `"Select 'Card' layout"`).
+Always use generic role-based placeholders enclosed in angle brackets.
+
+Examples of CORRECT step wording:
+  - "Enter <valid email> in the Email field"
+  - "Select <account type> from the Account Type dropdown"
+  - "Check the <target participant> checkbox"
+  - "Select 'Cash-based' from the Accounting radio options" (Only if mandated by spec)
+
+Examples of WRONG step wording (never do this):
+  - "Enter 'John' in the First Name field"
+  - "Enter '500.00' in the Amount field"
+
+---
+
+**PRECONDITIONS vs STEPS — BOUNDARY RULE (CRITICAL):**
+
+A **precondition** is a state the tester sets up *before* touching the module under test. A **step** is an action the tester performs *inside* the module.
+
+Apply this checklist to every TC before outputting:
+1. If a step says `"Ensure <X> is open"` or `"Verify <X> shows <Y>"` — it is a precondition, not a step. Move it.
+2. If a precondition says a form, dialog, or page is already open, there **must** be a step that opens it — unless the module's entry point is that page by definition. If the step is missing, add it as step 1.
+3. A TC with only one step that is an observation (`"Observe the page"`) is missing real user actions. Either add the navigation step that brings the user to this state, or fold the observation into the precondition.
+
+When dealing with complex AST components, format steps like this:
+- **Modals/Dialogs:** "1. Click <Button> to open modal", "2. Enter <value> inside modal"
+- **Confirmation Dialogs:** If the spec describes a confirmation dialog appearing after a state-change or destructive action, always add the step `"Click Confirm on the <Action> dialog"`. Never omit it, even if the spec only implies it.
+- **Inline Editing:** "1. Click the edit icon next to <item>", "2. Enter <new value>", "3. Click Save"
+- **Search-and-add (Autocomplete):** "1. Enter <search term> in the autocomplete", "2. Select <matching result> from the dropdown"
+- **Dynamic Rows (`repeating_group`):** "1. Click 'Add Row'", "2. Enter <value> in the new row"
+- **File Uploads:** "1. Click 'Upload'", "2. Select a <valid file type> from the OS dialog"
+- **Dynamic Filters:** Include separate tests to remove individual active filter chips or click "Reset All".
+
+---
+
+**PRECONDITIONS FOR ISOLATED MODULES:**
+Because you are testing a module in isolation, establish the required entry state:
+- **Global Context:** Use the `<module_context>` block's `assumed_state_on_entry` as your primary source for preconditions. If the context states "Requires an active Client profile" or "Loan must be in Approved state", include that verbatim as a precondition.
+- **Roles:** "User logged in as <Teacher / Student / Admin>" (derive from context or description).
+- **State:** "[Entity] is in [Status]" (derive from context or description).
+- **Toggles/Modes:** "Edit mode is enabled" or "Requires active internet connection".
+- **Role-Specific Views:** If the spec explicitly states that a UI element (tab, button, control) is visible to one role but not another, generate a test that asserts the element's presence for the role that should see it. The expected_result must name the specific element — e.g., `"The Settings tab is visible in the course navigation bar"` or `"No Edit mode toggle is present on the Course page"`.
+
+---
+
+**WHAT TO GENERATE (COVERAGE MAPPING TO AST):**
+
+**1. Forms & Wizards (`form`, `wizard`):**
+- Generate ONE happy path per distinct success outcome.
+- *Conditional UI Check:* If a toggle/dropdown reveals new mandatory fields (`visible_when`), generate a separate test for that conditional branch.
+- **Wizard step coverage (CRITICAL):** If a wizard has multiple steps and any step beyond Step 1 contains its own named field group (e.g., "Address Details", "Family Members", "Identifiers"), generate ONE dedicated positive TC per such step. The TC must:
+  - Navigate to that specific step (include the preceding steps as preconditions or brief navigation steps)
+  - Fill the fields described for that step (not just pass through)
+  - Assert the step's content is visible/saved on the detail page after final submission
+  - **Do NOT collapse all wizard steps into one happy-path TC** — if Steps 2, 3, and 4 each have their own named section in the spec, they each need their own TC.
+- **Wizard in-step identifiers/duplicates:** If a wizard step allows adding identifiers, documents, or similar entries that have a uniqueness constraint, include a TC for that wizard step that also verifies the constraint (e.g., attempting to add a duplicate Document Type+Key pair inside the wizard). This is a different code path from adding the same post-creation on the detail page.
+- **Action dialogs:** If a `state_bound_action_bar` action opens a dialog with its own `fields{}` (e.g., Activate requires Activation Date, Reject requires Reason), generate ONE positive TC per such action-dialog — distinct from the state-transition TC. The TC fills the dialog field and completes the action.
+
+**2. State Machines (`state_bound_action_bar`):**
+- For each unique action available in a specific state, generate ONE test performing that action.
+- Do not split bidirectional transitions; test A→B.
+
+**3. Tabs (`tab_container`):**
+- If tabs switch between entirely different forms (e.g., Hotels vs. Flights tabs), generate ONE submission test for EACH tab.
+- Otherwise, generate one test verifying navigation between the tabs.
+
+**4. Data Tables (`data_table`):**
+- Generate ONE test per `row_actions` (e.g., clicking a three-dot menu).
+- Generate ONE test per `bulk_actions` (e.g., selecting multiple checkboxes).
+- Generate ONE test applying a search/filter. The expected_result must describe the **filtered content** (e.g., `"Only results matching <filter criterion> are shown; unrelated items are no longer visible"`) — never just the filter UI state (❌ `"filter is applied"`).
+- If the spec describes **active filter chips/tags with individual remove buttons**, generate ONE test removing a single chip and asserting the results expand back.
+- If the spec describes a **"Reset All" or "Clear Filters" control**, generate ONE test clicking it and asserting all filters are cleared and full unfiltered results are restored.
+
+**5. Empty / Zero-Result States:**
+If the spec explicitly describes an empty state, zero-results display, or "No Data" message (e.g., a filtered list with no matches, a timeline with no upcoming items, a dashboard with no financial data), generate ONE test that reaches that state through a valid user action and asserts the described empty-state message or UI element is visible. This is a valid positive test — the system correctly handles the absence of data.
+
+**6. COVERAGE COMPLETENESS GATE (run before outputting):**
+Enumerate every **action verb** listed in the description for each entity state (e.g., "Approve, Reject, Withdraw, Disburse, Waive Interest, Write Off, Reschedule, Block Debit, Reactivate…"). For each action verb:
+- If a TC already covers it → keep it.
+- If NO TC covers it → add a TC for it. Do not skip spec-described actions just because they lack a clear AST node.
+
+---
+
+**CALIBRATION & LIMITS:**
+Do not drop functionally unique code paths (like a specific state transition) just to hit a limit, but follow these general sizes:
+  - Simple module (login, simple filter): 2–4 tests
+  - Medium module (standard CRUD form, data table): 4–8 tests
+  - Complex module (Massive multi-panel forms, Tabbed Search Engines): 8–15 tests
+
+**Hard step cap — 15 steps per TC:**
+If a TC exceeds **15 steps**, split it at the first sub-feature boundary (e.g., basic form submission vs. adding optional repeating-group items). Each split becomes a separate TC with its own precondition establishing the required starting state. Never merge two distinct sub-features into one TC just to reduce TC count.
+
+---
+
+**ANTI-HALLUCINATION & DEDUPLICATION GATE (run before outputting):**
+1. Does this test trace back to a specific node in the AST or a specific action/state in the description? If no → delete it.
+2. For each pair of tests: Do they reach a DIFFERENT success state, OR take a DIFFERENT conditional branch/form layout to reach the same state?
+   - If two tests share the same code path (e.g., same form, just different optional fields filled) → merge them. Keep the more complete version.
+3. Read each `expected_result`. Does it match any **banned pattern** from the ASSERTION STYLE rules?
+   - ❌ `"creates/updates/deletes [entity]"` → rewrite to name the visible row, badge, or notification
+   - ❌ `"[system] adjusts/recalculates automatically"` → rewrite to describe the immediate visible screen state
+   - ❌ `"when X, result A; when Y, result B"` in a single TC → split into two TCs
+   - ❌ `"[field] contains <value>"` after a filter/search → rewrite to assert the filtered list/table state
+   - ❌ `"a success message is displayed"` when spec quotes exact text → replace with the verbatim quoted string
+   - ❌ `"filter is applied"` → rewrite to describe the filtered content visible in the results
+4. Check every TC: does its step count exceed 15? If yes → split it.
+5. Check every TC: does step 1 say "Ensure…" or "Verify…"? If yes → move it to preconditions and add a real action as step 1.
+6. Does the spec describe any empty/zero-result state? If yes, confirm a TC exists for it.
+
+---
+
+**WORKFLOW COVERAGE OBLIGATION (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- Your test cases must **collectively cover every workflow** listed.
+- For each `wf_id`, at least one TC must:
+  - Activate the `conditional_branch` (if not null) — i.e. the test must set up the condition described.
+  - Assert the `on_success` as its `expected_result` (verbatim or as the primary basis for the expected result).
+- Add `"wf_ref": "WF-NNN"` to each TC to identify which workflow it covers.
+- If one TC naturally covers multiple workflows (e.g., the base path overlaps), pick the most specific `wf_ref`.
+- If a TC does not map to any workflow (e.g., a navigation-only test), set `"wf_ref": null`.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "positive",
+  "test_cases": [
+    {
+      "tc_id": "P-001",
+      "wf_ref": "WF-001",
+      "test_case": "Short descriptive name",
+      "preconditions": ["User logged in as <Role>", "<Prerequisite state>"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "Exact visible outcome on the current screen or redirect confirmation",
+      "priority": "high | medium | low"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "high_priority": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+------------------------------------------------------------
+[21:12:33] Test-Positive - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 6,
+  "module_title": "Course Edit Mode and Activity Chooser",
+  "summary": "Enables an authoring interface on a Course page with inline controls for editing, managing sections and activities, bulk actions, and an Activity Chooser modal for adding activities and resources.",
+  "where_it_fits": "This module is activated on a Course Page (reached via My Courses or Dashboard \u2192 select course) and switches the course view into edit mode for content creation and organization; it is primarily used by teachers during course setup and ongoing content edits (the Settings tab is visible to teachers).",
+  "assumed_state_on_entry": "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+}
+</module_context>
+
+<module_name>Course Edit Mode and Activity Chooser</module_name>
+
+<ast>
+{
+  "module_name": "Course Edit Mode and Activity Chooser",
+  "components": {
+    "Course_Edit_Mode": {
+      "type": "container",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+      ],
+      "fields": {
+        "Sections": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Quick_Rename": {
+              "type": "unspecified"
+            },
+            "Section_Menu": {
+              "type": "menu",
+              "row_actions": [
+                {
+                  "action_name": "edit"
+                },
+                {
+                  "action_name": "duplicate"
+                },
+                {
+                  "action_name": "hide"
+                },
+                {
+                  "action_name": "delete"
+                },
+                {
+                  "action_name": "move"
+                }
+              ]
+            },
+            "Activities": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Select_For_Bulk": {
+                  "type": "checkbox"
+                },
+                "Quick_Rename": {
+                  "type": "unspecified"
+                },
+                "Activity_Menu": {
+                  "type": "menu",
+                  "row_actions": [
+                    {
+                      "action_name": "edit settings"
+                    },
+                    {
+                      "action_name": "move"
+                    },
+                    {
+                      "action_name": "duplicate"
+                    },
+                    {
+                      "action_name": "hide"
+                    },
+                    {
+                      "action_name": "set access restrictions"
+                    },
+                    {
+                      "action_name": "delete"
+                    }
+                  ]
+                }
+              }
+            },
+            "Add_Activity_Button": {
+              "type": "button",
+              "action_name": "+ Add an activity or resource",
+              "on_success": "opens Activity_Chooser_Modal"
+            },
+            "Add_Subsection": {
+              "type": "button",
+              "action_name": "+ Add a subsection"
+            }
+          }
+        },
+        "Bulk_Actions_Toolbar": {
+          "type": "bulk_action_bar",
+          "visible_when": "one or more Select_For_Bulk == true",
+          "bulk_actions": [
+            {
+              "action_name": "Delete Selected"
+            },
+            {
+              "action_name": "Move Selected"
+            },
+            {
+              "action_name": "Duplicate Selected"
+            },
+            {
+              "action_name": "Hide Selected"
+            },
+            {
+              "action_name": "Set access restrictions"
+            }
+          ]
+        }
+      }
+    },
+    "Activity_Chooser_Modal": {
+      "type": "modal",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+      ],
+      "fields": {
+        "Category_Filter": {
+          "type": "dropdown",
+          "options": [
+            "All",
+            "Activities",
+            "Resources",
+            "Recommended"
+          ]
+        },
+        "Search": {
+          "type": "search"
+        },
+        "Activity_Tiles": {
+          "type": "repeating_group",
+          "options": [
+            "Assignment",
+            "Forum",
+            "Quiz",
+            "File",
+            "Page",
+            "Lesson",
+            "SCORM",
+            "URL",
+            "Workshop"
+          ],
+          "item_fields": {
+            "Favorite": {
+              "type": "checkbox"
+            },
+            "Select": {
+              "type": "radio"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Add",
+          "on_success": "opens selected activity creation form",
+          "preconditions": [
+            "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+Enabling Edit mode turns the Course page into an authoring interface. Each section and activity row gains inline controls: an edit icon for quick renaming, a section-level three-dot menu (edit, duplicate, hide, delete, move), an activity-level three-dot menu (edit settings, move, duplicate, hide, set access restrictions, delete), and a bulk actions toolbar for batch operations on multiple selected activities. An "+ Add an activity or resource" button appears at the bottom of each section, and an "+ Add a subsection" control allows nesting content hierarchically. Clicking "+ Add an activity or resource" opens the Activity Chooser modal, which contains a category filter bar (All, Activities, Resources, Recommended), a search field, and a grid of activity/resource tiles including Assignment, Forum, Quiz, File, Page, Lesson, SCORM, URL, and Workshop. Each tile has a star/favorite toggle for quick access. Selecting a tile and clicking "Add" opens that activity's creation form.
+
+---
+
+
+</description>
+
+<workflows>
+WF-001 | Section inline quick rename | actor: Teacher | branch: none | terminal: Quick_Rename | on_success: Section renamed inline.
+WF-002 | Section menu - edit | actor: Teacher | branch: none | terminal: edit | on_success: section edit selected (edit action invoked for section)
+WF-003 | Section menu - duplicate | actor: Teacher | branch: none | terminal: duplicate | on_success: section duplicated
+WF-004 | Section menu - hide | actor: Teacher | branch: none | terminal: hide | on_success: section hidden
+WF-005 | Section menu - delete | actor: Teacher | branch: none | terminal: delete | on_success: section deleted
+WF-006 | Section menu - move | actor: Teacher | branch: none | terminal: move | on_success: section move initiated
+WF-007 | Add an activity or resource (open chooser) | actor: Teacher | branch: none | terminal: + Add an activity or resource | on_success: opens Activity_Chooser_Modal
+WF-008 | Add a subsection | actor: Teacher | branch: none | terminal: + Add a subsection | on_success: subsection added
+WF-009 | Activity inline quick rename | actor: Teacher | branch: none | terminal: Quick_Rename | on_success: Activity renamed inline.
+WF-010 | Activity menu - edit settings | actor: Teacher | branch: none | terminal: edit settings | on_success: activity settings edit selected (opens activity settings)
+WF-011 | Activity menu - move | actor: Teacher | branch: none | terminal: move | on_success: activity move initiated
+WF-012 | Activity menu - duplicate | actor: Teacher | branch: none | terminal: duplicate | on_success: activity duplicated
+WF-013 | Activity menu - hide | actor: Teacher | branch: none | terminal: hide | on_success: activity hidden
+WF-014 | Activity menu - set access restrictions | actor: Teacher | branch: none | terminal: set access restrictions | on_success: activity access restrictions selected (opens access restrictions dialog)
+WF-015 | Activity menu - delete | actor: Teacher | branch: none | terminal: delete | on_success: activity deleted
+WF-016 | Bulk action - Delete Selected | actor: Teacher | branch: one or more Select_For_Bulk == true | terminal: Delete Selected | on_success: selected activities deleted
+WF-017 | Bulk action - Move Selected | actor: Teacher | branch: one or more Select_For_Bulk == true | terminal: Move Selected | on_success: move selected activities initiated
+WF-018 | Bulk action - Duplicate Selected | actor: Teacher | branch: one or more Select_For_Bulk == true | terminal: Duplicate Selected | on_success: selected activities duplicated
+WF-019 | Bulk action - Hide Selected | actor: Teacher | branch: one or more Select_For_Bulk == true | terminal: Hide Selected | on_success: selected activities hidden
+WF-020 | Bulk action - Set access restrictions | actor: Teacher | branch: one or more Select_For_Bulk == true | terminal: Set access restrictions | on_success: access restrictions set for selected activities
+WF-021 | Activity tile favorite toggle | actor: Teacher | branch: none | terminal: Favorite | on_success: activity tile favorite state toggled
+WF-022 | Activity Chooser Add - Assignment selected | actor: Teacher | branch: Activity_Tiles.Select == Assignment | terminal: Add | on_success: opens selected activity creation form
+WF-023 | Activity Chooser Add - Forum selected | actor: Teacher | branch: Activity_Tiles.Select == Forum | terminal: Add | on_success: opens selected activity creation form
+WF-024 | Activity Chooser Add - Quiz selected | actor: Teacher | branch: Activity_Tiles.Select == Quiz | terminal: Add | on_success: opens selected activity creation form
+WF-025 | Activity Chooser Add - File selected | actor: Teacher | branch: Activity_Tiles.Select == File | terminal: Add | on_success: opens selected activity creation form
+WF-026 | Activity Chooser Add - Page selected | actor: Teacher | branch: Activity_Tiles.Select == Page | terminal: Add | on_success: opens selected activity creation form
+WF-027 | Activity Chooser Add - Lesson selected | actor: Teacher | branch: Activity_Tiles.Select == Lesson | terminal: Add | on_success: opens selected activity creation form
+WF-028 | Activity Chooser Add - SCORM selected | actor: Teacher | branch: Activity_Tiles.Select == SCORM | terminal: Add | on_success: opens selected activity creation form
+WF-029 | Activity Chooser Add - URL selected | actor: Teacher | branch: Activity_Tiles.Select == URL | terminal: Add | on_success: opens selected activity creation form
+WF-030 | Activity Chooser Add - Workshop selected | actor: Teacher | branch: Activity_Tiles.Select == Workshop | terminal: Add | on_success: opens selected activity creation form
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:14:24] Test-Positive - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Course Edit Mode and Activity Chooser",
+  "category": "positive",
+  "test_cases": [
+    {
+      "tc_id": "P-001",
+      "wf_ref": "WF-001",
+      "test_case": "Section inline quick rename",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Locate the target Section row and click the inline edit / Quick Rename control",
+        "3. Enter <new section name> in the inline rename field and press Enter or click Save"
+      ],
+      "expected_result": "Section renamed inline. The Section row now displays <new section name> as the section title in the Sections list",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-002",
+      "wf_ref": "WF-002",
+      "test_case": "Open Section menu and select Edit",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for a Section",
+        "3. Click the 'edit' action in the Section menu"
+      ],
+      "expected_result": "section edit selected (edit action invoked for section) — an inline section edit field or Section edit panel is visible for that section",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-003",
+      "wf_ref": "WF-003",
+      "test_case": "Duplicate a section via Section menu",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for a Section",
+        "3. Click the 'duplicate' action in the Section menu",
+        "4. If a confirmation appears, click Confirm"
+      ],
+      "expected_result": "section duplicated — a new Section row appears adjacent to the original showing the same section title, indicating a duplicate was created",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-004",
+      "wf_ref": "WF-004",
+      "test_case": "Hide a section via Section menu",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for a Section",
+        "3. Click the 'hide' action in the Section menu"
+      ],
+      "expected_result": "section hidden — the Section row displays a visible hidden indicator (e.g., 'Hidden' badge or dimmed styling) in the Sections list",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-005",
+      "wf_ref": "WF-005",
+      "test_case": "Delete a section via Section menu",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for a Section",
+        "3. Click the 'delete' action in the Section menu",
+        "4. Click Confirm on the Delete confirmation dialog"
+      ],
+      "expected_result": "section deleted — the Section row is no longer present in the Sections list",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-006",
+      "wf_ref": "WF-006",
+      "test_case": "Initiate move for a section",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for a Section",
+        "3. Click the 'move' action in the Section menu"
+      ],
+      "expected_result": "section move initiated — the UI displays a move placeholder or prompt allowing selection of a new position for the Section",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-007",
+      "wf_ref": "WF-007",
+      "test_case": "Open Activity Chooser modal from a section",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. In a Section row click the '+ Add an activity or resource' button"
+      ],
+      "expected_result": "opens Activity_Chooser_Modal — the Activity Chooser modal opens and displays the Category Filter (All, Activities, Resources, Recommended), the Search field, and the grid of Activity/Resource tiles",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-008",
+      "wf_ref": "WF-008",
+      "test_case": "Add a subsection under a section",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add a subsection' on a Section",
+        "3. Enter <new subsection title> in the new subsection input and press Enter or click Save"
+      ],
+      "expected_result": "subsection added — a new subsection row appears nested under the parent Section in the Sections list showing <new subsection title>",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-009",
+      "wf_ref": "WF-009",
+      "test_case": "Activity inline quick rename",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Locate the target Activity row and click its inline edit / Quick Rename control",
+        "3. Enter <new activity name> and press Enter or click Save"
+      ],
+      "expected_result": "Activity renamed inline. The Activity row now displays <new activity name> as the activity title",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-010",
+      "wf_ref": "WF-010",
+      "test_case": "Open Activity settings from Activity menu",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for an Activity",
+        "3. Click the 'edit settings' action in the Activity menu"
+      ],
+      "expected_result": "activity settings edit selected (opens activity settings) — the Activity settings panel or dialog is visible for that Activity",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-011",
+      "wf_ref": "WF-011",
+      "test_case": "Initiate move for an activity",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for an Activity",
+        "3. Click the 'move' action in the Activity menu"
+      ],
+      "expected_result": "activity move initiated — the UI displays a move placeholder or prompt allowing selection of a new position for the Activity",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-012",
+      "wf_ref": "WF-012",
+      "test_case": "Duplicate an activity via Activity menu",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for an Activity",
+        "3. Click the 'duplicate' action in the Activity menu",
+        "4. If a confirmation appears, click Confirm"
+      ],
+      "expected_result": "activity duplicated — a new Activity row appears adjacent to the original showing the same activity title, indicating a duplicate",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-013",
+      "wf_ref": "WF-013",
+      "test_case": "Hide an activity via Activity menu",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for an Activity",
+        "3. Click the 'hide' action in the Activity menu"
+      ],
+      "expected_result": "activity hidden — the Activity row displays a visible hidden indicator (e.g., 'Hidden' badge or dimmed styling) in the activity list",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-014",
+      "wf_ref": "WF-014",
+      "test_case": "Open Access Restrictions from Activity menu",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for an Activity",
+        "3. Click the 'set access restrictions' action in the Activity menu"
+      ],
+      "expected_result": "activity access restrictions selected (opens access restrictions dialog) — the Access Restrictions dialog is displayed for the Activity",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-015",
+      "wf_ref": "WF-015",
+      "test_case": "Delete an activity via Activity menu",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for an Activity",
+        "3. Click the 'delete' action in the Activity menu",
+        "4. Click Confirm on the Delete confirmation dialog"
+      ],
+      "expected_result": "activity deleted — the Activity row is no longer present in the Section's activity list",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-016",
+      "wf_ref": "WF-016",
+      "test_case": "Bulk Delete Selected activities",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. In a Section, check the Select checkbox for two or more Activities to activate the Bulk Actions toolbar",
+        "3. Click 'Delete Selected' in the Bulk Actions toolbar",
+        "4. Click Confirm on the Delete confirmation dialog"
+      ],
+      "expected_result": "selected activities deleted — each selected Activity row is removed from the activity list and is no longer visible in the Section",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-017",
+      "wf_ref": "WF-017",
+      "test_case": "Bulk Move Selected activities",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. In a Section, check the Select checkbox for two or more Activities to activate the Bulk Actions toolbar",
+        "3. Click 'Move Selected' in the Bulk Actions toolbar"
+      ],
+      "expected_result": "move selected activities initiated — the UI displays a move placeholder or prompt allowing selection of a new target location for the selected Activities",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-018",
+      "wf_ref": "WF-018",
+      "test_case": "Bulk Duplicate Selected activities",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. In a Section, check the Select checkbox for two or more Activities to activate the Bulk Actions toolbar",
+        "3. Click 'Duplicate Selected' in the Bulk Actions toolbar",
+        "4. If a confirmation appears, click Confirm"
+      ],
+      "expected_result": "selected activities duplicated — additional Activity rows appear for each selected Activity adjacent to the originals indicating duplicates were created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-019",
+      "wf_ref": "WF-019",
+      "test_case": "Bulk Hide Selected activities",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. In a Section, check the Select checkbox for two or more Activities to activate the Bulk Actions toolbar",
+        "3. Click 'Hide Selected' in the Bulk Actions toolbar"
+      ],
+      "expected_result": "selected activities hidden — each selected Activity row displays a visible hidden indicator (e.g., 'Hidden' badge or dimmed styling)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-020",
+      "wf_ref": "WF-020",
+      "test_case": "Bulk Set access restrictions for selected activities",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. In a Section, check the Select checkbox for two or more Activities to activate the Bulk Actions toolbar",
+        "3. Click 'Set access restrictions' in the Bulk Actions toolbar",
+        "4. In the Access Restrictions dialog configure <access restriction settings> and click Apply"
+      ],
+      "expected_result": "access restrictions set for selected activities — the Access Restrictions dialog closes and each selected Activity row shows a visible access restrictions indicator",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-021",
+      "wf_ref": "WF-021",
+      "test_case": "Toggle Favorite on an Activity tile in the Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. In the Activity Chooser, click the Favorite (star) toggle on an Activity tile"
+      ],
+      "expected_result": "activity tile favorite state toggled — the tile's favorite icon is visibly shown as selected/filled for that Activity tile",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-022",
+      "wf_ref": "WF-022",
+      "test_case": "Add an Assignment via Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. Select the 'Assignment' tile in the Activity Chooser (select radio)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "opens selected activity creation form — the Assignment creation form opens and is visible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-023",
+      "wf_ref": "WF-023",
+      "test_case": "Add a Forum via Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. Select the 'Forum' tile in the Activity Chooser (select radio)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "opens selected activity creation form — the Forum creation form opens and is visible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-024",
+      "wf_ref": "WF-024",
+      "test_case": "Add a Quiz via Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. Select the 'Quiz' tile in the Activity Chooser (select radio)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "opens selected activity creation form — the Quiz creation form opens and is visible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-025",
+      "wf_ref": "WF-025",
+      "test_case": "Add a File resource via Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. Select the 'File' tile in the Activity Chooser (select radio)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "opens selected activity creation form — the File resource creation form opens and is visible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-026",
+      "wf_ref": "WF-026",
+      "test_case": "Add a Page via Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. Select the 'Page' tile in the Activity Chooser (select radio)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "opens selected activity creation form — the Page creation form opens and is visible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-027",
+      "wf_ref": "WF-027",
+      "test_case": "Add a Lesson via Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. Select the 'Lesson' tile in the Activity Chooser (select radio)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "opens selected activity creation form — the Lesson creation form opens and is visible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-028",
+      "wf_ref": "WF-028",
+      "test_case": "Add a SCORM activity via Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. Select the 'SCORM' tile in the Activity Chooser (select radio)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "opens selected activity creation form — the SCORM activity creation form opens and is visible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-029",
+      "wf_ref": "WF-029",
+      "test_case": "Add a URL resource via Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. Select the 'URL' tile in the Activity Chooser (select radio)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "opens selected activity creation form — the URL resource creation form opens and is visible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-030",
+      "wf_ref": "WF-030",
+      "test_case": "Add a Workshop via Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. Select the 'Workshop' tile in the Activity Chooser (select radio)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "opens selected activity creation form — the Workshop creation form opens and is visible",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 30,
+    "high_priority": 12,
+    "medium_priority": 18,
+    "low_priority": 0
+  }
+}
+
+------------------------------------------------------------
+[21:14:24] Test-Positive - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Course Edit Mode and Activity Chooser",
+  "category": "positive",
+  "test_cases": [
+    {
+      "tc_id": "P-001",
+      "wf_ref": "WF-001",
+      "test_case": "Section inline quick rename",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Locate the target Section row and click the inline edit / Quick Rename control",
+        "3. Enter <new section name> in the inline rename field and press Enter or click Save"
+      ],
+      "expected_result": "Section renamed inline. The Section row now displays <new section name> as the section title in the Sections list",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-002",
+      "wf_ref": "WF-002",
+      "test_case": "Open Section menu and select Edit",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for a Section",
+        "3. Click the 'edit' action in the Section menu"
+      ],
+      "expected_result": "section edit selected (edit action invoked for section) \u2014 an inline section edit field or Section edit panel is visible for that section",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-003",
+      "wf_ref": "WF-003",
+      "test_case": "Duplicate a section via Section menu",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for a Section",
+        "3. Click the 'duplicate' action in the Section menu",
+        "4. If a confirmation appears, click Confirm"
+      ],
+      "expected_result": "section duplicated \u2014 a new Section row appears adjacent to the original showing the same section title, indicating a duplicate was created",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-004",
+      "wf_ref": "WF-004",
+      "test_case": "Hide a section via Section menu",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for a Section",
+        "3. Click the 'hide' action in the Section menu"
+      ],
+      "expected_result": "section hidden \u2014 the Section row displays a visible hidden indicator (e.g., 'Hidden' badge or dimmed styling) in the Sections list",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-005",
+      "wf_ref": "WF-005",
+      "test_case": "Delete a section via Section menu",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for a Section",
+        "3. Click the 'delete' action in the Section menu",
+        "4. Click Confirm on the Delete confirmation dialog"
+      ],
+      "expected_result": "section deleted \u2014 the Section row is no longer present in the Sections list",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-006",
+      "wf_ref": "WF-006",
+      "test_case": "Initiate move for a section",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for a Section",
+        "3. Click the 'move' action in the Section menu"
+      ],
+      "expected_result": "section move initiated \u2014 the UI displays a move placeholder or prompt allowing selection of a new position for the Section",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-007",
+      "wf_ref": "WF-007",
+      "test_case": "Open Activity Chooser modal from a section",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. In a Section row click the '+ Add an activity or resource' button"
+      ],
+      "expected_result": "opens Activity_Chooser_Modal \u2014 the Activity Chooser modal opens and displays the Category Filter (All, Activities, Resources, Recommended), the Search field, and the grid of Activity/Resource tiles",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-008",
+      "wf_ref": "WF-008",
+      "test_case": "Add a subsection under a section",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add a subsection' on a Section",
+        "3. Enter <new subsection title> in the new subsection input and press Enter or click Save"
+      ],
+      "expected_result": "subsection added \u2014 a new subsection row appears nested under the parent Section in the Sections list showing <new subsection title>",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-009",
+      "wf_ref": "WF-009",
+      "test_case": "Activity inline quick rename",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Locate the target Activity row and click its inline edit / Quick Rename control",
+        "3. Enter <new activity name> and press Enter or click Save"
+      ],
+      "expected_result": "Activity renamed inline. The Activity row now displays <new activity name> as the activity title",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-010",
+      "wf_ref": "WF-010",
+      "test_case": "Open Activity settings from Activity menu",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for an Activity",
+        "3. Click the 'edit settings' action in the Activity menu"
+      ],
+      "expected_result": "activity settings edit selected (opens activity settings) \u2014 the Activity settings panel or dialog is visible for that Activity",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-011",
+      "wf_ref": "WF-011",
+      "test_case": "Initiate move for an activity",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for an Activity",
+        "3. Click the 'move' action in the Activity menu"
+      ],
+      "expected_result": "activity move initiated \u2014 the UI displays a move placeholder or prompt allowing selection of a new position for the Activity",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-012",
+      "wf_ref": "WF-012",
+      "test_case": "Duplicate an activity via Activity menu",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for an Activity",
+        "3. Click the 'duplicate' action in the Activity menu",
+        "4. If a confirmation appears, click Confirm"
+      ],
+      "expected_result": "activity duplicated \u2014 a new Activity row appears adjacent to the original showing the same activity title, indicating a duplicate",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-013",
+      "wf_ref": "WF-013",
+      "test_case": "Hide an activity via Activity menu",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for an Activity",
+        "3. Click the 'hide' action in the Activity menu"
+      ],
+      "expected_result": "activity hidden \u2014 the Activity row displays a visible hidden indicator (e.g., 'Hidden' badge or dimmed styling) in the activity list",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-014",
+      "wf_ref": "WF-014",
+      "test_case": "Open Access Restrictions from Activity menu",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for an Activity",
+        "3. Click the 'set access restrictions' action in the Activity menu"
+      ],
+      "expected_result": "activity access restrictions selected (opens access restrictions dialog) \u2014 the Access Restrictions dialog is displayed for the Activity",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-015",
+      "wf_ref": "WF-015",
+      "test_case": "Delete an activity via Activity menu",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Open the three-dot menu for an Activity",
+        "3. Click the 'delete' action in the Activity menu",
+        "4. Click Confirm on the Delete confirmation dialog"
+      ],
+      "expected_result": "activity deleted \u2014 the Activity row is no longer present in the Section's activity list",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-016",
+      "wf_ref": "WF-016",
+      "test_case": "Bulk Delete Selected activities",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. In a Section, check the Select checkbox for two or more Activities to activate the Bulk Actions toolbar",
+        "3. Click 'Delete Selected' in the Bulk Actions toolbar",
+        "4. Click Confirm on the Delete confirmation dialog"
+      ],
+      "expected_result": "selected activities deleted \u2014 each selected Activity row is removed from the activity list and is no longer visible in the Section",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-017",
+      "wf_ref": "WF-017",
+      "test_case": "Bulk Move Selected activities",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. In a Section, check the Select checkbox for two or more Activities to activate the Bulk Actions toolbar",
+        "3. Click 'Move Selected' in the Bulk Actions toolbar"
+      ],
+      "expected_result": "move selected activities initiated \u2014 the UI displays a move placeholder or prompt allowing selection of a new target location for the selected Activities",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-018",
+      "wf_ref": "WF-018",
+      "test_case": "Bulk Duplicate Selected activities",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. In a Section, check the Select checkbox for two or more Activities to activate the Bulk Actions toolbar",
+        "3. Click 'Duplicate Selected' in the Bulk Actions toolbar",
+        "4. If a confirmation appears, click Confirm"
+      ],
+      "expected_result": "selected activities duplicated \u2014 additional Activity rows appear for each selected Activity adjacent to the originals indicating duplicates were created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-019",
+      "wf_ref": "WF-019",
+      "test_case": "Bulk Hide Selected activities",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. In a Section, check the Select checkbox for two or more Activities to activate the Bulk Actions toolbar",
+        "3. Click 'Hide Selected' in the Bulk Actions toolbar"
+      ],
+      "expected_result": "selected activities hidden \u2014 each selected Activity row displays a visible hidden indicator (e.g., 'Hidden' badge or dimmed styling)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-020",
+      "wf_ref": "WF-020",
+      "test_case": "Bulk Set access restrictions for selected activities",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. In a Section, check the Select checkbox for two or more Activities to activate the Bulk Actions toolbar",
+        "3. Click 'Set access restrictions' in the Bulk Actions toolbar",
+        "4. In the Access Restrictions dialog configure <access restriction settings> and click Apply"
+      ],
+      "expected_result": "access restrictions set for selected activities \u2014 the Access Restrictions dialog closes and each selected Activity row shows a visible access restrictions indicator",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-021",
+      "wf_ref": "WF-021",
+      "test_case": "Toggle Favorite on an Activity tile in the Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. In the Activity Chooser, click the Favorite (star) toggle on an Activity tile"
+      ],
+      "expected_result": "activity tile favorite state toggled \u2014 the tile's favorite icon is visibly shown as selected/filled for that Activity tile",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-022",
+      "wf_ref": "WF-022",
+      "test_case": "Add an Assignment via Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. Select the 'Assignment' tile in the Activity Chooser (select radio)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "opens selected activity creation form \u2014 the Assignment creation form opens and is visible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-023",
+      "wf_ref": "WF-023",
+      "test_case": "Add a Forum via Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. Select the 'Forum' tile in the Activity Chooser (select radio)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "opens selected activity creation form \u2014 the Forum creation form opens and is visible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-024",
+      "wf_ref": "WF-024",
+      "test_case": "Add a Quiz via Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. Select the 'Quiz' tile in the Activity Chooser (select radio)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "opens selected activity creation form \u2014 the Quiz creation form opens and is visible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-025",
+      "wf_ref": "WF-025",
+      "test_case": "Add a File resource via Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. Select the 'File' tile in the Activity Chooser (select radio)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "opens selected activity creation form \u2014 the File resource creation form opens and is visible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-026",
+      "wf_ref": "WF-026",
+      "test_case": "Add a Page via Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. Select the 'Page' tile in the Activity Chooser (select radio)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "opens selected activity creation form \u2014 the Page creation form opens and is visible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-027",
+      "wf_ref": "WF-027",
+      "test_case": "Add a Lesson via Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. Select the 'Lesson' tile in the Activity Chooser (select radio)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "opens selected activity creation form \u2014 the Lesson creation form opens and is visible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-028",
+      "wf_ref": "WF-028",
+      "test_case": "Add a SCORM activity via Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. Select the 'SCORM' tile in the Activity Chooser (select radio)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "opens selected activity creation form \u2014 the SCORM activity creation form opens and is visible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-029",
+      "wf_ref": "WF-029",
+      "test_case": "Add a URL resource via Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. Select the 'URL' tile in the Activity Chooser (select radio)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "opens selected activity creation form \u2014 the URL resource creation form opens and is visible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-030",
+      "wf_ref": "WF-030",
+      "test_case": "Add a Workshop via Activity Chooser",
+      "preconditions": [
+        "User logged in as <Teacher>",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. Click the control to enable Edit mode on the Course page",
+        "2. Click '+ Add an activity or resource' to open the Activity Chooser modal",
+        "3. Select the 'Workshop' tile in the Activity Chooser (select radio)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "opens selected activity creation form \u2014 the Workshop creation form opens and is visible",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 30,
+    "high_priority": 12,
+    "medium_priority": 18,
+    "low_priority": 0
+  }
+}

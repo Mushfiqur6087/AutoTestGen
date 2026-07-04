@@ -1,0 +1,600 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:12:33.078464
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:12:33] Test-Negative - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Negative Testing:**
+
+The AST represents every interactive element in the module. Each node type has a corresponding failure category:
+
+| AST node / field | What to test for failure |
+|---|---|
+| `required: true` field | Leave it blank and submit — inline validation error |
+| `constraints: []` on a field or action | One TC per unique constraint: violate it specifically |
+| `preconditions: []` on an action | One TC attempting the action when the precondition is NOT met |
+| `visible_when` / `required_when` conditional field | Trigger the condition, then submit the revealed field blank or invalid |
+| `state_bound_action_bar` states | Attempt an action from the wrong state (e.g., Approve an already-Active entity) |
+| `on_success` with quoted text | The negative expected_result is the *blocking* behavior — the entity stays unchanged |
+| `submit_actions[]` | If any button has `preconditions`, test that button when precondition fails |
+
+> If a module has no `form`, no `wizard`, no `state_bound_action_bar`, and no `constraints` — it is display-only. Generate at most 1–2 tests (unauthenticated access, or a non-implemented link if described). Do not invent validation scenarios.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — Name the field, the violated rule, and the visible error indicator.**
+Never write a vague expected result. Always specify what the tester sees.
+
+- ❌ `"Validation error shown"` — too vague
+- ❌ `"Error is displayed"` — too vague
+- ✅ `"Inline validation error appears on the <Field Name> field indicating it is required"`
+- ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
+- ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
+
+**Rule B — Quote exact error text when the spec provides it.**
+If the description quotes a specific error string, copy it verbatim into the expected_result.
+- ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
+- ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+
+**Rule C — Assert the blocking behavior, not just the error.**
+The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
+- ❌ `"Error shown"` (doesn't confirm the action was blocked)
+- ✅ `"Form does not submit; <Entity> is not created; error shown on <Field>"`
+- ✅ `"Status remains <Current State>; no transition occurs"`
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Use generic placeholders in angle brackets.
+
+- ✅ `"Enter <invalid email format> in the Email field"`
+- ✅ `"Enter <amount exceeding available balance> in the Amount field"`
+- ✅ `"Enter <password shorter than minimum length> in the Password field"`
+- ❌ `"Enter 'notanemail' in the Email field"`
+- ❌ `"Enter 'abc123' in the Password field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic user action — one field, one click, one navigation. No grouping.
+
+- ✅ `"1. Leave the <Required Field> blank"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill all fields except <Required Field> and submit"`
+
+---
+
+**SCOPE GATE (run before writing any test):**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact sentence in the description or field/constraint/state in the AST justifies this test? If you cannot point to one → delete it.
+2. **UI-executable:** Can a tester trigger this by clicking, typing, selecting, or navigating in a browser? If verification requires dev tools, DOM inspection, concurrent users, API calls, or server-side error simulation → out of scope.
+3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
+
+Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Required field representatives (deduplicated by field type):**
+
+Group required fields by type: `text/unspecified`, `email`, `password`, `number`, `date`, `dropdown`, `file_upload`. Generate:
+- ONE "leave blank and submit" test per **type group** (not per field) — use the most prominent field as representative
+- ONE "submit with ALL required fields empty" test
+
+Do NOT generate a separate blank-field test for every required field. If 5 text fields are all required, one representative covers them all.
+
+**Action dialog required fields — NOT subject to cross-form deduplication:**
+If a `state_bound_action_bar` action opens a dialog with its own required `fields{}` (e.g., Activate requires Activation Date, Reject requires a Reason, Withdraw requires a Reason, Close requires a Closure Reason), each such dialog is its own testing scope. Generate ONE "leave the required dialog field blank and submit" test per distinct action dialog. These are HIGH priority — they block state transitions and are common defect sites. Do not suppress them because the main wizard already has a blank-field test.
+
+**2. Format violations:**
+
+For fields with type-specific format rules (from AST type or description):
+- `email` → one test with invalid format
+- `number` → one test with non-numeric input
+- `date` → one test with invalid/impossible date
+- `password` → ONE representative test for policy violation (not one per sub-rule — see Deduplication)
+
+Only generate if the spec or AST implies format validation for that field.
+
+**3. Numeric bounds and balance violations:**
+
+If the spec describes minimum/maximum values, amount ranges, or balance checks:
+- One test per distinct bound violation (e.g., amount below minimum, amount above maximum, amount exceeding available balance)
+- Use `<amount below minimum>`, `<amount exceeding available balance>` as placeholders
+
+Examples across the dataset:
+- Transfer amount > available balance → error
+- Loan amount outside product min/max → error
+- Deposit below minimum requirement → error
+
+**4. Constraint violations:**
+
+For each unique `constraints[]` entry in the AST, and for cross-field rules described in the spec:
+- `"must be unique"` → submit with a duplicate value
+- `"must match"` (confirm fields) → enter mismatched values
+- `"must not be same as current"` → select the current value
+- `"cannot perform <action> while <condition>"` → attempt the action when the condition is true
+- `"<date> must be after <other date>"` → enter reversed dates
+
+One test per unique constraint. Do not duplicate the same mechanism.
+
+**Constraint timing tests:** If the spec states an action is blocked by a pre-existing system state (e.g., "cannot close with active accounts", "cannot transfer to the same office"), generate TWO tests:
+1. The standard constraint violation test (user opens the dialog, fills required fields, submits → blocked).
+2. A constraint-timing test: user opens the dialog WITHOUT filling required fields → assert whether the block is shown immediately on dialog open (before the user fills anything) OR only on submit. This distinguishes whether the UI enforces the constraint eagerly or lazily. Steps: open the dialog, observe the state → assert what is visible before any interaction. If the spec is silent on timing, generate only the first test.
+
+**5. Precondition violations (auth, role, and state):**
+
+For each `preconditions[]` entry on any action — and for auth/role/state rules described in the spec or the `<module_context>` block:
+
+- **Global Context constraints:** If the `<module_context>` block's `assumed_state_on_entry` explicitly lists required states (e.g., "Requires an active Client profile"), generate one test attempting the module's core action when that precondition fails (e.g., Client profile is missing or inactive).
+- **Unauthenticated access:** If any page or action requires login, generate one test: an unauthenticated user attempts to access it and is redirected to the login page.
+- **Wrong role:** If the spec explicitly states a feature is restricted to a specific role (e.g., Teacher only, Admin only), generate one test: a user of the wrong role attempts the action and is blocked or the control is not visible.
+- **Precondition not met:** For each AST `preconditions[]` entry, attempt the action when that precondition is not satisfied.
+
+**6. State-machine violations:**
+
+From `state_bound_action_bar` nodes:
+- **Every defined state must have at least one wrong-state test.** For each state, identify at least one action that is NOT in its `available_actions` list and generate a test attempting that action from that state.
+- If a state has an empty `available_actions` array, generate one test verifying no action buttons are visible in that state.
+- **Do not stop after 1–2 representative examples** when the module defines 4+ distinct states. The states Active, Pending, Closed, Rejected, and Withdrawn each have different action sets — each must be independently verified.
+- One test per state is sufficient — pick the most distinct unavailable action for that state. Do not enumerate every action × every state (that would be exponential).
+
+---
+
+**DEDUPLICATION GATE (run before outputting):**
+
+1. **Required field dedup:** Multiple required text fields in the **same form or dialog** → ONE representative test, not one per field.
+2. **Sub-rule dedup:** A field with multiple validation sub-rules (e.g., password: length + uppercase + lowercase + number + special char) → ONE representative violation test, not one per sub-rule.
+3. **Cross-form dedup:** If two **main forms** in the same module share the same validation mechanism → test it on the primary form only. **Exception: action dialogs are never suppressed by cross-form dedup** — each action dialog with a required field gets its own blank-field test regardless.
+4. **Uniqueness check:** Before outputting, ask for each TC: "Does this test catch a bug that NO other test in this module would catch?" If no → remove it.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (standard CRUD form, form with constraints): **4–8 tests**
+- Complex module (state machine, multi-form, wizard with many constraints): **10–16 tests**
+
+For modules with a `state_bound_action_bar` defining 4+ states, the state-machine violation tests alone will produce 4–5 tests. This is expected and correct — do not suppress them to hit a lower target.
+
+If you exceed the upper range, apply the deduplication gate again before outputting.
+
+---
+
+**PRIORITY:**
+
+- **High:** State precondition violations, constraint violations that could corrupt data, unauthenticated access, required field representatives
+- **Medium:** Format violations, cross-field validation, numeric bounds, wrong-role access, wrong-state action attempts
+
+---
+
+**WORKFLOW-AWARE FAILURE INJECTION (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow that contains a form interaction (terminal action is a submit/save/create/approve button):
+  - Identify the most **critical blocking failure** for that workflow's `conditional_branch`.
+  - If that failure mode is NOT already covered by another workflow's negative test, generate one negative TC for it.
+- **Do NOT generate one negative TC per workflow mechanically.** Apply the existing deduplication gate first — only add a TC if it catches a bug that no other test would catch.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a workflow. Set `"wf_ref": null` for generic validation tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "What error/block should occur, naming the field and indicator",
+      "priority": "high | medium"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "high_priority": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[21:12:33] Test-Negative - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 3,
+  "module_title": "Dashboard \u2014 Edit Mode",
+  "summary": "Provides an interface for customizing the Dashboard layout by adding, configuring, moving, and removing blocks, with an option to reset the page to the default layout.",
+  "where_it_fits": "Accessible from the top navigation via the Dashboard link, this mode is the Dashboard-specific editing state where block management controls (add block, move, configure, delete) and layout persistence are exposed; it complements the regular Dashboard viewing path and sits alongside other course/activity edit modes in the app's navigation structure.",
+  "assumed_state_on_entry": "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
+}
+</module_context>
+
+<module_name>Dashboard — Edit Mode</module_name>
+
+<ast>
+{
+  "module_name": "Dashboard \u2014 Edit Mode",
+  "components": {
+    "Dashboard_Edit_Mode": {
+      "type": "page",
+      "preconditions": [
+        "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
+      ],
+      "fields": {
+        "Reset_Page_To_Default": {
+          "type": "button",
+          "action_name": "Reset page to default",
+          "visible_when": "Edit_Mode == on",
+          "preconditions": [
+            "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
+          ],
+          "on_success": "reverts layout to default for the user"
+        },
+        "Add_A_Block_Button": {
+          "type": "button",
+          "action_name": "+ Add a block",
+          "visible_when": "Edit_Mode == on",
+          "preconditions": [
+            "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
+          ],
+          "opens": "Add_A_Block_Page"
+        },
+        "Blocks": {
+          "type": "repeating_group",
+          "visible_when": "Edit_Mode == on",
+          "item_fields": {
+            "Move_Icon": {
+              "type": "button",
+              "action_name": "Move"
+            },
+            "Options_Menu": {
+              "type": "menu",
+              "row_actions": [
+                {
+                  "action_name": "Configure"
+                },
+                {
+                  "action_name": "Move"
+                },
+                {
+                  "action_name": "Delete"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "Add_A_Block_Page": {
+      "type": "form",
+      "fields": {
+        "Block_Type": {
+          "type": "unspecified",
+          "options": [
+            "Comments",
+            "Course overview",
+            "Latest announcements",
+            "Latest badges",
+            "Learning plans",
+            "Logged in user",
+            "Mentees",
+            "Online users",
+            "Private files",
+            "Random glossary entry",
+            "Recently accessed courses",
+            "Starred courses",
+            "Tags",
+            "Text",
+            "Upcoming events"
+          ]
+        },
+        "Cancel_Link": {
+          "type": "link",
+          "action_name": "Cancel",
+          "on_success": "returns to the Dashboard without adding a block"
+        }
+      }
+    }
+  }
+}
+</ast>
+
+<description>
+
+When Edit mode is toggled on, a "Reset page to default" button appears at the top right and a "+ Add a block" button appears below the Dashboard heading. Clicking it opens an Add a block page listing all available block types: Comments, Course overview, Latest announcements, Latest badges, Learning plans, Logged in user, Mentees, Online users, Private files, Random glossary entry, Recently accessed courses, Starred courses, Tags, Text, and Upcoming events. A "Cancel" link at the bottom returns to the Dashboard without adding a block. In Edit mode, each existing block shows a move icon and a three-dot options menu for configure, move, and delete actions. Layout changes are persisted per user and can be fully reverted with "Reset page to default."
+
+---
+
+
+</description>
+
+<workflows>
+WF-001 | Reset page to default (while in Edit mode) | actor: <role> | branch: Edit_Mode == on | terminal: Reset page to default | on_success: reverts layout to default for the user
+WF-002 | Open Add a block page (while in Edit mode) | actor: <role> | branch: Edit_Mode == on | terminal: + Add a block | on_success: opens Add_A_Block_Page
+WF-003 | Cancel from Add a block page | actor: <role> | branch: none | terminal: Cancel | on_success: returns to the Dashboard without adding a block
+WF-004 | Move a block using the move icon (row-level) | actor: <role> | branch: Edit_Mode == on AND Blocks.Move_Icon | terminal: Move | on_success: initiates block repositioning; layout changes persisted for the user
+WF-005 | Configure a block via options menu (row-level) | actor: <role> | branch: Edit_Mode == on AND Blocks.Options_Menu.Configure | terminal: Configure | on_success: opens configuration controls for the selected block
+WF-006 | Move a block via options menu (row-level) | actor: <role> | branch: Edit_Mode == on AND Blocks.Options_Menu.Move | terminal: Move | on_success: initiates block repositioning; layout changes persisted for the user
+WF-007 | Delete a block via options menu (row-level) | actor: <role> | branch: Edit_Mode == on AND Blocks.Options_Menu.Delete | terminal: Delete | on_success: removes the block from the dashboard; layout changes persisted for the user
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:13:12] Test-Negative - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Dashboard — Edit Mode",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user attempts to access Edit mode controls",
+      "preconditions": [
+        "User is not authenticated"
+      ],
+      "steps": [
+        "1. Open the application in a browser while not logged in",
+        "2. Navigate to the Dashboard page or the URL that would open Dashboard edit mode"
+      ],
+      "expected_result": "Navigation is blocked: the user is redirected to the login page; no Edit-mode controls are visible (no 'Reset page to default' button, no '+ Add a block' button, no block move icons or options menus) and no layout edit actions can be performed",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": "WF-001",
+      "test_case": "Attempt to use 'Reset page to default' when Edit mode is OFF",
+      "preconditions": [
+        "User is authenticated",
+        "Dashboard Edit mode is toggled OFF"
+      ],
+      "steps": [
+        "1. Log in as an authenticated user",
+        "2. Open the Dashboard page",
+        "3. Ensure Edit mode is toggled OFF",
+        "4. Look for the 'Reset page to default' button"
+      ],
+      "expected_result": "The 'Reset page to default' button is not visible when Edit mode is OFF; the reset action cannot be triggered and the dashboard layout remains unchanged",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-002",
+      "test_case": "Attempt to open 'Add a block' when Edit mode is OFF (button not present)",
+      "preconditions": [
+        "User is authenticated",
+        "Dashboard Edit mode is toggled OFF"
+      ],
+      "steps": [
+        "1. Log in as an authenticated user",
+        "2. Open the Dashboard page",
+        "3. Ensure Edit mode is toggled OFF",
+        "4. Look for the '+ Add a block' button below the Dashboard heading"
+      ],
+      "expected_result": "The '+ Add a block' button is not visible when Edit mode is OFF; the Add a block page cannot be opened from the Dashboard and no block can be added",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-002",
+      "test_case": "Direct navigation to Add a block page is blocked when Edit mode is OFF",
+      "preconditions": [
+        "User is authenticated",
+        "Dashboard Edit mode is toggled OFF"
+      ],
+      "steps": [
+        "1. Log in as an authenticated user",
+        "2. Open the Dashboard page",
+        "3. Ensure Edit mode is toggled OFF",
+        "4. Manually navigate to the Add a block page URL or attempt to open it via a direct link"
+      ],
+      "expected_result": "Navigation to the Add a block page is blocked when Edit mode is OFF: the Add a block page is not displayed, the user remains on the standard Dashboard view, and no block addition UI or controls are available",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-005",
+      "test_case": "Options menu (Configure/Move/Delete) is not accessible when Edit mode is OFF",
+      "preconditions": [
+        "User is authenticated",
+        "Dashboard contains at least one block",
+        "Dashboard Edit mode is toggled OFF"
+      ],
+      "steps": [
+        "1. Log in as an authenticated user",
+        "2. Open the Dashboard page that contains existing blocks",
+        "3. Ensure Edit mode is toggled OFF",
+        "4. Attempt to open a block's three-dot options menu (row-level options)"
+      ],
+      "expected_result": "The block's options menu is not visible / does not open when Edit mode is OFF; the 'Configure', 'Move', and 'Delete' actions are not accessible and no block configuration, move, or delete can be performed",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": "WF-004",
+      "test_case": "Move icon/drag to reposition is disabled or absent when Edit mode is OFF",
+      "preconditions": [
+        "User is authenticated",
+        "Dashboard contains at least one block",
+        "Dashboard Edit mode is toggled OFF"
+      ],
+      "steps": [
+        "1. Log in as an authenticated user",
+        "2. Open the Dashboard page that contains existing blocks",
+        "3. Ensure Edit mode is toggled OFF",
+        "4. Attempt to click or drag a block using its Move icon"
+      ],
+      "expected_result": "The Move icon is not visible or is disabled when Edit mode is OFF; dragging/repositioning does not start and the dashboard layout remains unchanged",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 6,
+    "high_priority": 5,
+    "medium_priority": 1,
+    "low_priority": 0
+  }
+}
+
+------------------------------------------------------------
+[21:13:12] Test-Negative - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Dashboard \u2014 Edit Mode",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user attempts to access Edit mode controls",
+      "preconditions": [
+        "User is not authenticated"
+      ],
+      "steps": [
+        "1. Open the application in a browser while not logged in",
+        "2. Navigate to the Dashboard page or the URL that would open Dashboard edit mode"
+      ],
+      "expected_result": "Navigation is blocked: the user is redirected to the login page; no Edit-mode controls are visible (no 'Reset page to default' button, no '+ Add a block' button, no block move icons or options menus) and no layout edit actions can be performed",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": "WF-001",
+      "test_case": "Attempt to use 'Reset page to default' when Edit mode is OFF",
+      "preconditions": [
+        "User is authenticated",
+        "Dashboard Edit mode is toggled OFF"
+      ],
+      "steps": [
+        "1. Log in as an authenticated user",
+        "2. Open the Dashboard page",
+        "3. Ensure Edit mode is toggled OFF",
+        "4. Look for the 'Reset page to default' button"
+      ],
+      "expected_result": "The 'Reset page to default' button is not visible when Edit mode is OFF; the reset action cannot be triggered and the dashboard layout remains unchanged",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-002",
+      "test_case": "Attempt to open 'Add a block' when Edit mode is OFF (button not present)",
+      "preconditions": [
+        "User is authenticated",
+        "Dashboard Edit mode is toggled OFF"
+      ],
+      "steps": [
+        "1. Log in as an authenticated user",
+        "2. Open the Dashboard page",
+        "3. Ensure Edit mode is toggled OFF",
+        "4. Look for the '+ Add a block' button below the Dashboard heading"
+      ],
+      "expected_result": "The '+ Add a block' button is not visible when Edit mode is OFF; the Add a block page cannot be opened from the Dashboard and no block can be added",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-002",
+      "test_case": "Direct navigation to Add a block page is blocked when Edit mode is OFF",
+      "preconditions": [
+        "User is authenticated",
+        "Dashboard Edit mode is toggled OFF"
+      ],
+      "steps": [
+        "1. Log in as an authenticated user",
+        "2. Open the Dashboard page",
+        "3. Ensure Edit mode is toggled OFF",
+        "4. Manually navigate to the Add a block page URL or attempt to open it via a direct link"
+      ],
+      "expected_result": "Navigation to the Add a block page is blocked when Edit mode is OFF: the Add a block page is not displayed, the user remains on the standard Dashboard view, and no block addition UI or controls are available",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-005",
+      "test_case": "Options menu (Configure/Move/Delete) is not accessible when Edit mode is OFF",
+      "preconditions": [
+        "User is authenticated",
+        "Dashboard contains at least one block",
+        "Dashboard Edit mode is toggled OFF"
+      ],
+      "steps": [
+        "1. Log in as an authenticated user",
+        "2. Open the Dashboard page that contains existing blocks",
+        "3. Ensure Edit mode is toggled OFF",
+        "4. Attempt to open a block's three-dot options menu (row-level options)"
+      ],
+      "expected_result": "The block's options menu is not visible / does not open when Edit mode is OFF; the 'Configure', 'Move', and 'Delete' actions are not accessible and no block configuration, move, or delete can be performed",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": "WF-004",
+      "test_case": "Move icon/drag to reposition is disabled or absent when Edit mode is OFF",
+      "preconditions": [
+        "User is authenticated",
+        "Dashboard contains at least one block",
+        "Dashboard Edit mode is toggled OFF"
+      ],
+      "steps": [
+        "1. Log in as an authenticated user",
+        "2. Open the Dashboard page that contains existing blocks",
+        "3. Ensure Edit mode is toggled OFF",
+        "4. Attempt to click or drag a block using its Move icon"
+      ],
+      "expected_result": "The Move icon is not visible or is disabled when Edit mode is OFF; dragging/repositioning does not start and the dashboard layout remains unchanged",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 6,
+    "high_priority": 5,
+    "medium_priority": 1,
+    "low_priority": 0
+  }
+}

@@ -1,0 +1,778 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:20:32.128072
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:21:22] Workflow-Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Validator. You receive (1) a raw functional description, (2) a Structural Model JSON, and (3) a generated workflow list for one module.
+
+Your single job: decide whether this workflow list is complete and correct, or whether it must be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the workflow list. You DO NOT generate new workflows. You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+<workflows>
+{workflows}
+</workflows>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**WHAT A WORKFLOW IS:**
+
+A workflow is one complete, executable interaction path through the module — from entry to one terminal action. Two workflows are distinct if they require different user actions to reach the terminal (different conditional branch, different state, different terminal button).
+
+MINOR missing
+  A non-critical row action (e.g., "View" on a data table) where omission does not
+  break any downstream state transition or form submission. Flag it; don't auto-retry
+  for it alone.
+
+CRITICAL missing
+  Any of: a form submit_action with no matching workflow, a state × action pair with
+  no workflow, a bulk_action with no workflow, any submit path through a conditional
+  branch with no workflow.
+
+MINOR phantom
+  A workflow whose terminal_action is not literally named in the AST but is so
+  universally implied by the component type that its presence is unsurprising
+  (e.g., a "Search" workflow when the table has `searchable: true`). Flag it;
+  don't auto-retry for it alone.
+
+CRITICAL phantom
+  A workflow whose terminal_action cannot be traced to any AST node's
+  submit_actions[], available_actions[], row_actions[], or bulk_actions[] —
+  and is not an explicit action verb in the description text.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD — Seven Checks
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Check 1 — Missing form workflows.**
+Walk every `form` node in the AST. For each entry in `submit_actions[]`, there must be at least one workflow with a matching `terminal_action`. If the form has `visible_when` or `required_when` fields, there must be one workflow per unique condition combination × submit action. Flag any missing combinations. Classify each as critical or minor.
+
+**Check 2 — Missing state-machine workflows.**
+Walk every `state_bound_action_bar` node. For each state key in `states{}`, for each entry in `available_actions[]`, there must be one workflow with `terminal_action` matching that action and `conditional_branch` containing `entity_state == <state>`. Flag any missing state × action pairs. Classify each as critical.
+If a `<module_context>` block is present, use its `assumed_state_on_entry` to confirm that the entry state named in the context is represented as a workflow's starting condition where applicable.
+
+**Check 3 — Missing data table workflows.**
+Walk every `data_table` node. For each entry in `row_actions[]` and `bulk_actions[]`, there must be one workflow with `terminal_action` matching that action. Flag any missing entries. This includes read-only actions like View/Details. Classify bulk_actions as critical; row_actions as minor if read-only, critical otherwise.
+
+**Check 4 — Phantom workflows.**
+A workflow is a phantom if its `terminal_action` cannot be found in any AST node's `submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`, or as an explicit action verb in the description text. Classify each as critical or minor per the definitions above.
+
+**Check 5 — Wrong conditional branch.**
+If a workflow has a non-null `conditional_branch`, verify the condition references a real field name that appears in the AST under `visible_when`, `required_when`, or a real state key in `state_bound_action_bar`. Flag any condition that references a field or state that does not exist. Classify as structural error.
+
+**Check 6 — Empty or generic on_success.**
+If a workflow's `on_success` is empty, null, "success", "done", or any single-word generic string, and the AST has a concrete `on_success` value for that action, flag it. The `on_success` must reflect what the AST or description says actually happens. Classify as structural error.
+
+**Check 7 — Zero workflows when module clearly has actions.**
+If the workflow list is empty (total = 0) but the AST contains any `form`, `wizard`, `state_bound_action_bar`, or `data_table` component, that is a critical failure — flag it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERDICT RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Check 5, 6)
+                       AND Check 7 passes
+                       → fixes must be []
+
+  retry                Any CRITICAL missing workflow
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any structural error (wrong conditional, generic on_success)
+                       OR Check 7 failure
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       interaction path exists — not a close call, but truly unresolvable
+                       from the text and AST alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "AST path or state×action pair",
+      "severity": "critical | minor",
+      "reason": "<why this workflow is expected from the AST/description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "WF-NNN terminal_action=X",
+      "severity": "critical | minor",
+      "reason": "<why this workflow has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Check 5/6 violation and the affected workflow>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact missing path or phantom to remove>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+
+------------------------------------------------------------
+[21:21:22] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 19,
+  "module_title": "Reviews & Ratings",
+  "summary": "Displays aggregate scores and individual guest reviews for listings, including category-specific ratings, written comments, photos, and filtering by rating, date, or traveler type.",
+  "where_it_fits": "Accessible from listing and detail pages within the Hotels/Flights/Tours/Cars sections of the main navigation and exposed on detail pages as a dedicated Reviews section; review submission is also reachable via the user Dashboard or post-stay email prompts after bookings. It complements search/listing workflows by surfacing social proof and post-stay feedback during the booking lifecycle.",
+  "assumed_state_on_entry": "Viewing: public access (no login required); Submitting: authenticated user with a completed/recorded booking (post-stay)."
+}
+</module_context>
+
+<description>
+
+Listing pages show an aggregate rating score and total review count for each item. Detail pages include a dedicated Reviews section with individual reviews showing overall rating, category-specific ratings (e.g., Cleanliness, Service, Location for hotels), reviewer name and country, review date, stay date, written comments, and any guest-uploaded photos. Users can filter reviews by rating, date, or traveler type. Authenticated users who have completed a booking can submit a review through the dashboard or via a post-stay email prompt, providing star ratings for overall experience and individual categories, plus written feedback.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Reviews & Ratings",
+  "components": {
+    "Reviews_Filters": {
+      "type": "form",
+      "fields": {
+        "Rating_Filter": {
+          "type": "unspecified"
+        },
+        "Date_Filter": {
+          "type": "date"
+        },
+        "Traveler_Type_Filter": {
+          "type": "dropdown"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Apply Filters"
+        },
+        {
+          "action_name": "Clear Filters"
+        }
+      ]
+    },
+    "Review_Submission_Form": {
+      "type": "form",
+      "preconditions": [
+        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
+      ],
+      "fields": {
+        "Overall_Rating": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Category_Ratings": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Category_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Category_Rating": {
+              "type": "unspecified",
+              "required": true
+            }
+          },
+          "options_note": "e.g., Cleanliness, Service, Location for hotels (partial \u2014 others not specified)"
+        },
+        "Written_Comments": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Photos": {
+          "type": "file_upload"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Submit Review",
+          "on_success": "review submitted"
+        }
+      ]
+    },
+    "Dashboard_Submit_Review": {
+      "type": "button",
+      "action_name": "Submit Review",
+      "preconditions": [
+        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
+      ],
+      "on_success": "opens Review_Submission_Form"
+    },
+    "Email_Submit_Link": {
+      "type": "link",
+      "action_name": "Submit Review",
+      "preconditions": [
+        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
+      ],
+      "on_success": "opens Review_Submission_Form"
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Apply review filters",
+    "actor": "Public user",
+    "conditional_branch": null,
+    "terminal_action": "Apply Filters",
+    "on_success": "reviews list filtered by selected criteria"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Clear review filters",
+    "actor": "Public user",
+    "conditional_branch": null,
+    "terminal_action": "Clear Filters",
+    "on_success": "filters cleared; full reviews list shown"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Submit a review (post-stay authenticated user)",
+    "actor": "Authenticated guest (post-stay)",
+    "conditional_branch": "user_status == Authenticated AND booking_status == Completed",
+    "terminal_action": "Submit Review",
+    "on_success": "review submitted"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Open review submission from Dashboard (post-stay)",
+    "actor": "Authenticated guest (post-stay)",
+    "conditional_branch": "user_status == Authenticated AND booking_status == Completed AND entry_point == Dashboard_Submit_Review",
+    "terminal_action": "Submit Review",
+    "on_success": "opens Review_Submission_Form"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Open review submission from email link (post-stay)",
+    "actor": "Authenticated guest (post-stay)",
+    "conditional_branch": "user_status == Authenticated AND booking_status == Completed AND entry_point == Email_Submit_Link",
+    "terminal_action": "Submit Review",
+    "on_success": "opens Review_Submission_Form"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:21:57] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "Conditional branches in workflows reference fields/states that do not exist in the AST (structural errors); fix conditional expressions or add the referenced fields/states and then regenerate workflows.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "WF-003 conditional_branch references 'user_status' and 'booking_status' which are not defined in the AST under visible_when/required_when or as state keys; conditions must reference actual AST fields or declared state keys.",
+    "WF-004 conditional_branch references 'entry_point' and uses value 'Dashboard_Submit_Review'; 'entry_point' is not a declared field/state in the AST and comparing it to a component name is invalid per Check 5.",
+    "WF-005 conditional_branch references 'entry_point' and uses value 'Email_Submit_Link'; 'entry_point' is not a declared field/state in the AST and comparing it to a component name is invalid per Check 5."
+  ],
+  "fixes": [
+    "Update WF-003: change conditional_branch to reference an AST-declared field or state (e.g., add visible_when or a state key for authentication/booking status in the AST) or remove the conditional_branch and instead tie the workflow to the Review_Submission_Form precondition text. Example actionable change: add a state key 'user_state' with possible values ['public','authenticated_post_stay'] to the AST and rewrite WF-003 conditional_branch to \"entity_state == authenticated_post_stay\".",
+    "Update WF-004: either (A) add a real field named 'entry_point' in the AST (e.g., in a form-level visible_when or global context) so the condition 'entry_point == Dashboard_Submit_Review' is valid, or (B) change the conditional_branch to reference a proper state/field (or remove it) and instead mark this workflow as the action for the Dashboard_Submit_Review component (make terminal_action distinct if needed).",
+    "Update WF-005: either (A) add a real field named 'entry_point' in the AST so 'entry_point == Email_Submit_Link' is valid, or (B) change the conditional_branch to reference a proper state/field (or remove it) and instead mark this workflow as the action for the Email_Submit_Link component (make terminal_action distinct if needed)."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:21:57] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "Conditional branches in workflows reference fields/states that do not exist in the AST (structural errors); fix conditional expressions or add the referenced fields/states and then regenerate workflows.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "WF-003 conditional_branch references 'user_status' and 'booking_status' which are not defined in the AST under visible_when/required_when or as state keys; conditions must reference actual AST fields or declared state keys.",
+    "WF-004 conditional_branch references 'entry_point' and uses value 'Dashboard_Submit_Review'; 'entry_point' is not a declared field/state in the AST and comparing it to a component name is invalid per Check 5.",
+    "WF-005 conditional_branch references 'entry_point' and uses value 'Email_Submit_Link'; 'entry_point' is not a declared field/state in the AST and comparing it to a component name is invalid per Check 5."
+  ],
+  "fixes": [
+    "Update WF-003: change conditional_branch to reference an AST-declared field or state (e.g., add visible_when or a state key for authentication/booking status in the AST) or remove the conditional_branch and instead tie the workflow to the Review_Submission_Form precondition text. Example actionable change: add a state key 'user_state' with possible values ['public','authenticated_post_stay'] to the AST and rewrite WF-003 conditional_branch to \"entity_state == authenticated_post_stay\".",
+    "Update WF-004: either (A) add a real field named 'entry_point' in the AST (e.g., in a form-level visible_when or global context) so the condition 'entry_point == Dashboard_Submit_Review' is valid, or (B) change the conditional_branch to reference a proper state/field (or remove it) and instead mark this workflow as the action for the Dashboard_Submit_Review component (make terminal_action distinct if needed).",
+    "Update WF-005: either (A) add a real field named 'entry_point' in the AST so 'entry_point == Email_Submit_Link' is valid, or (B) change the conditional_branch to reference a proper state/field (or remove it) and instead mark this workflow as the action for the Email_Submit_Link component (make terminal_action distinct if needed)."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:22:34] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 19,
+  "module_title": "Reviews & Ratings",
+  "summary": "Displays aggregate scores and individual guest reviews for listings, including category-specific ratings, written comments, photos, and filtering by rating, date, or traveler type.",
+  "where_it_fits": "Accessible from listing and detail pages within the Hotels/Flights/Tours/Cars sections of the main navigation and exposed on detail pages as a dedicated Reviews section; review submission is also reachable via the user Dashboard or post-stay email prompts after bookings. It complements search/listing workflows by surfacing social proof and post-stay feedback during the booking lifecycle.",
+  "assumed_state_on_entry": "Viewing: public access (no login required); Submitting: authenticated user with a completed/recorded booking (post-stay)."
+}
+</module_context>
+
+<description>
+
+Listing pages show an aggregate rating score and total review count for each item. Detail pages include a dedicated Reviews section with individual reviews showing overall rating, category-specific ratings (e.g., Cleanliness, Service, Location for hotels), reviewer name and country, review date, stay date, written comments, and any guest-uploaded photos. Users can filter reviews by rating, date, or traveler type. Authenticated users who have completed a booking can submit a review through the dashboard or via a post-stay email prompt, providing star ratings for overall experience and individual categories, plus written feedback.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Reviews & Ratings",
+  "components": {
+    "Reviews_Filters": {
+      "type": "form",
+      "fields": {
+        "Rating_Filter": {
+          "type": "unspecified"
+        },
+        "Date_Filter": {
+          "type": "date"
+        },
+        "Traveler_Type_Filter": {
+          "type": "dropdown"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Apply Filters"
+        },
+        {
+          "action_name": "Clear Filters"
+        }
+      ]
+    },
+    "Review_Submission_Form": {
+      "type": "form",
+      "preconditions": [
+        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
+      ],
+      "fields": {
+        "Overall_Rating": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Category_Ratings": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Category_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Category_Rating": {
+              "type": "unspecified",
+              "required": true
+            }
+          },
+          "options_note": "e.g., Cleanliness, Service, Location for hotels (partial \u2014 others not specified)"
+        },
+        "Written_Comments": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Photos": {
+          "type": "file_upload"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Submit Review",
+          "on_success": "review submitted"
+        }
+      ]
+    },
+    "Dashboard_Submit_Review": {
+      "type": "button",
+      "action_name": "Submit Review",
+      "preconditions": [
+        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
+      ],
+      "on_success": "opens Review_Submission_Form"
+    },
+    "Email_Submit_Link": {
+      "type": "link",
+      "action_name": "Submit Review",
+      "preconditions": [
+        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
+      ],
+      "on_success": "opens Review_Submission_Form"
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Apply review filters",
+    "actor": "public_user",
+    "conditional_branch": null,
+    "terminal_action": "Apply Filters",
+    "on_success": "filters applied; reviews list updated to match selected criteria"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Clear review filters",
+    "actor": "public_user",
+    "conditional_branch": null,
+    "terminal_action": "Clear Filters",
+    "on_success": "filters cleared; full reviews list shown"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Open review submission from Dashboard",
+    "actor": "authenticated_post_stay_user",
+    "conditional_branch": "user_state == authenticated_post_stay",
+    "terminal_action": "Dashboard_Submit_Review",
+    "on_success": "opens Review_Submission_Form"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Open review submission from post-stay email link",
+    "actor": "authenticated_post_stay_user",
+    "conditional_branch": "user_state == authenticated_post_stay",
+    "terminal_action": "Email_Submit_Link",
+    "on_success": "opens Review_Submission_Form"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Submit review via submission form",
+    "actor": "authenticated_post_stay_user",
+    "conditional_branch": "user_state == authenticated_post_stay",
+    "terminal_action": "Submit Review",
+    "on_success": "review submitted"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:23:09] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 2,
+  "summary": "Two workflows use terminal_action names that are not anchored in the AST (critical phantoms) and several workflows use a conditional_branch referencing a nonexistent field 'user_state' (structural errors); regenerate workflows after fixing these issues.",
+  "missing": [],
+  "phantoms": [
+    {
+      "path": "WF-003 terminal_action=Dashboard_Submit_Review",
+      "severity": "critical",
+      "reason": "The terminal_action 'Dashboard_Submit_Review' is not present in any AST submit_actions[], available_actions[], row_actions[], or bulk_actions[]; AST has a component named Dashboard_Submit_Review whose action_name is 'Submit Review' so the workflow's terminal_action does not match any declared action verb."
+    },
+    {
+      "path": "WF-004 terminal_action=Email_Submit_Link",
+      "severity": "critical",
+      "reason": "The terminal_action 'Email_Submit_Link' is not present in any AST submit_actions[], available_actions[], row_actions[], or bulk_actions[]; AST has a component named Email_Submit_Link whose action_name is 'Submit Review' so the workflow's terminal_action does not match any declared action verb."
+    }
+  ],
+  "structural_errors": [
+    "WF-003 conditional_branch 'user_state == authenticated_post_stay' references 'user_state' which is not defined in the AST (no visible_when/required_when field or state_bound_action_bar state named 'authenticated_post_stay').",
+    "WF-004 conditional_branch 'user_state == authenticated_post_stay' references 'user_state' which is not defined in the AST (no visible_when/required_when field or state_bound_action_bar state named 'authenticated_post_stay').",
+    "WF-005 conditional_branch 'user_state == authenticated_post_stay' references 'user_state' which is not defined in the AST (no visible_when/required_when field or state_bound_action_bar state named 'authenticated_post_stay')."
+  ],
+  "fixes": [
+    "For WF-003: change terminal_action from 'Dashboard_Submit_Review' to the actual action verb 'Submit Review' (matching the AST component action_name), or add a submit/action entry in the AST that defines 'Dashboard_Submit_Review' as an action verb.",
+    "For WF-004: change terminal_action from 'Email_Submit_Link' to the actual action verb 'Submit Review' (matching the AST component action_name), or add a submit/action entry in the AST that defines 'Email_Submit_Link' as an action verb.",
+    "For WF-003, WF-004, WF-005: replace the conditional_branch 'user_state == authenticated_post_stay' with either (a) a conditional that references an actual AST-visible field/state (e.g., a state key defined in a state_bound_action_bar) or (b) remove the conditional_branch and rely on the actor field (authenticated_post_stay_user) and the component's preconditions. Alternatively, add a state_bound_action_bar or visible_when/required_when entry to the AST that defines 'user_state' and the 'authenticated_post_stay' state so the condition is valid."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:23:09] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 2,
+  "summary": "Two workflows use terminal_action names that are not anchored in the AST (critical phantoms) and several workflows use a conditional_branch referencing a nonexistent field 'user_state' (structural errors); regenerate workflows after fixing these issues.",
+  "missing": [],
+  "phantoms": [
+    {
+      "path": "WF-003 terminal_action=Dashboard_Submit_Review",
+      "severity": "critical",
+      "reason": "The terminal_action 'Dashboard_Submit_Review' is not present in any AST submit_actions[], available_actions[], row_actions[], or bulk_actions[]; AST has a component named Dashboard_Submit_Review whose action_name is 'Submit Review' so the workflow's terminal_action does not match any declared action verb."
+    },
+    {
+      "path": "WF-004 terminal_action=Email_Submit_Link",
+      "severity": "critical",
+      "reason": "The terminal_action 'Email_Submit_Link' is not present in any AST submit_actions[], available_actions[], row_actions[], or bulk_actions[]; AST has a component named Email_Submit_Link whose action_name is 'Submit Review' so the workflow's terminal_action does not match any declared action verb."
+    }
+  ],
+  "structural_errors": [
+    "WF-003 conditional_branch 'user_state == authenticated_post_stay' references 'user_state' which is not defined in the AST (no visible_when/required_when field or state_bound_action_bar state named 'authenticated_post_stay').",
+    "WF-004 conditional_branch 'user_state == authenticated_post_stay' references 'user_state' which is not defined in the AST (no visible_when/required_when field or state_bound_action_bar state named 'authenticated_post_stay').",
+    "WF-005 conditional_branch 'user_state == authenticated_post_stay' references 'user_state' which is not defined in the AST (no visible_when/required_when field or state_bound_action_bar state named 'authenticated_post_stay')."
+  ],
+  "fixes": [
+    "For WF-003: change terminal_action from 'Dashboard_Submit_Review' to the actual action verb 'Submit Review' (matching the AST component action_name), or add a submit/action entry in the AST that defines 'Dashboard_Submit_Review' as an action verb.",
+    "For WF-004: change terminal_action from 'Email_Submit_Link' to the actual action verb 'Submit Review' (matching the AST component action_name), or add a submit/action entry in the AST that defines 'Email_Submit_Link' as an action verb.",
+    "For WF-003, WF-004, WF-005: replace the conditional_branch 'user_state == authenticated_post_stay' with either (a) a conditional that references an actual AST-visible field/state (e.g., a state key defined in a state_bound_action_bar) or (b) remove the conditional_branch and rely on the actor field (authenticated_post_stay_user) and the component's preconditions. Alternatively, add a state_bound_action_bar or visible_when/required_when entry to the AST that defines 'user_state' and the 'authenticated_post_stay' state so the condition is valid."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:23:37] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 19,
+  "module_title": "Reviews & Ratings",
+  "summary": "Displays aggregate scores and individual guest reviews for listings, including category-specific ratings, written comments, photos, and filtering by rating, date, or traveler type.",
+  "where_it_fits": "Accessible from listing and detail pages within the Hotels/Flights/Tours/Cars sections of the main navigation and exposed on detail pages as a dedicated Reviews section; review submission is also reachable via the user Dashboard or post-stay email prompts after bookings. It complements search/listing workflows by surfacing social proof and post-stay feedback during the booking lifecycle.",
+  "assumed_state_on_entry": "Viewing: public access (no login required); Submitting: authenticated user with a completed/recorded booking (post-stay)."
+}
+</module_context>
+
+<description>
+
+Listing pages show an aggregate rating score and total review count for each item. Detail pages include a dedicated Reviews section with individual reviews showing overall rating, category-specific ratings (e.g., Cleanliness, Service, Location for hotels), reviewer name and country, review date, stay date, written comments, and any guest-uploaded photos. Users can filter reviews by rating, date, or traveler type. Authenticated users who have completed a booking can submit a review through the dashboard or via a post-stay email prompt, providing star ratings for overall experience and individual categories, plus written feedback.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Reviews & Ratings",
+  "components": {
+    "Reviews_Filters": {
+      "type": "form",
+      "fields": {
+        "Rating_Filter": {
+          "type": "unspecified"
+        },
+        "Date_Filter": {
+          "type": "date"
+        },
+        "Traveler_Type_Filter": {
+          "type": "dropdown"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Apply Filters"
+        },
+        {
+          "action_name": "Clear Filters"
+        }
+      ]
+    },
+    "Review_Submission_Form": {
+      "type": "form",
+      "preconditions": [
+        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
+      ],
+      "fields": {
+        "Overall_Rating": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Category_Ratings": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Category_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Category_Rating": {
+              "type": "unspecified",
+              "required": true
+            }
+          },
+          "options_note": "e.g., Cleanliness, Service, Location for hotels (partial \u2014 others not specified)"
+        },
+        "Written_Comments": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Photos": {
+          "type": "file_upload"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Submit Review",
+          "on_success": "review submitted"
+        }
+      ]
+    },
+    "Dashboard_Submit_Review": {
+      "type": "button",
+      "action_name": "Submit Review",
+      "preconditions": [
+        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
+      ],
+      "on_success": "opens Review_Submission_Form"
+    },
+    "Email_Submit_Link": {
+      "type": "link",
+      "action_name": "Submit Review",
+      "preconditions": [
+        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
+      ],
+      "on_success": "opens Review_Submission_Form"
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Apply Filters",
+    "actor": "Public User",
+    "conditional_branch": null,
+    "terminal_action": "Apply Filters",
+    "on_success": "Filters applied; review list updated"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Clear Filters",
+    "actor": "Public User",
+    "conditional_branch": null,
+    "terminal_action": "Clear Filters",
+    "on_success": "Filters cleared; review list reset"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Submit Review (from Review Submission Form)",
+    "actor": "Authenticated Post-stay User",
+    "conditional_branch": "source_component == Review_Submission_Form",
+    "terminal_action": "Submit Review",
+    "on_success": "review submitted"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Open Review Form (Dashboard button)",
+    "actor": "Authenticated Post-stay User",
+    "conditional_branch": "source_component == Dashboard_Submit_Review",
+    "terminal_action": "Submit Review",
+    "on_success": "opens Review_Submission_Form"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Open Review Form (Post-stay Email link)",
+    "actor": "Authenticated Post-stay User",
+    "conditional_branch": "source_component == Email_Submit_Link",
+    "terminal_action": "Submit Review",
+    "on_success": "opens Review_Submission_Form"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:23:58] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 3,
+  "summary": "Three workflows use conditional_branch expressions that reference a non-existent conditional field ('source_component') in the AST, which is a structural error and requires correction.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "WF-003 conditional_branch='source_component == Review_Submission_Form' references 'source_component', which is not a field appearing in the AST under visible_when/required_when nor a state key.",
+    "WF-004 conditional_branch='source_component == Dashboard_Submit_Review' references 'source_component', which is not a field appearing in the AST under visible_when/required_when nor a state key.",
+    "WF-005 conditional_branch='source_component == Email_Submit_Link' references 'source_component', which is not a field appearing in the AST under visible_when/required_when nor a state key."
+  ],
+  "fixes": [
+    "For WF-003: either remove the conditional_branch (set to null) so the workflow is unconditional, OR add a visible_when entry to the Review_Submission_Form component in the AST that defines source_component (e.g., add visible_when: { \"source_component\": \"Review_Submission_Form\" }) so the condition references a declared field.",
+    "For WF-004: either remove the conditional_branch (set to null) OR add a visible_when entry to the Review_Submission_Form component (or to the Dashboard_Submit_Review component if appropriate) so 'source_component' is a declared conditional field; e.g., add visible_when: { \"source_component\": \"Dashboard_Submit_Review\" }.",
+    "For WF-005: either remove the conditional_branch (set to null) OR add a visible_when entry to the Review_Submission_Form component (or to the Email_Submit_Link component if appropriate) so 'source_component' is a declared conditional field; e.g., add visible_when: { \"source_component\": \"Email_Submit_Link\" }."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[21:23:58] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 3,
+  "summary": "Three workflows use conditional_branch expressions that reference a non-existent conditional field ('source_component') in the AST, which is a structural error and requires correction.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "WF-003 conditional_branch='source_component == Review_Submission_Form' references 'source_component', which is not a field appearing in the AST under visible_when/required_when nor a state key.",
+    "WF-004 conditional_branch='source_component == Dashboard_Submit_Review' references 'source_component', which is not a field appearing in the AST under visible_when/required_when nor a state key.",
+    "WF-005 conditional_branch='source_component == Email_Submit_Link' references 'source_component', which is not a field appearing in the AST under visible_when/required_when nor a state key."
+  ],
+  "fixes": [
+    "For WF-003: either remove the conditional_branch (set to null) so the workflow is unconditional, OR add a visible_when entry to the Review_Submission_Form component in the AST that defines source_component (e.g., add visible_when: { \"source_component\": \"Review_Submission_Form\" }) so the condition references a declared field.",
+    "For WF-004: either remove the conditional_branch (set to null) OR add a visible_when entry to the Review_Submission_Form component (or to the Dashboard_Submit_Review component if appropriate) so 'source_component' is a declared conditional field; e.g., add visible_when: { \"source_component\": \"Dashboard_Submit_Review\" }.",
+    "For WF-005: either remove the conditional_branch (set to null) OR add a visible_when entry to the Review_Submission_Form component (or to the Email_Submit_Link component if appropriate) so 'source_component' is a declared conditional field; e.g., add visible_when: { \"source_component\": \"Email_Submit_Link\" }."
+  ],
+  "clarifications": []
+}

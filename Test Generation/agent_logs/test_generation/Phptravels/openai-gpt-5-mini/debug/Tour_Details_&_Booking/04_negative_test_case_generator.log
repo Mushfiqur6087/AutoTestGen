@@ -1,0 +1,649 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:24:13.879075
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:24:13] Test-Negative - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Negative Testing:**
+
+The AST represents every interactive element in the module. Each node type has a corresponding failure category:
+
+| AST node / field | What to test for failure |
+|---|---|
+| `required: true` field | Leave it blank and submit — inline validation error |
+| `constraints: []` on a field or action | One TC per unique constraint: violate it specifically |
+| `preconditions: []` on an action | One TC attempting the action when the precondition is NOT met |
+| `visible_when` / `required_when` conditional field | Trigger the condition, then submit the revealed field blank or invalid |
+| `state_bound_action_bar` states | Attempt an action from the wrong state (e.g., Approve an already-Active entity) |
+| `on_success` with quoted text | The negative expected_result is the *blocking* behavior — the entity stays unchanged |
+| `submit_actions[]` | If any button has `preconditions`, test that button when precondition fails |
+
+> If a module has no `form`, no `wizard`, no `state_bound_action_bar`, and no `constraints` — it is display-only. Generate at most 1–2 tests (unauthenticated access, or a non-implemented link if described). Do not invent validation scenarios.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — Name the field, the violated rule, and the visible error indicator.**
+Never write a vague expected result. Always specify what the tester sees.
+
+- ❌ `"Validation error shown"` — too vague
+- ❌ `"Error is displayed"` — too vague
+- ✅ `"Inline validation error appears on the <Field Name> field indicating it is required"`
+- ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
+- ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
+
+**Rule B — Quote exact error text when the spec provides it.**
+If the description quotes a specific error string, copy it verbatim into the expected_result.
+- ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
+- ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+
+**Rule C — Assert the blocking behavior, not just the error.**
+The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
+- ❌ `"Error shown"` (doesn't confirm the action was blocked)
+- ✅ `"Form does not submit; <Entity> is not created; error shown on <Field>"`
+- ✅ `"Status remains <Current State>; no transition occurs"`
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Use generic placeholders in angle brackets.
+
+- ✅ `"Enter <invalid email format> in the Email field"`
+- ✅ `"Enter <amount exceeding available balance> in the Amount field"`
+- ✅ `"Enter <password shorter than minimum length> in the Password field"`
+- ❌ `"Enter 'notanemail' in the Email field"`
+- ❌ `"Enter 'abc123' in the Password field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic user action — one field, one click, one navigation. No grouping.
+
+- ✅ `"1. Leave the <Required Field> blank"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill all fields except <Required Field> and submit"`
+
+---
+
+**SCOPE GATE (run before writing any test):**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact sentence in the description or field/constraint/state in the AST justifies this test? If you cannot point to one → delete it.
+2. **UI-executable:** Can a tester trigger this by clicking, typing, selecting, or navigating in a browser? If verification requires dev tools, DOM inspection, concurrent users, API calls, or server-side error simulation → out of scope.
+3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
+
+Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Required field representatives (deduplicated by field type):**
+
+Group required fields by type: `text/unspecified`, `email`, `password`, `number`, `date`, `dropdown`, `file_upload`. Generate:
+- ONE "leave blank and submit" test per **type group** (not per field) — use the most prominent field as representative
+- ONE "submit with ALL required fields empty" test
+
+Do NOT generate a separate blank-field test for every required field. If 5 text fields are all required, one representative covers them all.
+
+**Action dialog required fields — NOT subject to cross-form deduplication:**
+If a `state_bound_action_bar` action opens a dialog with its own required `fields{}` (e.g., Activate requires Activation Date, Reject requires a Reason, Withdraw requires a Reason, Close requires a Closure Reason), each such dialog is its own testing scope. Generate ONE "leave the required dialog field blank and submit" test per distinct action dialog. These are HIGH priority — they block state transitions and are common defect sites. Do not suppress them because the main wizard already has a blank-field test.
+
+**2. Format violations:**
+
+For fields with type-specific format rules (from AST type or description):
+- `email` → one test with invalid format
+- `number` → one test with non-numeric input
+- `date` → one test with invalid/impossible date
+- `password` → ONE representative test for policy violation (not one per sub-rule — see Deduplication)
+
+Only generate if the spec or AST implies format validation for that field.
+
+**3. Numeric bounds and balance violations:**
+
+If the spec describes minimum/maximum values, amount ranges, or balance checks:
+- One test per distinct bound violation (e.g., amount below minimum, amount above maximum, amount exceeding available balance)
+- Use `<amount below minimum>`, `<amount exceeding available balance>` as placeholders
+
+Examples across the dataset:
+- Transfer amount > available balance → error
+- Loan amount outside product min/max → error
+- Deposit below minimum requirement → error
+
+**4. Constraint violations:**
+
+For each unique `constraints[]` entry in the AST, and for cross-field rules described in the spec:
+- `"must be unique"` → submit with a duplicate value
+- `"must match"` (confirm fields) → enter mismatched values
+- `"must not be same as current"` → select the current value
+- `"cannot perform <action> while <condition>"` → attempt the action when the condition is true
+- `"<date> must be after <other date>"` → enter reversed dates
+
+One test per unique constraint. Do not duplicate the same mechanism.
+
+**Constraint timing tests:** If the spec states an action is blocked by a pre-existing system state (e.g., "cannot close with active accounts", "cannot transfer to the same office"), generate TWO tests:
+1. The standard constraint violation test (user opens the dialog, fills required fields, submits → blocked).
+2. A constraint-timing test: user opens the dialog WITHOUT filling required fields → assert whether the block is shown immediately on dialog open (before the user fills anything) OR only on submit. This distinguishes whether the UI enforces the constraint eagerly or lazily. Steps: open the dialog, observe the state → assert what is visible before any interaction. If the spec is silent on timing, generate only the first test.
+
+**5. Precondition violations (auth, role, and state):**
+
+For each `preconditions[]` entry on any action — and for auth/role/state rules described in the spec or the `<module_context>` block:
+
+- **Global Context constraints:** If the `<module_context>` block's `assumed_state_on_entry` explicitly lists required states (e.g., "Requires an active Client profile"), generate one test attempting the module's core action when that precondition fails (e.g., Client profile is missing or inactive).
+- **Unauthenticated access:** If any page or action requires login, generate one test: an unauthenticated user attempts to access it and is redirected to the login page.
+- **Wrong role:** If the spec explicitly states a feature is restricted to a specific role (e.g., Teacher only, Admin only), generate one test: a user of the wrong role attempts the action and is blocked or the control is not visible.
+- **Precondition not met:** For each AST `preconditions[]` entry, attempt the action when that precondition is not satisfied.
+
+**6. State-machine violations:**
+
+From `state_bound_action_bar` nodes:
+- **Every defined state must have at least one wrong-state test.** For each state, identify at least one action that is NOT in its `available_actions` list and generate a test attempting that action from that state.
+- If a state has an empty `available_actions` array, generate one test verifying no action buttons are visible in that state.
+- **Do not stop after 1–2 representative examples** when the module defines 4+ distinct states. The states Active, Pending, Closed, Rejected, and Withdrawn each have different action sets — each must be independently verified.
+- One test per state is sufficient — pick the most distinct unavailable action for that state. Do not enumerate every action × every state (that would be exponential).
+
+---
+
+**DEDUPLICATION GATE (run before outputting):**
+
+1. **Required field dedup:** Multiple required text fields in the **same form or dialog** → ONE representative test, not one per field.
+2. **Sub-rule dedup:** A field with multiple validation sub-rules (e.g., password: length + uppercase + lowercase + number + special char) → ONE representative violation test, not one per sub-rule.
+3. **Cross-form dedup:** If two **main forms** in the same module share the same validation mechanism → test it on the primary form only. **Exception: action dialogs are never suppressed by cross-form dedup** — each action dialog with a required field gets its own blank-field test regardless.
+4. **Uniqueness check:** Before outputting, ask for each TC: "Does this test catch a bug that NO other test in this module would catch?" If no → remove it.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (standard CRUD form, form with constraints): **4–8 tests**
+- Complex module (state machine, multi-form, wizard with many constraints): **10–16 tests**
+
+For modules with a `state_bound_action_bar` defining 4+ states, the state-machine violation tests alone will produce 4–5 tests. This is expected and correct — do not suppress them to hit a lower target.
+
+If you exceed the upper range, apply the deduplication gate again before outputting.
+
+---
+
+**PRIORITY:**
+
+- **High:** State precondition violations, constraint violations that could corrupt data, unauthenticated access, required field representatives
+- **Medium:** Format violations, cross-field validation, numeric bounds, wrong-role access, wrong-state action attempts
+
+---
+
+**WORKFLOW-AWARE FAILURE INJECTION (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow that contains a form interaction (terminal action is a submit/save/create/approve button):
+  - Identify the most **critical blocking failure** for that workflow's `conditional_branch`.
+  - If that failure mode is NOT already covered by another workflow's negative test, generate one negative TC for it.
+- **Do NOT generate one negative TC per workflow mechanically.** Apply the existing deduplication gate first — only add a TC if it catches a bug that no other test would catch.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a workflow. Set `"wf_ref": null` for generic validation tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "What error/block should occur, naming the field and indicator",
+      "priority": "high | medium"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "high_priority": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[21:24:13] Test-Negative - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 10,
+  "module_title": "Tour Details & Booking",
+  "summary": "Displays full tour information including images, day-by-day itinerary, inclusions/exclusions, departure dates, pricing, reviews, terms, and a booking form for traveler details and cost breakdown.",
+  "where_it_fits": "Accessible from the top navigation under Tours or via the Tours Search & Listing results, this module presents detailed information after a tour is chosen and precedes the booking flow handled by Booking Management and Payment Processing. It is part of the user journey that starts from the Home search widget or Tours listing and moves toward account/checkout steps in the dashboard and payment modules.",
+  "assumed_state_on_entry": "A specific tour has been selected from Tours Search & Listing; the tour's availability and departure dates are loaded and the user session is either authenticated or will trigger a redirect to Login."
+}
+</module_context>
+
+<module_name>Tour Details & Booking</module_name>
+
+<ast>
+{
+  "module_name": "Tour Details & Booking",
+  "components": {
+    "Tour_Details_Selection_Form": {
+      "type": "form",
+      "fields": {
+        "Departure_Date": {
+          "type": "date",
+          "required": true
+        },
+        "Adults": {
+          "type": "number",
+          "required": true,
+          "constraints": [
+            "minimum 1"
+          ]
+        },
+        "Children": {
+          "type": "number",
+          "constraints": [
+            "minimum 0"
+          ]
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Book Now",
+          "preconditions": [
+            "user must be logged in"
+          ],
+          "on_precondition_fail": "redirect to Login",
+          "on_success": "opens Booking Form"
+        }
+      ]
+    },
+    "Booking_Form": {
+      "type": "form",
+      "on_precondition_fail": "redirect to Login",
+      "preconditions": [
+        "user must be logged in"
+      ],
+      "fields": {
+        "Travelers": {
+          "type": "repeating_group",
+          "item_fields": {
+            "First_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Last_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Special_Requirements": {
+              "type": "unspecified"
+            }
+          }
+        },
+        "Contact_Email": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Contact_Phone": {
+          "type": "unspecified"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Confirm Booking",
+          "preconditions": [
+            "user must be logged in"
+          ],
+          "on_precondition_fail": "redirect to Login",
+          "on_success": "creates booking and proceeds to Payment Processing"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The tour details page displays a slideshow of images, a full day-by-day itinerary, inclusions and exclusions (meals, accommodation, activities, transportation), available departure dates, pricing per person for adults and children, location map, guest reviews, and terms and conditions. The user selects a departure date, specifies the number of travelers (adults and children), and clicks Book Now. The booking form collects traveler names, contact details, and special requirements, and displays the total cost breakdown. Unauthenticated users are redirected to the login page before proceeding.
+
+---
+
+
+</description>
+
+<workflows>
+WF-001 | Select departure/date and start booking (Book Now) | actor: <role> | branch: none | terminal: Book Now | on_success: opens Booking Form
+WF-002 | Complete booking with traveler details (Confirm Booking) | actor: <role> | branch: none | terminal: Confirm Booking | on_success: creates booking and proceeds to Payment Processing
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:26:29] Test-Negative - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Tour Details & Booking",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": "WF-001",
+      "test_case": "Submit 'Book Now' with required Departure_Date left blank",
+      "preconditions": [
+        "User is logged in",
+        "On Tour Details page for a selected tour"
+      ],
+      "steps": [
+        "1. Ensure user is logged in and on the Tour Details page for a specific tour",
+        "2. Leave the Departure_Date field blank",
+        "3. Enter a valid value in the Adults field (e.g., <number >= 1>)",
+        "4. Click the 'Book Now' button"
+      ],
+      "expected_result": "Inline validation error appears on the Departure_Date field indicating it is required; the Book Now action is blocked; Booking Form does not open",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": "WF-001",
+      "test_case": "Enter invalid date format in Departure_Date and attempt to Book Now",
+      "preconditions": [
+        "User is logged in",
+        "On Tour Details page for a selected tour"
+      ],
+      "steps": [
+        "1. Ensure user is logged in and on the Tour Details page",
+        "2. Enter <invalid date format> into the Departure_Date field",
+        "3. Enter a valid value in the Adults field (e.g., <number >= 1>)",
+        "4. Click the 'Book Now' button"
+      ],
+      "expected_result": "Departure_Date field displays an inline validation error indicating invalid date format; the Book Now action is blocked; Booking Form does not open",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-001",
+      "test_case": "Set Adults below minimum (violates 'minimum 1') and attempt to Book Now",
+      "preconditions": [
+        "User is logged in",
+        "On Tour Details page for a selected tour"
+      ],
+      "steps": [
+        "1. Ensure user is logged in and on the Tour Details page",
+        "2. Enter <number less than 1> into the Adults field",
+        "3. Select a valid Departure_Date",
+        "4. Click the 'Book Now' button"
+      ],
+      "expected_result": "Adults field displays an inline validation error indicating the value must be at least 1; the Book Now action is blocked; Booking Form does not open",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-001",
+      "test_case": "Enter negative number for Children (violates 'minimum 0') and attempt to Book Now",
+      "preconditions": [
+        "User is logged in",
+        "On Tour Details page for a selected tour"
+      ],
+      "steps": [
+        "1. Ensure user is logged in and on the Tour Details page",
+        "2. Enter <negative number> into the Children field",
+        "3. Select a valid Departure_Date and enter a valid Adults value (e.g., <number >= 1>)",
+        "4. Click the 'Book Now' button"
+      ],
+      "expected_result": "Children field displays an inline validation error indicating the value must be 0 or greater; the Book Now action is blocked; Booking Form does not open",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-001",
+      "test_case": "Unauthenticated user clicks Book Now and is redirected to Login",
+      "preconditions": [
+        "User is not logged in",
+        "On Tour Details page for a selected tour"
+      ],
+      "steps": [
+        "1. Ensure user is not logged in and is on the Tour Details page",
+        "2. Select a valid Departure_Date and enter valid Adults value (e.g., <number >= 1>)",
+        "3. Click the 'Book Now' button"
+      ],
+      "expected_result": "User is redirected to the Login page (on_precondition_fail = redirect to Login); Booking Form is not opened",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": "WF-002",
+      "test_case": "Direct access to Booking Form while unauthenticated redirects to Login",
+      "preconditions": [
+        "User is not logged in"
+      ],
+      "steps": [
+        "1. As an unauthenticated user, navigate directly to the Booking Form URL or attempt to open the Booking Form",
+        "2. Observe the resulting page"
+      ],
+      "expected_result": "User is redirected to the Login page (Booking_Form precondition 'user must be logged in' fails); Booking Form is not accessible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-002",
+      "test_case": "Leave required Contact_Email blank in Booking Form and attempt Confirm Booking",
+      "preconditions": [
+        "User is logged in",
+        "Booking Form is open (arrived via successful Book Now)"
+      ],
+      "steps": [
+        "1. Ensure user is logged in and the Booking Form is open",
+        "2. Fill required traveler item fields with valid values for First_Name and Last_Name (e.g., <valid first name>, <valid last name>)",
+        "3. Leave the Contact_Email field blank",
+        "4. Click the 'Confirm Booking' button"
+      ],
+      "expected_result": "Inline validation error appears on the Contact_Email field indicating it is required; the Confirm Booking action is blocked; no booking is created and no redirect to Payment Processing occurs",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-009",
+      "wf_ref": "WF-002",
+      "test_case": "Submit Confirm Booking with ALL required Booking Form fields empty",
+      "preconditions": [
+        "User is logged in",
+        "Booking Form is open"
+      ],
+      "steps": [
+        "1. Ensure user is logged in and the Booking Form is open",
+        "2. Leave all required fields empty: do not enter any Travelers' First_Name or Last_Name and leave Contact_Email blank",
+        "3. Click the 'Confirm Booking' button"
+      ],
+      "expected_result": "Form does not submit; inline validation errors appear on Contact_Email and on required traveler fields (First_Name and Last_Name) indicating they are required; no booking is created and there is no redirect to Payment Processing",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "high_priority": 6,
+    "medium_priority": 2,
+    "low_priority": 0
+  }
+}
+
+------------------------------------------------------------
+[21:26:29] Test-Negative - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Tour Details & Booking",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": "WF-001",
+      "test_case": "Submit 'Book Now' with required Departure_Date left blank",
+      "preconditions": [
+        "User is logged in",
+        "On Tour Details page for a selected tour"
+      ],
+      "steps": [
+        "1. Ensure user is logged in and on the Tour Details page for a specific tour",
+        "2. Leave the Departure_Date field blank",
+        "3. Enter a valid value in the Adults field (e.g., <number >= 1>)",
+        "4. Click the 'Book Now' button"
+      ],
+      "expected_result": "Inline validation error appears on the Departure_Date field indicating it is required; the Book Now action is blocked; Booking Form does not open",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": "WF-001",
+      "test_case": "Enter invalid date format in Departure_Date and attempt to Book Now",
+      "preconditions": [
+        "User is logged in",
+        "On Tour Details page for a selected tour"
+      ],
+      "steps": [
+        "1. Ensure user is logged in and on the Tour Details page",
+        "2. Enter <invalid date format> into the Departure_Date field",
+        "3. Enter a valid value in the Adults field (e.g., <number >= 1>)",
+        "4. Click the 'Book Now' button"
+      ],
+      "expected_result": "Departure_Date field displays an inline validation error indicating invalid date format; the Book Now action is blocked; Booking Form does not open",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-001",
+      "test_case": "Set Adults below minimum (violates 'minimum 1') and attempt to Book Now",
+      "preconditions": [
+        "User is logged in",
+        "On Tour Details page for a selected tour"
+      ],
+      "steps": [
+        "1. Ensure user is logged in and on the Tour Details page",
+        "2. Enter <number less than 1> into the Adults field",
+        "3. Select a valid Departure_Date",
+        "4. Click the 'Book Now' button"
+      ],
+      "expected_result": "Adults field displays an inline validation error indicating the value must be at least 1; the Book Now action is blocked; Booking Form does not open",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-001",
+      "test_case": "Enter negative number for Children (violates 'minimum 0') and attempt to Book Now",
+      "preconditions": [
+        "User is logged in",
+        "On Tour Details page for a selected tour"
+      ],
+      "steps": [
+        "1. Ensure user is logged in and on the Tour Details page",
+        "2. Enter <negative number> into the Children field",
+        "3. Select a valid Departure_Date and enter a valid Adults value (e.g., <number >= 1>)",
+        "4. Click the 'Book Now' button"
+      ],
+      "expected_result": "Children field displays an inline validation error indicating the value must be 0 or greater; the Book Now action is blocked; Booking Form does not open",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-001",
+      "test_case": "Unauthenticated user clicks Book Now and is redirected to Login",
+      "preconditions": [
+        "User is not logged in",
+        "On Tour Details page for a selected tour"
+      ],
+      "steps": [
+        "1. Ensure user is not logged in and is on the Tour Details page",
+        "2. Select a valid Departure_Date and enter valid Adults value (e.g., <number >= 1>)",
+        "3. Click the 'Book Now' button"
+      ],
+      "expected_result": "User is redirected to the Login page (on_precondition_fail = redirect to Login); Booking Form is not opened",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": "WF-002",
+      "test_case": "Direct access to Booking Form while unauthenticated redirects to Login",
+      "preconditions": [
+        "User is not logged in"
+      ],
+      "steps": [
+        "1. As an unauthenticated user, navigate directly to the Booking Form URL or attempt to open the Booking Form",
+        "2. Observe the resulting page"
+      ],
+      "expected_result": "User is redirected to the Login page (Booking_Form precondition 'user must be logged in' fails); Booking Form is not accessible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-002",
+      "test_case": "Leave required Contact_Email blank in Booking Form and attempt Confirm Booking",
+      "preconditions": [
+        "User is logged in",
+        "Booking Form is open (arrived via successful Book Now)"
+      ],
+      "steps": [
+        "1. Ensure user is logged in and the Booking Form is open",
+        "2. Fill required traveler item fields with valid values for First_Name and Last_Name (e.g., <valid first name>, <valid last name>)",
+        "3. Leave the Contact_Email field blank",
+        "4. Click the 'Confirm Booking' button"
+      ],
+      "expected_result": "Inline validation error appears on the Contact_Email field indicating it is required; the Confirm Booking action is blocked; no booking is created and no redirect to Payment Processing occurs",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-009",
+      "wf_ref": "WF-002",
+      "test_case": "Submit Confirm Booking with ALL required Booking Form fields empty",
+      "preconditions": [
+        "User is logged in",
+        "Booking Form is open"
+      ],
+      "steps": [
+        "1. Ensure user is logged in and the Booking Form is open",
+        "2. Leave all required fields empty: do not enter any Travelers' First_Name or Last_Name and leave Contact_Email blank",
+        "3. Click the 'Confirm Booking' button"
+      ],
+      "expected_result": "Form does not submit; inline validation errors appear on Contact_Email and on required traveler fields (First_Name and Last_Name) indicating they are required; no booking is created and there is no redirect to Payment Processing",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "high_priority": 6,
+    "medium_priority": 2,
+    "low_priority": 0
+  }
+}

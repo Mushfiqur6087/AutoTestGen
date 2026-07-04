@@ -1,0 +1,581 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:12:33.041368
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:12:33] Test-Negative - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Negative Testing:**
+
+The AST represents every interactive element in the module. Each node type has a corresponding failure category:
+
+| AST node / field | What to test for failure |
+|---|---|
+| `required: true` field | Leave it blank and submit — inline validation error |
+| `constraints: []` on a field or action | One TC per unique constraint: violate it specifically |
+| `preconditions: []` on an action | One TC attempting the action when the precondition is NOT met |
+| `visible_when` / `required_when` conditional field | Trigger the condition, then submit the revealed field blank or invalid |
+| `state_bound_action_bar` states | Attempt an action from the wrong state (e.g., Approve an already-Active entity) |
+| `on_success` with quoted text | The negative expected_result is the *blocking* behavior — the entity stays unchanged |
+| `submit_actions[]` | If any button has `preconditions`, test that button when precondition fails |
+
+> If a module has no `form`, no `wizard`, no `state_bound_action_bar`, and no `constraints` — it is display-only. Generate at most 1–2 tests (unauthenticated access, or a non-implemented link if described). Do not invent validation scenarios.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — Name the field, the violated rule, and the visible error indicator.**
+Never write a vague expected result. Always specify what the tester sees.
+
+- ❌ `"Validation error shown"` — too vague
+- ❌ `"Error is displayed"` — too vague
+- ✅ `"Inline validation error appears on the <Field Name> field indicating it is required"`
+- ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
+- ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
+
+**Rule B — Quote exact error text when the spec provides it.**
+If the description quotes a specific error string, copy it verbatim into the expected_result.
+- ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
+- ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+
+**Rule C — Assert the blocking behavior, not just the error.**
+The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
+- ❌ `"Error shown"` (doesn't confirm the action was blocked)
+- ✅ `"Form does not submit; <Entity> is not created; error shown on <Field>"`
+- ✅ `"Status remains <Current State>; no transition occurs"`
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Use generic placeholders in angle brackets.
+
+- ✅ `"Enter <invalid email format> in the Email field"`
+- ✅ `"Enter <amount exceeding available balance> in the Amount field"`
+- ✅ `"Enter <password shorter than minimum length> in the Password field"`
+- ❌ `"Enter 'notanemail' in the Email field"`
+- ❌ `"Enter 'abc123' in the Password field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic user action — one field, one click, one navigation. No grouping.
+
+- ✅ `"1. Leave the <Required Field> blank"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill all fields except <Required Field> and submit"`
+
+---
+
+**SCOPE GATE (run before writing any test):**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact sentence in the description or field/constraint/state in the AST justifies this test? If you cannot point to one → delete it.
+2. **UI-executable:** Can a tester trigger this by clicking, typing, selecting, or navigating in a browser? If verification requires dev tools, DOM inspection, concurrent users, API calls, or server-side error simulation → out of scope.
+3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
+
+Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Required field representatives (deduplicated by field type):**
+
+Group required fields by type: `text/unspecified`, `email`, `password`, `number`, `date`, `dropdown`, `file_upload`. Generate:
+- ONE "leave blank and submit" test per **type group** (not per field) — use the most prominent field as representative
+- ONE "submit with ALL required fields empty" test
+
+Do NOT generate a separate blank-field test for every required field. If 5 text fields are all required, one representative covers them all.
+
+**Action dialog required fields — NOT subject to cross-form deduplication:**
+If a `state_bound_action_bar` action opens a dialog with its own required `fields{}` (e.g., Activate requires Activation Date, Reject requires a Reason, Withdraw requires a Reason, Close requires a Closure Reason), each such dialog is its own testing scope. Generate ONE "leave the required dialog field blank and submit" test per distinct action dialog. These are HIGH priority — they block state transitions and are common defect sites. Do not suppress them because the main wizard already has a blank-field test.
+
+**2. Format violations:**
+
+For fields with type-specific format rules (from AST type or description):
+- `email` → one test with invalid format
+- `number` → one test with non-numeric input
+- `date` → one test with invalid/impossible date
+- `password` → ONE representative test for policy violation (not one per sub-rule — see Deduplication)
+
+Only generate if the spec or AST implies format validation for that field.
+
+**3. Numeric bounds and balance violations:**
+
+If the spec describes minimum/maximum values, amount ranges, or balance checks:
+- One test per distinct bound violation (e.g., amount below minimum, amount above maximum, amount exceeding available balance)
+- Use `<amount below minimum>`, `<amount exceeding available balance>` as placeholders
+
+Examples across the dataset:
+- Transfer amount > available balance → error
+- Loan amount outside product min/max → error
+- Deposit below minimum requirement → error
+
+**4. Constraint violations:**
+
+For each unique `constraints[]` entry in the AST, and for cross-field rules described in the spec:
+- `"must be unique"` → submit with a duplicate value
+- `"must match"` (confirm fields) → enter mismatched values
+- `"must not be same as current"` → select the current value
+- `"cannot perform <action> while <condition>"` → attempt the action when the condition is true
+- `"<date> must be after <other date>"` → enter reversed dates
+
+One test per unique constraint. Do not duplicate the same mechanism.
+
+**Constraint timing tests:** If the spec states an action is blocked by a pre-existing system state (e.g., "cannot close with active accounts", "cannot transfer to the same office"), generate TWO tests:
+1. The standard constraint violation test (user opens the dialog, fills required fields, submits → blocked).
+2. A constraint-timing test: user opens the dialog WITHOUT filling required fields → assert whether the block is shown immediately on dialog open (before the user fills anything) OR only on submit. This distinguishes whether the UI enforces the constraint eagerly or lazily. Steps: open the dialog, observe the state → assert what is visible before any interaction. If the spec is silent on timing, generate only the first test.
+
+**5. Precondition violations (auth, role, and state):**
+
+For each `preconditions[]` entry on any action — and for auth/role/state rules described in the spec or the `<module_context>` block:
+
+- **Global Context constraints:** If the `<module_context>` block's `assumed_state_on_entry` explicitly lists required states (e.g., "Requires an active Client profile"), generate one test attempting the module's core action when that precondition fails (e.g., Client profile is missing or inactive).
+- **Unauthenticated access:** If any page or action requires login, generate one test: an unauthenticated user attempts to access it and is redirected to the login page.
+- **Wrong role:** If the spec explicitly states a feature is restricted to a specific role (e.g., Teacher only, Admin only), generate one test: a user of the wrong role attempts the action and is blocked or the control is not visible.
+- **Precondition not met:** For each AST `preconditions[]` entry, attempt the action when that precondition is not satisfied.
+
+**6. State-machine violations:**
+
+From `state_bound_action_bar` nodes:
+- **Every defined state must have at least one wrong-state test.** For each state, identify at least one action that is NOT in its `available_actions` list and generate a test attempting that action from that state.
+- If a state has an empty `available_actions` array, generate one test verifying no action buttons are visible in that state.
+- **Do not stop after 1–2 representative examples** when the module defines 4+ distinct states. The states Active, Pending, Closed, Rejected, and Withdrawn each have different action sets — each must be independently verified.
+- One test per state is sufficient — pick the most distinct unavailable action for that state. Do not enumerate every action × every state (that would be exponential).
+
+---
+
+**DEDUPLICATION GATE (run before outputting):**
+
+1. **Required field dedup:** Multiple required text fields in the **same form or dialog** → ONE representative test, not one per field.
+2. **Sub-rule dedup:** A field with multiple validation sub-rules (e.g., password: length + uppercase + lowercase + number + special char) → ONE representative violation test, not one per sub-rule.
+3. **Cross-form dedup:** If two **main forms** in the same module share the same validation mechanism → test it on the primary form only. **Exception: action dialogs are never suppressed by cross-form dedup** — each action dialog with a required field gets its own blank-field test regardless.
+4. **Uniqueness check:** Before outputting, ask for each TC: "Does this test catch a bug that NO other test in this module would catch?" If no → remove it.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (standard CRUD form, form with constraints): **4–8 tests**
+- Complex module (state machine, multi-form, wizard with many constraints): **10–16 tests**
+
+For modules with a `state_bound_action_bar` defining 4+ states, the state-machine violation tests alone will produce 4–5 tests. This is expected and correct — do not suppress them to hit a lower target.
+
+If you exceed the upper range, apply the deduplication gate again before outputting.
+
+---
+
+**PRIORITY:**
+
+- **High:** State precondition violations, constraint violations that could corrupt data, unauthenticated access, required field representatives
+- **Medium:** Format violations, cross-field validation, numeric bounds, wrong-role access, wrong-state action attempts
+
+---
+
+**WORKFLOW-AWARE FAILURE INJECTION (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow that contains a form interaction (terminal action is a submit/save/create/approve button):
+  - Identify the most **critical blocking failure** for that workflow's `conditional_branch`.
+  - If that failure mode is NOT already covered by another workflow's negative test, generate one negative TC for it.
+- **Do NOT generate one negative TC per workflow mechanically.** Apply the existing deduplication gate first — only add a TC if it catches a bug that no other test would catch.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a workflow. Set `"wf_ref": null` for generic validation tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "What error/block should occur, naming the field and indicator",
+      "priority": "high | medium"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "high_priority": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[21:12:33] Test-Negative - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 1,
+  "module_title": "Login",
+  "summary": "Provides the authentication interface with username and password fields, options for guest access and cookie information, and inline error handling for failed sign-in attempts.",
+  "where_it_fits": "Acts as the application's primary entry point for unauthenticated users before access to Dashboard, My Courses, and course pages; a successful teacher login redirects to the Dashboard referenced in the top navigation, while guest access permits limited unauthenticated browsing of site content.",
+  "assumed_state_on_entry": "User is unauthenticated and at the site's login page (or choosing guest access); valid credentials are available for successful sign-in."
+}
+</module_context>
+
+<module_name>Login</module_name>
+
+<ast>
+{
+  "module_name": "Login",
+  "components": {
+    "Login_Form": {
+      "type": "form",
+      "preconditions": [
+        "User is unauthenticated and at the site's login page (or choosing guest access); valid credentials are available for successful sign-in."
+      ],
+      "fields": {
+        "Username": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Password": {
+          "type": "password",
+          "required": true
+        },
+        "Lost_Password": {
+          "type": "link",
+          "action_name": "Lost password?",
+          "preconditions": [
+            "disabled on this test site"
+          ]
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Log in",
+          "preconditions": [
+            "User is unauthenticated and at the site's login page (or choosing guest access); valid credentials are available for successful sign-in."
+          ],
+          "on_success": "redirects teacher to the Dashboard",
+          "on_failure": {
+            "shows_inline_error": true,
+            "clear_fields": [
+              "Password"
+            ],
+            "retain_fields": [
+              "Username"
+            ]
+          }
+        }
+      ]
+    },
+    "Guest_Access_Section": {
+      "type": "action_group",
+      "fields": {
+        "Access_As_A_Guest": {
+          "type": "button",
+          "action_name": "Access as a guest",
+          "preconditions": [
+            "User is unauthenticated"
+          ],
+          "on_success": "grants limited unauthenticated browsing of site content"
+        },
+        "Cookies_Notice": {
+          "type": "button",
+          "action_name": "Cookies notice",
+          "on_success": "opens cookie usage information"
+        }
+      }
+    }
+  }
+}
+</ast>
+
+<description>
+
+The login page displays a form with two required fields — Username and Password — followed by a "Log in" button. A "Lost password?" link is available (currently disabled on this test site). A separate section offers an "Access as a guest" button for unauthenticated browsing, and a "Cookies notice" button provides cookie usage information. On submission, valid credentials redirect the teacher to the Dashboard. Invalid or empty credentials show an inline error message, clear the password field, and retain the username for correction.
+
+---
+
+
+</description>
+
+<workflows>
+WF-001 | User submits credentials via Log in | actor: <role> | branch: none | terminal: Log in | on_success: redirects teacher to the Dashboard
+WF-002 | Unauthenticated user accesses site as a guest | actor: <role> | branch: User is unauthenticated | terminal: Access as a guest | on_success: grants limited unauthenticated browsing of site content
+WF-003 | User opens Cookies notice | actor: <role> | branch: none | terminal: Cookies notice | on_success: opens cookie usage information
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:13:05] Test-Negative - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Login",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Submit with Username blank (required text)",
+      "preconditions": [
+        "User is unauthenticated and on the login page"
+      ],
+      "steps": [
+        "1. Leave the Username field blank",
+        "2. Enter <valid password> in the Password field",
+        "3. Click the \"Log in\" button"
+      ],
+      "expected_result": "Inline validation error appears on the Username field indicating it is required; the form does not submit; user remains on the login page and is not authenticated",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": null,
+      "test_case": "Submit with Password blank (required password)",
+      "preconditions": [
+        "User is unauthenticated and on the login page"
+      ],
+      "steps": [
+        "1. Enter <valid username> in the Username field",
+        "2. Leave the Password field blank",
+        "3. Click the \"Log in\" button"
+      ],
+      "expected_result": "Inline validation error appears on the Password field indicating it is required; the form does not submit; user remains on the login page and is not authenticated",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": null,
+      "test_case": "Submit with both Username and Password empty",
+      "preconditions": [
+        "User is unauthenticated and on the login page"
+      ],
+      "steps": [
+        "1. Leave the Username field blank",
+        "2. Leave the Password field blank",
+        "3. Click the \"Log in\" button"
+      ],
+      "expected_result": "Inline validation errors appear on both Username and Password fields indicating they are required; the form does not submit; user remains on the login page and is not authenticated",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-001",
+      "test_case": "Submit with invalid credentials (wrong password)",
+      "preconditions": [
+        "User is unauthenticated and on the login page",
+        "A valid Username exists to test incorrect authentication"
+      ],
+      "steps": [
+        "1. Enter <valid username> in the Username field",
+        "2. Enter <invalid password> in the Password field",
+        "3. Click the \"Log in\" button"
+      ],
+      "expected_result": "Inline authentication error appears on the form indicating sign-in failed; the Password field is cleared; the Username field retains its value; the form does not submit and the user remains unauthenticated (no redirect to Dashboard)",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": null,
+      "test_case": "Click 'Lost password?' when the link is disabled on this test site",
+      "preconditions": [
+        "User is unauthenticated and on the login page",
+        "The 'Lost password?' link is marked disabled on this test site (per spec)"
+      ],
+      "steps": [
+        "1. Locate the 'Lost password?' link on the login form",
+        "2. Click the 'Lost password?' link"
+      ],
+      "expected_result": "The 'Lost password?' link is disabled/unresponsive (not navigable); no password-reset page or flow opens; no navigation occurs and the user remains on the login page",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": null,
+      "test_case": "Attempt to access the login page / perform Log in while already authenticated (precondition violation)",
+      "preconditions": [
+        "User is already authenticated and has an active session"
+      ],
+      "steps": [
+        "1. With an authenticated session, navigate to the site's login page",
+        "2. Attempt to view or interact with the Login form or click the \"Log in\" button"
+      ],
+      "expected_result": "Access to the login form is blocked for authenticated users: the system redirects the user away from the login page to the Dashboard (or the Login form is not visible); the Log in action is not available and no re-authentication occurs",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-002",
+      "test_case": "Attempt 'Access as a guest' while authenticated (precondition violation)",
+      "preconditions": [
+        "User is already authenticated and has an active session"
+      ],
+      "steps": [
+        "1. With an authenticated session, navigate to the page containing the 'Access as a guest' control",
+        "2. Attempt to click the 'Access as a guest' button"
+      ],
+      "expected_result": "The 'Access as a guest' action is not available to authenticated users: the button is either not visible or is disabled; clicking it does not grant limited unauthenticated browsing and the user's authenticated session remains active",
+      "priority": "medium"
+    }
+  ],
+  "summary": {
+    "total": 7,
+    "high_priority": 5,
+    "medium_priority": 2,
+    "low_priority": 0
+  }
+}
+
+------------------------------------------------------------
+[21:13:05] Test-Negative - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Login",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Submit with Username blank (required text)",
+      "preconditions": [
+        "User is unauthenticated and on the login page"
+      ],
+      "steps": [
+        "1. Leave the Username field blank",
+        "2. Enter <valid password> in the Password field",
+        "3. Click the \"Log in\" button"
+      ],
+      "expected_result": "Inline validation error appears on the Username field indicating it is required; the form does not submit; user remains on the login page and is not authenticated",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": null,
+      "test_case": "Submit with Password blank (required password)",
+      "preconditions": [
+        "User is unauthenticated and on the login page"
+      ],
+      "steps": [
+        "1. Enter <valid username> in the Username field",
+        "2. Leave the Password field blank",
+        "3. Click the \"Log in\" button"
+      ],
+      "expected_result": "Inline validation error appears on the Password field indicating it is required; the form does not submit; user remains on the login page and is not authenticated",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": null,
+      "test_case": "Submit with both Username and Password empty",
+      "preconditions": [
+        "User is unauthenticated and on the login page"
+      ],
+      "steps": [
+        "1. Leave the Username field blank",
+        "2. Leave the Password field blank",
+        "3. Click the \"Log in\" button"
+      ],
+      "expected_result": "Inline validation errors appear on both Username and Password fields indicating they are required; the form does not submit; user remains on the login page and is not authenticated",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-001",
+      "test_case": "Submit with invalid credentials (wrong password)",
+      "preconditions": [
+        "User is unauthenticated and on the login page",
+        "A valid Username exists to test incorrect authentication"
+      ],
+      "steps": [
+        "1. Enter <valid username> in the Username field",
+        "2. Enter <invalid password> in the Password field",
+        "3. Click the \"Log in\" button"
+      ],
+      "expected_result": "Inline authentication error appears on the form indicating sign-in failed; the Password field is cleared; the Username field retains its value; the form does not submit and the user remains unauthenticated (no redirect to Dashboard)",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": null,
+      "test_case": "Click 'Lost password?' when the link is disabled on this test site",
+      "preconditions": [
+        "User is unauthenticated and on the login page",
+        "The 'Lost password?' link is marked disabled on this test site (per spec)"
+      ],
+      "steps": [
+        "1. Locate the 'Lost password?' link on the login form",
+        "2. Click the 'Lost password?' link"
+      ],
+      "expected_result": "The 'Lost password?' link is disabled/unresponsive (not navigable); no password-reset page or flow opens; no navigation occurs and the user remains on the login page",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": null,
+      "test_case": "Attempt to access the login page / perform Log in while already authenticated (precondition violation)",
+      "preconditions": [
+        "User is already authenticated and has an active session"
+      ],
+      "steps": [
+        "1. With an authenticated session, navigate to the site's login page",
+        "2. Attempt to view or interact with the Login form or click the \"Log in\" button"
+      ],
+      "expected_result": "Access to the login form is blocked for authenticated users: the system redirects the user away from the login page to the Dashboard (or the Login form is not visible); the Log in action is not available and no re-authentication occurs",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-002",
+      "test_case": "Attempt 'Access as a guest' while authenticated (precondition violation)",
+      "preconditions": [
+        "User is already authenticated and has an active session"
+      ],
+      "steps": [
+        "1. With an authenticated session, navigate to the page containing the 'Access as a guest' control",
+        "2. Attempt to click the 'Access as a guest' button"
+      ],
+      "expected_result": "The 'Access as a guest' action is not available to authenticated users: the button is either not visible or is disabled; clicking it does not grant limited unauthenticated browsing and the user's authenticated session remains active",
+      "priority": "medium"
+    }
+  ],
+  "summary": {
+    "total": 7,
+    "high_priority": 5,
+    "medium_priority": 2,
+    "low_priority": 0
+  }
+}

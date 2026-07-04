@@ -1,4 +1,4 @@
-# (ParaBank Clone) Test Cases
+# ParaBank Test Cases
 
 **Application Type:** React/TypeScript Banking Application
 **Test Suite Version:** 1.1 
@@ -64,6 +64,8 @@
 | MW-LOGIN-011 | Password without lowercase | None | 1. Enter password without lowercase letter | Validation error: password must contain lowercase | Medium |
 | MW-LOGIN-012 | Password without number | None | 1. Enter password without number | Validation error: password must contain number | Medium |
 | MW-LOGIN-013 | Password without special char | None | 1. Enter password without special character | Validation error: password must contain special character | Medium |
+| MW-LOGIN-014 | Login with extremely long email | None | 1. Enter email > 255 chars | Validation error or prevented | Low |
+| MW-LOGIN-015 | SQL injection in email | None | 1. Enter "' OR 1=1 --" in email | Error message, no login | High |
 
 ---
 
@@ -106,6 +108,8 @@
 |-------|-----------|---------------|-------|-----------------|----------|
 | MW-REG-023 | Minimum valid inputs | None | 1. Enter minimum valid data for all fields<br>2. Submit | Registration succeeds | Medium |
 | MW-REG-024 | Maximum length inputs | None | 1. Enter very long strings<br>2. Submit | System handles gracefully | Low |
+| MW-REG-025 | Email with leading/trailing spaces | None | 1. Enter email with spaces<br>2. Submit | Successfully registers, trims spaces | Medium |
+| MW-REG-026 | Registration session timeout | None | 1. Leave page open for 30 mins<br>2. Submit | Error: Session expired | Medium |
 
 ---
 
@@ -121,6 +125,9 @@
 | MW-AO-004 | Total balance calculation | User logged in | 1. View total row | Total = sum of all account balances | High |
 | MW-AO-005 | Accounts ordered by date | User logged in | 1. View accounts table | Ordered by Open Date (earliest first) | Medium |
 | MW-AO-006 | Active status badge | User logged in | 1. View Status column | "Active" badge displayed for active accounts | Medium |
+| MW-AO-007 | High volume of accounts | User logged in with >50 accounts | 1. View Accounts Overview | Pagination or scroll handles accounts gracefully | Medium |
+| MW-AO-008 | Zero balance display | User logged in | 1. View account with $0.00 | Balance displays exactly $0.00 without negative sign | Medium |
+| MW-AO-009 | Extreme negative balance | User logged in | 1. View account with very large negative balance | Renders without UI breakage | Low |
 
 ---
 
@@ -152,6 +159,8 @@
 | MW-ONA-011 | Exact minimum Checking ($25) | User logged in | 1. Select Checking<br>2. Enter exactly $25<br>3. Submit | Account opens successfully | Medium |
 | MW-ONA-012 | Exact minimum Savings ($100) | User logged in | 1. Select Savings<br>2. Enter exactly $100<br>3. Submit | Account opens successfully | Medium |
 | MW-ONA-013 | Just below minimum | User logged in | 1. Select Checking<br>2. Enter $24.99 | Validation error | Medium |
+| MW-ONA-014 | Deposit with excessive precision | User logged in | 1. Enter $25.1234 | Rounded to $25.12 or rejected | Medium |
+| MW-ONA-015 | Duplicate account prevention | User logged in | 1. Submit form<br>2. Click Back<br>3. Submit again | Prevented or handled gracefully | Medium |
 
 ---
 
@@ -185,6 +194,8 @@
 |-------|-----------|---------------|-------|-----------------|----------|
 | MW-TF-013 | Transfer exact balance | User logged in | 1. Enter exact source balance<br>2. Submit | Transfer succeeds, source balance = $0 | Medium |
 | MW-TF-014 | Minimum transfer ($0.01) | User logged in | 1. Enter $0.01<br>2. Submit | Transfer succeeds or minimum amount error | Low |
+| MW-TF-015 | Transfer amount just above balance | User logged in | 1. Enter amount = balance + $0.01 | Insufficient funds error | Medium |
+| MW-TF-016 | External routing number boundaries | User logged in | 1. Enter routing number < 9 or > 9 digits | Validation error | High |
 
 ---
 
@@ -214,6 +225,8 @@
 | MW-BP-013 | Amount empty | User logged in | 1. Leave Amount empty<br>2. Submit | Validation error | High |
 | MW-BP-014 | Insufficient funds | User logged in | 1. Enter amount > source balance<br>2. Submit | Error: "Insufficient funds" | High |
 | MW-BP-015 | No source account | User logged in | 1. Don't select source<br>2. Submit | Validation error | High |
+| MW-BP-016 | Payee name maximum length | User logged in | 1. Enter payee name > 50 chars | Validation error or truncation | Low |
+| MW-BP-017 | XSS payload in Payee Name | User logged in | 1. Enter "<script>alert(1)</script>" | Payload neutralized | High |
 
 ---
 
@@ -251,6 +264,8 @@
 | MW-RL-016 | Exact minimum Personal ($1,000) | User logged in | 1. Enter exactly $1,000<br>2. Valid down payment<br>3. Submit | Loan processed | Medium |
 | MW-RL-017 | Exact maximum Personal ($50,000) | User logged in | 1. Enter exactly $50,000<br>2. Valid down payment<br>3. Submit | Loan processed | Medium |
 | MW-RL-018 | Exactly 10% down payment | User logged in | 1. Enter loan amount<br>2. Enter exactly 10% as down payment<br>3. Submit | Loan processed | Medium |
+| MW-RL-019 | Non-numeric loan amount | User logged in | 1. Enter "abc" in loan amount | Validation error | High |
+| MW-RL-020 | Down payment exactly one cent below 10% | User logged in | 1. Enter down payment = 9.99% | Denial or validation error | Medium |
 
 ---
 
@@ -283,6 +298,8 @@
 | MW-UCI-016 | Phone empty | User logged in | 1. Clear Phone Number<br>2. Submit | Validation error | High |
 | MW-UCI-017 | Invalid ZIP format | User logged in | 1. Enter invalid ZIP<br>2. Submit | Validation error | High |
 | MW-UCI-018 | Invalid Phone format | User logged in | 1. Enter invalid phone<br>2. Submit | Validation error | High |
+| MW-UCI-019 | Special characters in City | User logged in | 1. Enter City with numbers/symbols | Validation error | Medium |
+| MW-UCI-020 | Non-US ZIP code format | User logged in | 1. Enter alphanumeric ZIP | Validation error | Low |
 
 ---
 
@@ -307,6 +324,9 @@
 | MW-MC-008 | Unfreeze card | Existing card, Frozen | 1. Select frozen card<br>2. Change status to Active<br>3. Submit | Card activated | High |
 | MW-MC-009 | Invalid spending limit | Existing card | 1. Enter limit above policy maximum<br>2. Submit | Validation error displayed inline | High |
 | MW-MC-010 | Invalid date range | Existing card | 1. Enter end date before start date<br>2. Submit | Validation error | Medium |
+| MW-MC-011 | Spending limit exactly at policy maximum | Existing card | 1. Enter limit exactly at policy max | Accepted | Medium |
+| MW-MC-012 | Travel notice for same day | Existing card | 1. Enter start date = today | Accepted | Medium |
+| MW-MC-013 | Rapid status toggle | Existing card | 1. Rapidly toggle Frozen/Active | Handled without state corruption | Low |
 
 ---
 
@@ -339,6 +359,8 @@
 | MW-INV-011 | Past start date | User logged in | 1. Enter start date in the past<br>2. Submit | Validation error: "Start date must be in the future" | High |
 | MW-INV-012 | Below minimum contribution | User logged in | 1. Enter contribution below minimum<br>2. Submit | Validation error | High |
 | MW-INV-013 | Insufficient funding balance | User logged in | 1. Select account with low balance<br>2. Submit | Validation error: inadequate balance | High |
+| MW-INV-014 | Start date exactly today | User logged in | 1. Enter start date = today | Handled based on cutoff rules | Medium |
+| MW-INV-015 | Sell exact total shares owned | User logged in | 1. Sell quantity = total shares | Success, balance goes to 0 | Medium |
 
 ---
 
@@ -362,6 +384,9 @@
 | MW-AS-007 | Opt-out of paperless | Previously opted-in | 1. Uncheck paperless checkbox<br>2. Submit | Preference updated | High |
 | MW-AS-008 | Invalid email | User logged in | 1. Enter invalid email<br>2. Submit | Validation error, email field highlighted | High |
 | MW-AS-009 | Empty email with opt-in | User logged in | 1. Check paperless<br>2. Leave email empty<br>3. Submit | Validation error | High |
+| MW-AS-010 | Custom date range spanning years | User logged in | 1. Enter > 5 years range | Statement generated or date range limit error | Medium |
+| MW-AS-011 | Opt-out clears email field | Previously opted-in | 1. Uncheck paperless | Email field disabled or cleared | Low |
+| MW-AS-012 | Invalid characters in email | User logged in | 1. Enter email with spaces/invalid chars | Validation error | High |
 
 ---
 
@@ -379,6 +404,9 @@
 | MW-SS-006 | New password missing number | User logged in | 1. Enter new password without number<br>2. Submit | Validation error | High |
 | MW-SS-007 | New password missing special char | User logged in | 1. Enter new password without special char<br>2. Submit | Validation error | High |
 | MW-SS-008 | Passwords don't match | User logged in | 1. Enter different values for new and confirm<br>2. Submit | Validation error: passwords must match | High |
+| MW-SS-009 | New password matches current password | User logged in | 1. Enter new password identical to current | Error: Cannot reuse old password | High |
+| MW-SS-010 | Passwords match but differ by trailing space | User logged in | 1. Add trailing space to confirm | Validation error: passwords must match | Medium |
+| MW-SS-011 | Extreme length password | User logged in | 1. Enter password > 128 chars | System handles gracefully | Low |
 
 ---
 
@@ -404,6 +432,9 @@
 | MW-SC-009 | Date too soon | User logged in | 1. Select today's date or next non-business day<br>2. Submit | Validation error: date must be next business day or later | High |
 | MW-SC-010 | Invalid phone format | User logged in | 1. Enter invalid phone<br>2. Submit | Validation error | High |
 | MW-SC-011 | Email confirmation | MW-SC-007 completed | Check email | Confirmation email received | Medium |
+| MW-SC-012 | Callback preferred time overlapping cutoff | User logged in | 1. Select time exactly at EOD | Validated and processed | Medium |
+| MW-SC-013 | Concurrent message submissions | User logged in | 1. Submit message from 2 tabs simultaneously | Handled gracefully | Low |
+| MW-SC-014 | Extremely large attachment | User logged in | 1. Attach file > 50MB | Validation error: file too large | High |
 
 ---
 
@@ -411,17 +442,17 @@
 
 | Module | Total Tests | High Priority | Medium Priority | Low Priority |
 |--------|-------------|---------------|-----------------|--------------|
-| Login | 12 | 10 | 2 | 0 |
-| Register | 23 | 17 | 4 | 2 |
-| Accounts Overview | 6 | 4 | 2 | 0 |
-| Open New Account | 12 | 10 | 2 | 0 |
-| Transfer Funds | 14 | 12 | 1 | 1 |
-| Payments | 15 | 14 | 1 | 0 |
-| Request Loan | 18 | 15 | 3 | 0 |
-| Update Contact Info | 18 | 14 | 4 | 0 |
-| Manage Cards | 10 | 7 | 3 | 0 |
-| Investments | 13 | 10 | 3 | 0 |
-| Account Statements | 9 | 6 | 3 | 0 |
-| Security Settings | 8 | 8 | 0 | 0 |
-| Support Center | 11 | 6 | 5 | 0 |
-| **TOTAL** | **169** | **133** | **33** | **3** |
+| Login | 14 | 11 | 2 | 1 |
+| Register | 25 | 17 | 6 | 2 |
+| Accounts Overview | 9 | 4 | 4 | 1 |
+| Open New Account | 14 | 10 | 4 | 0 |
+| Transfer Funds | 16 | 13 | 2 | 1 |
+| Payments | 17 | 15 | 1 | 1 |
+| Request Loan | 20 | 16 | 4 | 0 |
+| Update Contact Info | 20 | 14 | 5 | 1 |
+| Manage Cards | 13 | 7 | 5 | 1 |
+| Investments | 15 | 10 | 5 | 0 |
+| Account Statements | 12 | 7 | 4 | 1 |
+| Security Settings | 11 | 9 | 1 | 1 |
+| Support Center | 14 | 7 | 6 | 1 |
+| **TOTAL** | **200** | **140** | **49** | **11** |

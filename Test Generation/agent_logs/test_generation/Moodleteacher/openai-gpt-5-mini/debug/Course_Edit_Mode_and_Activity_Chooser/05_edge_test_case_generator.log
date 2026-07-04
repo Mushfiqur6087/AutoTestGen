@@ -1,0 +1,665 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:12:33.147298
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:12:33] Test-Edge - SYSTEM PROMPT
+------------------------------------------------------------
+You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
+
+You are NOT producing happy paths (positive prompt) or standard validation failures (negative prompt). You are finding the cracks between valid and invalid, and the unusual paths real users take.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Edge Testing:**
+
+| AST node / field | What to look for |
+|---|---|
+| `constraints: []` with numeric/date/count threshold | The boundary values — test AT and JUST PAST each limit |
+| `repeating_group` with `max` | Test adding exactly `max` entries (should succeed) then one more (should block) |
+| `visible_when` / `required_when` | Edge: trigger condition, fill revealed field with boundary value |
+| `state_bound_action_bar` | State edges: rapid consecutive state transitions, transition from a boundary state |
+
+| `type: "date"` fields | Data edges: today, yesterday, far future, Feb 29 leap year |
+| `type: "file_upload"` | Edge: file exactly at size limit, file at 1 byte over limit |
+
+> If the module has no `constraints`, no `repeating_group`, no `date` or `number` fields, and no `state_bound_action_bar` — it has minimal edge surface. Produce 1–3 generic input edge cases (long text, special characters) and stop. Do not invent boundary tests where no boundary exists.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — State clearly whether the boundary value should PASS or FAIL.**
+Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+- ❌ `"System handles the input"` — ambiguous
+- ✅ `"Form submits successfully; entity is created with the <minimum value>"`
+- ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
+
+**Rule B — For edge cases, describe the precise visible outcome.**
+Same rule as the positive/negative prompts — name the UI element that changes.
+- ❌ `"Edge case handled correctly"`
+- ✅ `"Second submission attempt is blocked; only one record appears in the table"`
+- ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
+
+**Rule C — Quote exact error text when the spec provides it.**
+If the description states a specific error string for a boundary violation, use it verbatim.
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Express boundary values relative to the constraint.
+
+- ✅ `"Enter <minimum allowed value> in the <field>"`
+- ✅ `"Enter <one unit below minimum> in the <field>"`
+- ✅ `"Enter <maximum length string> in the <text field>"`
+- ✅ `"Add <maximum allowed entries + 1> rows to the repeating group"`
+- ❌ `"Enter '$25' in the Amount field"`
+- ❌ `"Enter 'aaaaaaaaaa' (10 chars) in the field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic action — one field, one click, one navigation. No grouping.
+- ✅ `"1. Enter <minimum allowed value> in the <Amount> field"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill the form with minimum value and submit"`
+
+---
+
+**SCOPE GATE:**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
+2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
+3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Boundary Tests (from AST constraints):**
+
+Scan every `constraints: []` array and every numeric/date/count threshold mentioned in the description. For each threshold:
+
+| Constraint | Boundary (should PASS) | Past-boundary (should FAIL) |
+|---|---|---|
+| `"minimum <X>"` | Enter exactly `<minimum value>` | Enter `<one unit below minimum>` |
+| `"maximum <N> entries"` | Add exactly `<N>` entries | Attempt to add `<N+1>` entry |
+| `"<date A> must not be before <date B>"` | `<date A>` = `<date B>` (same day) | `<date A>` = `<date B>` minus 1 day |
+| `"<X>–<Y> range"` | Enter `<X>` → pass; enter `<Y>` → pass | Enter `<X-1>` → fail; enter `<Y+1>` → fail |
+| `"at least <N> characters"` | Enter exactly `<N>` characters | Enter `<N-1>` characters |
+| `"must be ≥ <P>% of <reference>"` | Enter exactly `<P>%` | Enter `<P minus small delta>%` |
+
+Rules:
+- If a constraint has both a minimum AND maximum, test both ends (up to 4 tests total for that constraint).
+- If a constraint has no numeric/date/count threshold (e.g., "must be unique", "cannot transition while children exist") → **skip it** — it belongs in negative tests, not boundary tests.
+- Generate zero boundary tests if zero thresholds exist — do not invent them.
+
+**Cross-field boundary tests** (only if the description/AST shows a field ordering constraint — e.g., date A must not be before date B, closing date must be after opening date):
+- ONE test where field A equals field B exactly (same-day / same-value boundary) → assert this **succeeds** per spec
+- ONE test where field A is one unit before field B → assert **blocked with a visible error**
+
+**2. Input Edge Cases:**
+
+Pick only the ones that apply to field types present in this module's AST:
+
+- **Long text** (any `text/unspecified` or `textarea` field): enter a very long string (200+ characters) → assert it is either accepted or truncated/rejected with a visible indicator
+- **Special characters / emoji / unicode** (free-text fields): enter special chars → assert accepted or a specific error shown
+- **Leading/trailing whitespace** (text inputs): enter value with leading/trailing spaces → assert trimmed in saved output shown on the detail page, or an inline error shown
+- **Zero as numeric input** (number fields where zero is ambiguous): if the spec states a minimum > 0, assert `0` is blocked with a visible error; if the spec permits zero, assert the form submits successfully and the saved record displays `0`
+- **Decimal precision** (financial/numeric fields): enter a value with more decimal places than the field supports → assert rounding behavior is visible in the saved output, or an inline error is shown
+
+**3. Interaction Edge Cases:**
+
+Pick only the ones that match component types in this module's AST:
+
+- **Rapid re-submission after redirect** (any form that redirects to a detail page on success): after a successful submit, press the browser back button → assert the creation form is shown blank (not pre-filled) OR the user is redirected to the detail page without a second entity being created
+- **Wizard step skip — enforced navigation** (wizard where steps must be completed sequentially): attempt to click a later step tab directly without completing earlier steps → assert navigation is blocked and the earlier step remains active
+- **Wizard step skip — free navigation** (wizard that allows free tab navigation): navigate to a later step without filling earlier steps → assert the later step displays and returning to the earlier step shows fields blank (no data was lost from the later step)
+- **Repeating group: add then remove all** (any `repeating_group`): add entries → remove all entries → submit → assert behavior: if spec states no minimum, form submits successfully; if spec requires at least one entry, a visible error is shown
+
+**4. State / Data Edge Cases:**
+
+Pick only what applies to this module:
+
+- **Rapid consecutive state transitions** (`state_bound_action_bar`): complete one transition → immediately attempt the next → assert the action succeeds or the expected blocking message is shown per spec
+- **State boundary condition:** If the `<module_context>` block specifies an `assumed_state_on_entry` that is on the boundary of an entity's lifecycle (e.g. "Newly created", "Pending Review"), generate an edge case testing an action immediately following that state entry.
+- **Date edges** (`date` fields): test today's date, yesterday, and a far future date — assert which are accepted per spec and describe the visible outcome for each
+- **Leap year date** (`date` fields, free-text entry only): enter February 29 on a non-leap year → assert error; on a leap year → assert accepted. *Skip this test if the field uses a calendar date picker — pickers remove February 29 from non-leap years at the UI level and the test is not UI-executable.*
+- **File at exact size limit** (`file_upload`): upload a file exactly at the stated size limit → assert accepted with a visible success indicator; upload a file one unit over the limit → assert a visible error naming the size constraint
+
+**RELEVANCE RULE:** Only generate edge cases that match component types present in this module's AST. A login form does not need repeating-group edge cases. A data table does not need wizard-step-skip tests.
+
+**`visible_when` fields:** If the spec reveals a conditional field via a toggle/dropdown, test a boundary value in that revealed field. If the revealed field has no numeric or date constraint, generate one `input_edge` test using a long-text or special-character value instead.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (form with numeric/date constraints): **4–8 tests**
+- Complex module (state machine, wizard, repeating groups): **6–10 tests**
+
+If you exceed these, you are generating generic edges that don't apply to this module. Apply the relevance rule and scope gate again.
+
+---
+
+**MINIMUM OUTPUT RULE:**
+
+If the module has any numeric/date/count threshold in the AST or description, produce at least 2 boundary tests. Zero boundary tests when thresholds exist is a generation failure.
+
+---
+
+**PRIORITY:**
+
+- **High:** None — edge tests are secondary to core functionality
+- **Medium:** Boundary tests at thresholds (financial amounts, date ordering, count limits, file size limits)
+- **Low:** Input edge cases (long text, special chars, whitespace, decimal precision), interaction edge cases (browser back, wizard skip)
+
+---
+
+**WORKFLOW-AWARE BOUNDARY SCOPING (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow where `conditional_branch` activates a numeric or date field, check if that field has a boundary (a numeric/date threshold in the AST `constraints` or description).
+- If yes, that workflow's branch is a **candidate for a boundary edge test** — add or confirm a boundary TC exists for it.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a specific workflow's boundary. Set `"wf_ref": null` for generic input/interaction edge tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "wf_ref": null,
+      "subcategory": "boundary | input_edge | interaction_edge | state_edge | data_edge",
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "Precise visible outcome — state pass or fail explicitly for boundary tests",
+      "priority": "medium | low"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "boundary": 0,
+    "input_edge": 0,
+    "interaction_edge": 0,
+    "state_edge": 0,
+    "data_edge": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[21:12:33] Test-Edge - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 6,
+  "module_title": "Course Edit Mode and Activity Chooser",
+  "summary": "Enables an authoring interface on a Course page with inline controls for editing, managing sections and activities, bulk actions, and an Activity Chooser modal for adding activities and resources.",
+  "where_it_fits": "This module is activated on a Course Page (reached via My Courses or Dashboard \u2192 select course) and switches the course view into edit mode for content creation and organization; it is primarily used by teachers during course setup and ongoing content edits (the Settings tab is visible to teachers).",
+  "assumed_state_on_entry": "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+}
+</module_context>
+
+<module_name>Course Edit Mode and Activity Chooser</module_name>
+
+<ast>
+{
+  "module_name": "Course Edit Mode and Activity Chooser",
+  "components": {
+    "Course_Edit_Mode": {
+      "type": "container",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+      ],
+      "fields": {
+        "Sections": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Quick_Rename": {
+              "type": "unspecified"
+            },
+            "Section_Menu": {
+              "type": "menu",
+              "row_actions": [
+                {
+                  "action_name": "edit"
+                },
+                {
+                  "action_name": "duplicate"
+                },
+                {
+                  "action_name": "hide"
+                },
+                {
+                  "action_name": "delete"
+                },
+                {
+                  "action_name": "move"
+                }
+              ]
+            },
+            "Activities": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Select_For_Bulk": {
+                  "type": "checkbox"
+                },
+                "Quick_Rename": {
+                  "type": "unspecified"
+                },
+                "Activity_Menu": {
+                  "type": "menu",
+                  "row_actions": [
+                    {
+                      "action_name": "edit settings"
+                    },
+                    {
+                      "action_name": "move"
+                    },
+                    {
+                      "action_name": "duplicate"
+                    },
+                    {
+                      "action_name": "hide"
+                    },
+                    {
+                      "action_name": "set access restrictions"
+                    },
+                    {
+                      "action_name": "delete"
+                    }
+                  ]
+                }
+              }
+            },
+            "Add_Activity_Button": {
+              "type": "button",
+              "action_name": "+ Add an activity or resource",
+              "on_success": "opens Activity_Chooser_Modal"
+            },
+            "Add_Subsection": {
+              "type": "button",
+              "action_name": "+ Add a subsection"
+            }
+          }
+        },
+        "Bulk_Actions_Toolbar": {
+          "type": "bulk_action_bar",
+          "visible_when": "one or more Select_For_Bulk == true",
+          "bulk_actions": [
+            {
+              "action_name": "Delete Selected"
+            },
+            {
+              "action_name": "Move Selected"
+            },
+            {
+              "action_name": "Duplicate Selected"
+            },
+            {
+              "action_name": "Hide Selected"
+            },
+            {
+              "action_name": "Set access restrictions"
+            }
+          ]
+        }
+      }
+    },
+    "Activity_Chooser_Modal": {
+      "type": "modal",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+      ],
+      "fields": {
+        "Category_Filter": {
+          "type": "dropdown",
+          "options": [
+            "All",
+            "Activities",
+            "Resources",
+            "Recommended"
+          ]
+        },
+        "Search": {
+          "type": "search"
+        },
+        "Activity_Tiles": {
+          "type": "repeating_group",
+          "options": [
+            "Assignment",
+            "Forum",
+            "Quiz",
+            "File",
+            "Page",
+            "Lesson",
+            "SCORM",
+            "URL",
+            "Workshop"
+          ],
+          "item_fields": {
+            "Favorite": {
+              "type": "checkbox"
+            },
+            "Select": {
+              "type": "radio"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Add",
+          "on_success": "opens selected activity creation form",
+          "preconditions": [
+            "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+Enabling Edit mode turns the Course page into an authoring interface. Each section and activity row gains inline controls: an edit icon for quick renaming, a section-level three-dot menu (edit, duplicate, hide, delete, move), an activity-level three-dot menu (edit settings, move, duplicate, hide, set access restrictions, delete), and a bulk actions toolbar for batch operations on multiple selected activities. An "+ Add an activity or resource" button appears at the bottom of each section, and an "+ Add a subsection" control allows nesting content hierarchically. Clicking "+ Add an activity or resource" opens the Activity Chooser modal, which contains a category filter bar (All, Activities, Resources, Recommended), a search field, and a grid of activity/resource tiles including Assignment, Forum, Quiz, File, Page, Lesson, SCORM, URL, and Workshop. Each tile has a star/favorite toggle for quick access. Selecting a tile and clicking "Add" opens that activity's creation form.
+
+---
+
+
+</description>
+
+<workflows>
+WF-001 | Section inline quick rename | actor: Teacher | branch: none | terminal: Quick_Rename | on_success: Section renamed inline.
+WF-002 | Section menu - edit | actor: Teacher | branch: none | terminal: edit | on_success: section edit selected (edit action invoked for section)
+WF-003 | Section menu - duplicate | actor: Teacher | branch: none | terminal: duplicate | on_success: section duplicated
+WF-004 | Section menu - hide | actor: Teacher | branch: none | terminal: hide | on_success: section hidden
+WF-005 | Section menu - delete | actor: Teacher | branch: none | terminal: delete | on_success: section deleted
+WF-006 | Section menu - move | actor: Teacher | branch: none | terminal: move | on_success: section move initiated
+WF-007 | Add an activity or resource (open chooser) | actor: Teacher | branch: none | terminal: + Add an activity or resource | on_success: opens Activity_Chooser_Modal
+WF-008 | Add a subsection | actor: Teacher | branch: none | terminal: + Add a subsection | on_success: subsection added
+WF-009 | Activity inline quick rename | actor: Teacher | branch: none | terminal: Quick_Rename | on_success: Activity renamed inline.
+WF-010 | Activity menu - edit settings | actor: Teacher | branch: none | terminal: edit settings | on_success: activity settings edit selected (opens activity settings)
+WF-011 | Activity menu - move | actor: Teacher | branch: none | terminal: move | on_success: activity move initiated
+WF-012 | Activity menu - duplicate | actor: Teacher | branch: none | terminal: duplicate | on_success: activity duplicated
+WF-013 | Activity menu - hide | actor: Teacher | branch: none | terminal: hide | on_success: activity hidden
+WF-014 | Activity menu - set access restrictions | actor: Teacher | branch: none | terminal: set access restrictions | on_success: activity access restrictions selected (opens access restrictions dialog)
+WF-015 | Activity menu - delete | actor: Teacher | branch: none | terminal: delete | on_success: activity deleted
+WF-016 | Bulk action - Delete Selected | actor: Teacher | branch: one or more Select_For_Bulk == true | terminal: Delete Selected | on_success: selected activities deleted
+WF-017 | Bulk action - Move Selected | actor: Teacher | branch: one or more Select_For_Bulk == true | terminal: Move Selected | on_success: move selected activities initiated
+WF-018 | Bulk action - Duplicate Selected | actor: Teacher | branch: one or more Select_For_Bulk == true | terminal: Duplicate Selected | on_success: selected activities duplicated
+WF-019 | Bulk action - Hide Selected | actor: Teacher | branch: one or more Select_For_Bulk == true | terminal: Hide Selected | on_success: selected activities hidden
+WF-020 | Bulk action - Set access restrictions | actor: Teacher | branch: one or more Select_For_Bulk == true | terminal: Set access restrictions | on_success: access restrictions set for selected activities
+WF-021 | Activity tile favorite toggle | actor: Teacher | branch: none | terminal: Favorite | on_success: activity tile favorite state toggled
+WF-022 | Activity Chooser Add - Assignment selected | actor: Teacher | branch: Activity_Tiles.Select == Assignment | terminal: Add | on_success: opens selected activity creation form
+WF-023 | Activity Chooser Add - Forum selected | actor: Teacher | branch: Activity_Tiles.Select == Forum | terminal: Add | on_success: opens selected activity creation form
+WF-024 | Activity Chooser Add - Quiz selected | actor: Teacher | branch: Activity_Tiles.Select == Quiz | terminal: Add | on_success: opens selected activity creation form
+WF-025 | Activity Chooser Add - File selected | actor: Teacher | branch: Activity_Tiles.Select == File | terminal: Add | on_success: opens selected activity creation form
+WF-026 | Activity Chooser Add - Page selected | actor: Teacher | branch: Activity_Tiles.Select == Page | terminal: Add | on_success: opens selected activity creation form
+WF-027 | Activity Chooser Add - Lesson selected | actor: Teacher | branch: Activity_Tiles.Select == Lesson | terminal: Add | on_success: opens selected activity creation form
+WF-028 | Activity Chooser Add - SCORM selected | actor: Teacher | branch: Activity_Tiles.Select == SCORM | terminal: Add | on_success: opens selected activity creation form
+WF-029 | Activity Chooser Add - URL selected | actor: Teacher | branch: Activity_Tiles.Select == URL | terminal: Add | on_success: opens selected activity creation form
+WF-030 | Activity Chooser Add - Workshop selected | actor: Teacher | branch: Activity_Tiles.Select == Workshop | terminal: Add | on_success: opens selected activity creation form
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:13:55] Test-Edge - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Course Edit Mode and Activity Chooser",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "wf_ref": "WF-016",
+      "subcategory": "boundary",
+      "test_case": "Bulk actions toolbar appears when exactly one activity is selected",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and viewing an existing Course Page",
+        "Course page is in Edit mode",
+        "At least one section exists with one or more activity rows visible"
+      ],
+      "steps": [
+        "1. Click the Select_For_Bulk checkbox for a single activity row",
+        "2. Observe the area where the Bulk_Actions_Toolbar should appear"
+      ],
+      "expected_result": "Bulk_Actions_Toolbar becomes visible showing bulk action buttons (e.g., Delete Selected, Move Selected) and the buttons are enabled for use; this behavior succeeds (toolbar visible when exactly one item is selected).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-002",
+      "wf_ref": "WF-016",
+      "subcategory": "boundary",
+      "test_case": "Bulk actions are not available when zero activities are selected (past-boundary)",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and viewing an existing Course Page",
+        "Course page is in Edit mode",
+        "No Select_For_Bulk checkboxes are checked"
+      ],
+      "steps": [
+        "1. Verify no Select_For_Bulk checkboxes are checked",
+        "2. Inspect the area where Bulk_Actions_Toolbar would appear and attempt to interact with a 'Delete Selected' control if present"
+      ],
+      "expected_result": "Bulk_Actions_Toolbar remains hidden and there are no actionable bulk action controls; attempting to invoke a bulk action is blocked (no bulk action can be performed when zero items are selected) — the past-boundary is blocked / error shown (no bulk action performed).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-003",
+      "wf_ref": null,
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid select/deselect race does not create duplicate bulk toolbars or leave stale toolbar",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and viewing an existing Course Page",
+        "Course page is in Edit mode",
+        "At least one section exists with one or more activity rows visible"
+      ],
+      "steps": [
+        "1. Rapidly click the Select_For_Bulk checkbox on an activity row (select)",
+        "2. Within 300ms, click the same Select_For_Bulk checkbox again (deselect)",
+        "3. Observe the Bulk_Actions_Toolbar area for presence and count of toolbar instances"
+      ],
+      "expected_result": "No duplicate Bulk_Actions_Toolbar instances are created; after the quick deselect the toolbar remains hidden (no residual toolbar left behind); the UI state is consistent and this behavior succeeds (race does not produce duplicated or stuck toolbars).",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-004",
+      "wf_ref": "WF-024",
+      "subcategory": "input_edge",
+      "test_case": "Rapidly switching selection between activity tiles results in a single final selection used by Add",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and viewing an existing Course Page",
+        "Course page is in Edit mode",
+        "Activity_Chooser_Modal opens when '+ Add an activity or resource' is clicked"
+      ],
+      "steps": [
+        "1. Click '+ Add an activity or resource' on any section to open Activity_Chooser_Modal (WF-007)",
+        "2. Click the 'Assignment' activity tile's Select control",
+        "3. Immediately click the 'Quiz' activity tile's Select control",
+        "4. Click the 'Add' button in the Activity_Chooser_Modal"
+      ],
+      "expected_result": "Only the last-clicked tile ('Quiz') remains selected (radio semantics); clicking Add opens the Quiz creation form (WF-024) and only one creation form opens; this behavior succeeds (single final selection honored).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-005",
+      "wf_ref": "WF-022",
+      "subcategory": "interaction_edge",
+      "test_case": "Prevent duplicate activity creation when navigating back immediately after saving a newly added activity",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and viewing an existing Course Page",
+        "Course page is in Edit mode",
+        "A section is available to receive a new activity"
+      ],
+      "steps": [
+        "1. Click '+ Add an activity or resource' to open Activity_Chooser_Modal (WF-007)",
+        "2. Select the 'Assignment' tile and click 'Add' to open the Assignment creation form (WF-022)",
+        "3. Fill the minimal required fields in the Assignment creation form (enter title or required inputs) — one atomic input per step",
+        "4. Click the form's Save/Finish button to create the Assignment",
+        "5. Immediately press the browser Back button once"
+      ],
+      "expected_result": "No duplicate Assignment is created: only one new activity entry appears in the section after returning; any automatic re-submit or duplicate creation attempt is blocked (no second record is added) and the user sees the original single created activity in the section (duplicate creation is blocked).",
+      "priority": "medium"
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "boundary": 2,
+    "input_edge": 1,
+    "interaction_edge": 2,
+    "state_edge": 0,
+    "data_edge": 0,
+    "medium_priority": 4,
+    "low_priority": 1
+  }
+}
+
+------------------------------------------------------------
+[21:13:55] Test-Edge - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Course Edit Mode and Activity Chooser",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "wf_ref": "WF-016",
+      "subcategory": "boundary",
+      "test_case": "Bulk actions toolbar appears when exactly one activity is selected",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and viewing an existing Course Page",
+        "Course page is in Edit mode",
+        "At least one section exists with one or more activity rows visible"
+      ],
+      "steps": [
+        "1. Click the Select_For_Bulk checkbox for a single activity row",
+        "2. Observe the area where the Bulk_Actions_Toolbar should appear"
+      ],
+      "expected_result": "Bulk_Actions_Toolbar becomes visible showing bulk action buttons (e.g., Delete Selected, Move Selected) and the buttons are enabled for use; this behavior succeeds (toolbar visible when exactly one item is selected).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-002",
+      "wf_ref": "WF-016",
+      "subcategory": "boundary",
+      "test_case": "Bulk actions are not available when zero activities are selected (past-boundary)",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and viewing an existing Course Page",
+        "Course page is in Edit mode",
+        "No Select_For_Bulk checkboxes are checked"
+      ],
+      "steps": [
+        "1. Verify no Select_For_Bulk checkboxes are checked",
+        "2. Inspect the area where Bulk_Actions_Toolbar would appear and attempt to interact with a 'Delete Selected' control if present"
+      ],
+      "expected_result": "Bulk_Actions_Toolbar remains hidden and there are no actionable bulk action controls; attempting to invoke a bulk action is blocked (no bulk action can be performed when zero items are selected) \u2014 the past-boundary is blocked / error shown (no bulk action performed).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-003",
+      "wf_ref": null,
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid select/deselect race does not create duplicate bulk toolbars or leave stale toolbar",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and viewing an existing Course Page",
+        "Course page is in Edit mode",
+        "At least one section exists with one or more activity rows visible"
+      ],
+      "steps": [
+        "1. Rapidly click the Select_For_Bulk checkbox on an activity row (select)",
+        "2. Within 300ms, click the same Select_For_Bulk checkbox again (deselect)",
+        "3. Observe the Bulk_Actions_Toolbar area for presence and count of toolbar instances"
+      ],
+      "expected_result": "No duplicate Bulk_Actions_Toolbar instances are created; after the quick deselect the toolbar remains hidden (no residual toolbar left behind); the UI state is consistent and this behavior succeeds (race does not produce duplicated or stuck toolbars).",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-004",
+      "wf_ref": "WF-024",
+      "subcategory": "input_edge",
+      "test_case": "Rapidly switching selection between activity tiles results in a single final selection used by Add",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and viewing an existing Course Page",
+        "Course page is in Edit mode",
+        "Activity_Chooser_Modal opens when '+ Add an activity or resource' is clicked"
+      ],
+      "steps": [
+        "1. Click '+ Add an activity or resource' on any section to open Activity_Chooser_Modal (WF-007)",
+        "2. Click the 'Assignment' activity tile's Select control",
+        "3. Immediately click the 'Quiz' activity tile's Select control",
+        "4. Click the 'Add' button in the Activity_Chooser_Modal"
+      ],
+      "expected_result": "Only the last-clicked tile ('Quiz') remains selected (radio semantics); clicking Add opens the Quiz creation form (WF-024) and only one creation form opens; this behavior succeeds (single final selection honored).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-005",
+      "wf_ref": "WF-022",
+      "subcategory": "interaction_edge",
+      "test_case": "Prevent duplicate activity creation when navigating back immediately after saving a newly added activity",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and viewing an existing Course Page",
+        "Course page is in Edit mode",
+        "A section is available to receive a new activity"
+      ],
+      "steps": [
+        "1. Click '+ Add an activity or resource' to open Activity_Chooser_Modal (WF-007)",
+        "2. Select the 'Assignment' tile and click 'Add' to open the Assignment creation form (WF-022)",
+        "3. Fill the minimal required fields in the Assignment creation form (enter title or required inputs) \u2014 one atomic input per step",
+        "4. Click the form's Save/Finish button to create the Assignment",
+        "5. Immediately press the browser Back button once"
+      ],
+      "expected_result": "No duplicate Assignment is created: only one new activity entry appears in the section after returning; any automatic re-submit or duplicate creation attempt is blocked (no second record is added) and the user sees the original single created activity in the section (duplicate creation is blocked).",
+      "priority": "medium"
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "boundary": 2,
+    "input_edge": 1,
+    "interaction_edge": 2,
+    "state_edge": 0,
+    "data_edge": 0,
+    "medium_priority": 4,
+    "low_priority": 1
+  }
+}

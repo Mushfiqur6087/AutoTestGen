@@ -1,0 +1,701 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:12:34.414628
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:12:34] Test-Negative - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Negative Testing:**
+
+The AST represents every interactive element in the module. Each node type has a corresponding failure category:
+
+| AST node / field | What to test for failure |
+|---|---|
+| `required: true` field | Leave it blank and submit — inline validation error |
+| `constraints: []` on a field or action | One TC per unique constraint: violate it specifically |
+| `preconditions: []` on an action | One TC attempting the action when the precondition is NOT met |
+| `visible_when` / `required_when` conditional field | Trigger the condition, then submit the revealed field blank or invalid |
+| `state_bound_action_bar` states | Attempt an action from the wrong state (e.g., Approve an already-Active entity) |
+| `on_success` with quoted text | The negative expected_result is the *blocking* behavior — the entity stays unchanged |
+| `submit_actions[]` | If any button has `preconditions`, test that button when precondition fails |
+
+> If a module has no `form`, no `wizard`, no `state_bound_action_bar`, and no `constraints` — it is display-only. Generate at most 1–2 tests (unauthenticated access, or a non-implemented link if described). Do not invent validation scenarios.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — Name the field, the violated rule, and the visible error indicator.**
+Never write a vague expected result. Always specify what the tester sees.
+
+- ❌ `"Validation error shown"` — too vague
+- ❌ `"Error is displayed"` — too vague
+- ✅ `"Inline validation error appears on the <Field Name> field indicating it is required"`
+- ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
+- ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
+
+**Rule B — Quote exact error text when the spec provides it.**
+If the description quotes a specific error string, copy it verbatim into the expected_result.
+- ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
+- ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+
+**Rule C — Assert the blocking behavior, not just the error.**
+The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
+- ❌ `"Error shown"` (doesn't confirm the action was blocked)
+- ✅ `"Form does not submit; <Entity> is not created; error shown on <Field>"`
+- ✅ `"Status remains <Current State>; no transition occurs"`
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Use generic placeholders in angle brackets.
+
+- ✅ `"Enter <invalid email format> in the Email field"`
+- ✅ `"Enter <amount exceeding available balance> in the Amount field"`
+- ✅ `"Enter <password shorter than minimum length> in the Password field"`
+- ❌ `"Enter 'notanemail' in the Email field"`
+- ❌ `"Enter 'abc123' in the Password field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic user action — one field, one click, one navigation. No grouping.
+
+- ✅ `"1. Leave the <Required Field> blank"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill all fields except <Required Field> and submit"`
+
+---
+
+**SCOPE GATE (run before writing any test):**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact sentence in the description or field/constraint/state in the AST justifies this test? If you cannot point to one → delete it.
+2. **UI-executable:** Can a tester trigger this by clicking, typing, selecting, or navigating in a browser? If verification requires dev tools, DOM inspection, concurrent users, API calls, or server-side error simulation → out of scope.
+3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
+
+Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Required field representatives (deduplicated by field type):**
+
+Group required fields by type: `text/unspecified`, `email`, `password`, `number`, `date`, `dropdown`, `file_upload`. Generate:
+- ONE "leave blank and submit" test per **type group** (not per field) — use the most prominent field as representative
+- ONE "submit with ALL required fields empty" test
+
+Do NOT generate a separate blank-field test for every required field. If 5 text fields are all required, one representative covers them all.
+
+**Action dialog required fields — NOT subject to cross-form deduplication:**
+If a `state_bound_action_bar` action opens a dialog with its own required `fields{}` (e.g., Activate requires Activation Date, Reject requires a Reason, Withdraw requires a Reason, Close requires a Closure Reason), each such dialog is its own testing scope. Generate ONE "leave the required dialog field blank and submit" test per distinct action dialog. These are HIGH priority — they block state transitions and are common defect sites. Do not suppress them because the main wizard already has a blank-field test.
+
+**2. Format violations:**
+
+For fields with type-specific format rules (from AST type or description):
+- `email` → one test with invalid format
+- `number` → one test with non-numeric input
+- `date` → one test with invalid/impossible date
+- `password` → ONE representative test for policy violation (not one per sub-rule — see Deduplication)
+
+Only generate if the spec or AST implies format validation for that field.
+
+**3. Numeric bounds and balance violations:**
+
+If the spec describes minimum/maximum values, amount ranges, or balance checks:
+- One test per distinct bound violation (e.g., amount below minimum, amount above maximum, amount exceeding available balance)
+- Use `<amount below minimum>`, `<amount exceeding available balance>` as placeholders
+
+Examples across the dataset:
+- Transfer amount > available balance → error
+- Loan amount outside product min/max → error
+- Deposit below minimum requirement → error
+
+**4. Constraint violations:**
+
+For each unique `constraints[]` entry in the AST, and for cross-field rules described in the spec:
+- `"must be unique"` → submit with a duplicate value
+- `"must match"` (confirm fields) → enter mismatched values
+- `"must not be same as current"` → select the current value
+- `"cannot perform <action> while <condition>"` → attempt the action when the condition is true
+- `"<date> must be after <other date>"` → enter reversed dates
+
+One test per unique constraint. Do not duplicate the same mechanism.
+
+**Constraint timing tests:** If the spec states an action is blocked by a pre-existing system state (e.g., "cannot close with active accounts", "cannot transfer to the same office"), generate TWO tests:
+1. The standard constraint violation test (user opens the dialog, fills required fields, submits → blocked).
+2. A constraint-timing test: user opens the dialog WITHOUT filling required fields → assert whether the block is shown immediately on dialog open (before the user fills anything) OR only on submit. This distinguishes whether the UI enforces the constraint eagerly or lazily. Steps: open the dialog, observe the state → assert what is visible before any interaction. If the spec is silent on timing, generate only the first test.
+
+**5. Precondition violations (auth, role, and state):**
+
+For each `preconditions[]` entry on any action — and for auth/role/state rules described in the spec or the `<module_context>` block:
+
+- **Global Context constraints:** If the `<module_context>` block's `assumed_state_on_entry` explicitly lists required states (e.g., "Requires an active Client profile"), generate one test attempting the module's core action when that precondition fails (e.g., Client profile is missing or inactive).
+- **Unauthenticated access:** If any page or action requires login, generate one test: an unauthenticated user attempts to access it and is redirected to the login page.
+- **Wrong role:** If the spec explicitly states a feature is restricted to a specific role (e.g., Teacher only, Admin only), generate one test: a user of the wrong role attempts the action and is blocked or the control is not visible.
+- **Precondition not met:** For each AST `preconditions[]` entry, attempt the action when that precondition is not satisfied.
+
+**6. State-machine violations:**
+
+From `state_bound_action_bar` nodes:
+- **Every defined state must have at least one wrong-state test.** For each state, identify at least one action that is NOT in its `available_actions` list and generate a test attempting that action from that state.
+- If a state has an empty `available_actions` array, generate one test verifying no action buttons are visible in that state.
+- **Do not stop after 1–2 representative examples** when the module defines 4+ distinct states. The states Active, Pending, Closed, Rejected, and Withdrawn each have different action sets — each must be independently verified.
+- One test per state is sufficient — pick the most distinct unavailable action for that state. Do not enumerate every action × every state (that would be exponential).
+
+---
+
+**DEDUPLICATION GATE (run before outputting):**
+
+1. **Required field dedup:** Multiple required text fields in the **same form or dialog** → ONE representative test, not one per field.
+2. **Sub-rule dedup:** A field with multiple validation sub-rules (e.g., password: length + uppercase + lowercase + number + special char) → ONE representative violation test, not one per sub-rule.
+3. **Cross-form dedup:** If two **main forms** in the same module share the same validation mechanism → test it on the primary form only. **Exception: action dialogs are never suppressed by cross-form dedup** — each action dialog with a required field gets its own blank-field test regardless.
+4. **Uniqueness check:** Before outputting, ask for each TC: "Does this test catch a bug that NO other test in this module would catch?" If no → remove it.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (standard CRUD form, form with constraints): **4–8 tests**
+- Complex module (state machine, multi-form, wizard with many constraints): **10–16 tests**
+
+For modules with a `state_bound_action_bar` defining 4+ states, the state-machine violation tests alone will produce 4–5 tests. This is expected and correct — do not suppress them to hit a lower target.
+
+If you exceed the upper range, apply the deduplication gate again before outputting.
+
+---
+
+**PRIORITY:**
+
+- **High:** State precondition violations, constraint violations that could corrupt data, unauthenticated access, required field representatives
+- **Medium:** Format violations, cross-field validation, numeric bounds, wrong-role access, wrong-state action attempts
+
+---
+
+**WORKFLOW-AWARE FAILURE INJECTION (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow that contains a form interaction (terminal action is a submit/save/create/approve button):
+  - Identify the most **critical blocking failure** for that workflow's `conditional_branch`.
+  - If that failure mode is NOT already covered by another workflow's negative test, generate one negative TC for it.
+- **Do NOT generate one negative TC per workflow mechanically.** Apply the existing deduplication gate first — only add a TC if it catches a bug that no other test would catch.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a workflow. Set `"wf_ref": null` for generic validation tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "What error/block should occur, naming the field and indicator",
+      "priority": "high | medium"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "high_priority": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[21:12:34] Test-Negative - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 9,
+  "module_title": "Profile",
+  "summary": "Displays the user's profile information including contact and privacy details, course links, activity and report summaries, and an editable profile form with collapsible panels for personal data and picture.",
+  "where_it_fits": "Reached from the top navigation user menu (User menu \u2192 Profile) alongside Grades, Calendar, Private Files and Preferences; it is part of the account area that complements Dashboard/My Courses and course-level views by surfacing personal settings and links to enrolled course profiles and reports.",
+  "assumed_state_on_entry": "Active authenticated session (logged in as the user whose profile is being viewed)"
+}
+</module_context>
+
+<module_name>Profile</module_name>
+
+<ast>
+{
+  "module_name": "Profile",
+  "components": {
+    "Profile_Page": {
+      "type": "page",
+      "fields": {
+        "Message": {
+          "type": "button",
+          "action_name": "Message"
+        },
+        "User_Details_Card": {
+          "type": "panel",
+          "fields": {
+            "Edit_Profile": {
+              "type": "link",
+              "action_name": "Edit profile",
+              "opens": "Edit_Profile_Form",
+              "preconditions": [
+                "Active authenticated session (logged in as the user whose profile is being viewed)",
+                "user must be the profile owner"
+              ]
+            }
+          }
+        },
+        "Privacy_And_Policies_Card": {
+          "type": "panel",
+          "fields": {
+            "Data_Retention_Summary": {
+              "type": "link",
+              "action_name": "Data retention summary"
+            }
+          }
+        },
+        "Course_Details_Card": {
+          "type": "panel",
+          "fields": {
+            "Course_Profile_Links": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Course_Profile_Link": {
+                  "type": "link"
+                }
+              }
+            }
+          }
+        },
+        "Miscellaneous_Card": {
+          "type": "panel",
+          "fields": {
+            "Blog_Entries_Link": {
+              "type": "link",
+              "action_name": "Blog entries"
+            },
+            "Forum_Posts_Link": {
+              "type": "link",
+              "action_name": "Forum posts"
+            },
+            "Forum_Discussions_Link": {
+              "type": "link",
+              "action_name": "Forum discussions"
+            },
+            "Learning_Plans_Link": {
+              "type": "link",
+              "action_name": "Learning plans"
+            }
+          }
+        },
+        "Reports_Card": {
+          "type": "panel",
+          "fields": {
+            "Browser_Sessions_Link": {
+              "type": "link",
+              "action_name": "Browser sessions"
+            },
+            "Grades_Overview_Link": {
+              "type": "link",
+              "action_name": "Grades overview"
+            }
+          }
+        },
+        "Login_Activity_Card": {
+          "type": "panel",
+          "fields": {}
+        }
+      }
+    },
+    "Edit_Profile_Form": {
+      "type": "form",
+      "preconditions": [
+        "Active authenticated session (logged in as the user whose profile is being viewed)",
+        "user must be the profile owner"
+      ],
+      "fields": {
+        "General": {
+          "type": "collapsible_panel",
+          "fields": {
+            "First_Name": {
+              "type": "unspecified"
+            },
+            "Last_Name": {
+              "type": "unspecified"
+            },
+            "Email_Address": {
+              "type": "email"
+            },
+            "Email_Visibility": {
+              "type": "dropdown"
+            },
+            "MoodleNet_Profile_ID": {
+              "type": "unspecified"
+            },
+            "City_Town": {
+              "type": "unspecified"
+            },
+            "Country": {
+              "type": "dropdown"
+            },
+            "Timezone": {
+              "type": "dropdown"
+            },
+            "Description": {
+              "type": "unspecified"
+            }
+          }
+        },
+        "User_Picture": {
+          "type": "collapsible_panel",
+          "fields": {
+            "New_Picture": {
+              "type": "file_upload"
+            },
+            "Picture_Description": {
+              "type": "unspecified"
+            }
+          }
+        },
+        "Additional_Names": {
+          "type": "collapsible_panel",
+          "fields": {}
+        },
+        "Interests": {
+          "type": "collapsible_panel",
+          "fields": {}
+        },
+        "Optional_Fields": {
+          "type": "collapsible_panel",
+          "fields": {}
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Update profile",
+          "constraints": [
+            "validates all required fields before saving"
+          ],
+          "preconditions": [
+            "Active authenticated session (logged in as the user whose profile is being viewed)",
+            "user must be the profile owner"
+          ],
+          "on_success": "saves changes to the user's profile"
+        },
+        {
+          "action_name": "Cancel",
+          "on_success": "exits without changes"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Profile page displays the student's circular initials icon, full name, a "Message" button, and an optional profile description. The page is organized into information cards: User details (email address, visibility note, timezone, and an "Edit profile" link), Privacy and policies (Data retention summary link), Course details (links to all enrolled course profiles), Miscellaneous (links to Blog entries, Forum posts, Forum discussions, and Learning plans), Reports (Browser sessions and Grades overview links), and Login activity (First and Last access to site with exact dates and relative time indicators). Clicking "Edit profile" opens the profile form, which contains collapsible panels for General (First name, Last name, Email address, Email visibility dropdown, MoodleNet profile ID, City/town, Country dropdown, Timezone dropdown, and Description), User picture (current picture, new picture upload, and picture description), Additional names, Interests, and Optional fields. "Update profile" validates all required fields before saving; "Cancel" exits without changes. Students can only modify their own profile.
+
+---
+
+
+</description>
+
+<workflows>
+WF-001 | Message button | actor: Profile owner | branch: none | terminal: Message | on_success: opens message composer for this user
+WF-002 | Open Edit profile form | actor: Profile owner | branch: none | terminal: Edit profile | on_success: opens Edit_Profile_Form
+WF-003 | Open Data retention summary | actor: Profile owner | branch: none | terminal: Data retention summary | on_success: navigates to data retention summary
+WF-004 | Open course profile link | actor: Profile owner | branch: none | terminal: Course_Profile_Link | on_success: navigates to the linked course profile
+WF-005 | Open Blog entries | actor: Profile owner | branch: none | terminal: Blog entries | on_success: navigates to blog entries list
+WF-006 | Open Forum posts | actor: Profile owner | branch: none | terminal: Forum posts | on_success: navigates to forum posts list
+WF-007 | Open Forum discussions | actor: Profile owner | branch: none | terminal: Forum discussions | on_success: navigates to forum discussions list
+WF-008 | Open Learning plans | actor: Profile owner | branch: none | terminal: Learning plans | on_success: navigates to learning plans
+WF-009 | Open Browser sessions | actor: Profile owner | branch: none | terminal: Browser sessions | on_success: navigates to browser sessions report
+WF-010 | Open Grades overview | actor: Profile owner | branch: none | terminal: Grades overview | on_success: navigates to grades overview
+WF-011 | Update profile (save changes) | actor: Profile owner | branch: none | terminal: Update profile | on_success: saves changes to the user's profile
+WF-012 | Cancel profile editing | actor: Profile owner | branch: none | terminal: Cancel | on_success: exits without changes
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:14:24] Test-Negative - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Profile",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": "WF-002",
+      "test_case": "Unauthenticated user cannot open Edit profile",
+      "preconditions": [
+        "User is not authenticated (logged out)"
+      ],
+      "steps": [
+        "1. Open the Profile page URL for <target user>",
+        "2. Attempt to click the 'Edit profile' link on the User details card (or navigate directly to the Edit_Profile_Form URL)"
+      ],
+      "expected_result": "User is redirected to the login page (or shown an authentication prompt); the Edit_Profile_Form is not accessible and no edit controls are visible; profile cannot be edited or saved.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": "WF-002",
+      "test_case": "Non-owner logged-in user does not see Edit profile link",
+      "preconditions": [
+        "Active authenticated session as <different user> (not the profile owner)"
+      ],
+      "steps": [
+        "1. Log in as <different authenticated user> (not the profile owner)",
+        "2. Open the Profile page for <target user>",
+        "3. Inspect the User details card for the presence of the 'Edit profile' link"
+      ],
+      "expected_result": "The 'Edit profile' link is not visible on the User details card; no Edit_Profile_Form is opened. Attempting to access the Edit_Profile_Form URL redirects to a read-only profile or shows an access denied notice; no edits can be made.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-011",
+      "test_case": "Leave required text field blank (representative: First name) and attempt to Update profile",
+      "preconditions": [
+        "Active authenticated session as the profile owner",
+        "Edit_Profile_Form is open"
+      ],
+      "steps": [
+        "1. In the General panel, clear the First_Name field (leave it blank)",
+        "2. Fill any other required fields with valid values",
+        "3. Click the 'Update profile' button"
+      ],
+      "expected_result": "First_Name field displays an inline validation error indicating it is required; the form does not submit; the user's profile is not saved or changed.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-011",
+      "test_case": "Leave required email field blank and attempt to Update profile",
+      "preconditions": [
+        "Active authenticated session as the profile owner",
+        "Edit_Profile_Form is open"
+      ],
+      "steps": [
+        "1. In the General panel, clear the Email_Address field (leave it blank)",
+        "2. Fill any other required fields with valid values",
+        "3. Click the 'Update profile' button"
+      ],
+      "expected_result": "Email_Address field displays an inline validation error indicating it is required; the form does not submit; the user's profile is not saved or changed.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-011",
+      "test_case": "Submit Update profile with ALL required fields empty",
+      "preconditions": [
+        "Active authenticated session as the profile owner",
+        "Edit_Profile_Form is open"
+      ],
+      "steps": [
+        "1. Clear all required fields in the form (leave all required fields blank)",
+        "2. Click the 'Update profile' button"
+      ],
+      "expected_result": "Inline validation errors appear for each required field (e.g., First_Name, Email_Address); the form does not submit; no changes are saved to the user's profile.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": "WF-011",
+      "test_case": "Enter invalid email format in Email address and attempt to Update profile",
+      "preconditions": [
+        "Active authenticated session as the profile owner",
+        "Edit_Profile_Form is open"
+      ],
+      "steps": [
+        "1. In the General panel, enter <invalid email format> into the Email_Address field",
+        "2. Ensure other required fields contain valid values",
+        "3. Click the 'Update profile' button"
+      ],
+      "expected_result": "Email_Address field displays an inline validation error indicating the email format is invalid (e.g., 'must be a valid email address'); the form does not submit; the user's profile is not saved or changed.",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-011",
+      "test_case": "Non-owner attempts direct access to Edit_Profile_Form and to save changes (submit precondition failure)",
+      "preconditions": [
+        "Active authenticated session as <different user> (not the profile owner)"
+      ],
+      "steps": [
+        "1. Log in as <different authenticated user> (not the profile owner)",
+        "2. Navigate directly to the Edit_Profile_Form URL for <target user>",
+        "3. Attempt to modify a non-required field (e.g., Description) and click 'Update profile'"
+      ],
+      "expected_result": "Access is denied or the user is redirected to the read-only profile; the Edit_Profile_Form actions are blocked; an edit/save is not performed and no changes are saved to the target user's profile.",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 7,
+    "high_priority": 6,
+    "medium_priority": 1,
+    "low_priority": 0
+  }
+}
+
+------------------------------------------------------------
+[21:14:24] Test-Negative - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Profile",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": "WF-002",
+      "test_case": "Unauthenticated user cannot open Edit profile",
+      "preconditions": [
+        "User is not authenticated (logged out)"
+      ],
+      "steps": [
+        "1. Open the Profile page URL for <target user>",
+        "2. Attempt to click the 'Edit profile' link on the User details card (or navigate directly to the Edit_Profile_Form URL)"
+      ],
+      "expected_result": "User is redirected to the login page (or shown an authentication prompt); the Edit_Profile_Form is not accessible and no edit controls are visible; profile cannot be edited or saved.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": "WF-002",
+      "test_case": "Non-owner logged-in user does not see Edit profile link",
+      "preconditions": [
+        "Active authenticated session as <different user> (not the profile owner)"
+      ],
+      "steps": [
+        "1. Log in as <different authenticated user> (not the profile owner)",
+        "2. Open the Profile page for <target user>",
+        "3. Inspect the User details card for the presence of the 'Edit profile' link"
+      ],
+      "expected_result": "The 'Edit profile' link is not visible on the User details card; no Edit_Profile_Form is opened. Attempting to access the Edit_Profile_Form URL redirects to a read-only profile or shows an access denied notice; no edits can be made.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-011",
+      "test_case": "Leave required text field blank (representative: First name) and attempt to Update profile",
+      "preconditions": [
+        "Active authenticated session as the profile owner",
+        "Edit_Profile_Form is open"
+      ],
+      "steps": [
+        "1. In the General panel, clear the First_Name field (leave it blank)",
+        "2. Fill any other required fields with valid values",
+        "3. Click the 'Update profile' button"
+      ],
+      "expected_result": "First_Name field displays an inline validation error indicating it is required; the form does not submit; the user's profile is not saved or changed.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-011",
+      "test_case": "Leave required email field blank and attempt to Update profile",
+      "preconditions": [
+        "Active authenticated session as the profile owner",
+        "Edit_Profile_Form is open"
+      ],
+      "steps": [
+        "1. In the General panel, clear the Email_Address field (leave it blank)",
+        "2. Fill any other required fields with valid values",
+        "3. Click the 'Update profile' button"
+      ],
+      "expected_result": "Email_Address field displays an inline validation error indicating it is required; the form does not submit; the user's profile is not saved or changed.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-011",
+      "test_case": "Submit Update profile with ALL required fields empty",
+      "preconditions": [
+        "Active authenticated session as the profile owner",
+        "Edit_Profile_Form is open"
+      ],
+      "steps": [
+        "1. Clear all required fields in the form (leave all required fields blank)",
+        "2. Click the 'Update profile' button"
+      ],
+      "expected_result": "Inline validation errors appear for each required field (e.g., First_Name, Email_Address); the form does not submit; no changes are saved to the user's profile.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": "WF-011",
+      "test_case": "Enter invalid email format in Email address and attempt to Update profile",
+      "preconditions": [
+        "Active authenticated session as the profile owner",
+        "Edit_Profile_Form is open"
+      ],
+      "steps": [
+        "1. In the General panel, enter <invalid email format> into the Email_Address field",
+        "2. Ensure other required fields contain valid values",
+        "3. Click the 'Update profile' button"
+      ],
+      "expected_result": "Email_Address field displays an inline validation error indicating the email format is invalid (e.g., 'must be a valid email address'); the form does not submit; the user's profile is not saved or changed.",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-011",
+      "test_case": "Non-owner attempts direct access to Edit_Profile_Form and to save changes (submit precondition failure)",
+      "preconditions": [
+        "Active authenticated session as <different user> (not the profile owner)"
+      ],
+      "steps": [
+        "1. Log in as <different authenticated user> (not the profile owner)",
+        "2. Navigate directly to the Edit_Profile_Form URL for <target user>",
+        "3. Attempt to modify a non-required field (e.g., Description) and click 'Update profile'"
+      ],
+      "expected_result": "Access is denied or the user is redirected to the read-only profile; the Edit_Profile_Form actions are blocked; an edit/save is not performed and no changes are saved to the target user's profile.",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 7,
+    "high_priority": 6,
+    "medium_priority": 1,
+    "low_priority": 0
+  }
+}

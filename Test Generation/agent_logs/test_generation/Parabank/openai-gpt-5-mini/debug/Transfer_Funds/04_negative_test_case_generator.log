@@ -1,0 +1,644 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:02:39.088718
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:02:39] Test-Negative - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Negative Testing:**
+
+The AST represents every interactive element in the module. Each node type has a corresponding failure category:
+
+| AST node / field | What to test for failure |
+|---|---|
+| `required: true` field | Leave it blank and submit — inline validation error |
+| `constraints: []` on a field or action | One TC per unique constraint: violate it specifically |
+| `preconditions: []` on an action | One TC attempting the action when the precondition is NOT met |
+| `visible_when` / `required_when` conditional field | Trigger the condition, then submit the revealed field blank or invalid |
+| `state_bound_action_bar` states | Attempt an action from the wrong state (e.g., Approve an already-Active entity) |
+| `on_success` with quoted text | The negative expected_result is the *blocking* behavior — the entity stays unchanged |
+| `submit_actions[]` | If any button has `preconditions`, test that button when precondition fails |
+
+> If a module has no `form`, no `wizard`, no `state_bound_action_bar`, and no `constraints` — it is display-only. Generate at most 1–2 tests (unauthenticated access, or a non-implemented link if described). Do not invent validation scenarios.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — Name the field, the violated rule, and the visible error indicator.**
+Never write a vague expected result. Always specify what the tester sees.
+
+- ❌ `"Validation error shown"` — too vague
+- ❌ `"Error is displayed"` — too vague
+- ✅ `"Inline validation error appears on the <Field Name> field indicating it is required"`
+- ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
+- ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
+
+**Rule B — Quote exact error text when the spec provides it.**
+If the description quotes a specific error string, copy it verbatim into the expected_result.
+- ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
+- ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+
+**Rule C — Assert the blocking behavior, not just the error.**
+The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
+- ❌ `"Error shown"` (doesn't confirm the action was blocked)
+- ✅ `"Form does not submit; <Entity> is not created; error shown on <Field>"`
+- ✅ `"Status remains <Current State>; no transition occurs"`
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Use generic placeholders in angle brackets.
+
+- ✅ `"Enter <invalid email format> in the Email field"`
+- ✅ `"Enter <amount exceeding available balance> in the Amount field"`
+- ✅ `"Enter <password shorter than minimum length> in the Password field"`
+- ❌ `"Enter 'notanemail' in the Email field"`
+- ❌ `"Enter 'abc123' in the Password field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic user action — one field, one click, one navigation. No grouping.
+
+- ✅ `"1. Leave the <Required Field> blank"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill all fields except <Required Field> and submit"`
+
+---
+
+**SCOPE GATE (run before writing any test):**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact sentence in the description or field/constraint/state in the AST justifies this test? If you cannot point to one → delete it.
+2. **UI-executable:** Can a tester trigger this by clicking, typing, selecting, or navigating in a browser? If verification requires dev tools, DOM inspection, concurrent users, API calls, or server-side error simulation → out of scope.
+3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
+
+Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Required field representatives (deduplicated by field type):**
+
+Group required fields by type: `text/unspecified`, `email`, `password`, `number`, `date`, `dropdown`, `file_upload`. Generate:
+- ONE "leave blank and submit" test per **type group** (not per field) — use the most prominent field as representative
+- ONE "submit with ALL required fields empty" test
+
+Do NOT generate a separate blank-field test for every required field. If 5 text fields are all required, one representative covers them all.
+
+**Action dialog required fields — NOT subject to cross-form deduplication:**
+If a `state_bound_action_bar` action opens a dialog with its own required `fields{}` (e.g., Activate requires Activation Date, Reject requires a Reason, Withdraw requires a Reason, Close requires a Closure Reason), each such dialog is its own testing scope. Generate ONE "leave the required dialog field blank and submit" test per distinct action dialog. These are HIGH priority — they block state transitions and are common defect sites. Do not suppress them because the main wizard already has a blank-field test.
+
+**2. Format violations:**
+
+For fields with type-specific format rules (from AST type or description):
+- `email` → one test with invalid format
+- `number` → one test with non-numeric input
+- `date` → one test with invalid/impossible date
+- `password` → ONE representative test for policy violation (not one per sub-rule — see Deduplication)
+
+Only generate if the spec or AST implies format validation for that field.
+
+**3. Numeric bounds and balance violations:**
+
+If the spec describes minimum/maximum values, amount ranges, or balance checks:
+- One test per distinct bound violation (e.g., amount below minimum, amount above maximum, amount exceeding available balance)
+- Use `<amount below minimum>`, `<amount exceeding available balance>` as placeholders
+
+Examples across the dataset:
+- Transfer amount > available balance → error
+- Loan amount outside product min/max → error
+- Deposit below minimum requirement → error
+
+**4. Constraint violations:**
+
+For each unique `constraints[]` entry in the AST, and for cross-field rules described in the spec:
+- `"must be unique"` → submit with a duplicate value
+- `"must match"` (confirm fields) → enter mismatched values
+- `"must not be same as current"` → select the current value
+- `"cannot perform <action> while <condition>"` → attempt the action when the condition is true
+- `"<date> must be after <other date>"` → enter reversed dates
+
+One test per unique constraint. Do not duplicate the same mechanism.
+
+**Constraint timing tests:** If the spec states an action is blocked by a pre-existing system state (e.g., "cannot close with active accounts", "cannot transfer to the same office"), generate TWO tests:
+1. The standard constraint violation test (user opens the dialog, fills required fields, submits → blocked).
+2. A constraint-timing test: user opens the dialog WITHOUT filling required fields → assert whether the block is shown immediately on dialog open (before the user fills anything) OR only on submit. This distinguishes whether the UI enforces the constraint eagerly or lazily. Steps: open the dialog, observe the state → assert what is visible before any interaction. If the spec is silent on timing, generate only the first test.
+
+**5. Precondition violations (auth, role, and state):**
+
+For each `preconditions[]` entry on any action — and for auth/role/state rules described in the spec or the `<module_context>` block:
+
+- **Global Context constraints:** If the `<module_context>` block's `assumed_state_on_entry` explicitly lists required states (e.g., "Requires an active Client profile"), generate one test attempting the module's core action when that precondition fails (e.g., Client profile is missing or inactive).
+- **Unauthenticated access:** If any page or action requires login, generate one test: an unauthenticated user attempts to access it and is redirected to the login page.
+- **Wrong role:** If the spec explicitly states a feature is restricted to a specific role (e.g., Teacher only, Admin only), generate one test: a user of the wrong role attempts the action and is blocked or the control is not visible.
+- **Precondition not met:** For each AST `preconditions[]` entry, attempt the action when that precondition is not satisfied.
+
+**6. State-machine violations:**
+
+From `state_bound_action_bar` nodes:
+- **Every defined state must have at least one wrong-state test.** For each state, identify at least one action that is NOT in its `available_actions` list and generate a test attempting that action from that state.
+- If a state has an empty `available_actions` array, generate one test verifying no action buttons are visible in that state.
+- **Do not stop after 1–2 representative examples** when the module defines 4+ distinct states. The states Active, Pending, Closed, Rejected, and Withdrawn each have different action sets — each must be independently verified.
+- One test per state is sufficient — pick the most distinct unavailable action for that state. Do not enumerate every action × every state (that would be exponential).
+
+---
+
+**DEDUPLICATION GATE (run before outputting):**
+
+1. **Required field dedup:** Multiple required text fields in the **same form or dialog** → ONE representative test, not one per field.
+2. **Sub-rule dedup:** A field with multiple validation sub-rules (e.g., password: length + uppercase + lowercase + number + special char) → ONE representative violation test, not one per sub-rule.
+3. **Cross-form dedup:** If two **main forms** in the same module share the same validation mechanism → test it on the primary form only. **Exception: action dialogs are never suppressed by cross-form dedup** — each action dialog with a required field gets its own blank-field test regardless.
+4. **Uniqueness check:** Before outputting, ask for each TC: "Does this test catch a bug that NO other test in this module would catch?" If no → remove it.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (standard CRUD form, form with constraints): **4–8 tests**
+- Complex module (state machine, multi-form, wizard with many constraints): **10–16 tests**
+
+For modules with a `state_bound_action_bar` defining 4+ states, the state-machine violation tests alone will produce 4–5 tests. This is expected and correct — do not suppress them to hit a lower target.
+
+If you exceed the upper range, apply the deduplication gate again before outputting.
+
+---
+
+**PRIORITY:**
+
+- **High:** State precondition violations, constraint violations that could corrupt data, unauthenticated access, required field representatives
+- **Medium:** Format violations, cross-field validation, numeric bounds, wrong-role access, wrong-state action attempts
+
+---
+
+**WORKFLOW-AWARE FAILURE INJECTION (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow that contains a form interaction (terminal action is a submit/save/create/approve button):
+  - Identify the most **critical blocking failure** for that workflow's `conditional_branch`.
+  - If that failure mode is NOT already covered by another workflow's negative test, generate one negative TC for it.
+- **Do NOT generate one negative TC per workflow mechanically.** Apply the existing deduplication gate first — only add a TC if it catches a bug that no other test would catch.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a workflow. Set `"wf_ref": null` for generic validation tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "What error/block should occur, naming the field and indicator",
+      "priority": "high | medium"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "high_priority": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[21:02:39] Test-Negative - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 5,
+  "module_title": "Transfer Funds",
+  "summary": "Module for initiating fund transfers either between the user's ParaBank accounts or to an external account, including validation of amounts and account numbers and displaying success or error messages.",
+  "where_it_fits": "Accessible from the left-hand navigation under 'Transfer Funds' after successful sign-in and arrival at the Accounts Overview/dashboard; it is used during regular account operations to move money within the user's accounts or to external accounts and occurs after account selection in the session lifecycle.",
+  "assumed_state_on_entry": "User is logged in and has at least one active Checking or Savings account available to select as a source; for external transfers the user may provide an external account number to confirm."
+}
+</module_context>
+
+<module_name>Transfer Funds</module_name>
+
+<ast>
+{
+  "module_name": "Transfer Funds",
+  "components": {
+    "Transfer_Funds_Form": {
+      "type": "form",
+      "fields": {
+        "Transfer_Type": {
+          "type": "radio",
+          "options": [
+            "My ParaBank Account",
+            "External Account"
+          ]
+        },
+        "Transfer_Amount": {
+          "type": "number",
+          "constraints": [
+            "must be greater than 0",
+            "sufficient funds validated against selected Source_Account"
+          ]
+        },
+        "Source_Account": {
+          "type": "dropdown",
+          "constraints": [
+            "only Checking and Savings accounts are shown to select as source"
+          ]
+        },
+        "Destination_Account": {
+          "type": "dropdown",
+          "visible_when": "Transfer_Type == My ParaBank Account"
+        },
+        "External_Account_Number": {
+          "type": "unspecified",
+          "visible_when": "Transfer_Type == External Account",
+          "constraints": [
+            "account number format validated by system"
+          ]
+        },
+        "Confirm_External_Account_Number": {
+          "type": "unspecified",
+          "visible_when": "Transfer_Type == External Account",
+          "constraints": [
+            "must match External_Account_Number"
+          ]
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Submit",
+          "preconditions": [
+            "User is logged in and has at least one active Checking or Savings account available to select as a source"
+          ],
+          "on_success": "Transfer completed successfully. Returns transaction ID.",
+          "on_failure": [
+            "Insufficient funds",
+            "Account numbers do not match"
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+The transfer page presents a form with radio buttons to select transfer type (My ParaBank Account or External Account), Transfer Amount field, Source Account dropdown (filtered to Checking and Savings accounts only), and destination options that change based on transfer type. For internal transfers, users select from their own accounts; for external transfers, users enter and confirm the account number. The system validates transfer amount, sufficient funds, and account number matching for external transfers. Successful transfers show "Transfer completed successfully." with a transaction ID; failures display contextual errors such as "Insufficient funds" or "Account numbers do not match." 
+
+
+</description>
+
+<workflows>
+WF-001 | Internal transfer between ParaBank accounts | actor: User | branch: Transfer_Type == My ParaBank Account | terminal: Submit | on_success: Transfer completed successfully. Returns transaction ID.
+WF-002 | External transfer to an external account | actor: User | branch: Transfer_Type == External Account | terminal: Submit | on_success: Transfer completed successfully. Returns transaction ID.
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:04:13] Test-Negative - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Transfer Funds",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Leave Transfer Amount blank and submit (number field representative)",
+      "preconditions": [
+        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page",
+        "2. Select 'My ParaBank Account' for Transfer Type",
+        "3. Select a valid Source Account from the dropdown",
+        "4. Select a valid Destination Account from the Destination_Account dropdown",
+        "5. Leave the Transfer Amount field blank",
+        "6. Click the Submit button"
+      ],
+      "expected_result": "Transfer Amount field displays an inline validation error indicating it is required; the form does not submit and no transaction is created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": null,
+      "test_case": "Submit with all required fields empty",
+      "preconditions": [
+        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page",
+        "2. Do not select a Transfer Type (leave radio unselected)",
+        "3. Do not select a Source Account (leave dropdown unselected)",
+        "4. Leave the Transfer Amount field blank",
+        "5. Click the Submit button"
+      ],
+      "expected_result": "Form does not submit; inline validation errors appear on the Transfer Type control, Transfer Amount field, and Source Account field indicating they are required; no transaction is created",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-001",
+      "test_case": "Internal transfer with amount exceeding available balance (Insufficient funds)",
+      "preconditions": [
+        "User is logged in and has at least one active Checking or Savings account available to select as a source",
+        "Selected Source Account has a balance lower than the amount to be entered"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page",
+        "2. Select 'My ParaBank Account' for Transfer Type",
+        "3. Select the Source Account that has the low balance",
+        "4. Select a Destination Account different from the source",
+        "5. Enter <amount exceeding available balance> in the Transfer Amount field",
+        "6. Click the Submit button"
+      ],
+      "expected_result": "Submission is blocked; the page displays the contextual error 'Insufficient funds' (inline or banner); no transaction is created and the Source Account balance remains unchanged",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-001",
+      "test_case": "Transfer amount violates 'must be greater than 0' (zero or negative)",
+      "preconditions": [
+        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page",
+        "2. Select 'My ParaBank Account' for Transfer Type",
+        "3. Select a valid Source Account and Destination Account",
+        "4. Enter <amount equal to 0> (or <negative amount>) in the Transfer Amount field",
+        "5. Click the Submit button"
+      ],
+      "expected_result": "Transfer Amount field displays an inline validation error indicating the amount must be greater than 0; the form does not submit and no transaction is created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-002",
+      "test_case": "External Account Number format validation fails",
+      "preconditions": [
+        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page",
+        "2. Select 'External Account' for Transfer Type",
+        "3. Select a valid Source Account from the dropdown",
+        "4. Enter <invalid external account format> in the External_Account_Number field",
+        "5. Enter the same value in Confirm_External_Account_Number (to isolate format error)",
+        "6. Enter a valid amount in Transfer Amount",
+        "7. Click the Submit button"
+      ],
+      "expected_result": "External Account Number field displays an inline validation error indicating the account number format is invalid; the form does not submit and no transaction is created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": "WF-002",
+      "test_case": "External transfer blocked when confirmation account number does not match",
+      "preconditions": [
+        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page",
+        "2. Select 'External Account' for Transfer Type",
+        "3. Select a valid Source Account from the dropdown",
+        "4. Enter <valid external account number> in External_Account_Number",
+        "5. Enter a different value <different external account number> in Confirm_External_Account_Number",
+        "6. Enter a valid amount in Transfer Amount",
+        "7. Click the Submit button"
+      ],
+      "expected_result": "Confirm External Account Number field displays the inline error 'Account numbers do not match'; submission is blocked and no transaction is created",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user attempts to access Transfer Funds page",
+      "preconditions": [
+        "User is not authenticated (not logged in)"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page URL without signing in",
+        "2. Observe the resulting page or redirect"
+      ],
+      "expected_result": "User is redirected to the login page / presented with the login prompt; Transfer Funds page is not accessible while unauthenticated",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-008",
+      "wf_ref": null,
+      "test_case": "Submit blocked when user has no active Checking or Savings account (Submit precondition fails)",
+      "preconditions": [
+        "User is logged in but has no active Checking or Savings accounts available to select as a source"
+      ],
+      "steps": [
+        "1. Log in as a user with no active Checking or Savings accounts",
+        "2. Navigate to the Transfer Funds page",
+        "3. Observe the Source Account dropdown (contains no eligible accounts)",
+        "4. Attempt to click the Submit button"
+      ],
+      "expected_result": "Submit is blocked; Source Account field displays an inline error indicating no active Checking or Savings accounts are available to select as the source; no transfer attempt is made",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "high_priority": 5,
+    "medium_priority": 3,
+    "low_priority": 0
+  }
+}
+
+------------------------------------------------------------
+[21:04:13] Test-Negative - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Transfer Funds",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Leave Transfer Amount blank and submit (number field representative)",
+      "preconditions": [
+        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page",
+        "2. Select 'My ParaBank Account' for Transfer Type",
+        "3. Select a valid Source Account from the dropdown",
+        "4. Select a valid Destination Account from the Destination_Account dropdown",
+        "5. Leave the Transfer Amount field blank",
+        "6. Click the Submit button"
+      ],
+      "expected_result": "Transfer Amount field displays an inline validation error indicating it is required; the form does not submit and no transaction is created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": null,
+      "test_case": "Submit with all required fields empty",
+      "preconditions": [
+        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page",
+        "2. Do not select a Transfer Type (leave radio unselected)",
+        "3. Do not select a Source Account (leave dropdown unselected)",
+        "4. Leave the Transfer Amount field blank",
+        "5. Click the Submit button"
+      ],
+      "expected_result": "Form does not submit; inline validation errors appear on the Transfer Type control, Transfer Amount field, and Source Account field indicating they are required; no transaction is created",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-001",
+      "test_case": "Internal transfer with amount exceeding available balance (Insufficient funds)",
+      "preconditions": [
+        "User is logged in and has at least one active Checking or Savings account available to select as a source",
+        "Selected Source Account has a balance lower than the amount to be entered"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page",
+        "2. Select 'My ParaBank Account' for Transfer Type",
+        "3. Select the Source Account that has the low balance",
+        "4. Select a Destination Account different from the source",
+        "5. Enter <amount exceeding available balance> in the Transfer Amount field",
+        "6. Click the Submit button"
+      ],
+      "expected_result": "Submission is blocked; the page displays the contextual error 'Insufficient funds' (inline or banner); no transaction is created and the Source Account balance remains unchanged",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-001",
+      "test_case": "Transfer amount violates 'must be greater than 0' (zero or negative)",
+      "preconditions": [
+        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page",
+        "2. Select 'My ParaBank Account' for Transfer Type",
+        "3. Select a valid Source Account and Destination Account",
+        "4. Enter <amount equal to 0> (or <negative amount>) in the Transfer Amount field",
+        "5. Click the Submit button"
+      ],
+      "expected_result": "Transfer Amount field displays an inline validation error indicating the amount must be greater than 0; the form does not submit and no transaction is created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-002",
+      "test_case": "External Account Number format validation fails",
+      "preconditions": [
+        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page",
+        "2. Select 'External Account' for Transfer Type",
+        "3. Select a valid Source Account from the dropdown",
+        "4. Enter <invalid external account format> in the External_Account_Number field",
+        "5. Enter the same value in Confirm_External_Account_Number (to isolate format error)",
+        "6. Enter a valid amount in Transfer Amount",
+        "7. Click the Submit button"
+      ],
+      "expected_result": "External Account Number field displays an inline validation error indicating the account number format is invalid; the form does not submit and no transaction is created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": "WF-002",
+      "test_case": "External transfer blocked when confirmation account number does not match",
+      "preconditions": [
+        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page",
+        "2. Select 'External Account' for Transfer Type",
+        "3. Select a valid Source Account from the dropdown",
+        "4. Enter <valid external account number> in External_Account_Number",
+        "5. Enter a different value <different external account number> in Confirm_External_Account_Number",
+        "6. Enter a valid amount in Transfer Amount",
+        "7. Click the Submit button"
+      ],
+      "expected_result": "Confirm External Account Number field displays the inline error 'Account numbers do not match'; submission is blocked and no transaction is created",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user attempts to access Transfer Funds page",
+      "preconditions": [
+        "User is not authenticated (not logged in)"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page URL without signing in",
+        "2. Observe the resulting page or redirect"
+      ],
+      "expected_result": "User is redirected to the login page / presented with the login prompt; Transfer Funds page is not accessible while unauthenticated",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-008",
+      "wf_ref": null,
+      "test_case": "Submit blocked when user has no active Checking or Savings account (Submit precondition fails)",
+      "preconditions": [
+        "User is logged in but has no active Checking or Savings accounts available to select as a source"
+      ],
+      "steps": [
+        "1. Log in as a user with no active Checking or Savings accounts",
+        "2. Navigate to the Transfer Funds page",
+        "3. Observe the Source Account dropdown (contains no eligible accounts)",
+        "4. Attempt to click the Submit button"
+      ],
+      "expected_result": "Submit is blocked; Source Account field displays an inline error indicating no active Checking or Savings accounts are available to select as the source; no transfer attempt is made",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "high_priority": 5,
+    "medium_priority": 3,
+    "low_priority": 0
+  }
+}

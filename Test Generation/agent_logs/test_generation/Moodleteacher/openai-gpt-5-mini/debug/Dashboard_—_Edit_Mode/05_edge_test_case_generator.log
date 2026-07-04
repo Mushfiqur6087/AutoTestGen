@@ -1,0 +1,523 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:12:33.085305
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:12:33] Test-Edge - SYSTEM PROMPT
+------------------------------------------------------------
+You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
+
+You are NOT producing happy paths (positive prompt) or standard validation failures (negative prompt). You are finding the cracks between valid and invalid, and the unusual paths real users take.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Edge Testing:**
+
+| AST node / field | What to look for |
+|---|---|
+| `constraints: []` with numeric/date/count threshold | The boundary values — test AT and JUST PAST each limit |
+| `repeating_group` with `max` | Test adding exactly `max` entries (should succeed) then one more (should block) |
+| `visible_when` / `required_when` | Edge: trigger condition, fill revealed field with boundary value |
+| `state_bound_action_bar` | State edges: rapid consecutive state transitions, transition from a boundary state |
+
+| `type: "date"` fields | Data edges: today, yesterday, far future, Feb 29 leap year |
+| `type: "file_upload"` | Edge: file exactly at size limit, file at 1 byte over limit |
+
+> If the module has no `constraints`, no `repeating_group`, no `date` or `number` fields, and no `state_bound_action_bar` — it has minimal edge surface. Produce 1–3 generic input edge cases (long text, special characters) and stop. Do not invent boundary tests where no boundary exists.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — State clearly whether the boundary value should PASS or FAIL.**
+Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+- ❌ `"System handles the input"` — ambiguous
+- ✅ `"Form submits successfully; entity is created with the <minimum value>"`
+- ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
+
+**Rule B — For edge cases, describe the precise visible outcome.**
+Same rule as the positive/negative prompts — name the UI element that changes.
+- ❌ `"Edge case handled correctly"`
+- ✅ `"Second submission attempt is blocked; only one record appears in the table"`
+- ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
+
+**Rule C — Quote exact error text when the spec provides it.**
+If the description states a specific error string for a boundary violation, use it verbatim.
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Express boundary values relative to the constraint.
+
+- ✅ `"Enter <minimum allowed value> in the <field>"`
+- ✅ `"Enter <one unit below minimum> in the <field>"`
+- ✅ `"Enter <maximum length string> in the <text field>"`
+- ✅ `"Add <maximum allowed entries + 1> rows to the repeating group"`
+- ❌ `"Enter '$25' in the Amount field"`
+- ❌ `"Enter 'aaaaaaaaaa' (10 chars) in the field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic action — one field, one click, one navigation. No grouping.
+- ✅ `"1. Enter <minimum allowed value> in the <Amount> field"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill the form with minimum value and submit"`
+
+---
+
+**SCOPE GATE:**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
+2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
+3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Boundary Tests (from AST constraints):**
+
+Scan every `constraints: []` array and every numeric/date/count threshold mentioned in the description. For each threshold:
+
+| Constraint | Boundary (should PASS) | Past-boundary (should FAIL) |
+|---|---|---|
+| `"minimum <X>"` | Enter exactly `<minimum value>` | Enter `<one unit below minimum>` |
+| `"maximum <N> entries"` | Add exactly `<N>` entries | Attempt to add `<N+1>` entry |
+| `"<date A> must not be before <date B>"` | `<date A>` = `<date B>` (same day) | `<date A>` = `<date B>` minus 1 day |
+| `"<X>–<Y> range"` | Enter `<X>` → pass; enter `<Y>` → pass | Enter `<X-1>` → fail; enter `<Y+1>` → fail |
+| `"at least <N> characters"` | Enter exactly `<N>` characters | Enter `<N-1>` characters |
+| `"must be ≥ <P>% of <reference>"` | Enter exactly `<P>%` | Enter `<P minus small delta>%` |
+
+Rules:
+- If a constraint has both a minimum AND maximum, test both ends (up to 4 tests total for that constraint).
+- If a constraint has no numeric/date/count threshold (e.g., "must be unique", "cannot transition while children exist") → **skip it** — it belongs in negative tests, not boundary tests.
+- Generate zero boundary tests if zero thresholds exist — do not invent them.
+
+**Cross-field boundary tests** (only if the description/AST shows a field ordering constraint — e.g., date A must not be before date B, closing date must be after opening date):
+- ONE test where field A equals field B exactly (same-day / same-value boundary) → assert this **succeeds** per spec
+- ONE test where field A is one unit before field B → assert **blocked with a visible error**
+
+**2. Input Edge Cases:**
+
+Pick only the ones that apply to field types present in this module's AST:
+
+- **Long text** (any `text/unspecified` or `textarea` field): enter a very long string (200+ characters) → assert it is either accepted or truncated/rejected with a visible indicator
+- **Special characters / emoji / unicode** (free-text fields): enter special chars → assert accepted or a specific error shown
+- **Leading/trailing whitespace** (text inputs): enter value with leading/trailing spaces → assert trimmed in saved output shown on the detail page, or an inline error shown
+- **Zero as numeric input** (number fields where zero is ambiguous): if the spec states a minimum > 0, assert `0` is blocked with a visible error; if the spec permits zero, assert the form submits successfully and the saved record displays `0`
+- **Decimal precision** (financial/numeric fields): enter a value with more decimal places than the field supports → assert rounding behavior is visible in the saved output, or an inline error is shown
+
+**3. Interaction Edge Cases:**
+
+Pick only the ones that match component types in this module's AST:
+
+- **Rapid re-submission after redirect** (any form that redirects to a detail page on success): after a successful submit, press the browser back button → assert the creation form is shown blank (not pre-filled) OR the user is redirected to the detail page without a second entity being created
+- **Wizard step skip — enforced navigation** (wizard where steps must be completed sequentially): attempt to click a later step tab directly without completing earlier steps → assert navigation is blocked and the earlier step remains active
+- **Wizard step skip — free navigation** (wizard that allows free tab navigation): navigate to a later step without filling earlier steps → assert the later step displays and returning to the earlier step shows fields blank (no data was lost from the later step)
+- **Repeating group: add then remove all** (any `repeating_group`): add entries → remove all entries → submit → assert behavior: if spec states no minimum, form submits successfully; if spec requires at least one entry, a visible error is shown
+
+**4. State / Data Edge Cases:**
+
+Pick only what applies to this module:
+
+- **Rapid consecutive state transitions** (`state_bound_action_bar`): complete one transition → immediately attempt the next → assert the action succeeds or the expected blocking message is shown per spec
+- **State boundary condition:** If the `<module_context>` block specifies an `assumed_state_on_entry` that is on the boundary of an entity's lifecycle (e.g. "Newly created", "Pending Review"), generate an edge case testing an action immediately following that state entry.
+- **Date edges** (`date` fields): test today's date, yesterday, and a far future date — assert which are accepted per spec and describe the visible outcome for each
+- **Leap year date** (`date` fields, free-text entry only): enter February 29 on a non-leap year → assert error; on a leap year → assert accepted. *Skip this test if the field uses a calendar date picker — pickers remove February 29 from non-leap years at the UI level and the test is not UI-executable.*
+- **File at exact size limit** (`file_upload`): upload a file exactly at the stated size limit → assert accepted with a visible success indicator; upload a file one unit over the limit → assert a visible error naming the size constraint
+
+**RELEVANCE RULE:** Only generate edge cases that match component types present in this module's AST. A login form does not need repeating-group edge cases. A data table does not need wizard-step-skip tests.
+
+**`visible_when` fields:** If the spec reveals a conditional field via a toggle/dropdown, test a boundary value in that revealed field. If the revealed field has no numeric or date constraint, generate one `input_edge` test using a long-text or special-character value instead.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (form with numeric/date constraints): **4–8 tests**
+- Complex module (state machine, wizard, repeating groups): **6–10 tests**
+
+If you exceed these, you are generating generic edges that don't apply to this module. Apply the relevance rule and scope gate again.
+
+---
+
+**MINIMUM OUTPUT RULE:**
+
+If the module has any numeric/date/count threshold in the AST or description, produce at least 2 boundary tests. Zero boundary tests when thresholds exist is a generation failure.
+
+---
+
+**PRIORITY:**
+
+- **High:** None — edge tests are secondary to core functionality
+- **Medium:** Boundary tests at thresholds (financial amounts, date ordering, count limits, file size limits)
+- **Low:** Input edge cases (long text, special chars, whitespace, decimal precision), interaction edge cases (browser back, wizard skip)
+
+---
+
+**WORKFLOW-AWARE BOUNDARY SCOPING (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow where `conditional_branch` activates a numeric or date field, check if that field has a boundary (a numeric/date threshold in the AST `constraints` or description).
+- If yes, that workflow's branch is a **candidate for a boundary edge test** — add or confirm a boundary TC exists for it.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a specific workflow's boundary. Set `"wf_ref": null` for generic input/interaction edge tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "wf_ref": null,
+      "subcategory": "boundary | input_edge | interaction_edge | state_edge | data_edge",
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "Precise visible outcome — state pass or fail explicitly for boundary tests",
+      "priority": "medium | low"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "boundary": 0,
+    "input_edge": 0,
+    "interaction_edge": 0,
+    "state_edge": 0,
+    "data_edge": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[21:12:33] Test-Edge - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 3,
+  "module_title": "Dashboard \u2014 Edit Mode",
+  "summary": "Provides an interface for customizing the Dashboard layout by adding, configuring, moving, and removing blocks, with an option to reset the page to the default layout.",
+  "where_it_fits": "Accessible from the top navigation via the Dashboard link, this mode is the Dashboard-specific editing state where block management controls (add block, move, configure, delete) and layout persistence are exposed; it complements the regular Dashboard viewing path and sits alongside other course/activity edit modes in the app's navigation structure.",
+  "assumed_state_on_entry": "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
+}
+</module_context>
+
+<module_name>Dashboard — Edit Mode</module_name>
+
+<ast>
+{
+  "module_name": "Dashboard \u2014 Edit Mode",
+  "components": {
+    "Dashboard_Edit_Mode": {
+      "type": "page",
+      "preconditions": [
+        "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
+      ],
+      "fields": {
+        "Reset_Page_To_Default": {
+          "type": "button",
+          "action_name": "Reset page to default",
+          "visible_when": "Edit_Mode == on",
+          "preconditions": [
+            "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
+          ],
+          "on_success": "reverts layout to default for the user"
+        },
+        "Add_A_Block_Button": {
+          "type": "button",
+          "action_name": "+ Add a block",
+          "visible_when": "Edit_Mode == on",
+          "preconditions": [
+            "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
+          ],
+          "opens": "Add_A_Block_Page"
+        },
+        "Blocks": {
+          "type": "repeating_group",
+          "visible_when": "Edit_Mode == on",
+          "item_fields": {
+            "Move_Icon": {
+              "type": "button",
+              "action_name": "Move"
+            },
+            "Options_Menu": {
+              "type": "menu",
+              "row_actions": [
+                {
+                  "action_name": "Configure"
+                },
+                {
+                  "action_name": "Move"
+                },
+                {
+                  "action_name": "Delete"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "Add_A_Block_Page": {
+      "type": "form",
+      "fields": {
+        "Block_Type": {
+          "type": "unspecified",
+          "options": [
+            "Comments",
+            "Course overview",
+            "Latest announcements",
+            "Latest badges",
+            "Learning plans",
+            "Logged in user",
+            "Mentees",
+            "Online users",
+            "Private files",
+            "Random glossary entry",
+            "Recently accessed courses",
+            "Starred courses",
+            "Tags",
+            "Text",
+            "Upcoming events"
+          ]
+        },
+        "Cancel_Link": {
+          "type": "link",
+          "action_name": "Cancel",
+          "on_success": "returns to the Dashboard without adding a block"
+        }
+      }
+    }
+  }
+}
+</ast>
+
+<description>
+
+When Edit mode is toggled on, a "Reset page to default" button appears at the top right and a "+ Add a block" button appears below the Dashboard heading. Clicking it opens an Add a block page listing all available block types: Comments, Course overview, Latest announcements, Latest badges, Learning plans, Logged in user, Mentees, Online users, Private files, Random glossary entry, Recently accessed courses, Starred courses, Tags, Text, and Upcoming events. A "Cancel" link at the bottom returns to the Dashboard without adding a block. In Edit mode, each existing block shows a move icon and a three-dot options menu for configure, move, and delete actions. Layout changes are persisted per user and can be fully reverted with "Reset page to default."
+
+---
+
+
+</description>
+
+<workflows>
+WF-001 | Reset page to default (while in Edit mode) | actor: <role> | branch: Edit_Mode == on | terminal: Reset page to default | on_success: reverts layout to default for the user
+WF-002 | Open Add a block page (while in Edit mode) | actor: <role> | branch: Edit_Mode == on | terminal: + Add a block | on_success: opens Add_A_Block_Page
+WF-003 | Cancel from Add a block page | actor: <role> | branch: none | terminal: Cancel | on_success: returns to the Dashboard without adding a block
+WF-004 | Move a block using the move icon (row-level) | actor: <role> | branch: Edit_Mode == on AND Blocks.Move_Icon | terminal: Move | on_success: initiates block repositioning; layout changes persisted for the user
+WF-005 | Configure a block via options menu (row-level) | actor: <role> | branch: Edit_Mode == on AND Blocks.Options_Menu.Configure | terminal: Configure | on_success: opens configuration controls for the selected block
+WF-006 | Move a block via options menu (row-level) | actor: <role> | branch: Edit_Mode == on AND Blocks.Options_Menu.Move | terminal: Move | on_success: initiates block repositioning; layout changes persisted for the user
+WF-007 | Delete a block via options menu (row-level) | actor: <role> | branch: Edit_Mode == on AND Blocks.Options_Menu.Delete | terminal: Delete | on_success: removes the block from the dashboard; layout changes persisted for the user
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:12:55] Test-Edge - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Dashboard — Edit Mode",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "wf_ref": "WF-004",
+      "subcategory": "state_edge",
+      "test_case": "Toggle Edit mode off while a block move is in progress (move cancelled)",
+      "preconditions": [
+        "User is authenticated and viewing the Dashboard page, with Edit mode toggled on",
+        "At least one block is present on the Dashboard"
+      ],
+      "steps": [
+        "1. Click the block's Move icon to initiate repositioning",
+        "2. While repositioning UI is active, click the Edit mode toggle to switch Edit mode off"
+      ],
+      "expected_result": "The in-progress repositioning is cancelled and no layout change is persisted; the Dashboard returns to view mode and the Move controls (Move icon and options menu) are no longer visible — action is blocked (the attempted move does not succeed).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-002",
+      "wf_ref": "WF-004",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid consecutive Move attempts on the same block (second attempt ignored)",
+      "preconditions": [
+        "User is authenticated and viewing the Dashboard page, with Edit mode toggled on",
+        "At least two blocks are present so repositioning target exists"
+      ],
+      "steps": [
+        "1. Click a block's Move icon to begin repositioning",
+        "2. Immediately (within a fraction of a second) click the Move icon again on the target position or re-click the original block's Move icon a second time"
+      ],
+      "expected_result": "Only the first repositioning action is applied and persisted; the second rapid Move attempt is blocked and the UI shows no additional repositioning (no duplicate or conflicting moves are applied) — second attempt is blocked / error shown (or second click is ignored with a visible disabled state).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-003",
+      "wf_ref": "WF-002",
+      "subcategory": "interaction_edge",
+      "test_case": "Use browser Back immediately after opening Add a block page (no block added)",
+      "preconditions": [
+        "User is authenticated and viewing the Dashboard page, with Edit mode toggled on"
+      ],
+      "steps": [
+        "1. Click the '+ Add a block' button",
+        "2. Immediately press the browser Back button (before selecting any block type or interacting with the Add a block page)"
+      ],
+      "expected_result": "The UI returns to the Dashboard and no new block is added; the Dashboard shows the same blocks it showed before opening the Add a block page — the add action does not succeed (no partial addition persisted).",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-004",
+      "wf_ref": "WF-007",
+      "subcategory": "data_edge",
+      "test_case": "Delete all blocks then click 'Reset page to default' (empty state persisted, then default restored)",
+      "preconditions": [
+        "User is authenticated and viewing the Dashboard page, with Edit mode toggled on",
+        "At least one block is present on the Dashboard"
+      ],
+      "steps": [
+        "1. For each block visible in Edit mode, open its Options menu",
+        "2. Click Delete in the Options menu for a block",
+        "3. Repeat steps 1–2 until no blocks remain on the Dashboard",
+        "4. Leave Edit mode (toggle Edit mode off) and observe the Dashboard",
+        "5. Re-enter Edit mode (toggle Edit mode on)",
+        "6. Click the 'Reset page to default' button"
+      ],
+      "expected_result": "After step 3, the Dashboard shows no blocks and that empty layout persists when Edit mode is left and re-entered (deletion succeeds). After step 6, the Dashboard is reverted to the default layout and the default blocks reappear for the user — Reset page to default succeeds.",
+      "priority": "medium"
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "boundary": 0,
+    "input_edge": 0,
+    "interaction_edge": 2,
+    "state_edge": 1,
+    "data_edge": 1,
+    "medium_priority": 3,
+    "low_priority": 1
+  }
+}
+
+------------------------------------------------------------
+[21:12:55] Test-Edge - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Dashboard \u2014 Edit Mode",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "wf_ref": "WF-004",
+      "subcategory": "state_edge",
+      "test_case": "Toggle Edit mode off while a block move is in progress (move cancelled)",
+      "preconditions": [
+        "User is authenticated and viewing the Dashboard page, with Edit mode toggled on",
+        "At least one block is present on the Dashboard"
+      ],
+      "steps": [
+        "1. Click the block's Move icon to initiate repositioning",
+        "2. While repositioning UI is active, click the Edit mode toggle to switch Edit mode off"
+      ],
+      "expected_result": "The in-progress repositioning is cancelled and no layout change is persisted; the Dashboard returns to view mode and the Move controls (Move icon and options menu) are no longer visible \u2014 action is blocked (the attempted move does not succeed).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-002",
+      "wf_ref": "WF-004",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid consecutive Move attempts on the same block (second attempt ignored)",
+      "preconditions": [
+        "User is authenticated and viewing the Dashboard page, with Edit mode toggled on",
+        "At least two blocks are present so repositioning target exists"
+      ],
+      "steps": [
+        "1. Click a block's Move icon to begin repositioning",
+        "2. Immediately (within a fraction of a second) click the Move icon again on the target position or re-click the original block's Move icon a second time"
+      ],
+      "expected_result": "Only the first repositioning action is applied and persisted; the second rapid Move attempt is blocked and the UI shows no additional repositioning (no duplicate or conflicting moves are applied) \u2014 second attempt is blocked / error shown (or second click is ignored with a visible disabled state).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-003",
+      "wf_ref": "WF-002",
+      "subcategory": "interaction_edge",
+      "test_case": "Use browser Back immediately after opening Add a block page (no block added)",
+      "preconditions": [
+        "User is authenticated and viewing the Dashboard page, with Edit mode toggled on"
+      ],
+      "steps": [
+        "1. Click the '+ Add a block' button",
+        "2. Immediately press the browser Back button (before selecting any block type or interacting with the Add a block page)"
+      ],
+      "expected_result": "The UI returns to the Dashboard and no new block is added; the Dashboard shows the same blocks it showed before opening the Add a block page \u2014 the add action does not succeed (no partial addition persisted).",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-004",
+      "wf_ref": "WF-007",
+      "subcategory": "data_edge",
+      "test_case": "Delete all blocks then click 'Reset page to default' (empty state persisted, then default restored)",
+      "preconditions": [
+        "User is authenticated and viewing the Dashboard page, with Edit mode toggled on",
+        "At least one block is present on the Dashboard"
+      ],
+      "steps": [
+        "1. For each block visible in Edit mode, open its Options menu",
+        "2. Click Delete in the Options menu for a block",
+        "3. Repeat steps 1\u20132 until no blocks remain on the Dashboard",
+        "4. Leave Edit mode (toggle Edit mode off) and observe the Dashboard",
+        "5. Re-enter Edit mode (toggle Edit mode on)",
+        "6. Click the 'Reset page to default' button"
+      ],
+      "expected_result": "After step 3, the Dashboard shows no blocks and that empty layout persists when Edit mode is left and re-entered (deletion succeeds). After step 6, the Dashboard is reverted to the default layout and the default blocks reappear for the user \u2014 Reset page to default succeeds.",
+      "priority": "medium"
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "boundary": 0,
+    "input_edge": 0,
+    "interaction_edge": 2,
+    "state_edge": 1,
+    "data_edge": 1,
+    "medium_priority": 3,
+    "low_priority": 1
+  }
+}

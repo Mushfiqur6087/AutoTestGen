@@ -1,0 +1,692 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T21:12:33.140169
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[21:12:33] Test-Negative - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Negative Testing:**
+
+The AST represents every interactive element in the module. Each node type has a corresponding failure category:
+
+| AST node / field | What to test for failure |
+|---|---|
+| `required: true` field | Leave it blank and submit — inline validation error |
+| `constraints: []` on a field or action | One TC per unique constraint: violate it specifically |
+| `preconditions: []` on an action | One TC attempting the action when the precondition is NOT met |
+| `visible_when` / `required_when` conditional field | Trigger the condition, then submit the revealed field blank or invalid |
+| `state_bound_action_bar` states | Attempt an action from the wrong state (e.g., Approve an already-Active entity) |
+| `on_success` with quoted text | The negative expected_result is the *blocking* behavior — the entity stays unchanged |
+| `submit_actions[]` | If any button has `preconditions`, test that button when precondition fails |
+
+> If a module has no `form`, no `wizard`, no `state_bound_action_bar`, and no `constraints` — it is display-only. Generate at most 1–2 tests (unauthenticated access, or a non-implemented link if described). Do not invent validation scenarios.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — Name the field, the violated rule, and the visible error indicator.**
+Never write a vague expected result. Always specify what the tester sees.
+
+- ❌ `"Validation error shown"` — too vague
+- ❌ `"Error is displayed"` — too vague
+- ✅ `"Inline validation error appears on the <Field Name> field indicating it is required"`
+- ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
+- ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
+
+**Rule B — Quote exact error text when the spec provides it.**
+If the description quotes a specific error string, copy it verbatim into the expected_result.
+- ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
+- ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+
+**Rule C — Assert the blocking behavior, not just the error.**
+The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
+- ❌ `"Error shown"` (doesn't confirm the action was blocked)
+- ✅ `"Form does not submit; <Entity> is not created; error shown on <Field>"`
+- ✅ `"Status remains <Current State>; no transition occurs"`
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Use generic placeholders in angle brackets.
+
+- ✅ `"Enter <invalid email format> in the Email field"`
+- ✅ `"Enter <amount exceeding available balance> in the Amount field"`
+- ✅ `"Enter <password shorter than minimum length> in the Password field"`
+- ❌ `"Enter 'notanemail' in the Email field"`
+- ❌ `"Enter 'abc123' in the Password field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic user action — one field, one click, one navigation. No grouping.
+
+- ✅ `"1. Leave the <Required Field> blank"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill all fields except <Required Field> and submit"`
+
+---
+
+**SCOPE GATE (run before writing any test):**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact sentence in the description or field/constraint/state in the AST justifies this test? If you cannot point to one → delete it.
+2. **UI-executable:** Can a tester trigger this by clicking, typing, selecting, or navigating in a browser? If verification requires dev tools, DOM inspection, concurrent users, API calls, or server-side error simulation → out of scope.
+3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
+
+Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Required field representatives (deduplicated by field type):**
+
+Group required fields by type: `text/unspecified`, `email`, `password`, `number`, `date`, `dropdown`, `file_upload`. Generate:
+- ONE "leave blank and submit" test per **type group** (not per field) — use the most prominent field as representative
+- ONE "submit with ALL required fields empty" test
+
+Do NOT generate a separate blank-field test for every required field. If 5 text fields are all required, one representative covers them all.
+
+**Action dialog required fields — NOT subject to cross-form deduplication:**
+If a `state_bound_action_bar` action opens a dialog with its own required `fields{}` (e.g., Activate requires Activation Date, Reject requires a Reason, Withdraw requires a Reason, Close requires a Closure Reason), each such dialog is its own testing scope. Generate ONE "leave the required dialog field blank and submit" test per distinct action dialog. These are HIGH priority — they block state transitions and are common defect sites. Do not suppress them because the main wizard already has a blank-field test.
+
+**2. Format violations:**
+
+For fields with type-specific format rules (from AST type or description):
+- `email` → one test with invalid format
+- `number` → one test with non-numeric input
+- `date` → one test with invalid/impossible date
+- `password` → ONE representative test for policy violation (not one per sub-rule — see Deduplication)
+
+Only generate if the spec or AST implies format validation for that field.
+
+**3. Numeric bounds and balance violations:**
+
+If the spec describes minimum/maximum values, amount ranges, or balance checks:
+- One test per distinct bound violation (e.g., amount below minimum, amount above maximum, amount exceeding available balance)
+- Use `<amount below minimum>`, `<amount exceeding available balance>` as placeholders
+
+Examples across the dataset:
+- Transfer amount > available balance → error
+- Loan amount outside product min/max → error
+- Deposit below minimum requirement → error
+
+**4. Constraint violations:**
+
+For each unique `constraints[]` entry in the AST, and for cross-field rules described in the spec:
+- `"must be unique"` → submit with a duplicate value
+- `"must match"` (confirm fields) → enter mismatched values
+- `"must not be same as current"` → select the current value
+- `"cannot perform <action> while <condition>"` → attempt the action when the condition is true
+- `"<date> must be after <other date>"` → enter reversed dates
+
+One test per unique constraint. Do not duplicate the same mechanism.
+
+**Constraint timing tests:** If the spec states an action is blocked by a pre-existing system state (e.g., "cannot close with active accounts", "cannot transfer to the same office"), generate TWO tests:
+1. The standard constraint violation test (user opens the dialog, fills required fields, submits → blocked).
+2. A constraint-timing test: user opens the dialog WITHOUT filling required fields → assert whether the block is shown immediately on dialog open (before the user fills anything) OR only on submit. This distinguishes whether the UI enforces the constraint eagerly or lazily. Steps: open the dialog, observe the state → assert what is visible before any interaction. If the spec is silent on timing, generate only the first test.
+
+**5. Precondition violations (auth, role, and state):**
+
+For each `preconditions[]` entry on any action — and for auth/role/state rules described in the spec or the `<module_context>` block:
+
+- **Global Context constraints:** If the `<module_context>` block's `assumed_state_on_entry` explicitly lists required states (e.g., "Requires an active Client profile"), generate one test attempting the module's core action when that precondition fails (e.g., Client profile is missing or inactive).
+- **Unauthenticated access:** If any page or action requires login, generate one test: an unauthenticated user attempts to access it and is redirected to the login page.
+- **Wrong role:** If the spec explicitly states a feature is restricted to a specific role (e.g., Teacher only, Admin only), generate one test: a user of the wrong role attempts the action and is blocked or the control is not visible.
+- **Precondition not met:** For each AST `preconditions[]` entry, attempt the action when that precondition is not satisfied.
+
+**6. State-machine violations:**
+
+From `state_bound_action_bar` nodes:
+- **Every defined state must have at least one wrong-state test.** For each state, identify at least one action that is NOT in its `available_actions` list and generate a test attempting that action from that state.
+- If a state has an empty `available_actions` array, generate one test verifying no action buttons are visible in that state.
+- **Do not stop after 1–2 representative examples** when the module defines 4+ distinct states. The states Active, Pending, Closed, Rejected, and Withdrawn each have different action sets — each must be independently verified.
+- One test per state is sufficient — pick the most distinct unavailable action for that state. Do not enumerate every action × every state (that would be exponential).
+
+---
+
+**DEDUPLICATION GATE (run before outputting):**
+
+1. **Required field dedup:** Multiple required text fields in the **same form or dialog** → ONE representative test, not one per field.
+2. **Sub-rule dedup:** A field with multiple validation sub-rules (e.g., password: length + uppercase + lowercase + number + special char) → ONE representative violation test, not one per sub-rule.
+3. **Cross-form dedup:** If two **main forms** in the same module share the same validation mechanism → test it on the primary form only. **Exception: action dialogs are never suppressed by cross-form dedup** — each action dialog with a required field gets its own blank-field test regardless.
+4. **Uniqueness check:** Before outputting, ask for each TC: "Does this test catch a bug that NO other test in this module would catch?" If no → remove it.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (standard CRUD form, form with constraints): **4–8 tests**
+- Complex module (state machine, multi-form, wizard with many constraints): **10–16 tests**
+
+For modules with a `state_bound_action_bar` defining 4+ states, the state-machine violation tests alone will produce 4–5 tests. This is expected and correct — do not suppress them to hit a lower target.
+
+If you exceed the upper range, apply the deduplication gate again before outputting.
+
+---
+
+**PRIORITY:**
+
+- **High:** State precondition violations, constraint violations that could corrupt data, unauthenticated access, required field representatives
+- **Medium:** Format violations, cross-field validation, numeric bounds, wrong-role access, wrong-state action attempts
+
+---
+
+**WORKFLOW-AWARE FAILURE INJECTION (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow that contains a form interaction (terminal action is a submit/save/create/approve button):
+  - Identify the most **critical blocking failure** for that workflow's `conditional_branch`.
+  - If that failure mode is NOT already covered by another workflow's negative test, generate one negative TC for it.
+- **Do NOT generate one negative TC per workflow mechanically.** Apply the existing deduplication gate first — only add a TC if it catches a bug that no other test would catch.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a workflow. Set `"wf_ref": null` for generic validation tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "What error/block should occur, naming the field and indicator",
+      "priority": "high | medium"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "high_priority": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[21:12:33] Test-Negative - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 6,
+  "module_title": "Course Edit Mode and Activity Chooser",
+  "summary": "Enables an authoring interface on a Course page with inline controls for editing, managing sections and activities, bulk actions, and an Activity Chooser modal for adding activities and resources.",
+  "where_it_fits": "This module is activated on a Course Page (reached via My Courses or Dashboard \u2192 select course) and switches the course view into edit mode for content creation and organization; it is primarily used by teachers during course setup and ongoing content edits (the Settings tab is visible to teachers).",
+  "assumed_state_on_entry": "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+}
+</module_context>
+
+<module_name>Course Edit Mode and Activity Chooser</module_name>
+
+<ast>
+{
+  "module_name": "Course Edit Mode and Activity Chooser",
+  "components": {
+    "Course_Edit_Mode": {
+      "type": "container",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+      ],
+      "fields": {
+        "Sections": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Quick_Rename": {
+              "type": "unspecified"
+            },
+            "Section_Menu": {
+              "type": "menu",
+              "row_actions": [
+                {
+                  "action_name": "edit"
+                },
+                {
+                  "action_name": "duplicate"
+                },
+                {
+                  "action_name": "hide"
+                },
+                {
+                  "action_name": "delete"
+                },
+                {
+                  "action_name": "move"
+                }
+              ]
+            },
+            "Activities": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Select_For_Bulk": {
+                  "type": "checkbox"
+                },
+                "Quick_Rename": {
+                  "type": "unspecified"
+                },
+                "Activity_Menu": {
+                  "type": "menu",
+                  "row_actions": [
+                    {
+                      "action_name": "edit settings"
+                    },
+                    {
+                      "action_name": "move"
+                    },
+                    {
+                      "action_name": "duplicate"
+                    },
+                    {
+                      "action_name": "hide"
+                    },
+                    {
+                      "action_name": "set access restrictions"
+                    },
+                    {
+                      "action_name": "delete"
+                    }
+                  ]
+                }
+              }
+            },
+            "Add_Activity_Button": {
+              "type": "button",
+              "action_name": "+ Add an activity or resource",
+              "on_success": "opens Activity_Chooser_Modal"
+            },
+            "Add_Subsection": {
+              "type": "button",
+              "action_name": "+ Add a subsection"
+            }
+          }
+        },
+        "Bulk_Actions_Toolbar": {
+          "type": "bulk_action_bar",
+          "visible_when": "one or more Select_For_Bulk == true",
+          "bulk_actions": [
+            {
+              "action_name": "Delete Selected"
+            },
+            {
+              "action_name": "Move Selected"
+            },
+            {
+              "action_name": "Duplicate Selected"
+            },
+            {
+              "action_name": "Hide Selected"
+            },
+            {
+              "action_name": "Set access restrictions"
+            }
+          ]
+        }
+      }
+    },
+    "Activity_Chooser_Modal": {
+      "type": "modal",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+      ],
+      "fields": {
+        "Category_Filter": {
+          "type": "dropdown",
+          "options": [
+            "All",
+            "Activities",
+            "Resources",
+            "Recommended"
+          ]
+        },
+        "Search": {
+          "type": "search"
+        },
+        "Activity_Tiles": {
+          "type": "repeating_group",
+          "options": [
+            "Assignment",
+            "Forum",
+            "Quiz",
+            "File",
+            "Page",
+            "Lesson",
+            "SCORM",
+            "URL",
+            "Workshop"
+          ],
+          "item_fields": {
+            "Favorite": {
+              "type": "checkbox"
+            },
+            "Select": {
+              "type": "radio"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Add",
+          "on_success": "opens selected activity creation form",
+          "preconditions": [
+            "Logged in as a user with editing/teacher permissions and currently viewing an existing Course Page."
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+Enabling Edit mode turns the Course page into an authoring interface. Each section and activity row gains inline controls: an edit icon for quick renaming, a section-level three-dot menu (edit, duplicate, hide, delete, move), an activity-level three-dot menu (edit settings, move, duplicate, hide, set access restrictions, delete), and a bulk actions toolbar for batch operations on multiple selected activities. An "+ Add an activity or resource" button appears at the bottom of each section, and an "+ Add a subsection" control allows nesting content hierarchically. Clicking "+ Add an activity or resource" opens the Activity Chooser modal, which contains a category filter bar (All, Activities, Resources, Recommended), a search field, and a grid of activity/resource tiles including Assignment, Forum, Quiz, File, Page, Lesson, SCORM, URL, and Workshop. Each tile has a star/favorite toggle for quick access. Selecting a tile and clicking "Add" opens that activity's creation form.
+
+---
+
+
+</description>
+
+<workflows>
+WF-001 | Section inline quick rename | actor: Teacher | branch: none | terminal: Quick_Rename | on_success: Section renamed inline.
+WF-002 | Section menu - edit | actor: Teacher | branch: none | terminal: edit | on_success: section edit selected (edit action invoked for section)
+WF-003 | Section menu - duplicate | actor: Teacher | branch: none | terminal: duplicate | on_success: section duplicated
+WF-004 | Section menu - hide | actor: Teacher | branch: none | terminal: hide | on_success: section hidden
+WF-005 | Section menu - delete | actor: Teacher | branch: none | terminal: delete | on_success: section deleted
+WF-006 | Section menu - move | actor: Teacher | branch: none | terminal: move | on_success: section move initiated
+WF-007 | Add an activity or resource (open chooser) | actor: Teacher | branch: none | terminal: + Add an activity or resource | on_success: opens Activity_Chooser_Modal
+WF-008 | Add a subsection | actor: Teacher | branch: none | terminal: + Add a subsection | on_success: subsection added
+WF-009 | Activity inline quick rename | actor: Teacher | branch: none | terminal: Quick_Rename | on_success: Activity renamed inline.
+WF-010 | Activity menu - edit settings | actor: Teacher | branch: none | terminal: edit settings | on_success: activity settings edit selected (opens activity settings)
+WF-011 | Activity menu - move | actor: Teacher | branch: none | terminal: move | on_success: activity move initiated
+WF-012 | Activity menu - duplicate | actor: Teacher | branch: none | terminal: duplicate | on_success: activity duplicated
+WF-013 | Activity menu - hide | actor: Teacher | branch: none | terminal: hide | on_success: activity hidden
+WF-014 | Activity menu - set access restrictions | actor: Teacher | branch: none | terminal: set access restrictions | on_success: activity access restrictions selected (opens access restrictions dialog)
+WF-015 | Activity menu - delete | actor: Teacher | branch: none | terminal: delete | on_success: activity deleted
+WF-016 | Bulk action - Delete Selected | actor: Teacher | branch: one or more Select_For_Bulk == true | terminal: Delete Selected | on_success: selected activities deleted
+WF-017 | Bulk action - Move Selected | actor: Teacher | branch: one or more Select_For_Bulk == true | terminal: Move Selected | on_success: move selected activities initiated
+WF-018 | Bulk action - Duplicate Selected | actor: Teacher | branch: one or more Select_For_Bulk == true | terminal: Duplicate Selected | on_success: selected activities duplicated
+WF-019 | Bulk action - Hide Selected | actor: Teacher | branch: one or more Select_For_Bulk == true | terminal: Hide Selected | on_success: selected activities hidden
+WF-020 | Bulk action - Set access restrictions | actor: Teacher | branch: one or more Select_For_Bulk == true | terminal: Set access restrictions | on_success: access restrictions set for selected activities
+WF-021 | Activity tile favorite toggle | actor: Teacher | branch: none | terminal: Favorite | on_success: activity tile favorite state toggled
+WF-022 | Activity Chooser Add - Assignment selected | actor: Teacher | branch: Activity_Tiles.Select == Assignment | terminal: Add | on_success: opens selected activity creation form
+WF-023 | Activity Chooser Add - Forum selected | actor: Teacher | branch: Activity_Tiles.Select == Forum | terminal: Add | on_success: opens selected activity creation form
+WF-024 | Activity Chooser Add - Quiz selected | actor: Teacher | branch: Activity_Tiles.Select == Quiz | terminal: Add | on_success: opens selected activity creation form
+WF-025 | Activity Chooser Add - File selected | actor: Teacher | branch: Activity_Tiles.Select == File | terminal: Add | on_success: opens selected activity creation form
+WF-026 | Activity Chooser Add - Page selected | actor: Teacher | branch: Activity_Tiles.Select == Page | terminal: Add | on_success: opens selected activity creation form
+WF-027 | Activity Chooser Add - Lesson selected | actor: Teacher | branch: Activity_Tiles.Select == Lesson | terminal: Add | on_success: opens selected activity creation form
+WF-028 | Activity Chooser Add - SCORM selected | actor: Teacher | branch: Activity_Tiles.Select == SCORM | terminal: Add | on_success: opens selected activity creation form
+WF-029 | Activity Chooser Add - URL selected | actor: Teacher | branch: Activity_Tiles.Select == URL | terminal: Add | on_success: opens selected activity creation form
+WF-030 | Activity Chooser Add - Workshop selected | actor: Teacher | branch: Activity_Tiles.Select == Workshop | terminal: Add | on_success: opens selected activity creation form
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[21:13:55] Test-Negative - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Course Edit Mode and Activity Chooser",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user cannot enable Edit mode or see edit controls",
+      "preconditions": [
+        "User is not logged in (anonymous)"
+      ],
+      "steps": [
+        "1. Navigate to the Course Page URL for an existing course",
+        "2. Attempt to enable Edit mode / locate edit controls (e.g., 'Turn editing on' or '+ Add an activity or resource' button)"
+      ],
+      "expected_result": "User is redirected to the login page or shown an authentication required screen; edit-mode controls (section menus, activity menus, '+ Add an activity or resource' buttons, bulk action checkboxes) are not visible on the page",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": null,
+      "test_case": "User with non-editor role (Student) cannot access edit controls",
+      "preconditions": [
+        "Logged in as a Student (role without editing/teacher permissions)",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. While logged in as Student, navigate to the Course Page",
+        "2. Inspect the page for edit-mode controls (section inline rename, section three-dot menus, activity three-dot menus, '+ Add an activity or resource' buttons, bulk-select checkboxes)"
+      ],
+      "expected_result": "Edit-mode controls are not visible: section three-dot menus, activity menus, '+ Add an activity or resource' buttons and bulk-select checkboxes are absent; any attempt to open the Activity Chooser via the UI is not possible (no button to open it)",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-022",
+      "test_case": "Activity Chooser: clicking Add with no tile selected is blocked",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions",
+        "Viewing an existing Course Page",
+        "Course page is in Edit mode",
+        "Activity Chooser modal is open"
+      ],
+      "steps": [
+        "1. Open a Course Page in Edit mode as a teacher",
+        "2. Click '+ Add an activity or resource' on any section to open the Activity Chooser modal",
+        "3. Do not select any activity/resource tile (no radio selected)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "Modal does not proceed to an activity creation form; an inline validation error appears on the activity selection area stating a selection is required (e.g. \"Please select an activity to add\"); the Activity Chooser modal remains open and no activity creation form opens",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-022",
+      "test_case": "Activity Chooser: filtered view with no visible tiles blocks Add",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions",
+        "Viewing an existing Course Page",
+        "Course page is in Edit mode",
+        "Activity Chooser modal is open"
+      ],
+      "steps": [
+        "1. Open the Activity Chooser modal from a Course Page in Edit mode",
+        "2. Set the Category Filter to a value that results in no visible activity tiles (e.g., choose a category that returns no results)",
+        "3. Verify no activity tiles are visible",
+        "4. Click the 'Add' button"
+      ],
+      "expected_result": "Add action is blocked; Activity Chooser modal remains open; a visible inline message appears near the tiles or Add button indicating no activity is selected / no activities available in this filter (e.g. \"No activities available / select an activity to add\"); no activity creation form opens",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-016",
+      "test_case": "Bulk action cannot be performed when no activities are selected (toolbar hidden)",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions",
+        "Viewing an existing Course Page",
+        "Course page is in Edit mode",
+        "No Activity Select_For_Bulk checkboxes are checked"
+      ],
+      "steps": [
+        "1. Ensure Edit mode is enabled on the Course Page",
+        "2. Verify that no activity checkboxes are selected",
+        "3. Inspect the interface for the Bulk Actions toolbar and any bulk-action buttons (e.g., 'Delete Selected')"
+      ],
+      "expected_result": "Bulk Actions toolbar is not visible (per visible_when rule); bulk action buttons such as 'Delete Selected', 'Move Selected' are not present or accessible; it is not possible to perform a bulk action because no bulk action controls are shown",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": "WF-007",
+      "test_case": "Activity Chooser cannot be opened outside a Course Page context",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions",
+        "Viewing a non-Course page (e.g., Dashboard or Site Home)"
+      ],
+      "steps": [
+        "1. While on Dashboard (not viewing a Course Page), attempt to locate or use any UI affordance to open the Activity Chooser (attempt to find '+ Add an activity or resource' in the page)",
+        "2. If there is a direct link/URL for Activity Chooser, attempt to navigate to that URL from the non-course page"
+      ],
+      "expected_result": "Activity Chooser modal does not open from outside a Course Page; no '+ Add an activity or resource' control is present on non-course pages; navigating directly to the Activity Chooser URL is blocked or redirects to the Course listing or shows an access/context error banner indicating activities can only be added while viewing a Course Page",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 6,
+    "high_priority": 5,
+    "medium_priority": 1,
+    "low_priority": 0
+  }
+}
+
+------------------------------------------------------------
+[21:13:55] Test-Negative - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Course Edit Mode and Activity Chooser",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user cannot enable Edit mode or see edit controls",
+      "preconditions": [
+        "User is not logged in (anonymous)"
+      ],
+      "steps": [
+        "1. Navigate to the Course Page URL for an existing course",
+        "2. Attempt to enable Edit mode / locate edit controls (e.g., 'Turn editing on' or '+ Add an activity or resource' button)"
+      ],
+      "expected_result": "User is redirected to the login page or shown an authentication required screen; edit-mode controls (section menus, activity menus, '+ Add an activity or resource' buttons, bulk action checkboxes) are not visible on the page",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": null,
+      "test_case": "User with non-editor role (Student) cannot access edit controls",
+      "preconditions": [
+        "Logged in as a Student (role without editing/teacher permissions)",
+        "Viewing an existing Course Page"
+      ],
+      "steps": [
+        "1. While logged in as Student, navigate to the Course Page",
+        "2. Inspect the page for edit-mode controls (section inline rename, section three-dot menus, activity three-dot menus, '+ Add an activity or resource' buttons, bulk-select checkboxes)"
+      ],
+      "expected_result": "Edit-mode controls are not visible: section three-dot menus, activity menus, '+ Add an activity or resource' buttons and bulk-select checkboxes are absent; any attempt to open the Activity Chooser via the UI is not possible (no button to open it)",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-022",
+      "test_case": "Activity Chooser: clicking Add with no tile selected is blocked",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions",
+        "Viewing an existing Course Page",
+        "Course page is in Edit mode",
+        "Activity Chooser modal is open"
+      ],
+      "steps": [
+        "1. Open a Course Page in Edit mode as a teacher",
+        "2. Click '+ Add an activity or resource' on any section to open the Activity Chooser modal",
+        "3. Do not select any activity/resource tile (no radio selected)",
+        "4. Click the 'Add' button in the Activity Chooser modal"
+      ],
+      "expected_result": "Modal does not proceed to an activity creation form; an inline validation error appears on the activity selection area stating a selection is required (e.g. \"Please select an activity to add\"); the Activity Chooser modal remains open and no activity creation form opens",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-022",
+      "test_case": "Activity Chooser: filtered view with no visible tiles blocks Add",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions",
+        "Viewing an existing Course Page",
+        "Course page is in Edit mode",
+        "Activity Chooser modal is open"
+      ],
+      "steps": [
+        "1. Open the Activity Chooser modal from a Course Page in Edit mode",
+        "2. Set the Category Filter to a value that results in no visible activity tiles (e.g., choose a category that returns no results)",
+        "3. Verify no activity tiles are visible",
+        "4. Click the 'Add' button"
+      ],
+      "expected_result": "Add action is blocked; Activity Chooser modal remains open; a visible inline message appears near the tiles or Add button indicating no activity is selected / no activities available in this filter (e.g. \"No activities available / select an activity to add\"); no activity creation form opens",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-016",
+      "test_case": "Bulk action cannot be performed when no activities are selected (toolbar hidden)",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions",
+        "Viewing an existing Course Page",
+        "Course page is in Edit mode",
+        "No Activity Select_For_Bulk checkboxes are checked"
+      ],
+      "steps": [
+        "1. Ensure Edit mode is enabled on the Course Page",
+        "2. Verify that no activity checkboxes are selected",
+        "3. Inspect the interface for the Bulk Actions toolbar and any bulk-action buttons (e.g., 'Delete Selected')"
+      ],
+      "expected_result": "Bulk Actions toolbar is not visible (per visible_when rule); bulk action buttons such as 'Delete Selected', 'Move Selected' are not present or accessible; it is not possible to perform a bulk action because no bulk action controls are shown",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": "WF-007",
+      "test_case": "Activity Chooser cannot be opened outside a Course Page context",
+      "preconditions": [
+        "Logged in as a user with editing/teacher permissions",
+        "Viewing a non-Course page (e.g., Dashboard or Site Home)"
+      ],
+      "steps": [
+        "1. While on Dashboard (not viewing a Course Page), attempt to locate or use any UI affordance to open the Activity Chooser (attempt to find '+ Add an activity or resource' in the page)",
+        "2. If there is a direct link/URL for Activity Chooser, attempt to navigate to that URL from the non-course page"
+      ],
+      "expected_result": "Activity Chooser modal does not open from outside a Course Page; no '+ Add an activity or resource' control is present on non-course pages; navigating directly to the Activity Chooser URL is blocked or redirects to the Course listing or shows an access/context error banner indicating activities can only be added while viewing a Course Page",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 6,
+    "high_priority": 5,
+    "medium_priority": 1,
+    "low_priority": 0
+  }
+}
