@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:20:32.126983
+DEBUG SESSION STARTED: 2026-07-04T22:30:08.841106
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:20:32] Workflow-Extractor - SYSTEM PROMPT
+[22:30:08] Workflow-Extractor - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Workflow Extractor. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to enumerate every distinct, executable interaction path through this module — one entry per workflow.
 
@@ -54,12 +54,12 @@ Two workflows are **distinct** if they require different user actions to reach t
 
 ## What Paths to Enumerate
 
-Enumerate **all** distinct paths — not one-per-type. The rule: if two paths require the user to do something different to reach the terminal action, they are separate workflows.
+Enumerate **distinct-outcome** paths — not one-per-type, and **not** the cartesian product of every toggle. The rule: two paths are separate workflows only if the user does something different that leads to a **different terminal outcome** (different `on_success`) **or** exercises a **different revealed required-field group** that needs its own coverage.
 
 | AST node type | What to enumerate |
 |---|---|
 | `form` with no conditionals | One workflow per `submit_actions[]` entry |
-| `form` with `visible_when` fields | One workflow per unique combination of conditional branches activated, times each `submit_actions[]` entry |
+| `form` with `visible_when` / toggle fields | One base workflow per `submit_actions[]` entry, PLUS one workflow for **each conditional branch that reveals a distinct required-field group** (e.g. enabling File submissions reveals max-files/size/types). Do **NOT** multiply independent toggles together. |
 | `wizard` | One workflow per distinct step sequence (if all steps are linear, one workflow per `submit_actions[]`; if any step is conditional, enumerate each branch) |
 | `state_bound_action_bar` | One workflow per `available_actions[]` entry per state (state × action = one workflow) |
 | `data_table` | One workflow per `row_actions[]` entry + one per `bulk_actions[]` entry (include View, Edit, Delete, and all others) |
@@ -67,6 +67,20 @@ Enumerate **all** distinct paths — not one-per-type. The rule: if two paths re
 | `repeating_group` | Not a standalone workflow source — it is part of a form workflow that activates it |
 
 **Include all data table row actions** — View, Edit, Delete, and any others. Even read-only row actions (e.g., "View") must be included because they still require a positive test case.
+
+### DO NOT enumerate the cartesian product of toggles (CRITICAL)
+
+A form with independent toggles A, B, C and submit buttons {Save, Save+display, Cancel} must **not** produce 2×2×2×3 = 24 workflows. Independent toggles that do **not** change the terminal outcome are covered **once each**, not in combination:
+- If toggle A (e.g. `File_Submissions`) and toggle B (e.g. `Group_Submissions`) both still reach the same `on_success` ("assignment created"), they are **not** two dimensions to multiply. Emit one workflow that activates A's revealed fields, and one that activates B's revealed fields — not A×B.
+- An `+ Add restriction` / optional-picker step that does not change `on_success` is **not** a separate workflow dimension. Fold it into an existing workflow or add at most one workflow for it.
+
+### Discard / Cancel collapse rule (CRITICAL)
+
+A `Cancel` / `discard` / `abandon` terminal action discards **all** field state, so field/toggle combinations are irrelevant to it. Emit **exactly ONE** Cancel workflow for the module, regardless of how many toggles or revealed-field groups exist. Never produce a Cancel workflow per toggle combination.
+
+**Worked example — Assignment Creation** (toggles: File submissions, Group submissions, Add restriction; buttons: Save and return, Save and display, Cancel):
+- ✅ Correct (~6–8): base Save-and-return, base Save-and-display, one Save covering File-submission revealed fields, one Save covering Group-submission revealed fields, one Save covering an added restriction, one Cancel.
+- ❌ Wrong (24): every `{File}×{Group}×{Restriction}×{Save/Display/Cancel}` combination.
 
 ---
 
@@ -101,9 +115,11 @@ Go through these one by one. If any check fails, fix it before outputting.
 □ 4. Every tab with a form submission in a `tab_container` has one workflow.
 □ 5. `wf_id` numbering is sequential (WF-001, WF-002, ...) with no gaps.
 □ 6. Every `terminal_action` matches an exact `action_name` or `element_name` from the AST.
-□ 7. No two workflows share the same `conditional_branch` AND `terminal_action`.
-□ 8. No workflow crosses module boundaries (steps in another module).
-□ 9. Every `on_success` reflects the AST or description — no generic "success" strings.
+□ 7. No two workflows reach the **same `on_success` via the same code path** — even if their `conditional_branch` strings differ. If they do, merge them (keep the one that activates a distinct revealed required-field group; drop pure toggle-combination duplicates).
+□ 8. There is **at most ONE** `Cancel`/`discard` workflow for the whole module.
+□ 9. No independent toggles are multiplied together — the workflow count is roughly (base submits) + (revealed required-field groups) + 1 Cancel, NOT the product of all toggles × all buttons.
+□ 10. No workflow crosses module boundaries (steps in another module).
+□ 11. Every `on_success` reflects the AST or description — no generic "success" strings.
 
 ---
 
@@ -111,7 +127,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 1. Does each workflow trace back to a specific AST node (`submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`) or an explicit action described in the description text? If no → delete it.
 2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
-3. Are two workflows identical in `conditional_branch` AND `terminal_action`? If yes → merge them into one.
+3. Do two workflows reach the same `on_success` via the same code path (e.g. differing only by an independent toggle that does not change the outcome, or being repeated Cancel variants)? If yes → merge them into one. Keep a separate workflow only when its branch reveals a **distinct required-field group** that needs its own coverage.
 4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
 5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
 
@@ -120,7 +136,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 ## Calibration
 
 - Simple form module (no conditionals, one submit): 1–3 workflows
-- Form with conditionals: 3–8 workflows
+- Form with conditionals/toggles: **(base submit outcomes) + (one per revealed required-field group) + 1 Cancel** — typically 4–8, NOT the product of all toggles × all buttons. A multi-toggle form like Assignment Creation should land near 6–8, never 20+.
 - Module with state machine: add 1 per (state × action) combination
 - Module with data table: add 1 per row_action + 1 per bulk_action
 
@@ -153,15 +169,15 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 
 ------------------------------------------------------------
-[21:20:32] Workflow-Extractor - USER PROMPT
+[22:30:08] Workflow-Extractor - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 19,
   "module_title": "Reviews & Ratings",
-  "summary": "Displays aggregate scores and individual guest reviews for listings, including category-specific ratings, written comments, photos, and filtering by rating, date, or traveler type.",
-  "where_it_fits": "Accessible from listing and detail pages within the Hotels/Flights/Tours/Cars sections of the main navigation and exposed on detail pages as a dedicated Reviews section; review submission is also reachable via the user Dashboard or post-stay email prompts after bookings. It complements search/listing workflows by surfacing social proof and post-stay feedback during the booking lifecycle.",
-  "assumed_state_on_entry": "Viewing: public access (no login required); Submitting: authenticated user with a completed/recorded booking (post-stay)."
+  "summary": "Presents aggregated scores and individual guest reviews with category-specific ratings, filters, and photo attachments, and supports post-stay review submissions by eligible users.",
+  "where_it_fits": "Appears on listing pages and item detail pages accessed from the main navigation (Home \u2192 Hotels/Flights/Tours/Cars) and integrates with the User Dashboard and post-stay email workflow; it is part of the post-booking feedback and discovery experience used to inform future bookings. It complements search/listing content by providing social proof and detailed guest feedback within the booking lifecycle.",
+  "assumed_state_on_entry": "Viewing: a listing or detail page exists (with review data available); Submitting: user is authenticated and has a completed booking eligible for review."
 }
 </module_context>
 
@@ -175,12 +191,12 @@ Go through these one by one. If any check fails, fix it before outputting.
       "type": "form",
       "fields": {
         "Rating_Filter": {
-          "type": "unspecified"
+          "type": "dropdown"
         },
         "Date_Filter": {
           "type": "date"
         },
-        "Traveler_Type_Filter": {
+        "Traveler_Type": {
           "type": "dropdown"
         }
       },
@@ -193,33 +209,25 @@ Go through these one by one. If any check fails, fix it before outputting.
         }
       ]
     },
-    "Review_Submission_Form": {
+    "Submit_Review_Form": {
       "type": "form",
-      "preconditions": [
-        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
-      ],
       "fields": {
         "Overall_Rating": {
-          "type": "unspecified",
-          "required": true
+          "type": "unspecified"
         },
         "Category_Ratings": {
           "type": "repeating_group",
           "item_fields": {
             "Category_Name": {
-              "type": "unspecified",
-              "required": true
+              "type": "unspecified"
             },
-            "Category_Rating": {
-              "type": "unspecified",
-              "required": true
+            "Rating": {
+              "type": "unspecified"
             }
-          },
-          "options_note": "e.g., Cleanliness, Service, Location for hotels (partial \u2014 others not specified)"
+          }
         },
-        "Written_Comments": {
-          "type": "unspecified",
-          "required": true
+        "Written_Feedback": {
+          "type": "unspecified"
         },
         "Photos": {
           "type": "file_upload"
@@ -228,25 +236,23 @@ Go through these one by one. If any check fails, fix it before outputting.
       "submit_actions": [
         {
           "action_name": "Submit Review",
-          "on_success": "review submitted"
+          "preconditions": [
+            "Submitting: user is authenticated and has a completed booking eligible for review."
+          ]
         }
       ]
     },
-    "Dashboard_Submit_Review": {
-      "type": "button",
-      "action_name": "Submit Review",
-      "preconditions": [
-        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
-      ],
-      "on_success": "opens Review_Submission_Form"
-    },
-    "Email_Submit_Link": {
+    "Submit_Review_From_Dashboard": {
       "type": "link",
-      "action_name": "Submit Review",
       "preconditions": [
-        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
-      ],
-      "on_success": "opens Review_Submission_Form"
+        "Submitting: user is authenticated and has a completed booking eligible for review."
+      ]
+    },
+    "Submit_Review_From_Email": {
+      "type": "link",
+      "preconditions": [
+        "Submitting: user is authenticated and has a completed booking eligible for review."
+      ]
     }
   }
 }
@@ -264,7 +270,7 @@ Listing pages show an aggregate rating score and total review count for each ite
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:21:22] Workflow-Extractor - LLM RESPONSE
+[22:30:58] Workflow-Extractor - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Reviews & Ratings",
@@ -272,49 +278,49 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "wf_id": "WF-001",
       "name": "Apply review filters",
-      "actor": "Public user",
+      "actor": "<role>",
       "conditional_branch": null,
       "terminal_action": "Apply Filters",
-      "on_success": "reviews list filtered by selected criteria"
+      "on_success": "Reviews list filtered by selected criteria (rating, date, traveler type)"
     },
     {
       "wf_id": "WF-002",
       "name": "Clear review filters",
-      "actor": "Public user",
+      "actor": "<role>",
       "conditional_branch": null,
       "terminal_action": "Clear Filters",
-      "on_success": "filters cleared; full reviews list shown"
+      "on_success": "Filter selections cleared; reviews list shows default/unfiltered results"
     },
     {
       "wf_id": "WF-003",
-      "name": "Submit a review (post-stay authenticated user)",
-      "actor": "Authenticated guest (post-stay)",
-      "conditional_branch": "user_status == Authenticated AND booking_status == Completed",
-      "terminal_action": "Submit Review",
-      "on_success": "review submitted"
+      "name": "Open Submit Review form from Dashboard link",
+      "actor": "Authenticated user",
+      "conditional_branch": "Submitting: user is authenticated and has a completed booking eligible for review.",
+      "terminal_action": "Submit_Review_From_Dashboard",
+      "on_success": "Opens the Submit Review form (navigate to review submission for eligible user)"
     },
     {
       "wf_id": "WF-004",
-      "name": "Open review submission from Dashboard (post-stay)",
-      "actor": "Authenticated guest (post-stay)",
-      "conditional_branch": "user_status == Authenticated AND booking_status == Completed AND entry_point == Dashboard_Submit_Review",
-      "terminal_action": "Submit Review",
-      "on_success": "opens Review_Submission_Form"
+      "name": "Open Submit Review form from Email link",
+      "actor": "Authenticated user",
+      "conditional_branch": "Submitting: user is authenticated and has a completed booking eligible for review.",
+      "terminal_action": "Submit_Review_From_Email",
+      "on_success": "Opens the Submit Review form (navigate to review submission for eligible user)"
     },
     {
       "wf_id": "WF-005",
-      "name": "Open review submission from email link (post-stay)",
-      "actor": "Authenticated guest (post-stay)",
-      "conditional_branch": "user_status == Authenticated AND booking_status == Completed AND entry_point == Email_Submit_Link",
+      "name": "Submit a review (overall + category ratings, optional photos and written feedback)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Submitting: user is authenticated and has a completed booking eligible for review.",
       "terminal_action": "Submit Review",
-      "on_success": "opens Review_Submission_Form"
+      "on_success": "Review submitted"
     }
   ],
   "total": 5
 }
 
 ------------------------------------------------------------
-[21:21:22] Workflow-Extractor - PARSED JSON
+[22:30:58] Workflow-Extractor - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Reviews & Ratings",
@@ -322,57 +328,57 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "wf_id": "WF-001",
       "name": "Apply review filters",
-      "actor": "Public user",
+      "actor": "<role>",
       "conditional_branch": null,
       "terminal_action": "Apply Filters",
-      "on_success": "reviews list filtered by selected criteria"
+      "on_success": "Reviews list filtered by selected criteria (rating, date, traveler type)"
     },
     {
       "wf_id": "WF-002",
       "name": "Clear review filters",
-      "actor": "Public user",
+      "actor": "<role>",
       "conditional_branch": null,
       "terminal_action": "Clear Filters",
-      "on_success": "filters cleared; full reviews list shown"
+      "on_success": "Filter selections cleared; reviews list shows default/unfiltered results"
     },
     {
       "wf_id": "WF-003",
-      "name": "Submit a review (post-stay authenticated user)",
-      "actor": "Authenticated guest (post-stay)",
-      "conditional_branch": "user_status == Authenticated AND booking_status == Completed",
-      "terminal_action": "Submit Review",
-      "on_success": "review submitted"
+      "name": "Open Submit Review form from Dashboard link",
+      "actor": "Authenticated user",
+      "conditional_branch": "Submitting: user is authenticated and has a completed booking eligible for review.",
+      "terminal_action": "Submit_Review_From_Dashboard",
+      "on_success": "Opens the Submit Review form (navigate to review submission for eligible user)"
     },
     {
       "wf_id": "WF-004",
-      "name": "Open review submission from Dashboard (post-stay)",
-      "actor": "Authenticated guest (post-stay)",
-      "conditional_branch": "user_status == Authenticated AND booking_status == Completed AND entry_point == Dashboard_Submit_Review",
-      "terminal_action": "Submit Review",
-      "on_success": "opens Review_Submission_Form"
+      "name": "Open Submit Review form from Email link",
+      "actor": "Authenticated user",
+      "conditional_branch": "Submitting: user is authenticated and has a completed booking eligible for review.",
+      "terminal_action": "Submit_Review_From_Email",
+      "on_success": "Opens the Submit Review form (navigate to review submission for eligible user)"
     },
     {
       "wf_id": "WF-005",
-      "name": "Open review submission from email link (post-stay)",
-      "actor": "Authenticated guest (post-stay)",
-      "conditional_branch": "user_status == Authenticated AND booking_status == Completed AND entry_point == Email_Submit_Link",
+      "name": "Submit a review (overall + category ratings, optional photos and written feedback)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Submitting: user is authenticated and has a completed booking eligible for review.",
       "terminal_action": "Submit Review",
-      "on_success": "opens Review_Submission_Form"
+      "on_success": "Review submitted"
     }
   ],
   "total": 5
 }
 
 ------------------------------------------------------------
-[21:21:57] Workflow-Extractor - USER PROMPT
+[22:31:33] Workflow-Extractor - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 19,
   "module_title": "Reviews & Ratings",
-  "summary": "Displays aggregate scores and individual guest reviews for listings, including category-specific ratings, written comments, photos, and filtering by rating, date, or traveler type.",
-  "where_it_fits": "Accessible from listing and detail pages within the Hotels/Flights/Tours/Cars sections of the main navigation and exposed on detail pages as a dedicated Reviews section; review submission is also reachable via the user Dashboard or post-stay email prompts after bookings. It complements search/listing workflows by surfacing social proof and post-stay feedback during the booking lifecycle.",
-  "assumed_state_on_entry": "Viewing: public access (no login required); Submitting: authenticated user with a completed/recorded booking (post-stay)."
+  "summary": "Presents aggregated scores and individual guest reviews with category-specific ratings, filters, and photo attachments, and supports post-stay review submissions by eligible users.",
+  "where_it_fits": "Appears on listing pages and item detail pages accessed from the main navigation (Home \u2192 Hotels/Flights/Tours/Cars) and integrates with the User Dashboard and post-stay email workflow; it is part of the post-booking feedback and discovery experience used to inform future bookings. It complements search/listing content by providing social proof and detailed guest feedback within the booking lifecycle.",
+  "assumed_state_on_entry": "Viewing: a listing or detail page exists (with review data available); Submitting: user is authenticated and has a completed booking eligible for review."
 }
 </module_context>
 
@@ -386,12 +392,12 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "type": "form",
       "fields": {
         "Rating_Filter": {
-          "type": "unspecified"
+          "type": "dropdown"
         },
         "Date_Filter": {
           "type": "date"
         },
-        "Traveler_Type_Filter": {
+        "Traveler_Type": {
           "type": "dropdown"
         }
       },
@@ -404,33 +410,25 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
         }
       ]
     },
-    "Review_Submission_Form": {
+    "Submit_Review_Form": {
       "type": "form",
-      "preconditions": [
-        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
-      ],
       "fields": {
         "Overall_Rating": {
-          "type": "unspecified",
-          "required": true
+          "type": "unspecified"
         },
         "Category_Ratings": {
           "type": "repeating_group",
           "item_fields": {
             "Category_Name": {
-              "type": "unspecified",
-              "required": true
+              "type": "unspecified"
             },
-            "Category_Rating": {
-              "type": "unspecified",
-              "required": true
+            "Rating": {
+              "type": "unspecified"
             }
-          },
-          "options_note": "e.g., Cleanliness, Service, Location for hotels (partial \u2014 others not specified)"
+          }
         },
-        "Written_Comments": {
-          "type": "unspecified",
-          "required": true
+        "Written_Feedback": {
+          "type": "unspecified"
         },
         "Photos": {
           "type": "file_upload"
@@ -439,25 +437,23 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "submit_actions": [
         {
           "action_name": "Submit Review",
-          "on_success": "review submitted"
+          "preconditions": [
+            "Submitting: user is authenticated and has a completed booking eligible for review."
+          ]
         }
       ]
     },
-    "Dashboard_Submit_Review": {
-      "type": "button",
-      "action_name": "Submit Review",
-      "preconditions": [
-        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
-      ],
-      "on_success": "opens Review_Submission_Form"
-    },
-    "Email_Submit_Link": {
+    "Submit_Review_From_Dashboard": {
       "type": "link",
-      "action_name": "Submit Review",
       "preconditions": [
-        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
-      ],
-      "on_success": "opens Review_Submission_Form"
+        "Submitting: user is authenticated and has a completed booking eligible for review."
+      ]
+    },
+    "Submit_Review_From_Email": {
+      "type": "link",
+      "preconditions": [
+        "Submitting: user is authenticated and has a completed booking eligible for review."
+      ]
     }
   }
 }
@@ -475,7 +471,7 @@ Listing pages show an aggregate rating score and total review count for each ite
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:22:34] Workflow-Extractor - LLM RESPONSE
+[22:32:09] Workflow-Extractor - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Reviews & Ratings",
@@ -483,49 +479,49 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "wf_id": "WF-001",
       "name": "Apply review filters",
-      "actor": "public_user",
+      "actor": "<role>",
       "conditional_branch": null,
       "terminal_action": "Apply Filters",
-      "on_success": "filters applied; reviews list updated to match selected criteria"
+      "on_success": "Filters applied; reviews list updated to match selected criteria"
     },
     {
       "wf_id": "WF-002",
       "name": "Clear review filters",
-      "actor": "public_user",
+      "actor": "<role>",
       "conditional_branch": null,
       "terminal_action": "Clear Filters",
-      "on_success": "filters cleared; full reviews list shown"
+      "on_success": "Filters cleared; reviews list reset to default"
     },
     {
       "wf_id": "WF-003",
-      "name": "Open review submission from Dashboard",
-      "actor": "authenticated_post_stay_user",
-      "conditional_branch": "user_state == authenticated_post_stay",
-      "terminal_action": "Dashboard_Submit_Review",
-      "on_success": "opens Review_Submission_Form"
+      "name": "Open Submit Review form from Dashboard",
+      "actor": "authenticated_user",
+      "conditional_branch": "user_authenticated == true AND booking_eligible == true",
+      "terminal_action": "Submit_Review_From_Dashboard",
+      "on_success": "Opens Submit Review form"
     },
     {
       "wf_id": "WF-004",
-      "name": "Open review submission from post-stay email link",
-      "actor": "authenticated_post_stay_user",
-      "conditional_branch": "user_state == authenticated_post_stay",
-      "terminal_action": "Email_Submit_Link",
-      "on_success": "opens Review_Submission_Form"
+      "name": "Open Submit Review form from post-stay Email",
+      "actor": "authenticated_user",
+      "conditional_branch": "user_authenticated == true AND booking_eligible == true",
+      "terminal_action": "Submit_Review_From_Email",
+      "on_success": "Opens Submit Review form"
     },
     {
       "wf_id": "WF-005",
-      "name": "Submit review via submission form",
-      "actor": "authenticated_post_stay_user",
-      "conditional_branch": "user_state == authenticated_post_stay",
+      "name": "Submit review (form)",
+      "actor": "authenticated_user",
+      "conditional_branch": "user_authenticated == true AND booking_eligible == true",
       "terminal_action": "Submit Review",
-      "on_success": "review submitted"
+      "on_success": "Review submitted; confirmation shown; review added to listing and aggregate rating updated"
     }
   ],
   "total": 5
 }
 
 ------------------------------------------------------------
-[21:22:34] Workflow-Extractor - PARSED JSON
+[22:32:09] Workflow-Extractor - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Reviews & Ratings",
@@ -533,57 +529,57 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "wf_id": "WF-001",
       "name": "Apply review filters",
-      "actor": "public_user",
+      "actor": "<role>",
       "conditional_branch": null,
       "terminal_action": "Apply Filters",
-      "on_success": "filters applied; reviews list updated to match selected criteria"
+      "on_success": "Filters applied; reviews list updated to match selected criteria"
     },
     {
       "wf_id": "WF-002",
       "name": "Clear review filters",
-      "actor": "public_user",
+      "actor": "<role>",
       "conditional_branch": null,
       "terminal_action": "Clear Filters",
-      "on_success": "filters cleared; full reviews list shown"
+      "on_success": "Filters cleared; reviews list reset to default"
     },
     {
       "wf_id": "WF-003",
-      "name": "Open review submission from Dashboard",
-      "actor": "authenticated_post_stay_user",
-      "conditional_branch": "user_state == authenticated_post_stay",
-      "terminal_action": "Dashboard_Submit_Review",
-      "on_success": "opens Review_Submission_Form"
+      "name": "Open Submit Review form from Dashboard",
+      "actor": "authenticated_user",
+      "conditional_branch": "user_authenticated == true AND booking_eligible == true",
+      "terminal_action": "Submit_Review_From_Dashboard",
+      "on_success": "Opens Submit Review form"
     },
     {
       "wf_id": "WF-004",
-      "name": "Open review submission from post-stay email link",
-      "actor": "authenticated_post_stay_user",
-      "conditional_branch": "user_state == authenticated_post_stay",
-      "terminal_action": "Email_Submit_Link",
-      "on_success": "opens Review_Submission_Form"
+      "name": "Open Submit Review form from post-stay Email",
+      "actor": "authenticated_user",
+      "conditional_branch": "user_authenticated == true AND booking_eligible == true",
+      "terminal_action": "Submit_Review_From_Email",
+      "on_success": "Opens Submit Review form"
     },
     {
       "wf_id": "WF-005",
-      "name": "Submit review via submission form",
-      "actor": "authenticated_post_stay_user",
-      "conditional_branch": "user_state == authenticated_post_stay",
+      "name": "Submit review (form)",
+      "actor": "authenticated_user",
+      "conditional_branch": "user_authenticated == true AND booking_eligible == true",
       "terminal_action": "Submit Review",
-      "on_success": "review submitted"
+      "on_success": "Review submitted; confirmation shown; review added to listing and aggregate rating updated"
     }
   ],
   "total": 5
 }
 
 ------------------------------------------------------------
-[21:23:09] Workflow-Extractor - USER PROMPT
+[22:32:36] Workflow-Extractor - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 19,
   "module_title": "Reviews & Ratings",
-  "summary": "Displays aggregate scores and individual guest reviews for listings, including category-specific ratings, written comments, photos, and filtering by rating, date, or traveler type.",
-  "where_it_fits": "Accessible from listing and detail pages within the Hotels/Flights/Tours/Cars sections of the main navigation and exposed on detail pages as a dedicated Reviews section; review submission is also reachable via the user Dashboard or post-stay email prompts after bookings. It complements search/listing workflows by surfacing social proof and post-stay feedback during the booking lifecycle.",
-  "assumed_state_on_entry": "Viewing: public access (no login required); Submitting: authenticated user with a completed/recorded booking (post-stay)."
+  "summary": "Presents aggregated scores and individual guest reviews with category-specific ratings, filters, and photo attachments, and supports post-stay review submissions by eligible users.",
+  "where_it_fits": "Appears on listing pages and item detail pages accessed from the main navigation (Home \u2192 Hotels/Flights/Tours/Cars) and integrates with the User Dashboard and post-stay email workflow; it is part of the post-booking feedback and discovery experience used to inform future bookings. It complements search/listing content by providing social proof and detailed guest feedback within the booking lifecycle.",
+  "assumed_state_on_entry": "Viewing: a listing or detail page exists (with review data available); Submitting: user is authenticated and has a completed booking eligible for review."
 }
 </module_context>
 
@@ -597,12 +593,12 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "type": "form",
       "fields": {
         "Rating_Filter": {
-          "type": "unspecified"
+          "type": "dropdown"
         },
         "Date_Filter": {
           "type": "date"
         },
-        "Traveler_Type_Filter": {
+        "Traveler_Type": {
           "type": "dropdown"
         }
       },
@@ -615,33 +611,25 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
         }
       ]
     },
-    "Review_Submission_Form": {
+    "Submit_Review_Form": {
       "type": "form",
-      "preconditions": [
-        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
-      ],
       "fields": {
         "Overall_Rating": {
-          "type": "unspecified",
-          "required": true
+          "type": "unspecified"
         },
         "Category_Ratings": {
           "type": "repeating_group",
           "item_fields": {
             "Category_Name": {
-              "type": "unspecified",
-              "required": true
+              "type": "unspecified"
             },
-            "Category_Rating": {
-              "type": "unspecified",
-              "required": true
+            "Rating": {
+              "type": "unspecified"
             }
-          },
-          "options_note": "e.g., Cleanliness, Service, Location for hotels (partial \u2014 others not specified)"
+          }
         },
-        "Written_Comments": {
-          "type": "unspecified",
-          "required": true
+        "Written_Feedback": {
+          "type": "unspecified"
         },
         "Photos": {
           "type": "file_upload"
@@ -650,25 +638,23 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "submit_actions": [
         {
           "action_name": "Submit Review",
-          "on_success": "review submitted"
+          "preconditions": [
+            "Submitting: user is authenticated and has a completed booking eligible for review."
+          ]
         }
       ]
     },
-    "Dashboard_Submit_Review": {
-      "type": "button",
-      "action_name": "Submit Review",
-      "preconditions": [
-        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
-      ],
-      "on_success": "opens Review_Submission_Form"
-    },
-    "Email_Submit_Link": {
+    "Submit_Review_From_Dashboard": {
       "type": "link",
-      "action_name": "Submit Review",
       "preconditions": [
-        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
-      ],
-      "on_success": "opens Review_Submission_Form"
+        "Submitting: user is authenticated and has a completed booking eligible for review."
+      ]
+    },
+    "Submit_Review_From_Email": {
+      "type": "link",
+      "preconditions": [
+        "Submitting: user is authenticated and has a completed booking eligible for review."
+      ]
     }
   }
 }
@@ -686,101 +672,69 @@ Listing pages show an aggregate rating score and total review count for each ite
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:23:37] Workflow-Extractor - LLM RESPONSE
+[22:32:55] Workflow-Extractor - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Reviews & Ratings",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Apply Filters",
-      "actor": "Public User",
+      "name": "Apply review filters",
+      "actor": "<role>",
       "conditional_branch": null,
       "terminal_action": "Apply Filters",
-      "on_success": "Filters applied; review list updated"
+      "on_success": "Reviews filtered according to selected criteria; list updated"
     },
     {
       "wf_id": "WF-002",
-      "name": "Clear Filters",
-      "actor": "Public User",
+      "name": "Clear review filters",
+      "actor": "<role>",
       "conditional_branch": null,
       "terminal_action": "Clear Filters",
-      "on_success": "Filters cleared; review list reset"
+      "on_success": "Filters cleared; reviews list reset to default"
     },
     {
       "wf_id": "WF-003",
-      "name": "Submit Review (from Review Submission Form)",
-      "actor": "Authenticated Post-stay User",
-      "conditional_branch": "source_component == Review_Submission_Form",
+      "name": "Submit a post-stay review",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
       "terminal_action": "Submit Review",
-      "on_success": "review submitted"
-    },
-    {
-      "wf_id": "WF-004",
-      "name": "Open Review Form (Dashboard button)",
-      "actor": "Authenticated Post-stay User",
-      "conditional_branch": "source_component == Dashboard_Submit_Review",
-      "terminal_action": "Submit Review",
-      "on_success": "opens Review_Submission_Form"
-    },
-    {
-      "wf_id": "WF-005",
-      "name": "Open Review Form (Post-stay Email link)",
-      "actor": "Authenticated Post-stay User",
-      "conditional_branch": "source_component == Email_Submit_Link",
-      "terminal_action": "Submit Review",
-      "on_success": "opens Review_Submission_Form"
+      "on_success": "Review submitted; saved and associated with the listing"
     }
   ],
-  "total": 5
+  "total": 3
 }
 
 ------------------------------------------------------------
-[21:23:37] Workflow-Extractor - PARSED JSON
+[22:32:55] Workflow-Extractor - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Reviews & Ratings",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Apply Filters",
-      "actor": "Public User",
+      "name": "Apply review filters",
+      "actor": "<role>",
       "conditional_branch": null,
       "terminal_action": "Apply Filters",
-      "on_success": "Filters applied; review list updated"
+      "on_success": "Reviews filtered according to selected criteria; list updated"
     },
     {
       "wf_id": "WF-002",
-      "name": "Clear Filters",
-      "actor": "Public User",
+      "name": "Clear review filters",
+      "actor": "<role>",
       "conditional_branch": null,
       "terminal_action": "Clear Filters",
-      "on_success": "Filters cleared; review list reset"
+      "on_success": "Filters cleared; reviews list reset to default"
     },
     {
       "wf_id": "WF-003",
-      "name": "Submit Review (from Review Submission Form)",
-      "actor": "Authenticated Post-stay User",
-      "conditional_branch": "source_component == Review_Submission_Form",
+      "name": "Submit a post-stay review",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
       "terminal_action": "Submit Review",
-      "on_success": "review submitted"
-    },
-    {
-      "wf_id": "WF-004",
-      "name": "Open Review Form (Dashboard button)",
-      "actor": "Authenticated Post-stay User",
-      "conditional_branch": "source_component == Dashboard_Submit_Review",
-      "terminal_action": "Submit Review",
-      "on_success": "opens Review_Submission_Form"
-    },
-    {
-      "wf_id": "WF-005",
-      "name": "Open Review Form (Post-stay Email link)",
-      "actor": "Authenticated Post-stay User",
-      "conditional_branch": "source_component == Email_Submit_Link",
-      "terminal_action": "Submit Review",
-      "on_success": "opens Review_Submission_Form"
+      "on_success": "Review submitted; saved and associated with the listing"
     }
   ],
-  "total": 5
+  "total": 3
 }

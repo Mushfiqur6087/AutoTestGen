@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:04:20.730925
+DEBUG SESSION STARTED: 2026-07-04T22:55:35.934675
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Negative - SYSTEM PROMPT
+[22:55:35] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Negative - USER PROMPT
+[22:55:35] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 3,
   "module_title": "Product Detail",
-  "summary": "Shows detailed information for a selected product (image, name, description, price) and an add/remove control that reflects the current cart state.",
-  "where_it_fits": "Reached from the Product Inventory by clicking a product name or image, this page is part of the product-browsing flow and sits between Inventory and the Shopping Cart/Checkout path; the persistent header (hamburger menu and cart icon) remains available for navigation back to All Items, the cart, or app-level actions like Logout or Reset App State.",
-  "assumed_state_on_entry": "Authenticated user with a product selected from Product Inventory and an active app session (cart may contain items)."
+  "summary": "Displays the selected product\u2019s image, name, description, price, and a context-sensitive Add to cart / Remove button that reflects the current cart state.",
+  "where_it_fits": "Reached from Product Inventory by selecting a product (clicking its name or image), this page is part of the shopping flow and sits between browsing inventory and the Shopping Cart/checkout paths; the persistent header (hamburger menu and cart icon) remains available for navigation back to All Items, cart, or other actions.",
+  "assumed_state_on_entry": "User is logged in and has selected a specific product from the Product Inventory page."
 }
 </module_context>
 
@@ -262,15 +272,15 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Product_Detail_Actions": {
       "type": "state_bound_action_bar",
+      "preconditions": [
+        "User is logged in and has selected a specific product from the Product Inventory page."
+      ],
       "states": {
         "Not In Cart": {
           "available_actions": [
             {
               "action_name": "Add to cart",
-              "preconditions": [
-                "user must be logged in"
-              ],
-              "on_success": "adds item to cart"
+              "on_success": "adds product to cart"
             }
           ]
         },
@@ -278,47 +288,21 @@ If a `<workflows>` block is present in the input:
           "available_actions": [
             {
               "action_name": "Remove",
-              "preconditions": [
-                "user must be logged in"
-              ],
-              "on_success": "removes item from cart"
+              "on_success": "removes product from cart"
             }
           ]
         }
       }
     },
-    "Product_Detail_Page_Navigation": {
-      "type": "navigation",
-      "fields": {
-        "Back_To_Products": {
-          "type": "link",
-          "action_name": "Back to products",
-          "navigates_to": "Product Inventory"
-        },
-        "Persistent_Header": {
-          "type": "navigation",
-          "fields": {
-            "All_Items": {
-              "type": "link",
-              "action_name": "All Items",
-              "navigates_to": "All Items"
-            },
-            "Shopping_Cart": {
-              "type": "link",
-              "action_name": "Shopping Cart",
-              "navigates_to": "Shopping Cart"
-            },
-            "Logout": {
-              "type": "link",
-              "action_name": "Logout"
-            },
-            "Reset_App_State": {
-              "type": "link",
-              "action_name": "Reset App State"
-            }
-          }
-        }
-      }
+    "Back_To_Products": {
+      "type": "link",
+      "action_name": "Back to products",
+      "destination": "Product Inventory"
+    },
+    "Header_Cart_Icon": {
+      "type": "link",
+      "action_name": "Go to Shopping Cart",
+      "destination": "Shopping Cart"
     }
   }
 }
@@ -332,19 +316,16 @@ The Product Detail page shows the selected product’s image, name, description,
 </description>
 
 <workflows>
-WF-001 | Add to cart when product not in cart | actor: Authenticated user | branch: entity_state == Not In Cart | terminal: Add to cart | on_success: adds item to cart
-WF-002 | Remove from cart when product in cart | actor: Authenticated user | branch: entity_state == In Cart | terminal: Remove | on_success: removes item from cart
-WF-003 | Navigate back to Product Inventory | actor: Authenticated user | branch: none | terminal: Back to products | on_success: navigates to Product Inventory
-WF-004 | Navigate to All Items via header | actor: Authenticated user | branch: none | terminal: All Items | on_success: navigates to All Items
-WF-005 | Navigate to Shopping Cart via header | actor: Authenticated user | branch: none | terminal: Shopping Cart | on_success: navigates to Shopping Cart
-WF-006 | Logout via header | actor: Authenticated user | branch: none | terminal: Logout | on_success: logs out user
-WF-007 | Reset app state via header | actor: Authenticated user | branch: none | terminal: Reset App State | on_success: resets app state
+WF-001 | Add product to cart (Not In Cart state) | actor: User | branch: entity_state == Not In Cart | terminal: Add to cart | on_success: adds product to cart
+WF-002 | Remove product from cart (In Cart state) | actor: User | branch: entity_state == In Cart | terminal: Remove | on_success: removes product from cart
+WF-003 | Navigate back to Product Inventory | actor: User | branch: none | terminal: Back to products | on_success: navigates to Product Inventory
+WF-004 | Open Shopping Cart via header icon | actor: User | branch: none | terminal: Go to Shopping Cart | on_success: navigates to Shopping Cart
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:04:47] Test-Negative - LLM RESPONSE
+[22:56:08] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Product Detail",
@@ -352,65 +333,64 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": null,
-      "test_case": "Unauthenticated user cannot open Product Detail page",
+      "wf_ref": "WF-001",
+      "test_case": "Click 'Add to cart' while not logged in",
       "preconditions": [
         "User is not logged in",
-        "Product identifier available: <product id>"
+        "A product <product> exists in the catalog"
       ],
       "steps": [
-        "1. Open the Product Detail page URL for <product id> while not signed in",
-        "2. Observe the page shown"
+        "1. Navigate to the Product Inventory page",
+        "2. Click the <product> name or image to open the Product Detail page for <product>",
+        "3. Click the 'Add to cart' button on the Product Detail page"
       ],
-      "expected_result": "User is redirected to the Login page; Product Detail content (product image, name, description, price, and action bar) is not displayed. No changes are made to the cart (cart item count remains unchanged).",
+      "expected_result": "Action is blocked: the UI prompts the user to sign in (redirects to the login page or displays a sign-in modal); the Product Detail page does not add the product to the cart and the cart item count in the header does not increase",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Clicking 'Add to cart' while not logged in is blocked",
+      "test_case": "Attempt 'Add to cart' when product is already in cart (button should not be available)",
       "preconditions": [
-        "User is not logged in",
-        "Product is in state: Not In Cart"
+        "User is logged in",
+        "The product <product> is already in the user's cart"
       ],
       "steps": [
-        "1. Ensure the user session is signed out",
-        "2. Navigate to Product Detail for <product id> that is Not In Cart",
-        "3. Click the 'Add to cart' button"
+        "1. Sign in as a user who has <product> in their cart",
+        "2. Navigate to the Product Detail page for <product>"
       ],
-      "expected_result": "Action is blocked: user is taken to the Login page (Login form displayed) or shown a login prompt; the product is not added to the cart (cart item count remains the same). The Product Detail page does not transition to In Cart state.",
+      "expected_result": "The 'Add to cart' action is not available on the Product Detail page for a product that is already in the cart: the 'Add to cart' control is not visible (or is disabled); the 'Remove' control is visible instead; no additional item is added to the cart and the cart item count does not increase",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-002",
-      "test_case": "Remove action is not available when product is Not In Cart (wrong-state)",
+      "test_case": "Attempt 'Remove' when product is not in cart (button should not be available)",
       "preconditions": [
-        "User is logged in as <authenticated user>",
-        "Product is in state: Not In Cart"
+        "User is logged in",
+        "The product <product> is not in the user's cart"
       ],
       "steps": [
-        "1. Sign in as <authenticated user>",
-        "2. Open Product Detail for <product id> that is Not In Cart",
-        "3. Attempt to locate and click a 'Remove' button in the action bar"
+        "1. Sign in as a user who does not have <product> in their cart",
+        "2. Navigate to the Product Detail page for <product>",
+        "3. Attempt to click a 'Remove' control on the Product Detail page (if present)"
       ],
-      "expected_result": "The 'Remove' button is not present/visible in the action bar for this product; only the 'Add to cart' button is shown. No remove action occurs and the cart remains unchanged (product remains Not In Cart).",
+      "expected_result": "The 'Remove' action is not available on the Product Detail page for a product that is not in the cart: the 'Remove' control is not visible (or is disabled); the 'Add to cart' control is visible instead; no removal occurs and the cart item count remains unchanged",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-001",
-      "test_case": "Add to cart action is not available when product is already In Cart (wrong-state)",
+      "wf_ref": "WF-004",
+      "test_case": "Click header cart icon while not logged in",
       "preconditions": [
-        "User is logged in as <authenticated user>",
-        "Product is in state: In Cart"
+        "User is not logged in",
+        "A product <product> exists in the catalog"
       ],
       "steps": [
-        "1. Sign in as <authenticated user>",
-        "2. Ensure the product <product id> is already in the cart (state: In Cart)",
-        "3. Attempt to locate and click an 'Add to cart' button in the action bar"
+        "1. Navigate to the Product Detail page for <product>",
+        "2. Click the header cart icon"
       ],
-      "expected_result": "The 'Add to cart' button is not present/visible in the action bar for this product; only the 'Remove' button is shown. No add action occurs and the cart remains unchanged (product remains In Cart).",
+      "expected_result": "Action is blocked: user is redirected to the login page or shown a sign-in prompt instead of the Shopping Cart; the Shopping Cart page is not displayed",
       "priority": "high"
     }
   ],
@@ -423,7 +403,7 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
 }
 
 ------------------------------------------------------------
-[21:04:47] Test-Negative - PARSED JSON
+[22:56:08] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Product Detail",
@@ -431,65 +411,64 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": null,
-      "test_case": "Unauthenticated user cannot open Product Detail page",
+      "wf_ref": "WF-001",
+      "test_case": "Click 'Add to cart' while not logged in",
       "preconditions": [
         "User is not logged in",
-        "Product identifier available: <product id>"
+        "A product <product> exists in the catalog"
       ],
       "steps": [
-        "1. Open the Product Detail page URL for <product id> while not signed in",
-        "2. Observe the page shown"
+        "1. Navigate to the Product Inventory page",
+        "2. Click the <product> name or image to open the Product Detail page for <product>",
+        "3. Click the 'Add to cart' button on the Product Detail page"
       ],
-      "expected_result": "User is redirected to the Login page; Product Detail content (product image, name, description, price, and action bar) is not displayed. No changes are made to the cart (cart item count remains unchanged).",
+      "expected_result": "Action is blocked: the UI prompts the user to sign in (redirects to the login page or displays a sign-in modal); the Product Detail page does not add the product to the cart and the cart item count in the header does not increase",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Clicking 'Add to cart' while not logged in is blocked",
+      "test_case": "Attempt 'Add to cart' when product is already in cart (button should not be available)",
       "preconditions": [
-        "User is not logged in",
-        "Product is in state: Not In Cart"
+        "User is logged in",
+        "The product <product> is already in the user's cart"
       ],
       "steps": [
-        "1. Ensure the user session is signed out",
-        "2. Navigate to Product Detail for <product id> that is Not In Cart",
-        "3. Click the 'Add to cart' button"
+        "1. Sign in as a user who has <product> in their cart",
+        "2. Navigate to the Product Detail page for <product>"
       ],
-      "expected_result": "Action is blocked: user is taken to the Login page (Login form displayed) or shown a login prompt; the product is not added to the cart (cart item count remains the same). The Product Detail page does not transition to In Cart state.",
+      "expected_result": "The 'Add to cart' action is not available on the Product Detail page for a product that is already in the cart: the 'Add to cart' control is not visible (or is disabled); the 'Remove' control is visible instead; no additional item is added to the cart and the cart item count does not increase",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-002",
-      "test_case": "Remove action is not available when product is Not In Cart (wrong-state)",
+      "test_case": "Attempt 'Remove' when product is not in cart (button should not be available)",
       "preconditions": [
-        "User is logged in as <authenticated user>",
-        "Product is in state: Not In Cart"
+        "User is logged in",
+        "The product <product> is not in the user's cart"
       ],
       "steps": [
-        "1. Sign in as <authenticated user>",
-        "2. Open Product Detail for <product id> that is Not In Cart",
-        "3. Attempt to locate and click a 'Remove' button in the action bar"
+        "1. Sign in as a user who does not have <product> in their cart",
+        "2. Navigate to the Product Detail page for <product>",
+        "3. Attempt to click a 'Remove' control on the Product Detail page (if present)"
       ],
-      "expected_result": "The 'Remove' button is not present/visible in the action bar for this product; only the 'Add to cart' button is shown. No remove action occurs and the cart remains unchanged (product remains Not In Cart).",
+      "expected_result": "The 'Remove' action is not available on the Product Detail page for a product that is not in the cart: the 'Remove' control is not visible (or is disabled); the 'Add to cart' control is visible instead; no removal occurs and the cart item count remains unchanged",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-001",
-      "test_case": "Add to cart action is not available when product is already In Cart (wrong-state)",
+      "wf_ref": "WF-004",
+      "test_case": "Click header cart icon while not logged in",
       "preconditions": [
-        "User is logged in as <authenticated user>",
-        "Product is in state: In Cart"
+        "User is not logged in",
+        "A product <product> exists in the catalog"
       ],
       "steps": [
-        "1. Sign in as <authenticated user>",
-        "2. Ensure the product <product id> is already in the cart (state: In Cart)",
-        "3. Attempt to locate and click an 'Add to cart' button in the action bar"
+        "1. Navigate to the Product Detail page for <product>",
+        "2. Click the header cart icon"
       ],
-      "expected_result": "The 'Add to cart' button is not present/visible in the action bar for this product; only the 'Remove' button is shown. No add action occurs and the cart remains unchanged (product remains In Cart).",
+      "expected_result": "Action is blocked: user is redirected to the login page or shown a sign-in prompt instead of the Shopping Cart; the Shopping Cart page is not displayed",
       "priority": "high"
     }
   ],

@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:09:37.899712
+DEBUG SESSION STARTED: 2026-07-04T22:39:33.992971
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:09:37] Workflow-Extractor - SYSTEM PROMPT
+[22:39:33] Workflow-Extractor - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Workflow Extractor. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to enumerate every distinct, executable interaction path through this module — one entry per workflow.
 
@@ -54,12 +54,12 @@ Two workflows are **distinct** if they require different user actions to reach t
 
 ## What Paths to Enumerate
 
-Enumerate **all** distinct paths — not one-per-type. The rule: if two paths require the user to do something different to reach the terminal action, they are separate workflows.
+Enumerate **distinct-outcome** paths — not one-per-type, and **not** the cartesian product of every toggle. The rule: two paths are separate workflows only if the user does something different that leads to a **different terminal outcome** (different `on_success`) **or** exercises a **different revealed required-field group** that needs its own coverage.
 
 | AST node type | What to enumerate |
 |---|---|
 | `form` with no conditionals | One workflow per `submit_actions[]` entry |
-| `form` with `visible_when` fields | One workflow per unique combination of conditional branches activated, times each `submit_actions[]` entry |
+| `form` with `visible_when` / toggle fields | One base workflow per `submit_actions[]` entry, PLUS one workflow for **each conditional branch that reveals a distinct required-field group** (e.g. enabling File submissions reveals max-files/size/types). Do **NOT** multiply independent toggles together. |
 | `wizard` | One workflow per distinct step sequence (if all steps are linear, one workflow per `submit_actions[]`; if any step is conditional, enumerate each branch) |
 | `state_bound_action_bar` | One workflow per `available_actions[]` entry per state (state × action = one workflow) |
 | `data_table` | One workflow per `row_actions[]` entry + one per `bulk_actions[]` entry (include View, Edit, Delete, and all others) |
@@ -67,6 +67,20 @@ Enumerate **all** distinct paths — not one-per-type. The rule: if two paths re
 | `repeating_group` | Not a standalone workflow source — it is part of a form workflow that activates it |
 
 **Include all data table row actions** — View, Edit, Delete, and any others. Even read-only row actions (e.g., "View") must be included because they still require a positive test case.
+
+### DO NOT enumerate the cartesian product of toggles (CRITICAL)
+
+A form with independent toggles A, B, C and submit buttons {Save, Save+display, Cancel} must **not** produce 2×2×2×3 = 24 workflows. Independent toggles that do **not** change the terminal outcome are covered **once each**, not in combination:
+- If toggle A (e.g. `File_Submissions`) and toggle B (e.g. `Group_Submissions`) both still reach the same `on_success` ("assignment created"), they are **not** two dimensions to multiply. Emit one workflow that activates A's revealed fields, and one that activates B's revealed fields — not A×B.
+- An `+ Add restriction` / optional-picker step that does not change `on_success` is **not** a separate workflow dimension. Fold it into an existing workflow or add at most one workflow for it.
+
+### Discard / Cancel collapse rule (CRITICAL)
+
+A `Cancel` / `discard` / `abandon` terminal action discards **all** field state, so field/toggle combinations are irrelevant to it. Emit **exactly ONE** Cancel workflow for the module, regardless of how many toggles or revealed-field groups exist. Never produce a Cancel workflow per toggle combination.
+
+**Worked example — Assignment Creation** (toggles: File submissions, Group submissions, Add restriction; buttons: Save and return, Save and display, Cancel):
+- ✅ Correct (~6–8): base Save-and-return, base Save-and-display, one Save covering File-submission revealed fields, one Save covering Group-submission revealed fields, one Save covering an added restriction, one Cancel.
+- ❌ Wrong (24): every `{File}×{Group}×{Restriction}×{Save/Display/Cancel}` combination.
 
 ---
 
@@ -101,9 +115,11 @@ Go through these one by one. If any check fails, fix it before outputting.
 □ 4. Every tab with a form submission in a `tab_container` has one workflow.
 □ 5. `wf_id` numbering is sequential (WF-001, WF-002, ...) with no gaps.
 □ 6. Every `terminal_action` matches an exact `action_name` or `element_name` from the AST.
-□ 7. No two workflows share the same `conditional_branch` AND `terminal_action`.
-□ 8. No workflow crosses module boundaries (steps in another module).
-□ 9. Every `on_success` reflects the AST or description — no generic "success" strings.
+□ 7. No two workflows reach the **same `on_success` via the same code path** — even if their `conditional_branch` strings differ. If they do, merge them (keep the one that activates a distinct revealed required-field group; drop pure toggle-combination duplicates).
+□ 8. There is **at most ONE** `Cancel`/`discard` workflow for the whole module.
+□ 9. No independent toggles are multiplied together — the workflow count is roughly (base submits) + (revealed required-field groups) + 1 Cancel, NOT the product of all toggles × all buttons.
+□ 10. No workflow crosses module boundaries (steps in another module).
+□ 11. Every `on_success` reflects the AST or description — no generic "success" strings.
 
 ---
 
@@ -111,7 +127,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 1. Does each workflow trace back to a specific AST node (`submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`) or an explicit action described in the description text? If no → delete it.
 2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
-3. Are two workflows identical in `conditional_branch` AND `terminal_action`? If yes → merge them into one.
+3. Do two workflows reach the same `on_success` via the same code path (e.g. differing only by an independent toggle that does not change the outcome, or being repeated Cancel variants)? If yes → merge them into one. Keep a separate workflow only when its branch reveals a **distinct required-field group** that needs its own coverage.
 4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
 5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
 
@@ -120,7 +136,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 ## Calibration
 
 - Simple form module (no conditionals, one submit): 1–3 workflows
-- Form with conditionals: 3–8 workflows
+- Form with conditionals/toggles: **(base submit outcomes) + (one per revealed required-field group) + 1 Cancel** — typically 4–8, NOT the product of all toggles × all buttons. A multi-toggle form like Assignment Creation should land near 6–8, never 20+.
 - Module with state machine: add 1 per (state × action) combination
 - Module with data table: add 1 per row_action + 1 per bulk_action
 
@@ -153,15 +169,15 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 
 ------------------------------------------------------------
-[21:09:37] Workflow-Extractor - USER PROMPT
+[22:39:33] Workflow-Extractor - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 2,
   "module_title": "Dashboard",
-  "summary": "The Dashboard presents a personalized overview containing a Timeline of upcoming activities and deadlines and a Calendar with month navigation and course filtering.",
-  "where_it_fits": "Accessible from the top navigation bar via the Dashboard link, this module is the user's landing/overview page that aggregates information across My Courses and links into course-level views (e.g., Course Page and full calendar). It sits early in the user session lifecycle as the central hub users consult after signing in.",
-  "assumed_state_on_entry": "User is logged in (authenticated); user has at least one enrolled course or a valid personal calendar."
+  "summary": "The Dashboard presents a personalized landing page with a Timeline of upcoming activities and a Calendar view for events across the user\u2019s courses, plus edit-mode controls for adding and configuring blocks.",
+  "where_it_fits": "Accessible from the top navigation bar as the Dashboard link and serving as the user\u2019s primary landing/overview screen after login, it aggregates course activity and calendar data and links to the full calendar and calendar import/export pages. It complements course-level views (Course Page, Activities) by providing cross-course timelines and quick access to calendar management in the application lifecycle.",
+  "assumed_state_on_entry": "Authenticated (logged-in) user; user context loaded (profile and enrolled courses information available)"
 }
 </module_context>
 
@@ -173,35 +189,28 @@ Go through these one by one. If any check fails, fix it before outputting.
   "components": {
     "Dashboard_Page": {
       "type": "page",
-      "preconditions": [
-        "user must be logged in"
-      ],
       "fields": {
-        "Edit_Mode": {
+        "Edit_Mode_Toggle": {
           "type": "checkbox"
-        },
-        "Add_A_Block": {
-          "type": "button",
-          "action_name": "+ Add a block",
-          "visible_when": "Edit_Mode == true",
-          "on_success": "opens Block_Type_Chooser_Page",
-          "preconditions": [
-            "user must be logged in"
-          ]
         },
         "Reset_Page_To_Default": {
           "type": "button",
           "action_name": "Reset page to default",
-          "visible_when": "Edit_Mode == true",
+          "visible_when": "Edit_Mode_Toggle == true",
           "preconditions": [
-            "user must be logged in"
+            "Authenticated (logged-in) user"
+          ]
+        },
+        "Add_A_Block": {
+          "type": "button",
+          "action_name": "+ Add a block",
+          "visible_when": "Edit_Mode_Toggle == true",
+          "on_success": "opens block library page",
+          "preconditions": [
+            "Authenticated (logged-in) user"
           ]
         }
-      },
-      "blocks": [
-        "Timeline_Block",
-        "Calendar_Block"
-      ]
+      }
     },
     "Timeline_Block": {
       "type": "block",
@@ -212,121 +221,97 @@ Go through these one by one. If any check fails, fix it before outputting.
         "Sort_Order": {
           "type": "dropdown"
         },
-        "Search_Activities": {
-          "type": "search"
+        "Search": {
+          "type": "search",
+          "constraints": []
         },
-        "Empty_State": {
-          "type": "empty_state",
-          "visible_when": "Timeline_Block.items_in_range == 0",
-          "message": "No upcoming activities in the selected range"
+        "Move_Icon": {
+          "type": "unspecified",
+          "visible_when": "Edit_Mode_Toggle == true"
         },
-        "Edit_Controls": {
-          "type": "group",
-          "visible_when": "Edit_Mode == true",
-          "fields": {
-            "Move_Icon": {
-              "type": "button",
-              "action_name": "Move"
+        "Block_Menu": {
+          "type": "menu",
+          "visible_when": "Edit_Mode_Toggle == true",
+          "menu_actions": [
+            {
+              "action_name": "Configure",
+              "preconditions": [
+                "Authenticated (logged-in) user"
+              ]
             },
-            "More_Menu": {
-              "type": "menu",
-              "actions": [
-                {
-                  "action_name": "Configure"
-                },
-                {
-                  "action_name": "Move"
-                },
-                {
-                  "action_name": "Delete"
-                }
+            {
+              "action_name": "Move",
+              "preconditions": [
+                "Authenticated (logged-in) user"
+              ]
+            },
+            {
+              "action_name": "Delete",
+              "preconditions": [
+                "Authenticated (logged-in) user"
               ]
             }
-          }
+          ]
         }
       }
     },
     "Calendar_Block": {
       "type": "block",
       "fields": {
-        "All_Courses_Filter": {
+        "All_Courses": {
           "type": "dropdown"
         },
-        "New_Event": {
+        "New_Event_Button": {
           "type": "button",
           "action_name": "New event",
-          "on_success": "opens new personal event modal",
           "preconditions": [
-            "user must be logged in"
+            "Authenticated (logged-in) user"
           ]
         },
-        "Previous_Month": {
-          "type": "button",
-          "action_name": "Previous month"
+        "Prev_Month": {
+          "type": "button"
         },
         "Next_Month": {
-          "type": "button",
-          "action_name": "Next month"
+          "type": "button"
         },
         "Full_Calendar_Link": {
           "type": "link",
-          "action_name": "Full calendar",
-          "on_click": "navigate to full calendar view",
-          "preconditions": [
-            "user must be logged in"
-          ]
+          "action_name": "Full calendar"
         },
-        "Import_Export_Calendars_Link": {
+        "Import_or_Export_Calendars_Link": {
           "type": "link",
           "action_name": "Import or export calendars",
-          "on_click": "navigate to calendar data management",
           "preconditions": [
-            "user must be logged in"
+            "Authenticated (logged-in) user"
           ]
         },
-        "Edit_Controls": {
-          "type": "group",
-          "visible_when": "Edit_Mode == true",
-          "fields": {
-            "Move_Icon": {
-              "type": "button",
-              "action_name": "Move"
+        "Move_Icon": {
+          "type": "unspecified",
+          "visible_when": "Edit_Mode_Toggle == true"
+        },
+        "Block_Menu": {
+          "type": "menu",
+          "visible_when": "Edit_Mode_Toggle == true",
+          "menu_actions": [
+            {
+              "action_name": "Configure",
+              "preconditions": [
+                "Authenticated (logged-in) user"
+              ]
             },
-            "More_Menu": {
-              "type": "menu",
-              "actions": [
-                {
-                  "action_name": "Configure"
-                },
-                {
-                  "action_name": "Move"
-                },
-                {
-                  "action_name": "Delete"
-                }
+            {
+              "action_name": "Move",
+              "preconditions": [
+                "Authenticated (logged-in) user"
+              ]
+            },
+            {
+              "action_name": "Delete",
+              "preconditions": [
+                "Authenticated (logged-in) user"
               ]
             }
-          }
-        }
-      }
-    },
-    "Block_Type_Chooser_Page": {
-      "type": "page",
-      "preconditions": [
-        "user must be logged in"
-      ],
-      "fields": {
-        "Block_Types": {
-          "type": "repeating_group",
-          "item_fields": {
-            "Block_Type_Name": {
-              "type": "unspecified"
-            },
-            "Add_Block": {
-              "type": "button",
-              "action_name": "Add"
-            }
-          }
+          ]
         }
       }
     }
@@ -346,746 +331,341 @@ The Dashboard displays a personalized greeting at the top. The main content area
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:10:21] Workflow-Extractor - LLM RESPONSE
+[22:40:45] Workflow-Extractor - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Dashboard",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Open Block Type Chooser (+ Add a block)",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true",
-      "terminal_action": "+ Add a block",
-      "on_success": "opens Block_Type_Chooser_Page"
+      "name": "Open full calendar view",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Full calendar",
+      "on_success": "opens full calendar view"
     },
     {
       "wf_id": "WF-002",
-      "name": "Reset page to default (Edit mode)",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true",
-      "terminal_action": "Reset page to default",
-      "on_success": "resets dashboard to default layout"
+      "name": "Open calendar import/export page",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Import or export calendars",
+      "on_success": "opens calendar import/export page"
     },
     {
       "wf_id": "WF-003",
-      "name": "Add a block from Block Type Chooser",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Page == Block_Type_Chooser_Page",
-      "terminal_action": "Add",
-      "on_success": "adds selected block to Dashboard and returns to Dashboard page"
+      "name": "Create a new personal event",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "New event",
+      "on_success": "opens event creation interface"
     },
     {
       "wf_id": "WF-004",
-      "name": "Timeline block: Move via edit control icon",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Block == Timeline_Block AND Control == Edit_Controls.Move",
-      "terminal_action": "Move",
-      "on_success": "initiates move for Timeline block"
+      "name": "Navigate to previous month in calendar",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Prev_Month",
+      "on_success": "calendar month view updated to previous month"
     },
     {
       "wf_id": "WF-005",
-      "name": "Timeline block: Configure from More menu",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Block == Timeline_Block AND Menu == More_Menu",
-      "terminal_action": "Configure",
-      "on_success": "opens Timeline block configuration"
+      "name": "Navigate to next month in calendar",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Next_Month",
+      "on_success": "calendar month view updated to next month"
     },
     {
       "wf_id": "WF-006",
-      "name": "Timeline block: Move from More menu",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Block == Timeline_Block AND Menu == More_Menu",
-      "terminal_action": "Move",
-      "on_success": "initiates move for Timeline block (via More menu)"
+      "name": "Change Timeline time range filter",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Time_Range",
+      "on_success": "Timeline updated to selected time range"
     },
     {
       "wf_id": "WF-007",
-      "name": "Timeline block: Delete from More menu",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Block == Timeline_Block AND Menu == More_Menu",
-      "terminal_action": "Delete",
-      "on_success": "removes Timeline block from Dashboard"
+      "name": "Change Timeline sort order",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Sort_Order",
+      "on_success": "Timeline resorted according to selected sort order"
     },
     {
       "wf_id": "WF-008",
-      "name": "Calendar: Create new personal event",
-      "actor": "<role>",
+      "name": "Search Timeline items",
+      "actor": "Authenticated user",
       "conditional_branch": null,
-      "terminal_action": "New event",
-      "on_success": "opens new personal event modal"
+      "terminal_action": "Search",
+      "on_success": "Timeline filtered by search query"
     },
     {
       "wf_id": "WF-009",
-      "name": "Calendar: Navigate to previous month",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Previous month",
-      "on_success": "navigates calendar to previous month"
+      "name": "Enable Edit mode",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
+      "terminal_action": "Edit_Mode_Toggle",
+      "on_success": "Edit mode enabled; edit controls become visible"
     },
     {
       "wf_id": "WF-010",
-      "name": "Calendar: Navigate to next month",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Next month",
-      "on_success": "navigates calendar to next month"
+      "name": "Disable Edit mode",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == false",
+      "terminal_action": "Edit_Mode_Toggle",
+      "on_success": "Edit mode disabled; edit controls hidden"
     },
     {
       "wf_id": "WF-011",
-      "name": "Calendar: Open full calendar view",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Full calendar",
-      "on_success": "navigate to full calendar view"
+      "name": "Add a block (Add button) while in Edit mode",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
+      "terminal_action": "+ Add a block",
+      "on_success": "opens block library page"
     },
     {
       "wf_id": "WF-012",
-      "name": "Calendar: Open Import or export calendars",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Import or export calendars",
-      "on_success": "navigate to calendar data management"
-    },
-    {
-      "wf_id": "WF-013",
-      "name": "Calendar block: Move via edit control icon",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Block == Calendar_Block AND Control == Edit_Controls.Move",
-      "terminal_action": "Move",
-      "on_success": "initiates move for Calendar block"
-    },
-    {
-      "wf_id": "WF-014",
-      "name": "Calendar block: Configure from More menu",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Block == Calendar_Block AND Menu == More_Menu",
-      "terminal_action": "Configure",
-      "on_success": "opens Calendar block configuration"
-    },
-    {
-      "wf_id": "WF-015",
-      "name": "Calendar block: Move from More menu",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Block == Calendar_Block AND Menu == More_Menu",
-      "terminal_action": "Move",
-      "on_success": "initiates move for Calendar block (via More menu)"
-    },
-    {
-      "wf_id": "WF-016",
-      "name": "Calendar block: Delete from More menu",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Block == Calendar_Block AND Menu == More_Menu",
-      "terminal_action": "Delete",
-      "on_success": "removes Calendar block from Dashboard"
-    }
-  ],
-  "total": 16
-}
-
-------------------------------------------------------------
-[21:10:21] Workflow-Extractor - PARSED JSON
-------------------------------------------------------------
-{
-  "module": "Dashboard",
-  "workflows": [
-    {
-      "wf_id": "WF-001",
-      "name": "Open Block Type Chooser (+ Add a block)",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true",
-      "terminal_action": "+ Add a block",
-      "on_success": "opens Block_Type_Chooser_Page"
-    },
-    {
-      "wf_id": "WF-002",
-      "name": "Reset page to default (Edit mode)",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true",
-      "terminal_action": "Reset page to default",
-      "on_success": "resets dashboard to default layout"
-    },
-    {
-      "wf_id": "WF-003",
-      "name": "Add a block from Block Type Chooser",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Page == Block_Type_Chooser_Page",
-      "terminal_action": "Add",
-      "on_success": "adds selected block to Dashboard and returns to Dashboard page"
-    },
-    {
-      "wf_id": "WF-004",
-      "name": "Timeline block: Move via edit control icon",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Block == Timeline_Block AND Control == Edit_Controls.Move",
-      "terminal_action": "Move",
-      "on_success": "initiates move for Timeline block"
-    },
-    {
-      "wf_id": "WF-005",
-      "name": "Timeline block: Configure from More menu",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Block == Timeline_Block AND Menu == More_Menu",
-      "terminal_action": "Configure",
-      "on_success": "opens Timeline block configuration"
-    },
-    {
-      "wf_id": "WF-006",
-      "name": "Timeline block: Move from More menu",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Block == Timeline_Block AND Menu == More_Menu",
-      "terminal_action": "Move",
-      "on_success": "initiates move for Timeline block (via More menu)"
-    },
-    {
-      "wf_id": "WF-007",
-      "name": "Timeline block: Delete from More menu",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Block == Timeline_Block AND Menu == More_Menu",
-      "terminal_action": "Delete",
-      "on_success": "removes Timeline block from Dashboard"
-    },
-    {
-      "wf_id": "WF-008",
-      "name": "Calendar: Create new personal event",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "New event",
-      "on_success": "opens new personal event modal"
-    },
-    {
-      "wf_id": "WF-009",
-      "name": "Calendar: Navigate to previous month",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Previous month",
-      "on_success": "navigates calendar to previous month"
-    },
-    {
-      "wf_id": "WF-010",
-      "name": "Calendar: Navigate to next month",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Next month",
-      "on_success": "navigates calendar to next month"
-    },
-    {
-      "wf_id": "WF-011",
-      "name": "Calendar: Open full calendar view",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Full calendar",
-      "on_success": "navigate to full calendar view"
-    },
-    {
-      "wf_id": "WF-012",
-      "name": "Calendar: Open Import or export calendars",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Import or export calendars",
-      "on_success": "navigate to calendar data management"
-    },
-    {
-      "wf_id": "WF-013",
-      "name": "Calendar block: Move via edit control icon",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Block == Calendar_Block AND Control == Edit_Controls.Move",
-      "terminal_action": "Move",
-      "on_success": "initiates move for Calendar block"
-    },
-    {
-      "wf_id": "WF-014",
-      "name": "Calendar block: Configure from More menu",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Block == Calendar_Block AND Menu == More_Menu",
-      "terminal_action": "Configure",
-      "on_success": "opens Calendar block configuration"
-    },
-    {
-      "wf_id": "WF-015",
-      "name": "Calendar block: Move from More menu",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Block == Calendar_Block AND Menu == More_Menu",
-      "terminal_action": "Move",
-      "on_success": "initiates move for Calendar block (via More menu)"
-    },
-    {
-      "wf_id": "WF-016",
-      "name": "Calendar block: Delete from More menu",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Block == Calendar_Block AND Menu == More_Menu",
-      "terminal_action": "Delete",
-      "on_success": "removes Calendar block from Dashboard"
-    }
-  ],
-  "total": 16
-}
-
-------------------------------------------------------------
-[21:10:52] Workflow-Extractor - USER PROMPT
-------------------------------------------------------------
-<module_context>
-{
-  "module_id": 2,
-  "module_title": "Dashboard",
-  "summary": "The Dashboard presents a personalized overview containing a Timeline of upcoming activities and deadlines and a Calendar with month navigation and course filtering.",
-  "where_it_fits": "Accessible from the top navigation bar via the Dashboard link, this module is the user's landing/overview page that aggregates information across My Courses and links into course-level views (e.g., Course Page and full calendar). It sits early in the user session lifecycle as the central hub users consult after signing in.",
-  "assumed_state_on_entry": "User is logged in (authenticated); user has at least one enrolled course or a valid personal calendar."
-}
-</module_context>
-
-<module_name>Dashboard</module_name>
-
-<ast>
-{
-  "module_name": "Dashboard",
-  "components": {
-    "Dashboard_Page": {
-      "type": "page",
-      "preconditions": [
-        "user must be logged in"
-      ],
-      "fields": {
-        "Edit_Mode": {
-          "type": "checkbox"
-        },
-        "Add_A_Block": {
-          "type": "button",
-          "action_name": "+ Add a block",
-          "visible_when": "Edit_Mode == true",
-          "on_success": "opens Block_Type_Chooser_Page",
-          "preconditions": [
-            "user must be logged in"
-          ]
-        },
-        "Reset_Page_To_Default": {
-          "type": "button",
-          "action_name": "Reset page to default",
-          "visible_when": "Edit_Mode == true",
-          "preconditions": [
-            "user must be logged in"
-          ]
-        }
-      },
-      "blocks": [
-        "Timeline_Block",
-        "Calendar_Block"
-      ]
-    },
-    "Timeline_Block": {
-      "type": "block",
-      "fields": {
-        "Time_Range": {
-          "type": "dropdown"
-        },
-        "Sort_Order": {
-          "type": "dropdown"
-        },
-        "Search_Activities": {
-          "type": "search"
-        },
-        "Empty_State": {
-          "type": "empty_state",
-          "visible_when": "Timeline_Block.items_in_range == 0",
-          "message": "No upcoming activities in the selected range"
-        },
-        "Edit_Controls": {
-          "type": "group",
-          "visible_when": "Edit_Mode == true",
-          "fields": {
-            "Move_Icon": {
-              "type": "button",
-              "action_name": "Move"
-            },
-            "More_Menu": {
-              "type": "menu",
-              "actions": [
-                {
-                  "action_name": "Configure"
-                },
-                {
-                  "action_name": "Move"
-                },
-                {
-                  "action_name": "Delete"
-                }
-              ]
-            }
-          }
-        }
-      }
-    },
-    "Calendar_Block": {
-      "type": "block",
-      "fields": {
-        "All_Courses_Filter": {
-          "type": "dropdown"
-        },
-        "New_Event": {
-          "type": "button",
-          "action_name": "New event",
-          "on_success": "opens new personal event modal",
-          "preconditions": [
-            "user must be logged in"
-          ]
-        },
-        "Previous_Month": {
-          "type": "button",
-          "action_name": "Previous month"
-        },
-        "Next_Month": {
-          "type": "button",
-          "action_name": "Next month"
-        },
-        "Full_Calendar_Link": {
-          "type": "link",
-          "action_name": "Full calendar",
-          "on_click": "navigate to full calendar view",
-          "preconditions": [
-            "user must be logged in"
-          ]
-        },
-        "Import_Export_Calendars_Link": {
-          "type": "link",
-          "action_name": "Import or export calendars",
-          "on_click": "navigate to calendar data management",
-          "preconditions": [
-            "user must be logged in"
-          ]
-        },
-        "Edit_Controls": {
-          "type": "group",
-          "visible_when": "Edit_Mode == true",
-          "fields": {
-            "Move_Icon": {
-              "type": "button",
-              "action_name": "Move"
-            },
-            "More_Menu": {
-              "type": "menu",
-              "actions": [
-                {
-                  "action_name": "Configure"
-                },
-                {
-                  "action_name": "Move"
-                },
-                {
-                  "action_name": "Delete"
-                }
-              ]
-            }
-          }
-        }
-      }
-    },
-    "Block_Type_Chooser_Page": {
-      "type": "page",
-      "preconditions": [
-        "user must be logged in"
-      ],
-      "fields": {
-        "Block_Types": {
-          "type": "repeating_group",
-          "item_fields": {
-            "Block_Type_Name": {
-              "type": "unspecified"
-            },
-            "Add_Block": {
-              "type": "button",
-              "action_name": "Add"
-            }
-          }
-        }
-      }
-    }
-  }
-}
-</ast>
-
-<description>
-
-The Dashboard displays a personalized greeting at the top. The main content area contains two blocks side by side: the Timeline block and the Calendar block. The Timeline block shows upcoming activities and deadlines across all enrolled courses. It includes a time range dropdown (e.g., "Next 7 days"), a sort order dropdown, and a search field to find activities by name or type. When no items exist within the selected range, an empty state is shown. The Calendar block shows a monthly view with the current month and year as a heading. It includes an "All courses" dropdown to filter events by course, a "New event" button to create personal calendar entries, and left/right arrows to navigate between months. The current date is highlighted, and dates with events display their names inline. Two links at the bottom — "Full calendar" and "Import or export calendars" — open the dedicated calendar view and calendar data management respectively. When Edit mode is toggled on, a "Reset page to default" button appears at the top right and a "+ Add a block" button appears below the Dashboard heading, opening a page listing all available block types. In Edit mode, each existing block shows a move icon and a three-dot menu for configure, move, and delete actions.
-
----
-
-
-</description>
-
-IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
-
-------------------------------------------------------------
-[21:11:36] Workflow-Extractor - LLM RESPONSE
-------------------------------------------------------------
-{
-  "module": "Dashboard",
-  "workflows": [
-    {
-      "wf_id": "WF-001",
-      "name": "Open Block Type Chooser via + Add a block",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true",
-      "terminal_action": "+ Add a block",
-      "on_success": "opens Block_Type_Chooser_Page"
-    },
-    {
-      "wf_id": "WF-002",
-      "name": "Reset page to default (Edit mode)",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true",
+      "name": "Reset dashboard to default (Edit mode)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
       "terminal_action": "Reset page to default",
       "on_success": "Dashboard layout reset to default"
     },
     {
-      "wf_id": "WF-003",
-      "name": "Add a block from Block Type Chooser",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Add",
-      "on_success": "selected block added to Dashboard"
-    },
-    {
-      "wf_id": "WF-004",
-      "name": "Timeline block: click Move icon",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Timeline_Block.Edit_Controls.Move_Icon",
-      "terminal_action": "Move",
-      "on_success": "block repositioning initiated"
-    },
-    {
-      "wf_id": "WF-005",
-      "name": "Timeline block: More menu → Configure",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Timeline_Block.Edit_Controls.More_Menu.Configure",
-      "terminal_action": "Configure",
-      "on_success": "opens block configuration"
-    },
-    {
-      "wf_id": "WF-006",
-      "name": "Timeline block: More menu → Move",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Timeline_Block.Edit_Controls.More_Menu.Move",
-      "terminal_action": "Move",
-      "on_success": "block repositioning initiated"
-    },
-    {
-      "wf_id": "WF-007",
-      "name": "Timeline block: More menu → Delete",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Timeline_Block.Edit_Controls.More_Menu.Delete",
-      "terminal_action": "Delete",
-      "on_success": "block removed from Dashboard"
-    },
-    {
-      "wf_id": "WF-008",
-      "name": "Calendar: create new personal event",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "New event",
-      "on_success": "opens new personal event modal"
-    },
-    {
-      "wf_id": "WF-009",
-      "name": "Calendar: navigate to previous month",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Previous month",
-      "on_success": "calendar navigated to previous month view"
-    },
-    {
-      "wf_id": "WF-010",
-      "name": "Calendar: navigate to next month",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Next month",
-      "on_success": "calendar navigated to next month view"
-    },
-    {
-      "wf_id": "WF-011",
-      "name": "Open full calendar view",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Full calendar",
-      "on_success": "navigate to full calendar view"
-    },
-    {
-      "wf_id": "WF-012",
-      "name": "Open Import or Export Calendars",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Import or export calendars",
-      "on_success": "navigate to calendar data management"
-    },
-    {
       "wf_id": "WF-013",
-      "name": "Calendar block: click Move icon",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Calendar_Block.Edit_Controls.Move_Icon",
-      "terminal_action": "Move",
-      "on_success": "block repositioning initiated"
+      "name": "Configure Timeline block (Edit mode menu)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
+      "terminal_action": "Configure",
+      "on_success": "opens configuration for Timeline block"
     },
     {
       "wf_id": "WF-014",
-      "name": "Calendar block: More menu → Configure",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Calendar_Block.Edit_Controls.More_Menu.Configure",
-      "terminal_action": "Configure",
-      "on_success": "opens block configuration"
+      "name": "Move Timeline block (Edit mode menu)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
+      "terminal_action": "Move",
+      "on_success": "initiates move of Timeline block via menu"
     },
     {
       "wf_id": "WF-015",
-      "name": "Calendar block: More menu → Move",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Calendar_Block.Edit_Controls.More_Menu.Move",
-      "terminal_action": "Move",
-      "on_success": "block repositioning initiated"
+      "name": "Delete Timeline block (Edit mode menu)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
+      "terminal_action": "Delete",
+      "on_success": "removes Timeline block from dashboard"
     },
     {
       "wf_id": "WF-016",
-      "name": "Calendar block: More menu → Delete",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Calendar_Block.Edit_Controls.More_Menu.Delete",
+      "name": "Configure Calendar block (Edit mode menu)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
+      "terminal_action": "Configure",
+      "on_success": "opens configuration for Calendar block"
+    },
+    {
+      "wf_id": "WF-017",
+      "name": "Move Calendar block (Edit mode menu)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
+      "terminal_action": "Move",
+      "on_success": "initiates move of Calendar block via menu"
+    },
+    {
+      "wf_id": "WF-018",
+      "name": "Delete Calendar block (Edit mode menu)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
       "terminal_action": "Delete",
-      "on_success": "block removed from Dashboard"
+      "on_success": "removes Calendar block from dashboard"
+    },
+    {
+      "wf_id": "WF-019",
+      "name": "Initiate drag move of Timeline block (Move icon)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
+      "terminal_action": "Move_Icon",
+      "on_success": "initiates drag move of Timeline block"
+    },
+    {
+      "wf_id": "WF-020",
+      "name": "Initiate drag move of Calendar block (Move icon)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
+      "terminal_action": "Move_Icon",
+      "on_success": "initiates drag move of Calendar block"
     }
   ],
-  "total": 16
+  "total": 20
 }
 
 ------------------------------------------------------------
-[21:11:36] Workflow-Extractor - PARSED JSON
+[22:40:45] Workflow-Extractor - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Dashboard",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Open Block Type Chooser via + Add a block",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true",
-      "terminal_action": "+ Add a block",
-      "on_success": "opens Block_Type_Chooser_Page"
+      "name": "Open full calendar view",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Full calendar",
+      "on_success": "opens full calendar view"
     },
     {
       "wf_id": "WF-002",
-      "name": "Reset page to default (Edit mode)",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true",
+      "name": "Open calendar import/export page",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Import or export calendars",
+      "on_success": "opens calendar import/export page"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Create a new personal event",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "New event",
+      "on_success": "opens event creation interface"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Navigate to previous month in calendar",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Prev_Month",
+      "on_success": "calendar month view updated to previous month"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Navigate to next month in calendar",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Next_Month",
+      "on_success": "calendar month view updated to next month"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Change Timeline time range filter",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Time_Range",
+      "on_success": "Timeline updated to selected time range"
+    },
+    {
+      "wf_id": "WF-007",
+      "name": "Change Timeline sort order",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Sort_Order",
+      "on_success": "Timeline resorted according to selected sort order"
+    },
+    {
+      "wf_id": "WF-008",
+      "name": "Search Timeline items",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Search",
+      "on_success": "Timeline filtered by search query"
+    },
+    {
+      "wf_id": "WF-009",
+      "name": "Enable Edit mode",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
+      "terminal_action": "Edit_Mode_Toggle",
+      "on_success": "Edit mode enabled; edit controls become visible"
+    },
+    {
+      "wf_id": "WF-010",
+      "name": "Disable Edit mode",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == false",
+      "terminal_action": "Edit_Mode_Toggle",
+      "on_success": "Edit mode disabled; edit controls hidden"
+    },
+    {
+      "wf_id": "WF-011",
+      "name": "Add a block (Add button) while in Edit mode",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
+      "terminal_action": "+ Add a block",
+      "on_success": "opens block library page"
+    },
+    {
+      "wf_id": "WF-012",
+      "name": "Reset dashboard to default (Edit mode)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
       "terminal_action": "Reset page to default",
       "on_success": "Dashboard layout reset to default"
     },
     {
-      "wf_id": "WF-003",
-      "name": "Add a block from Block Type Chooser",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Add",
-      "on_success": "selected block added to Dashboard"
-    },
-    {
-      "wf_id": "WF-004",
-      "name": "Timeline block: click Move icon",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Timeline_Block.Edit_Controls.Move_Icon",
-      "terminal_action": "Move",
-      "on_success": "block repositioning initiated"
-    },
-    {
-      "wf_id": "WF-005",
-      "name": "Timeline block: More menu \u2192 Configure",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Timeline_Block.Edit_Controls.More_Menu.Configure",
-      "terminal_action": "Configure",
-      "on_success": "opens block configuration"
-    },
-    {
-      "wf_id": "WF-006",
-      "name": "Timeline block: More menu \u2192 Move",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Timeline_Block.Edit_Controls.More_Menu.Move",
-      "terminal_action": "Move",
-      "on_success": "block repositioning initiated"
-    },
-    {
-      "wf_id": "WF-007",
-      "name": "Timeline block: More menu \u2192 Delete",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Timeline_Block.Edit_Controls.More_Menu.Delete",
-      "terminal_action": "Delete",
-      "on_success": "block removed from Dashboard"
-    },
-    {
-      "wf_id": "WF-008",
-      "name": "Calendar: create new personal event",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "New event",
-      "on_success": "opens new personal event modal"
-    },
-    {
-      "wf_id": "WF-009",
-      "name": "Calendar: navigate to previous month",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Previous month",
-      "on_success": "calendar navigated to previous month view"
-    },
-    {
-      "wf_id": "WF-010",
-      "name": "Calendar: navigate to next month",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Next month",
-      "on_success": "calendar navigated to next month view"
-    },
-    {
-      "wf_id": "WF-011",
-      "name": "Open full calendar view",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Full calendar",
-      "on_success": "navigate to full calendar view"
-    },
-    {
-      "wf_id": "WF-012",
-      "name": "Open Import or Export Calendars",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Import or export calendars",
-      "on_success": "navigate to calendar data management"
-    },
-    {
       "wf_id": "WF-013",
-      "name": "Calendar block: click Move icon",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Calendar_Block.Edit_Controls.Move_Icon",
-      "terminal_action": "Move",
-      "on_success": "block repositioning initiated"
+      "name": "Configure Timeline block (Edit mode menu)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
+      "terminal_action": "Configure",
+      "on_success": "opens configuration for Timeline block"
     },
     {
       "wf_id": "WF-014",
-      "name": "Calendar block: More menu \u2192 Configure",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Calendar_Block.Edit_Controls.More_Menu.Configure",
-      "terminal_action": "Configure",
-      "on_success": "opens block configuration"
+      "name": "Move Timeline block (Edit mode menu)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
+      "terminal_action": "Move",
+      "on_success": "initiates move of Timeline block via menu"
     },
     {
       "wf_id": "WF-015",
-      "name": "Calendar block: More menu \u2192 Move",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Calendar_Block.Edit_Controls.More_Menu.Move",
-      "terminal_action": "Move",
-      "on_success": "block repositioning initiated"
+      "name": "Delete Timeline block (Edit mode menu)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
+      "terminal_action": "Delete",
+      "on_success": "removes Timeline block from dashboard"
     },
     {
       "wf_id": "WF-016",
-      "name": "Calendar block: More menu \u2192 Delete",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == true AND Calendar_Block.Edit_Controls.More_Menu.Delete",
+      "name": "Configure Calendar block (Edit mode menu)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
+      "terminal_action": "Configure",
+      "on_success": "opens configuration for Calendar block"
+    },
+    {
+      "wf_id": "WF-017",
+      "name": "Move Calendar block (Edit mode menu)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
+      "terminal_action": "Move",
+      "on_success": "initiates move of Calendar block via menu"
+    },
+    {
+      "wf_id": "WF-018",
+      "name": "Delete Calendar block (Edit mode menu)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
       "terminal_action": "Delete",
-      "on_success": "block removed from Dashboard"
+      "on_success": "removes Calendar block from dashboard"
+    },
+    {
+      "wf_id": "WF-019",
+      "name": "Initiate drag move of Timeline block (Move icon)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
+      "terminal_action": "Move_Icon",
+      "on_success": "initiates drag move of Timeline block"
+    },
+    {
+      "wf_id": "WF-020",
+      "name": "Initiate drag move of Calendar block (Move icon)",
+      "actor": "Authenticated user",
+      "conditional_branch": "Edit_Mode_Toggle == true",
+      "terminal_action": "Move_Icon",
+      "on_success": "initiates drag move of Calendar block"
     }
   ],
-  "total": 16
+  "total": 20
 }

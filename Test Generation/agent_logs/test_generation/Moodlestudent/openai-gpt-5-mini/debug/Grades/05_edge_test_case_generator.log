@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:34.392674
+DEBUG SESSION STARTED: 2026-07-04T22:41:48.076335
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Edge - SYSTEM PROMPT
+[22:41:48] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Edge - USER PROMPT
+[22:41:48] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 6,
   "module_title": "Grades",
-  "summary": "Displays the student's personal grade report for the current course, showing grade items, calculated weights, earned values, percentages, feedback, and the course total aggregation.",
-  "where_it_fits": "Accessible from the course-level horizontal tab bar (Course > Grades) when viewing a course; it is a course-scoped view tied to the user's enrollment and complements other course tabs like Participants and Activities. The Grades page is reached while navigated to a specific course from the top navigation (Home/Dashboard/My Courses) or the Course Index sidebar.",
-  "assumed_state_on_entry": "Logged in as a student and viewing a specific course where the student is enrolled"
+  "summary": "Displays the student's own course grades in a user report table listing grade items, calculated weights, earned values, ranges, percentages, feedback, and each item's contribution to the course total.",
+  "where_it_fits": "Available from within a course via the horizontal tab bar (Home/Dashboard/My Courses \u2192 select course \u2192 Grades), it is the student-facing view alongside Course, Participants, Activities, and Competencies for reviewing personal grade information rather than the full gradebook. It is part of the course-level navigation and appears when viewing a specific course.",
+  "assumed_state_on_entry": "Logged in as a student and currently viewing a specific course that contains graded activities (permission to view own grades)."
 }
 </module_context>
 
@@ -246,16 +260,18 @@ If a `<workflows>` block is present in the input:
     "Grades_User_Report": {
       "type": "data_table",
       "preconditions": [
-        "Logged in as a student and viewing a specific course where the student is enrolled",
-        "User may only view their own grades; cannot access the full gradebook or other students' grades"
+        "Logged in as a student and currently viewing a specific course that contains graded activities (permission to view own grades)."
       ],
-      "collapsible_groups": {
-        "group_by": "Course_Name",
-        "group_header": {
-          "collapsible": true,
-          "description": "Course name appears as a collapsible header; graded activities are listed indented beneath the header"
-        }
-      }
+      "grouping": {
+        "group_by": "Course",
+        "collapsible": true,
+        "group_shows_indented_items": true
+      },
+      "row_expansion": {
+        "expands_to_show": "graded activities indented beneath course header",
+        "collapsible_header_label_field": "Grade item"
+      },
+      "row_actions": []
     }
   }
 }
@@ -271,13 +287,13 @@ The Grades page displays the student's own grades for the course via a User repo
 </description>
 
 <workflows>
-WF-001 | View personal grades report (Grades_User_Report) | actor: student | branch: none | terminal: Grades_User_Report | on_success: Grades user report displayed showing grade items, calculated weights, earned values (or “–” if not yet graded), ranges, percentages, feedback, and the AGGREGATION course total row
+WF-001 | View Grades report (student) | actor: student | branch: none | terminal: View Grades | on_success: User report table displayed showing the student's own course grades (columns: Grade item, Calculated weight, Grade, Range, Percentage, Feedback, Contribution to course total) with an AGGREGATION Course total row at the bottom.
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:13:39] Test-Edge - LLM RESPONSE
+[22:42:55] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Grades",
@@ -285,72 +301,88 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Very long instructor feedback renders in grade row",
+      "test_case": "Very long Grade item name rendering",
       "preconditions": [
-        "Logged in as a student and viewing a specific course where the student is enrolled",
-        "Course contains a graded activity with instructor feedback whose body is a very long text (200+ characters) stored on the server"
+        "Logged in as a student and viewing the course",
+        "Course contains a grade item whose name is extremely long (e.g., 200+ characters)"
       ],
       "steps": [
-        "1. From the course page, click the 'Grades' tab to open the Grades_User_Report",
-        "2. Locate the grade item row that contains the long instructor feedback",
-        "3. Expand the course collapsible header if the grade item is collapsed",
-        "4. Hover over the Feedback cell or click any inline 'view more' affordance if present to reveal the full feedback"
+        "1. Navigate to the course Grades page",
+        "2. Locate the Grade item row with the extremely long name (expand course header if necessary)",
+        "3. Visually inspect the Grade item column cell for that row"
       ],
-      "expected_result": "The full instructor feedback is visible to the student without layout breakage: text wraps or expands within a scrollable container and does not overlap other columns; page remains responsive and the Grades page displays successfully (succeeds).",
-      "priority": "low"
+      "expected_result": "Succeeds: The Grades report table renders without horizontal overflow; the Grade item cell shows the long name without overlapping adjacent columns (text is wrapped or truncated so table layout remains intact) and the row remains selectable/expandable.",
+      "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Unicode, emoji, and special characters in course and grade item names are displayed",
+      "test_case": "Unicode, emoji and RTL characters in Feedback display",
       "preconditions": [
-        "Logged in as a student and viewing a specific course where the student is enrolled",
-        "Course title and at least one grade item title contain a mix of special characters and unicode/emoji"
+        "Logged in as a student and viewing the course",
+        "Course contains at least one graded activity where instructor feedback includes multi-byte Unicode (emoji), combining characters, and a right-to-left script sample"
       ],
       "steps": [
-        "1. From the course page, click the 'Grades' tab to open the Grades_User_Report",
-        "2. Observe the course collapsible header text (course title) and the indented grade item names in the table rows"
+        "1. Navigate to the course Grades page",
+        "2. Expand the course header to reveal the graded activity with the special-character feedback",
+        "3. Inspect the Feedback column cell for that activity"
       ],
-      "expected_result": "The course header and grade item names display the unicode/special characters and emoji correctly (not replaced with � or escaped sequences); collapsing/expanding header still functions and the Grades page displays successfully (succeeds).",
-      "priority": "low"
+      "expected_result": "Succeeds: The Feedback cell displays the Unicode, emoji and RTL characters visibly (no replacement glyphs like �) and the table layout does not break; text direction for RTL content is rendered so characters are readable.",
+      "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": null,
-      "subcategory": "interaction_edge",
-      "test_case": "Rapidly toggle the course collapsible header repeatedly",
+      "wf_ref": "WF-001",
+      "subcategory": "input_edge",
+      "test_case": "Leading/trailing whitespace in Grade item name handling",
       "preconditions": [
-        "Logged in as a student and viewing a specific course where the student is enrolled",
-        "Course contains multiple grade items listed under the course collapsible header"
+        "Logged in as a student and viewing the course",
+        "Course contains a grade item whose stored name contains leading and/or trailing whitespace characters"
       ],
       "steps": [
-        "1. From the course page, click the 'Grades' tab to open the Grades_User_Report",
-        "2. Identify the course collapsible header that groups grade items",
-        "3. Click the course collapsible header to collapse its grade items",
-        "4. Immediately click the same course collapsible header to expand it",
-        "5. Repeat steps 3 and 4 rapidly for 10 consecutive toggle actions"
+        "1. Navigate to the course Grades page",
+        "2. Locate the Grade item row whose stored name has leading/trailing whitespace",
+        "3. Inspect the Grade item column cell for visible surrounding whitespace"
       ],
-      "expected_result": "The UI remains responsive: each toggle action completes and the grade items show/hide appropriately with no duplicate rows, no stuck state (collapsed when expected, expanded when expected), and no JavaScript error dialogs displayed; the Grades page continues to function and the rapid toggling succeeds.",
+      "expected_result": "Succeeds: The Grade item cell displays the name without visible leading or trailing whitespace (display is trimmed) so the table column alignment remains correct and no extra blank space appears at cell edges.",
       "priority": "low"
+    },
+    {
+      "tc_id": "E-004",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Large number of graded activities under one course header",
+      "preconditions": [
+        "Logged in as a student and viewing the course",
+        "Course contains a very large number of graded activities (many rows beneath the course header)"
+      ],
+      "steps": [
+        "1. Navigate to the course Grades page",
+        "2. Expand the course header to reveal all indented graded activities",
+        "3. Scroll through the full list of revealed graded activities to the end",
+        "4. Verify presence of the AGGREGATION Course total row at the bottom"
+      ],
+      "expected_result": "Succeeds: All graded activity rows are rendered and reachable via scrolling (no missing rows), table remains usable (rows selectable/expandable where applicable), and the AGGREGATION Course total row is present and visible at the bottom of the list.",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 3,
+    "total": 4,
     "boundary": 0,
-    "input_edge": 2,
+    "input_edge": 3,
     "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 0,
-    "low_priority": 3
+    "medium_priority": 3,
+    "low_priority": 1
   }
 }
 
 ------------------------------------------------------------
-[21:13:39] Test-Edge - PARSED JSON
+[22:42:55] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Grades",
@@ -358,66 +390,82 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Very long instructor feedback renders in grade row",
+      "test_case": "Very long Grade item name rendering",
       "preconditions": [
-        "Logged in as a student and viewing a specific course where the student is enrolled",
-        "Course contains a graded activity with instructor feedback whose body is a very long text (200+ characters) stored on the server"
+        "Logged in as a student and viewing the course",
+        "Course contains a grade item whose name is extremely long (e.g., 200+ characters)"
       ],
       "steps": [
-        "1. From the course page, click the 'Grades' tab to open the Grades_User_Report",
-        "2. Locate the grade item row that contains the long instructor feedback",
-        "3. Expand the course collapsible header if the grade item is collapsed",
-        "4. Hover over the Feedback cell or click any inline 'view more' affordance if present to reveal the full feedback"
+        "1. Navigate to the course Grades page",
+        "2. Locate the Grade item row with the extremely long name (expand course header if necessary)",
+        "3. Visually inspect the Grade item column cell for that row"
       ],
-      "expected_result": "The full instructor feedback is visible to the student without layout breakage: text wraps or expands within a scrollable container and does not overlap other columns; page remains responsive and the Grades page displays successfully (succeeds).",
-      "priority": "low"
+      "expected_result": "Succeeds: The Grades report table renders without horizontal overflow; the Grade item cell shows the long name without overlapping adjacent columns (text is wrapped or truncated so table layout remains intact) and the row remains selectable/expandable.",
+      "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Unicode, emoji, and special characters in course and grade item names are displayed",
+      "test_case": "Unicode, emoji and RTL characters in Feedback display",
       "preconditions": [
-        "Logged in as a student and viewing a specific course where the student is enrolled",
-        "Course title and at least one grade item title contain a mix of special characters and unicode/emoji"
+        "Logged in as a student and viewing the course",
+        "Course contains at least one graded activity where instructor feedback includes multi-byte Unicode (emoji), combining characters, and a right-to-left script sample"
       ],
       "steps": [
-        "1. From the course page, click the 'Grades' tab to open the Grades_User_Report",
-        "2. Observe the course collapsible header text (course title) and the indented grade item names in the table rows"
+        "1. Navigate to the course Grades page",
+        "2. Expand the course header to reveal the graded activity with the special-character feedback",
+        "3. Inspect the Feedback column cell for that activity"
       ],
-      "expected_result": "The course header and grade item names display the unicode/special characters and emoji correctly (not replaced with \ufffd or escaped sequences); collapsing/expanding header still functions and the Grades page displays successfully (succeeds).",
-      "priority": "low"
+      "expected_result": "Succeeds: The Feedback cell displays the Unicode, emoji and RTL characters visibly (no replacement glyphs like \ufffd) and the table layout does not break; text direction for RTL content is rendered so characters are readable.",
+      "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": null,
-      "subcategory": "interaction_edge",
-      "test_case": "Rapidly toggle the course collapsible header repeatedly",
+      "wf_ref": "WF-001",
+      "subcategory": "input_edge",
+      "test_case": "Leading/trailing whitespace in Grade item name handling",
       "preconditions": [
-        "Logged in as a student and viewing a specific course where the student is enrolled",
-        "Course contains multiple grade items listed under the course collapsible header"
+        "Logged in as a student and viewing the course",
+        "Course contains a grade item whose stored name contains leading and/or trailing whitespace characters"
       ],
       "steps": [
-        "1. From the course page, click the 'Grades' tab to open the Grades_User_Report",
-        "2. Identify the course collapsible header that groups grade items",
-        "3. Click the course collapsible header to collapse its grade items",
-        "4. Immediately click the same course collapsible header to expand it",
-        "5. Repeat steps 3 and 4 rapidly for 10 consecutive toggle actions"
+        "1. Navigate to the course Grades page",
+        "2. Locate the Grade item row whose stored name has leading/trailing whitespace",
+        "3. Inspect the Grade item column cell for visible surrounding whitespace"
       ],
-      "expected_result": "The UI remains responsive: each toggle action completes and the grade items show/hide appropriately with no duplicate rows, no stuck state (collapsed when expected, expanded when expected), and no JavaScript error dialogs displayed; the Grades page continues to function and the rapid toggling succeeds.",
+      "expected_result": "Succeeds: The Grade item cell displays the name without visible leading or trailing whitespace (display is trimmed) so the table column alignment remains correct and no extra blank space appears at cell edges.",
       "priority": "low"
+    },
+    {
+      "tc_id": "E-004",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Large number of graded activities under one course header",
+      "preconditions": [
+        "Logged in as a student and viewing the course",
+        "Course contains a very large number of graded activities (many rows beneath the course header)"
+      ],
+      "steps": [
+        "1. Navigate to the course Grades page",
+        "2. Expand the course header to reveal all indented graded activities",
+        "3. Scroll through the full list of revealed graded activities to the end",
+        "4. Verify presence of the AGGREGATION Course total row at the bottom"
+      ],
+      "expected_result": "Succeeds: All graded activity rows are rendered and reachable via scrolling (no missing rows), table remains usable (rows selectable/expandable where applicable), and the AGGREGATION Course total row is present and visible at the bottom of the list.",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 3,
+    "total": 4,
     "boundary": 0,
-    "input_edge": 2,
+    "input_edge": 3,
     "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 0,
-    "low_priority": 3
+    "medium_priority": 3,
+    "low_priority": 1
   }
 }

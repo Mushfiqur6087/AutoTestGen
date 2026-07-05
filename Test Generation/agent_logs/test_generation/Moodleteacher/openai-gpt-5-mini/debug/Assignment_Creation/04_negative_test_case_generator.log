@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.156659
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.873667
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - SYSTEM PROMPT
+[22:49:29] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - USER PROMPT
+[22:49:29] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 7,
   "module_title": "Assignment Creation",
-  "summary": "Form for configuring and creating an Assignment activity, including settings for availability, submission and feedback types, grading, completion, access restrictions, and notifications.",
-  "where_it_fits": "Accessible from the Course Edit Mode via the Activity Chooser when managing a course (reachable from My Courses or a Course Page); after saving it returns to the course page or opens the new assignment's page. It complements course-level navigation such as the Course tab and Course Index sidebar for adding activities to a course.",
-  "assumed_state_on_entry": "User with course editing permissions viewing a specific course with Course Edit Mode enabled and the Activity Chooser open."
+  "summary": "A multi-panel form for configuring all settings of a course assignment including availability, submission and feedback types, grading, access restrictions, completion, and notifications.",
+  "where_it_fits": "Accessed from the Activity Chooser while in a course (typically via Course Edit Mode) and used during course authoring; upon save it creates the assignment and returns to or opens the assignment page within the Course Page where it appears in the Course Index and activity breadcrumbs. It is part of the course content creation flow reachable from the course interface (Course tab, Course Index sidebar, and edit controls).",
+  "assumed_state_on_entry": "User is in a specific Course with editing enabled and has permission to add activities (e.g., logged in as a Teacher) and the Activity Chooser has been opened."
 }
 </module_context>
 
@@ -262,68 +272,54 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Assignment_Creation_Form": {
       "type": "form",
-      "preconditions": [
-        "User with course editing permissions viewing a specific course with Course Edit Mode enabled and the Activity Chooser open."
-      ],
-      "validation": {
-        "inline": true
-      },
-      "fields": {
-        "General": {
-          "type": "collapsible_panel",
+      "validation": "inline",
+      "panels": [
+        {
+          "panel_name": "General",
+          "collapsible": true,
           "fields": {
             "Assignment_Name": {
-              "type": "text",
+              "type": "unspecified",
               "required": true
             },
             "Description": {
-              "type": "rich_text_editor"
+              "type": "unspecified"
             },
-            "Additional_Files_Upload": {
+            "Additional_Files": {
               "type": "file_upload"
             }
           }
         },
-        "Availability": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Availability",
+          "collapsible": true,
           "fields": {
-            "Allow_Submissions_From": {
-              "type": "group",
-              "fields": {
-                "Enabled": {
-                  "type": "checkbox"
-                },
-                "Date": {
-                  "type": "date_time"
-                }
-              }
+            "Allow_Submissions_From_Enable": {
+              "type": "checkbox"
+            },
+            "Allow_Submissions_From_Date": {
+              "type": "date",
+              "enabled_when": "Allow_Submissions_From_Enable == true"
+            },
+            "Due_Date_Enable": {
+              "type": "checkbox"
             },
             "Due_Date": {
-              "type": "group",
-              "fields": {
-                "Enabled": {
-                  "type": "checkbox"
-                },
-                "Date": {
-                  "type": "date_time"
-                }
-              }
+              "type": "date",
+              "enabled_when": "Due_Date_Enable == true"
             },
-            "Cut_Off_Date": {
-              "type": "group",
-              "fields": {
-                "Enabled": {
-                  "type": "checkbox"
-                },
-                "Date": {
-                  "type": "date_time"
-                }
-              }
+            "Cutoff_Date_Enable": {
+              "type": "checkbox"
+            },
+            "Cutoff_Date": {
+              "type": "date",
+              "enabled_when": "Cutoff_Date_Enable == true"
             }
           }
         },
-        "Submission_Types": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Submission_Types",
+          "collapsible": true,
           "fields": {
             "Online_Text": {
               "type": "checkbox"
@@ -331,22 +327,23 @@ If a `<workflows>` block is present in the input:
             "File_Submissions": {
               "type": "checkbox"
             },
-            "Max_Number_Of_Uploaded_Files": {
+            "File_Max_Number": {
               "type": "number",
               "visible_when": "File_Submissions == true"
             },
-            "Max_Submission_Size": {
+            "File_Max_Submission_Size": {
               "type": "number",
               "visible_when": "File_Submissions == true"
             },
             "Accepted_File_Types": {
-              "type": "list_of_strings",
+              "type": "unspecified",
               "visible_when": "File_Submissions == true"
             }
           }
         },
-        "Feedback_Types": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Feedback_Types",
+          "collapsible": true,
           "fields": {
             "Feedback_Comments": {
               "type": "checkbox"
@@ -359,8 +356,9 @@ If a `<workflows>` block is present in the input:
             }
           }
         },
-        "Submission_Settings": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Submission_Settings",
+          "collapsible": true,
           "fields": {
             "Require_Submit_Button_Click": {
               "type": "checkbox"
@@ -376,8 +374,9 @@ If a `<workflows>` block is present in the input:
             }
           }
         },
-        "Group_Submission_Settings": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Group_Submission_Settings",
+          "collapsible": true,
           "fields": {
             "Group_Submissions": {
               "type": "checkbox"
@@ -392,19 +391,21 @@ If a `<workflows>` block is present in the input:
             }
           }
         },
-        "Notifications": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Notifications",
+          "collapsible": true,
           "fields": {
-            "Notify_Graders_New_Submissions": {
+            "Notify_Graders_On_New_Submission": {
               "type": "checkbox"
             },
-            "Notify_Graders_Late_Submissions": {
+            "Notify_Graders_On_Late_Submission": {
               "type": "checkbox"
             }
           }
         },
-        "Grade": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Grade",
+          "collapsible": true,
           "fields": {
             "Grade_Type": {
               "type": "unspecified"
@@ -423,66 +424,78 @@ If a `<workflows>` block is present in the input:
             }
           }
         },
-        "Access_Restrictions": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Access_Restrictions",
+          "collapsible": true,
           "fields": {
-            "Add_Restriction_Button": {
+            "Add_Restriction": {
               "type": "button",
-              "action_name": "Add restriction",
-              "on_click_opens": "Restriction_Type_Picker"
-            },
-            "Restriction_Type_Picker": {
-              "type": "dropdown",
-              "visible_when": "Add_Restriction_Button_Clicked == true"
+              "action_name": "+ Add restriction",
+              "fields": {
+                "Restriction_Type": {
+                  "type": "unspecified"
+                }
+              }
             }
           }
         },
-        "Activity_Completion": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Activity_Completion",
+          "collapsible": true,
           "fields": {
-            "Completion_Tracking_Options": {
+            "Completion_Tracking": {
               "type": "unspecified"
             },
             "Required_Conditions": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Condition_Type": {
+                  "type": "unspecified"
+                },
+                "Condition_Value": {
+                  "type": "unspecified"
+                }
+              }
+            }
+          }
+        },
+        {
+          "panel_name": "Tags",
+          "collapsible": true,
+          "fields": {
+            "Tags": {
               "type": "unspecified"
             }
           }
         },
-        "Tags": {
-          "type": "collapsible_panel",
-          "fields": {
-            "Tags_Input": {
-              "type": "list_of_strings"
-            }
-          }
-        },
-        "Competencies": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Competencies",
+          "collapsible": true,
           "fields": {
             "Competency_Links": {
               "type": "unspecified"
             }
           }
         }
-      },
+      ],
       "submit_actions": [
         {
           "action_name": "Save and return to course",
-          "on_success": "creates the assignment and redirects to the course page",
+          "on_success": "creates the assignment and returns to course page",
           "preconditions": [
-            "User with course editing permissions viewing a specific course with Course Edit Mode enabled and the Activity Chooser open."
+            "User is in a specific Course with editing enabled and has permission to add activities (e.g., logged in as a Teacher) and the Activity Chooser has been opened."
           ]
         },
         {
           "action_name": "Save and display",
-          "on_success": "creates the assignment and opens the new assignment's page",
+          "on_success": "creates the assignment and opens the new assignment page",
           "preconditions": [
-            "User with course editing permissions viewing a specific course with Course Edit Mode enabled and the Activity Chooser open."
+            "User is in a specific Course with editing enabled and has permission to add activities (e.g., logged in as a Teacher) and the Activity Chooser has been opened."
           ]
         },
         {
           "action_name": "Cancel",
-          "on_success": "discards all changes"
+          "on_success": "discards changes and closes the creation form"
         }
       ]
     }
@@ -500,36 +513,22 @@ The assignment creation form opens after selecting Assignment from the Activity 
 </description>
 
 <workflows>
-WF-001 | Save and return — File_Submissions=false; Group_Submissions=false; Add_Restriction_Button_Clicked=false | actor: User with course editing permissions | branch: File_Submissions == false AND Group_Submissions == false AND Add_Restriction_Button_Clicked == false | terminal: Save and return to course | on_success: creates the assignment and redirects to the course page
-WF-002 | Save and display — File_Submissions=false; Group_Submissions=false; Add_Restriction_Button_Clicked=false | actor: User with course editing permissions | branch: File_Submissions == false AND Group_Submissions == false AND Add_Restriction_Button_Clicked == false | terminal: Save and display | on_success: creates the assignment and opens the new assignment's page
-WF-003 | Cancel — File_Submissions=false; Group_Submissions=false; Add_Restriction_Button_Clicked=false | actor: User with course editing permissions | branch: File_Submissions == false AND Group_Submissions == false AND Add_Restriction_Button_Clicked == false | terminal: Cancel | on_success: discards all changes
-WF-004 | Save and return — File_Submissions=true; Group_Submissions=false; Add_Restriction_Button_Clicked=false | actor: User with course editing permissions | branch: File_Submissions == true AND Group_Submissions == false AND Add_Restriction_Button_Clicked == false | terminal: Save and return to course | on_success: creates the assignment and redirects to the course page
-WF-005 | Save and display — File_Submissions=true; Group_Submissions=false; Add_Restriction_Button_Clicked=false | actor: User with course editing permissions | branch: File_Submissions == true AND Group_Submissions == false AND Add_Restriction_Button_Clicked == false | terminal: Save and display | on_success: creates the assignment and opens the new assignment's page
-WF-006 | Cancel — File_Submissions=true; Group_Submissions=false; Add_Restriction_Button_Clicked=false | actor: User with course editing permissions | branch: File_Submissions == true AND Group_Submissions == false AND Add_Restriction_Button_Clicked == false | terminal: Cancel | on_success: discards all changes
-WF-007 | Save and return — File_Submissions=false; Group_Submissions=true; Add_Restriction_Button_Clicked=false | actor: User with course editing permissions | branch: File_Submissions == false AND Group_Submissions == true AND Add_Restriction_Button_Clicked == false | terminal: Save and return to course | on_success: creates the assignment and redirects to the course page
-WF-008 | Save and display — File_Submissions=false; Group_Submissions=true; Add_Restriction_Button_Clicked=false | actor: User with course editing permissions | branch: File_Submissions == false AND Group_Submissions == true AND Add_Restriction_Button_Clicked == false | terminal: Save and display | on_success: creates the assignment and opens the new assignment's page
-WF-009 | Cancel — File_Submissions=false; Group_Submissions=true; Add_Restriction_Button_Clicked=false | actor: User with course editing permissions | branch: File_Submissions == false AND Group_Submissions == true AND Add_Restriction_Button_Clicked == false | terminal: Cancel | on_success: discards all changes
-WF-010 | Save and return — File_Submissions=true; Group_Submissions=true; Add_Restriction_Button_Clicked=false | actor: User with course editing permissions | branch: File_Submissions == true AND Group_Submissions == true AND Add_Restriction_Button_Clicked == false | terminal: Save and return to course | on_success: creates the assignment and redirects to the course page
-WF-011 | Save and display — File_Submissions=true; Group_Submissions=true; Add_Restriction_Button_Clicked=false | actor: User with course editing permissions | branch: File_Submissions == true AND Group_Submissions == true AND Add_Restriction_Button_Clicked == false | terminal: Save and display | on_success: creates the assignment and opens the new assignment's page
-WF-012 | Cancel — File_Submissions=true; Group_Submissions=true; Add_Restriction_Button_Clicked=false | actor: User with course editing permissions | branch: File_Submissions == true AND Group_Submissions == true AND Add_Restriction_Button_Clicked == false | terminal: Cancel | on_success: discards all changes
-WF-013 | Save and return — File_Submissions=false; Group_Submissions=false; Add_Restriction_Button_Clicked=true | actor: User with course editing permissions | branch: File_Submissions == false AND Group_Submissions == false AND Add_Restriction_Button_Clicked == true | terminal: Save and return to course | on_success: creates the assignment and redirects to the course page
-WF-014 | Save and display — File_Submissions=false; Group_Submissions=false; Add_Restriction_Button_Clicked=true | actor: User with course editing permissions | branch: File_Submissions == false AND Group_Submissions == false AND Add_Restriction_Button_Clicked == true | terminal: Save and display | on_success: creates the assignment and opens the new assignment's page
-WF-015 | Cancel — File_Submissions=false; Group_Submissions=false; Add_Restriction_Button_Clicked=true | actor: User with course editing permissions | branch: File_Submissions == false AND Group_Submissions == false AND Add_Restriction_Button_Clicked == true | terminal: Cancel | on_success: discards all changes
-WF-016 | Save and return — File_Submissions=true; Group_Submissions=false; Add_Restriction_Button_Clicked=true | actor: User with course editing permissions | branch: File_Submissions == true AND Group_Submissions == false AND Add_Restriction_Button_Clicked == true | terminal: Save and return to course | on_success: creates the assignment and redirects to the course page
-WF-017 | Save and display — File_Submissions=true; Group_Submissions=false; Add_Restriction_Button_Clicked=true | actor: User with course editing permissions | branch: File_Submissions == true AND Group_Submissions == false AND Add_Restriction_Button_Clicked == true | terminal: Save and display | on_success: creates the assignment and opens the new assignment's page
-WF-018 | Cancel — File_Submissions=true; Group_Submissions=false; Add_Restriction_Button_Clicked=true | actor: User with course editing permissions | branch: File_Submissions == true AND Group_Submissions == false AND Add_Restriction_Button_Clicked == true | terminal: Cancel | on_success: discards all changes
-WF-019 | Save and return — File_Submissions=false; Group_Submissions=true; Add_Restriction_Button_Clicked=true | actor: User with course editing permissions | branch: File_Submissions == false AND Group_Submissions == true AND Add_Restriction_Button_Clicked == true | terminal: Save and return to course | on_success: creates the assignment and redirects to the course page
-WF-020 | Save and display — File_Submissions=false; Group_Submissions=true; Add_Restriction_Button_Clicked=true | actor: User with course editing permissions | branch: File_Submissions == false AND Group_Submissions == true AND Add_Restriction_Button_Clicked == true | terminal: Save and display | on_success: creates the assignment and opens the new assignment's page
-WF-021 | Cancel — File_Submissions=false; Group_Submissions=true; Add_Restriction_Button_Clicked=true | actor: User with course editing permissions | branch: File_Submissions == false AND Group_Submissions == true AND Add_Restriction_Button_Clicked == true | terminal: Cancel | on_success: discards all changes
-WF-022 | Save and return — File_Submissions=true; Group_Submissions=true; Add_Restriction_Button_Clicked=true | actor: User with course editing permissions | branch: File_Submissions == true AND Group_Submissions == true AND Add_Restriction_Button_Clicked == true | terminal: Save and return to course | on_success: creates the assignment and redirects to the course page
-WF-023 | Save and display — File_Submissions=true; Group_Submissions=true; Add_Restriction_Button_Clicked=true | actor: User with course editing permissions | branch: File_Submissions == true AND Group_Submissions == true AND Add_Restriction_Button_Clicked == true | terminal: Save and display | on_success: creates the assignment and opens the new assignment's page
-WF-024 | Cancel — File_Submissions=true; Group_Submissions=true; Add_Restriction_Button_Clicked=true | actor: User with course editing permissions | branch: File_Submissions == true AND Group_Submissions == true AND Add_Restriction_Button_Clicked == true | terminal: Cancel | on_success: discards all changes
+WF-001 | Save and return (base) | actor: Teacher | branch: none | terminal: Save and return to course | on_success: creates the assignment and returns to course page
+WF-002 | Save and display (base) | actor: Teacher | branch: none | terminal: Save and display | on_success: creates the assignment and opens the new assignment page
+WF-003 | Cancel (base) | actor: Teacher | branch: none | terminal: Cancel | on_success: discards changes and closes the creation form
+WF-004 | Save and return with File submissions enabled | actor: Teacher | branch: File_Submissions == true | terminal: Save and return to course | on_success: creates the assignment and returns to course page
+WF-005 | Cancel with File submissions enabled | actor: Teacher | branch: File_Submissions == true | terminal: Cancel | on_success: discards changes and closes the creation form
+WF-006 | Save and return with Group submissions enabled | actor: Teacher | branch: Group_Submissions == true | terminal: Save and return to course | on_success: creates the assignment and returns to course page
+WF-007 | Cancel with Group submissions enabled | actor: Teacher | branch: Group_Submissions == true | terminal: Cancel | on_success: discards changes and closes the creation form
+WF-008 | Save and return with File and Group submissions enabled | actor: Teacher | branch: File_Submissions == true && Group_Submissions == true | terminal: Save and return to course | on_success: creates the assignment and returns to course page
+WF-009 | Save and display with File and Group submissions enabled | actor: Teacher | branch: File_Submissions == true && Group_Submissions == true | terminal: Save and display | on_success: creates the assignment and opens the new assignment page
+WF-010 | Cancel with File and Group submissions enabled | actor: Teacher | branch: File_Submissions == true && Group_Submissions == true | terminal: Cancel | on_success: discards changes and closes the creation form
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:14:03] Test-Negative - LLM RESPONSE
+[22:50:57] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Assignment Creation",
@@ -537,126 +536,108 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": null,
-      "test_case": "Leave required Assignment Name blank and attempt to save",
+      "wf_ref": "WF-001",
+      "test_case": "Submit form with required Assignment Name left blank (Save and return)",
       "preconditions": [
-        "User with course editing permissions viewing a specific course with Course Edit Mode enabled and the Activity Chooser open."
+        "User is in a specific Course with editing enabled and has permission to add activities",
+        "Assignment Creation form is open"
       ],
       "steps": [
-        "1. Ensure the Assignment Creation form is open (precondition satisfied).",
-        "2. Leave the Assignment_Name field blank.",
-        "3. Click the 'Save and return to course' button."
+        "1. Leave the Assignment_Name field blank",
+        "2. Click the 'Save and return to course' button"
       ],
-      "expected_result": "Inline validation error appears on the Assignment_Name field indicating it is required; the form does not submit; no assignment is created and the user remains on the creation form.",
+      "expected_result": "Inline validation error appears on the Assignment_Name field indicating it is required; the form does not submit; no assignment is created; user remains on the Assignment Creation form.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": null,
-      "test_case": "Submit with all required fields empty",
+      "wf_ref": "WF-002",
+      "test_case": "Submit with ALL required fields empty (Save and display)",
       "preconditions": [
-        "User with course editing permissions viewing a specific course with Course Edit Mode enabled and the Activity Chooser open."
+        "User is in a specific Course with editing enabled and has permission to add activities",
+        "Assignment Creation form is open"
       ],
       "steps": [
-        "1. Ensure the Assignment Creation form is open (precondition satisfied).",
-        "2. Leave all required fields empty (representative: Assignment_Name blank).",
-        "3. Click the 'Save and display' button."
+        "1. Ensure all required fields are left empty (leave Assignment_Name blank)",
+        "2. Click the 'Save and display' button"
       ],
-      "expected_result": "Inline validation error appears on the Assignment_Name field indicating it is required; the form does not submit; no assignment is created and the user remains on the creation form.",
+      "expected_result": "Inline validation error appears on the Assignment_Name field indicating it is required; the form does not submit; no assignment is created; user remains on the Assignment Creation form.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-004",
-      "test_case": "Enter non-numeric value into Max Number Of Uploaded Files when File Submissions enabled",
+      "test_case": "Enable File submissions and enter non-numeric value into File_Max_Number",
       "preconditions": [
-        "User with course editing permissions viewing a specific course with Course Edit Mode enabled and the Activity Chooser open.",
-        "Submission_Types -> File_Submissions checkbox is available"
+        "User is in a specific Course with editing enabled and has permission to add activities",
+        "Assignment Creation form is open"
       ],
       "steps": [
-        "1. Ensure the Assignment Creation form is open (precondition satisfied).",
-        "2. Check the File_Submissions checkbox to reveal file-related controls.",
-        "3. Enter <non-numeric value> into the Max_Number_Of_Uploaded_Files field.",
-        "4. Click the 'Save and return to course' button."
+        "1. Check the File_Submissions checkbox",
+        "2. Enter <non-numeric value> into the File_Max_Number field",
+        "3. Click the 'Save and return to course' button"
       ],
-      "expected_result": "Inline validation error appears on the Max_Number_Of_Uploaded_Files field indicating it must be a numeric value; the form does not submit; no assignment is created.",
+      "expected_result": "Inline validation error appears on the File_Max_Number field indicating a numeric value is required; the form does not submit; no assignment is created; user remains on the Assignment Creation form.",
       "priority": "medium"
     },
     {
       "tc_id": "N-004",
       "wf_ref": null,
-      "test_case": "Enter invalid date into Due Date when Due Date enabled",
+      "test_case": "Enable Due date and enter an invalid date format",
       "preconditions": [
-        "User with course editing permissions viewing a specific course with Course Edit Mode enabled and the Activity Chooser open."
+        "User is in a specific Course with editing enabled and has permission to add activities",
+        "Assignment Creation form is open"
       ],
       "steps": [
-        "1. Ensure the Assignment Creation form is open (precondition satisfied).",
-        "2. In the Availability panel, check the Due_Date Enabled checkbox to enable the Due Date picker.",
-        "3. Enter <invalid date format> into the Due_Date Date field.",
-        "4. Click the 'Save and display' button."
+        "1. Check the Due_Date_Enable checkbox",
+        "2. Enter <invalid date format> into the Due_Date field",
+        "3. Click the 'Save and return to course' button"
       ],
-      "expected_result": "Inline validation error appears on the Due_Date Date field indicating the date/time is invalid or incorrectly formatted; the form does not submit; no assignment is created.",
+      "expected_result": "Inline validation error appears on the Due_Date field indicating the date/time is invalid; the form does not submit; no assignment is created; user remains on the Assignment Creation form.",
       "priority": "medium"
     },
     {
       "tc_id": "N-005",
       "wf_ref": null,
-      "test_case": "Open Add restriction picker and submit without selecting a restriction type",
+      "test_case": "Unauthenticated user attempts to open Assignment Creation from Activity Chooser",
       "preconditions": [
-        "User with course editing permissions viewing a specific course with Course Edit Mode enabled and the Activity Chooser open."
+        "User is not authenticated",
+        "A course page is publicly accessible or reachable"
       ],
       "steps": [
-        "1. Ensure the Assignment Creation form is open (precondition satisfied).",
-        "2. Click the 'Add restriction' button to open the Restriction_Type_Picker.",
-        "3. Do not select any value in the Restriction_Type_Picker (leave it blank).",
-        "4. Click the 'Save and return to course' button."
+        "1. Navigate to the Course page while not logged in",
+        "2. Open the Activity Chooser",
+        "3. Select 'Assignment' from the Activity Chooser"
       ],
-      "expected_result": "Inline validation error appears on the Restriction_Type_Picker indicating a selection is required; the form does not submit; no assignment is created.",
-      "priority": "medium"
+      "expected_result": "Access to the Assignment Creation form is blocked: the user is redirected to the login page (or shown the authentication prompt) and the Assignment Creation form is not displayed.",
+      "priority": "high"
     },
     {
       "tc_id": "N-006",
       "wf_ref": null,
-      "test_case": "Attempt to access Assignment creation as a user without course editing permissions",
+      "test_case": "User without course edit permission attempts to open Assignment Creation",
       "preconditions": [
-        "User DOES NOT have course editing permissions for the target course."
+        "User is logged in but does not have editing permission in the course (e.g., Student role)",
+        "Course page is open"
       ],
       "steps": [
-        "1. Log in as a user without course editing permissions.",
-        "2. Navigate to the course page.",
-        "3. Open the Activity Chooser.",
-        "4. Attempt to select the 'Assignment' activity (or navigate directly to the assignment creation URL)."
+        "1. Open the Activity Chooser while logged in as a user without edit permissions",
+        "2. Attempt to select 'Assignment' from the Activity Chooser"
       ],
-      "expected_result": "The Assignment creation form is not displayed: the 'Assignment' option is not present in the Activity Chooser and direct navigation to the creation page is blocked; an authorization/error banner is visible indicating the user cannot add activities; no assignment creation UI is accessible.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": null,
-      "test_case": "Attempt to open Assignment creation while Course Edit Mode is disabled",
-      "preconditions": [
-        "User has course editing permissions but Course Edit Mode is disabled on the course page."
-      ],
-      "steps": [
-        "1. Log in as a user with course editing permissions.",
-        "2. Navigate to the course page and ensure Course Edit Mode is turned OFF.",
-        "3. Open the Activity Chooser.",
-        "4. Attempt to select the 'Assignment' activity."
-      ],
-      "expected_result": "The Assignment creation form does not open: the Activity Chooser does not present the 'Assignment' option while Edit Mode is disabled (or shows a message that editing must be enabled); no assignment creation UI is accessible and no save action is possible.",
+      "expected_result": "The Activity Chooser does not open the Assignment Creation form for this user: the 'Assignment' option is not available or selecting it does not open the creation form; the user remains on the Course page and cannot access assignment creation controls.",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 7,
+    "total": 6,
     "high_priority": 4,
-    "medium_priority": 3,
+    "medium_priority": 2,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:14:03] Test-Negative - PARSED JSON
+[22:50:57] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Assignment Creation",
@@ -664,120 +645,102 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": null,
-      "test_case": "Leave required Assignment Name blank and attempt to save",
+      "wf_ref": "WF-001",
+      "test_case": "Submit form with required Assignment Name left blank (Save and return)",
       "preconditions": [
-        "User with course editing permissions viewing a specific course with Course Edit Mode enabled and the Activity Chooser open."
+        "User is in a specific Course with editing enabled and has permission to add activities",
+        "Assignment Creation form is open"
       ],
       "steps": [
-        "1. Ensure the Assignment Creation form is open (precondition satisfied).",
-        "2. Leave the Assignment_Name field blank.",
-        "3. Click the 'Save and return to course' button."
+        "1. Leave the Assignment_Name field blank",
+        "2. Click the 'Save and return to course' button"
       ],
-      "expected_result": "Inline validation error appears on the Assignment_Name field indicating it is required; the form does not submit; no assignment is created and the user remains on the creation form.",
+      "expected_result": "Inline validation error appears on the Assignment_Name field indicating it is required; the form does not submit; no assignment is created; user remains on the Assignment Creation form.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": null,
-      "test_case": "Submit with all required fields empty",
+      "wf_ref": "WF-002",
+      "test_case": "Submit with ALL required fields empty (Save and display)",
       "preconditions": [
-        "User with course editing permissions viewing a specific course with Course Edit Mode enabled and the Activity Chooser open."
+        "User is in a specific Course with editing enabled and has permission to add activities",
+        "Assignment Creation form is open"
       ],
       "steps": [
-        "1. Ensure the Assignment Creation form is open (precondition satisfied).",
-        "2. Leave all required fields empty (representative: Assignment_Name blank).",
-        "3. Click the 'Save and display' button."
+        "1. Ensure all required fields are left empty (leave Assignment_Name blank)",
+        "2. Click the 'Save and display' button"
       ],
-      "expected_result": "Inline validation error appears on the Assignment_Name field indicating it is required; the form does not submit; no assignment is created and the user remains on the creation form.",
+      "expected_result": "Inline validation error appears on the Assignment_Name field indicating it is required; the form does not submit; no assignment is created; user remains on the Assignment Creation form.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-004",
-      "test_case": "Enter non-numeric value into Max Number Of Uploaded Files when File Submissions enabled",
+      "test_case": "Enable File submissions and enter non-numeric value into File_Max_Number",
       "preconditions": [
-        "User with course editing permissions viewing a specific course with Course Edit Mode enabled and the Activity Chooser open.",
-        "Submission_Types -> File_Submissions checkbox is available"
+        "User is in a specific Course with editing enabled and has permission to add activities",
+        "Assignment Creation form is open"
       ],
       "steps": [
-        "1. Ensure the Assignment Creation form is open (precondition satisfied).",
-        "2. Check the File_Submissions checkbox to reveal file-related controls.",
-        "3. Enter <non-numeric value> into the Max_Number_Of_Uploaded_Files field.",
-        "4. Click the 'Save and return to course' button."
+        "1. Check the File_Submissions checkbox",
+        "2. Enter <non-numeric value> into the File_Max_Number field",
+        "3. Click the 'Save and return to course' button"
       ],
-      "expected_result": "Inline validation error appears on the Max_Number_Of_Uploaded_Files field indicating it must be a numeric value; the form does not submit; no assignment is created.",
+      "expected_result": "Inline validation error appears on the File_Max_Number field indicating a numeric value is required; the form does not submit; no assignment is created; user remains on the Assignment Creation form.",
       "priority": "medium"
     },
     {
       "tc_id": "N-004",
       "wf_ref": null,
-      "test_case": "Enter invalid date into Due Date when Due Date enabled",
+      "test_case": "Enable Due date and enter an invalid date format",
       "preconditions": [
-        "User with course editing permissions viewing a specific course with Course Edit Mode enabled and the Activity Chooser open."
+        "User is in a specific Course with editing enabled and has permission to add activities",
+        "Assignment Creation form is open"
       ],
       "steps": [
-        "1. Ensure the Assignment Creation form is open (precondition satisfied).",
-        "2. In the Availability panel, check the Due_Date Enabled checkbox to enable the Due Date picker.",
-        "3. Enter <invalid date format> into the Due_Date Date field.",
-        "4. Click the 'Save and display' button."
+        "1. Check the Due_Date_Enable checkbox",
+        "2. Enter <invalid date format> into the Due_Date field",
+        "3. Click the 'Save and return to course' button"
       ],
-      "expected_result": "Inline validation error appears on the Due_Date Date field indicating the date/time is invalid or incorrectly formatted; the form does not submit; no assignment is created.",
+      "expected_result": "Inline validation error appears on the Due_Date field indicating the date/time is invalid; the form does not submit; no assignment is created; user remains on the Assignment Creation form.",
       "priority": "medium"
     },
     {
       "tc_id": "N-005",
       "wf_ref": null,
-      "test_case": "Open Add restriction picker and submit without selecting a restriction type",
+      "test_case": "Unauthenticated user attempts to open Assignment Creation from Activity Chooser",
       "preconditions": [
-        "User with course editing permissions viewing a specific course with Course Edit Mode enabled and the Activity Chooser open."
+        "User is not authenticated",
+        "A course page is publicly accessible or reachable"
       ],
       "steps": [
-        "1. Ensure the Assignment Creation form is open (precondition satisfied).",
-        "2. Click the 'Add restriction' button to open the Restriction_Type_Picker.",
-        "3. Do not select any value in the Restriction_Type_Picker (leave it blank).",
-        "4. Click the 'Save and return to course' button."
+        "1. Navigate to the Course page while not logged in",
+        "2. Open the Activity Chooser",
+        "3. Select 'Assignment' from the Activity Chooser"
       ],
-      "expected_result": "Inline validation error appears on the Restriction_Type_Picker indicating a selection is required; the form does not submit; no assignment is created.",
-      "priority": "medium"
+      "expected_result": "Access to the Assignment Creation form is blocked: the user is redirected to the login page (or shown the authentication prompt) and the Assignment Creation form is not displayed.",
+      "priority": "high"
     },
     {
       "tc_id": "N-006",
       "wf_ref": null,
-      "test_case": "Attempt to access Assignment creation as a user without course editing permissions",
+      "test_case": "User without course edit permission attempts to open Assignment Creation",
       "preconditions": [
-        "User DOES NOT have course editing permissions for the target course."
+        "User is logged in but does not have editing permission in the course (e.g., Student role)",
+        "Course page is open"
       ],
       "steps": [
-        "1. Log in as a user without course editing permissions.",
-        "2. Navigate to the course page.",
-        "3. Open the Activity Chooser.",
-        "4. Attempt to select the 'Assignment' activity (or navigate directly to the assignment creation URL)."
+        "1. Open the Activity Chooser while logged in as a user without edit permissions",
+        "2. Attempt to select 'Assignment' from the Activity Chooser"
       ],
-      "expected_result": "The Assignment creation form is not displayed: the 'Assignment' option is not present in the Activity Chooser and direct navigation to the creation page is blocked; an authorization/error banner is visible indicating the user cannot add activities; no assignment creation UI is accessible.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": null,
-      "test_case": "Attempt to open Assignment creation while Course Edit Mode is disabled",
-      "preconditions": [
-        "User has course editing permissions but Course Edit Mode is disabled on the course page."
-      ],
-      "steps": [
-        "1. Log in as a user with course editing permissions.",
-        "2. Navigate to the course page and ensure Course Edit Mode is turned OFF.",
-        "3. Open the Activity Chooser.",
-        "4. Attempt to select the 'Assignment' activity."
-      ],
-      "expected_result": "The Assignment creation form does not open: the Activity Chooser does not present the 'Assignment' option while Edit Mode is disabled (or shows a message that editing must be enabled); no assignment creation UI is accessible and no save action is possible.",
+      "expected_result": "The Activity Chooser does not open the Assignment Creation form for this user: the 'Assignment' option is not available or selecting it does not open the creation form; the user remains on the Course page and cannot access assignment creation controls.",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 7,
+    "total": 6,
     "high_priority": 4,
-    "medium_priority": 3,
+    "medium_priority": 2,
     "low_priority": 0
   }
 }

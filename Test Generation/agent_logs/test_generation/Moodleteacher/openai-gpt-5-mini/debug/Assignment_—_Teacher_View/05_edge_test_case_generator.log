@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.209473
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.907705
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Edge - SYSTEM PROMPT
+[22:49:29] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Edge - USER PROMPT
+[22:49:29] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 10,
   "module_title": "Assignment \u2014 Teacher View",
-  "summary": "Shows an individual assignment's metadata, grading summary metrics, description and attachments, and provides access to the per-student grading interface and assignment-related tabs.",
-  "where_it_fits": "Accessed from a course\u2019s activity view (breadcrumbs and the course tab bar: Course / Activities) when viewing a specific assignment within a Course Page; it complements the Course Index sidebar and sits alongside tabs for Settings, Submissions, and Advanced grading in the assignment lifecycle.",
-  "assumed_state_on_entry": "Logged in as a teacher and viewing a specific assignment activity within an existing course"
+  "summary": "Displays an assignment's metadata, attached files, read-only grading summary metrics, and navigation for grading, submissions, settings, and advanced grading from the teacher perspective.",
+  "where_it_fits": "Shown when viewing an assignment activity within a course (accessible via the course page and Course Index and represented in breadcrumbs like Course \u2192 Assignment); it sits in the activity-level workflow where teachers review assignment details and launch grading or submission management. ",
+  "assumed_state_on_entry": "Logged in as a Teacher and viewing a course that contains the assignment (the assignment activity already exists)."
 }
 </module_context>
 
@@ -241,20 +255,20 @@ If a `<workflows>` block is present in the input:
 
 <ast>
 {
-  "module_name": "Assignment \u0002 Teacher View",
+  "module_name": "Assignment \u2014 Teacher View",
   "components": {
-    "Assignment_Actions": {
+    "Assignment_Action_Bar": {
       "type": "action_bar",
-      "fields": {
-        "Grade": {
-          "type": "button",
+      "available_actions": [
+        {
           "action_name": "Grade",
-          "on_success": "opens grading interface",
+          "on_success": "opens grading interface for individual students",
           "preconditions": [
-            "Logged in as a teacher and viewing a specific assignment activity within an existing course"
+            "Logged in as a Teacher",
+            "Viewing a course that contains the assignment"
           ]
         }
-      }
+      ]
     },
     "Assignment_Tabs": {
       "type": "tab_container",
@@ -295,13 +309,13 @@ The Assignment page (teacher view) displays the assignment's metadata including 
 </description>
 
 <workflows>
-WF-001 | Open grading interface via Grade button | actor: Teacher | branch: none | terminal: Grade | on_success: opens grading interface
+WF-001 | Open grading interface via Grade button | actor: Teacher | branch: none | terminal: Grade | on_success: opens grading interface for individual students
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:14:49] Test-Edge - LLM RESPONSE
+[22:51:32] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Assignment — Teacher View",
@@ -309,125 +323,81 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": null,
-      "subcategory": "boundary",
-      "test_case": "Opened date equals Due date (same-day boundary)",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click of Grade button opens a single grading interface",
       "preconditions": [
-        "Logged in as a teacher and viewing the course containing the assignment",
-        "An assignment exists in the course with Opened date = Due date = <today>"
+        "Logged in as a Teacher",
+        "An assignment exists in the course and teacher is viewing the Assignment — Teacher View page"
       ],
       "steps": [
-        "1. Navigate to the Assignment — Teacher View for the assignment"
+        "1. On the Assignment — Teacher View page, locate the Grade action button in the Assignment_Action_Bar",
+        "2. Click the Grade button",
+        "3. Immediately click the Grade button again (second click within a very short interval)"
       ],
-      "expected_result": "Viewing the assignment succeeds; the Opened date and Due date fields both display the same date (<today>), and the Time remaining field displays zero remaining time (explicit zero-day or 'due today' indicator) — the assignment detail page renders without errors.",
+      "expected_result": "A single grading interface instance is displayed (the grading interface is visible and focused); no duplicate grading panels or duplicate browser tabs/windows are opened — action succeeds",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": null,
-      "subcategory": "boundary",
-      "test_case": "Due date is yesterday (just past boundary)",
+      "subcategory": "input_edge",
+      "test_case": "Very long Description text renders without horizontal overflow or truncation of critical content",
       "preconditions": [
-        "Logged in as a teacher and viewing the course containing the assignment",
-        "An assignment exists in the course with Due date = <yesterday>"
+        "Logged in as a Teacher",
+        "An assignment exists whose Description contains a very long text block (200+ characters) including multiple paragraphs"
       ],
       "steps": [
-        "1. Navigate to the Assignment — Teacher View for the assignment"
+        "1. Navigate to the Assignment — Teacher View page for that assignment"
       ],
-      "expected_result": "Viewing the assignment succeeds; the Due date displays <yesterday>, and the Time remaining field clearly indicates the assignment is past due (a visible past-due indicator or negative/elapsed time display is shown) — the metrics panel and metadata render without layout or crash issues.",
-      "priority": "medium"
+      "expected_result": "The Description panel displays the complete text content; vertical scrolling appears as needed and there is no horizontal overflow or clipped UI text — view rendering succeeds",
+      "priority": "low"
     },
     {
       "tc_id": "E-003",
       "wf_ref": null,
-      "subcategory": "boundary",
-      "test_case": "Due date on February 29 of a leap year (leap-year date edge)",
+      "subcategory": "input_edge",
+      "test_case": "Description containing emoji, right-to-left text, and special Unicode characters displays correctly",
       "preconditions": [
-        "Logged in as a teacher and viewing the course containing the assignment",
-        "An assignment exists in the course with Due date = February 29 of a leap year"
+        "Logged in as a Teacher",
+        "An assignment exists whose Description includes emoji, right-to-left script (e.g., Arabic or Hebrew), and other special Unicode characters"
       ],
       "steps": [
-        "1. Navigate to the Assignment — Teacher View for the assignment"
+        "1. Navigate to the Assignment — Teacher View page for that assignment"
       ],
-      "expected_result": "Viewing the assignment succeeds; the Due date displays February 29 of the leap year correctly and the Time remaining is calculated and shown accordingly — date is rendered without parsing error or incorrect year shift.",
-      "priority": "medium"
+      "expected_result": "The Description panel renders emoji and Unicode characters correctly (glyphs visible and text direction preserved); characters are not replaced with placeholders or garbled text — display succeeds",
+      "priority": "low"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click of Grade button",
-      "preconditions": [
-        "Logged in as a teacher and viewing the Assignment — Teacher View",
-        "Assignment has one or more participants"
-      ],
-      "steps": [
-        "1. Click the Grade button once",
-        "2. Immediately click the Grade button a second time (rapid double-click)"
-      ],
-      "expected_result": "Action succeeds; only one grading interface instance opens (one panel/tab/window) and the second rapid click is ignored or debounced — there are no duplicate grading sessions or duplicate UI panels created and no visible error is shown.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-005",
-      "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Click Grade when Number of participants = 0",
-      "preconditions": [
-        "Logged in as a teacher and viewing the Assignment — Teacher View",
-        "An assignment exists in the course with Number of participants = 0"
-      ],
-      "steps": [
-        "1. Click the Grade button"
-      ],
-      "expected_result": "Action succeeds; the grading interface opens but displays an empty student list / empty-state message for grading (visible empty-state UI in the grading interface) — no errors or crashes occur when opening grading for an assignment with zero participants.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-006",
-      "wf_ref": null,
-      "subcategory": "input_edge",
-      "test_case": "Very long assignment description with unicode and emoji",
-      "preconditions": [
-        "Logged in as a teacher and viewing the course containing the assignment",
-        "An assignment exists with a description containing a very long string (>200 characters) including unicode characters and emoji"
-      ],
-      "steps": [
-        "1. Navigate to the Assignment — Teacher View for the assignment"
-      ],
-      "expected_result": "Viewing the assignment succeeds; the Description panel renders the full long text (including unicode and emoji) without HTML-escaping issues or layout breakage — no truncation artifacts or rendering errors are visible.",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-007",
       "wf_ref": null,
       "subcategory": "data_edge",
-      "test_case": "Extremely large counts displayed in grading summary metrics",
+      "test_case": "Assignment with missing Opened and/or Due dates shows a clear empty-state for date fields",
       "preconditions": [
-        "Logged in as a teacher and viewing the course containing the assignment",
-        "An assignment exists where Number of participants and Number of submissions are set to a very large count (<very large count>)"
+        "Logged in as a Teacher",
+        "An assignment exists where Opened date and/or Due date fields are unset (null)"
       ],
       "steps": [
-        "1. Navigate to the Assignment — Teacher View for the assignment"
+        "1. Navigate to the Assignment — Teacher View page for that assignment"
       ],
-      "expected_result": "Viewing the assignment succeeds; the Grading summary panel displays the large counts for Number of participants and Number of submissions without layout overflow or visual truncation that breaks the page (numbers are rendered and the panel remains usable and readable).",
-      "priority": "low"
+      "expected_result": "The Opened and Due date areas display a visible empty-state indicating no date is set (the date area is not an error state and the page remains usable) — view succeeds",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 7,
-    "boundary": 3,
-    "input_edge": 1,
-    "interaction_edge": 2,
+    "total": 4,
+    "boundary": 0,
+    "input_edge": 2,
+    "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 1,
-    "medium_priority": 5,
+    "medium_priority": 2,
     "low_priority": 2
   }
 }
 
 ------------------------------------------------------------
-[21:14:49] Test-Edge - PARSED JSON
+[22:51:32] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Assignment \u2014 Teacher View",
@@ -435,119 +405,75 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": null,
-      "subcategory": "boundary",
-      "test_case": "Opened date equals Due date (same-day boundary)",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click of Grade button opens a single grading interface",
       "preconditions": [
-        "Logged in as a teacher and viewing the course containing the assignment",
-        "An assignment exists in the course with Opened date = Due date = <today>"
+        "Logged in as a Teacher",
+        "An assignment exists in the course and teacher is viewing the Assignment \u2014 Teacher View page"
       ],
       "steps": [
-        "1. Navigate to the Assignment \u2014 Teacher View for the assignment"
+        "1. On the Assignment \u2014 Teacher View page, locate the Grade action button in the Assignment_Action_Bar",
+        "2. Click the Grade button",
+        "3. Immediately click the Grade button again (second click within a very short interval)"
       ],
-      "expected_result": "Viewing the assignment succeeds; the Opened date and Due date fields both display the same date (<today>), and the Time remaining field displays zero remaining time (explicit zero-day or 'due today' indicator) \u2014 the assignment detail page renders without errors.",
+      "expected_result": "A single grading interface instance is displayed (the grading interface is visible and focused); no duplicate grading panels or duplicate browser tabs/windows are opened \u2014 action succeeds",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": null,
-      "subcategory": "boundary",
-      "test_case": "Due date is yesterday (just past boundary)",
+      "subcategory": "input_edge",
+      "test_case": "Very long Description text renders without horizontal overflow or truncation of critical content",
       "preconditions": [
-        "Logged in as a teacher and viewing the course containing the assignment",
-        "An assignment exists in the course with Due date = <yesterday>"
+        "Logged in as a Teacher",
+        "An assignment exists whose Description contains a very long text block (200+ characters) including multiple paragraphs"
       ],
       "steps": [
-        "1. Navigate to the Assignment \u2014 Teacher View for the assignment"
+        "1. Navigate to the Assignment \u2014 Teacher View page for that assignment"
       ],
-      "expected_result": "Viewing the assignment succeeds; the Due date displays <yesterday>, and the Time remaining field clearly indicates the assignment is past due (a visible past-due indicator or negative/elapsed time display is shown) \u2014 the metrics panel and metadata render without layout or crash issues.",
-      "priority": "medium"
+      "expected_result": "The Description panel displays the complete text content; vertical scrolling appears as needed and there is no horizontal overflow or clipped UI text \u2014 view rendering succeeds",
+      "priority": "low"
     },
     {
       "tc_id": "E-003",
       "wf_ref": null,
-      "subcategory": "boundary",
-      "test_case": "Due date on February 29 of a leap year (leap-year date edge)",
+      "subcategory": "input_edge",
+      "test_case": "Description containing emoji, right-to-left text, and special Unicode characters displays correctly",
       "preconditions": [
-        "Logged in as a teacher and viewing the course containing the assignment",
-        "An assignment exists in the course with Due date = February 29 of a leap year"
+        "Logged in as a Teacher",
+        "An assignment exists whose Description includes emoji, right-to-left script (e.g., Arabic or Hebrew), and other special Unicode characters"
       ],
       "steps": [
-        "1. Navigate to the Assignment \u2014 Teacher View for the assignment"
+        "1. Navigate to the Assignment \u2014 Teacher View page for that assignment"
       ],
-      "expected_result": "Viewing the assignment succeeds; the Due date displays February 29 of the leap year correctly and the Time remaining is calculated and shown accordingly \u2014 date is rendered without parsing error or incorrect year shift.",
-      "priority": "medium"
+      "expected_result": "The Description panel renders emoji and Unicode characters correctly (glyphs visible and text direction preserved); characters are not replaced with placeholders or garbled text \u2014 display succeeds",
+      "priority": "low"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click of Grade button",
-      "preconditions": [
-        "Logged in as a teacher and viewing the Assignment \u2014 Teacher View",
-        "Assignment has one or more participants"
-      ],
-      "steps": [
-        "1. Click the Grade button once",
-        "2. Immediately click the Grade button a second time (rapid double-click)"
-      ],
-      "expected_result": "Action succeeds; only one grading interface instance opens (one panel/tab/window) and the second rapid click is ignored or debounced \u2014 there are no duplicate grading sessions or duplicate UI panels created and no visible error is shown.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-005",
-      "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Click Grade when Number of participants = 0",
-      "preconditions": [
-        "Logged in as a teacher and viewing the Assignment \u2014 Teacher View",
-        "An assignment exists in the course with Number of participants = 0"
-      ],
-      "steps": [
-        "1. Click the Grade button"
-      ],
-      "expected_result": "Action succeeds; the grading interface opens but displays an empty student list / empty-state message for grading (visible empty-state UI in the grading interface) \u2014 no errors or crashes occur when opening grading for an assignment with zero participants.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-006",
-      "wf_ref": null,
-      "subcategory": "input_edge",
-      "test_case": "Very long assignment description with unicode and emoji",
-      "preconditions": [
-        "Logged in as a teacher and viewing the course containing the assignment",
-        "An assignment exists with a description containing a very long string (>200 characters) including unicode characters and emoji"
-      ],
-      "steps": [
-        "1. Navigate to the Assignment \u2014 Teacher View for the assignment"
-      ],
-      "expected_result": "Viewing the assignment succeeds; the Description panel renders the full long text (including unicode and emoji) without HTML-escaping issues or layout breakage \u2014 no truncation artifacts or rendering errors are visible.",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-007",
       "wf_ref": null,
       "subcategory": "data_edge",
-      "test_case": "Extremely large counts displayed in grading summary metrics",
+      "test_case": "Assignment with missing Opened and/or Due dates shows a clear empty-state for date fields",
       "preconditions": [
-        "Logged in as a teacher and viewing the course containing the assignment",
-        "An assignment exists where Number of participants and Number of submissions are set to a very large count (<very large count>)"
+        "Logged in as a Teacher",
+        "An assignment exists where Opened date and/or Due date fields are unset (null)"
       ],
       "steps": [
-        "1. Navigate to the Assignment \u2014 Teacher View for the assignment"
+        "1. Navigate to the Assignment \u2014 Teacher View page for that assignment"
       ],
-      "expected_result": "Viewing the assignment succeeds; the Grading summary panel displays the large counts for Number of participants and Number of submissions without layout overflow or visual truncation that breaks the page (numbers are rendered and the panel remains usable and readable).",
-      "priority": "low"
+      "expected_result": "The Opened and Due date areas display a visible empty-state indicating no date is set (the date area is not an error state and the page remains usable) \u2014 view succeeds",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 7,
-    "boundary": 3,
-    "input_edge": 1,
-    "interaction_edge": 2,
+    "total": 4,
+    "boundary": 0,
+    "input_edge": 2,
+    "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 1,
-    "medium_priority": 5,
+    "medium_priority": 2,
     "low_priority": 2
   }
 }

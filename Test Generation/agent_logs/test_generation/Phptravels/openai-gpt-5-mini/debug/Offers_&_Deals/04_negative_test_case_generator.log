@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:14.028886
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.354899
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:14] Test-Negative - SYSTEM PROMPT
+[22:33:07] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:14] Test-Negative - USER PROMPT
+[22:33:07] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 20,
   "module_title": "Offers & Deals",
-  "summary": "Displays promotional banners and featured deal cards with discount details, validity, terms, filtering by service/destination/dates, and actions that apply promo codes or redirect to pre-filled booking searches.",
-  "where_it_fits": "Accessible from the top navigation under Offers and via homepage promotions/search widget, this section surfaces time-limited, seasonal and last-minute promotions across services (Hotels, Flights, Tours, Cars) and integrates with the booking flows by applying discounts or pre-filling searches. It complements the main search/listing modules and influences subsequent Payment Processing and Booking Management steps.",
-  "assumed_state_on_entry": "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions."
+  "summary": "Displays promotional banners and featured deal cards across Hotels, Flights, and Packages with filtering, validity details, and Book Now actions that apply discounts or pre-fill searches.",
+  "where_it_fits": "Accessible from the top navigation (Offers) and reachable from the home page or promotional links, this module sits alongside core search/listing sections (Hotels, Flights, Tours, Cars) to surface time-limited promotions and drive bookings. It connects into the booking flow and payment processing by applying promo codes or redirecting to pre-filled searches with discounted rates.",
+  "assumed_state_on_entry": "Application loaded with main navigation available and the user has selected the Offers section (visitor or authenticated user); booking and payment subsystems are available for applying discounts."
 }
 </module_context>
 
@@ -260,7 +270,7 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Offers & Deals",
   "components": {
-    "Filters_Form": {
+    "Offers_Filters_Form": {
       "type": "form",
       "fields": {
         "Service_Type": {
@@ -274,51 +284,38 @@ If a `<workflows>` block is present in the input:
         "Destination": {
           "type": "unspecified"
         },
-        "Travel_Dates": {
+        "Travel_Start_Date": {
+          "type": "date"
+        },
+        "Travel_End_Date": {
           "type": "date"
         }
       },
       "submit_actions": [
         {
           "action_name": "Apply Filters",
-          "preconditions": [
-            "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions."
-          ],
-          "on_success": "filters offers list"
+          "on_success": "filters the offers list"
+        },
+        {
+          "action_name": "Reset Filters",
+          "on_success": "clears filter values"
         }
       ]
     },
     "Offers_List": {
-      "type": "card_list",
-      "item_actions": [
+      "type": "data_table",
+      "row_actions": [
         {
           "action_name": "Book Now",
-          "type": "button",
+          "on_success": "applies promo code or redirects to a pre-filled search with discounted rates",
           "preconditions": [
-            "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions."
-          ],
-          "on_success": "applies promotional code to booking flow or redirects to a pre-filled search with discounted rates applied"
+            "Application loaded with main navigation available and the user has selected the Offers section (visitor or authenticated user); booking and payment subsystems are available for applying discounts."
+          ]
         },
         {
           "action_name": "Terms and Conditions",
-          "type": "link"
-        }
-      ]
-    },
-    "Promotional_Banners": {
-      "type": "card_list",
-      "item_actions": [
-        {
-          "action_name": "Book Now",
-          "type": "button",
-          "preconditions": [
-            "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions."
-          ],
-          "on_success": "applies promotional code to booking flow or redirects to a pre-filled search with discounted rates applied"
-        },
-        {
-          "action_name": "Terms and Conditions",
-          "type": "link"
+          "type": "link",
+          "on_success": "opens the offer's terms and conditions"
         }
       ]
     },
@@ -326,20 +323,13 @@ If a `<workflows>` block is present in the input:
       "type": "form",
       "fields": {
         "Email": {
-          "type": "email",
-          "required": true,
-          "constraints": [
-            "must be a valid email address"
-          ]
+          "type": "email"
         }
       },
       "submit_actions": [
         {
           "action_name": "Subscribe",
-          "preconditions": [
-            "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions."
-          ],
-          "on_success": "subscribes email to receive future exclusive deals"
+          "on_success": "adds the email to the newsletter subscription list"
         }
       ]
     }
@@ -357,20 +347,17 @@ The Offers page displays promotional banners and featured deal cards, each showi
 </description>
 
 <workflows>
-WF-001 | Apply Filters | actor: User (guest or authenticated) | branch: none | terminal: Apply Filters | on_success: filters offers list
-WF-002 | Book Now (Offers List) | actor: User (guest or authenticated) | branch: none | terminal: Book Now | on_success: applies promotional code to booking flow or redirects to a pre-filled search with discounted rates applied
-WF-003 | Terms and Conditions (Offers List) | actor: User (guest or authenticated) | branch: none | terminal: Terms and Conditions | on_success: opens the terms and conditions for the selected offer
-WF-004 | Book Now (Promotional Banners) | actor: User (guest or authenticated) | branch: none | terminal: Book Now | on_success: applies promotional code to booking flow or redirects to a pre-filled search with discounted rates applied
-WF-005 | Terms and Conditions (Promotional Banners) | actor: User (guest or authenticated) | branch: none | terminal: Terms and Conditions | on_success: opens the terms and conditions for the selected offer
-WF-006 | Subscribe to Newsletter | actor: User (guest or authenticated) | branch: none | terminal: Subscribe | on_success: subscribes email to receive future exclusive deals
-WF-007 | Book Now (Offers List) — no filters selected | actor: User (guest or authenticated) | branch: Service_Type == null AND Destination == null AND Travel_Dates == null | terminal: Book Now | on_success: applies promotional code to booking flow or redirects to a pre-filled search with discounted rates applied
-WF-008 | Terms and Conditions (Offers List) — no filters selected | actor: User (guest or authenticated) | branch: Service_Type == null AND Destination == null AND Travel_Dates == null | terminal: Terms and Conditions | on_success: opens the terms and conditions for the selected offer
+WF-001 | Apply filters to offers list | actor: visitor or authenticated user | branch: none | terminal: Apply Filters | on_success: filters the offers list
+WF-002 | Reset filters on offers list | actor: visitor or authenticated user | branch: none | terminal: Reset Filters | on_success: clears filter values
+WF-003 | Book Now from an offer row (apply promo or redirect to pre-filled search) | actor: visitor or authenticated user | branch: none | terminal: Book Now | on_success: applies promo code or redirects to a pre-filled search with discounted rates
+WF-004 | Open offer Terms and Conditions | actor: visitor or authenticated user | branch: none | terminal: Terms and Conditions | on_success: opens the offer's terms and conditions
+WF-005 | Subscribe to newsletter with email | actor: visitor or authenticated user | branch: none | terminal: Subscribe | on_success: adds the email to the newsletter subscription list
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:28:30] Test-Negative - LLM RESPONSE
+[22:37:22] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Offers & Deals",
@@ -378,119 +365,87 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": "WF-006",
-      "test_case": "Subscribe with Email left blank",
+      "wf_ref": "WF-005",
+      "test_case": "Subscribe with Email field left blank",
       "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions."
+        "Offers page is open"
       ],
       "steps": [
-        "1. Navigate to the Offers page",
-        "2. Leave the Email field blank in the Newsletter Subscription form",
-        "3. Click the Subscribe button"
+        "1. Leave the Email field blank in the Newsletter Subscription form",
+        "2. Click the Subscribe button"
       ],
-      "expected_result": "Inline validation error appears on the Email field indicating it is required; the form does not submit and the email is not subscribed (no success message or change in subscription state).",
+      "expected_result": "Inline validation error appears on the Email field indicating it is required; the Subscribe action is blocked and the email is not added to the newsletter subscription list; no page navigation occurs",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-006",
+      "wf_ref": "WF-005",
       "test_case": "Subscribe with invalid email format",
       "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions."
+        "Offers page is open"
       ],
       "steps": [
-        "1. Navigate to the Offers page",
-        "2. Enter <invalid email format> in the Email field",
-        "3. Click the Subscribe button"
+        "1. Enter <invalid email format> into the Email field",
+        "2. Click the Subscribe button"
       ],
-      "expected_result": "Email field displays a validation error: 'must be a valid email address' (as specified by the constraint); the form does not submit and the email is not subscribed.",
+      "expected_result": "Email field displays an inline validation error indicating the value is not a valid email format; the Subscribe action is blocked and the email is not added to the newsletter subscription list; no page navigation occurs",
       "priority": "medium"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-006",
-      "test_case": "Subscribe when booking/search services are unavailable (precondition failure)",
+      "wf_ref": "WF-001",
+      "test_case": "Apply Filters with Travel Start Date later than Travel End Date",
       "preconditions": [
-        "Offers page is reachable but booking/search services are unavailable (precondition not met)."
+        "Offers page is open"
       ],
       "steps": [
-        "1. Open the Offers page in a state where booking/search services are unavailable",
-        "2. Enter <valid email> in the Email field",
-        "3. Click the Subscribe button"
+        "1. Enter <a Travel Start Date that is later than the Travel End Date> into the Travel_Start_Date field",
+        "2. Enter <an earlier Travel End Date> into the Travel_End_Date field",
+        "3. Click the Apply Filters button"
       ],
-      "expected_result": "Subscribe action is blocked; a visible global error banner or inline message appears indicating subscription cannot be completed because required services are unavailable; Email is not subscribed and no success state is shown.",
-      "priority": "high"
+      "expected_result": "Inline validation error appears on the Travel_End_Date field (or a form-level validation message) indicating the date range is invalid (Travel Start Date must be on or before Travel End Date); Apply Filters does not submit and the offers list remains unchanged",
+      "priority": "medium"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-001",
-      "test_case": "Apply Filters when offers data/filters not loaded (precondition failure)",
+      "test_case": "Apply Filters with an invalid/impossible date in Travel_Start_Date",
       "preconditions": [
-        "Offers page is open but offer data and filters are not loaded (precondition not met)."
+        "Offers page is open"
       ],
       "steps": [
-        "1. Open the Offers page where the offers data and filters have not finished loading or are absent",
-        "2. Select <Service_Type> from the Service Type dropdown (optional)",
-        "3. Enter <Destination> in the Destination field (optional)",
-        "4. Click the Apply Filters button"
+        "1. Enter <invalid/impossible date> into the Travel_Start_Date field",
+        "2. Click the Apply Filters button"
       ],
-      "expected_result": "Apply Filters does not execute; the offers list remains unchanged; a visible error indicator (global banner or inline message) is shown stating filters cannot be applied because offers data/filters are not available.",
-      "priority": "high"
+      "expected_result": "Travel_Start_Date field displays an inline validation error indicating the date is invalid or in an incorrect format; Apply Filters does not submit and the offers list remains unchanged",
+      "priority": "medium"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-002",
-      "test_case": "Book Now on an offer when booking/search services are unavailable (precondition failure)",
+      "wf_ref": "WF-003",
+      "test_case": "Click Book Now when booking/payment subsystem is unavailable (precondition not met)",
       "preconditions": [
-        "Offers page is open but booking/search services are unavailable (precondition not met)."
+        "Offers page is open",
+        "Booking and/or payment subsystems are unavailable"
       ],
       "steps": [
-        "1. Open the Offers page where booking/search services are unavailable",
-        "2. Click the Book Now button on any offer in the Offers List"
+        "1. Locate an offer row in the Offers list",
+        "2. Click the Book Now button for that offer"
       ],
-      "expected_result": "Booking action is blocked; user remains on the Offers page; a visible inline error near the selected offer or a global message appears indicating booking cannot proceed because booking/search services are unavailable; no redirect or promo code application occurs.",
+      "expected_result": "Clicking Book Now is blocked: a visible error banner or modal appears indicating the booking/payment subsystem is unavailable (precondition not met); the user is not redirected and the promotional code is not applied",
       "priority": "high"
-    },
-    {
-      "tc_id": "N-006",
-      "wf_ref": "WF-004",
-      "test_case": "Book Now on a promotional banner when booking/search services are unavailable (precondition failure)",
-      "preconditions": [
-        "Offers page is open but booking/search services are unavailable (precondition not met)."
-      ],
-      "steps": [
-        "1. Open the Offers page where booking/search services are unavailable",
-        "2. Click the Book Now button on any Promotional Banner"
-      ],
-      "expected_result": "Action is blocked; user is not redirected and no promotional code is applied; a visible error (inline near the banner or a global banner) indicates booking cannot proceed because required services are unavailable.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": "WF-001",
-      "test_case": "Apply Filters with invalid Travel Dates input",
-      "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions."
-      ],
-      "steps": [
-        "1. Navigate to the Offers page",
-        "2. Enter <invalid/impossible date> in the Travel Dates field",
-        "3. Click the Apply Filters button"
-      ],
-      "expected_result": "Travel Dates field displays an inline validation error indicating the date is invalid or not parsable; Apply Filters does not execute and the offers list remains unfiltered.",
-      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 7,
-    "high_priority": 5,
-    "medium_priority": 2,
+    "total": 5,
+    "high_priority": 2,
+    "medium_priority": 3,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:28:30] Test-Negative - PARSED JSON
+[22:37:22] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Offers & Deals",
@@ -498,113 +453,81 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": "WF-006",
-      "test_case": "Subscribe with Email left blank",
+      "wf_ref": "WF-005",
+      "test_case": "Subscribe with Email field left blank",
       "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions."
+        "Offers page is open"
       ],
       "steps": [
-        "1. Navigate to the Offers page",
-        "2. Leave the Email field blank in the Newsletter Subscription form",
-        "3. Click the Subscribe button"
+        "1. Leave the Email field blank in the Newsletter Subscription form",
+        "2. Click the Subscribe button"
       ],
-      "expected_result": "Inline validation error appears on the Email field indicating it is required; the form does not submit and the email is not subscribed (no success message or change in subscription state).",
+      "expected_result": "Inline validation error appears on the Email field indicating it is required; the Subscribe action is blocked and the email is not added to the newsletter subscription list; no page navigation occurs",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-006",
+      "wf_ref": "WF-005",
       "test_case": "Subscribe with invalid email format",
       "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions."
+        "Offers page is open"
       ],
       "steps": [
-        "1. Navigate to the Offers page",
-        "2. Enter <invalid email format> in the Email field",
-        "3. Click the Subscribe button"
+        "1. Enter <invalid email format> into the Email field",
+        "2. Click the Subscribe button"
       ],
-      "expected_result": "Email field displays a validation error: 'must be a valid email address' (as specified by the constraint); the form does not submit and the email is not subscribed.",
+      "expected_result": "Email field displays an inline validation error indicating the value is not a valid email format; the Subscribe action is blocked and the email is not added to the newsletter subscription list; no page navigation occurs",
       "priority": "medium"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-006",
-      "test_case": "Subscribe when booking/search services are unavailable (precondition failure)",
+      "wf_ref": "WF-001",
+      "test_case": "Apply Filters with Travel Start Date later than Travel End Date",
       "preconditions": [
-        "Offers page is reachable but booking/search services are unavailable (precondition not met)."
+        "Offers page is open"
       ],
       "steps": [
-        "1. Open the Offers page in a state where booking/search services are unavailable",
-        "2. Enter <valid email> in the Email field",
-        "3. Click the Subscribe button"
+        "1. Enter <a Travel Start Date that is later than the Travel End Date> into the Travel_Start_Date field",
+        "2. Enter <an earlier Travel End Date> into the Travel_End_Date field",
+        "3. Click the Apply Filters button"
       ],
-      "expected_result": "Subscribe action is blocked; a visible global error banner or inline message appears indicating subscription cannot be completed because required services are unavailable; Email is not subscribed and no success state is shown.",
-      "priority": "high"
+      "expected_result": "Inline validation error appears on the Travel_End_Date field (or a form-level validation message) indicating the date range is invalid (Travel Start Date must be on or before Travel End Date); Apply Filters does not submit and the offers list remains unchanged",
+      "priority": "medium"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-001",
-      "test_case": "Apply Filters when offers data/filters not loaded (precondition failure)",
+      "test_case": "Apply Filters with an invalid/impossible date in Travel_Start_Date",
       "preconditions": [
-        "Offers page is open but offer data and filters are not loaded (precondition not met)."
+        "Offers page is open"
       ],
       "steps": [
-        "1. Open the Offers page where the offers data and filters have not finished loading or are absent",
-        "2. Select <Service_Type> from the Service Type dropdown (optional)",
-        "3. Enter <Destination> in the Destination field (optional)",
-        "4. Click the Apply Filters button"
+        "1. Enter <invalid/impossible date> into the Travel_Start_Date field",
+        "2. Click the Apply Filters button"
       ],
-      "expected_result": "Apply Filters does not execute; the offers list remains unchanged; a visible error indicator (global banner or inline message) is shown stating filters cannot be applied because offers data/filters are not available.",
-      "priority": "high"
+      "expected_result": "Travel_Start_Date field displays an inline validation error indicating the date is invalid or in an incorrect format; Apply Filters does not submit and the offers list remains unchanged",
+      "priority": "medium"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-002",
-      "test_case": "Book Now on an offer when booking/search services are unavailable (precondition failure)",
+      "wf_ref": "WF-003",
+      "test_case": "Click Book Now when booking/payment subsystem is unavailable (precondition not met)",
       "preconditions": [
-        "Offers page is open but booking/search services are unavailable (precondition not met)."
+        "Offers page is open",
+        "Booking and/or payment subsystems are unavailable"
       ],
       "steps": [
-        "1. Open the Offers page where booking/search services are unavailable",
-        "2. Click the Book Now button on any offer in the Offers List"
+        "1. Locate an offer row in the Offers list",
+        "2. Click the Book Now button for that offer"
       ],
-      "expected_result": "Booking action is blocked; user remains on the Offers page; a visible inline error near the selected offer or a global message appears indicating booking cannot proceed because booking/search services are unavailable; no redirect or promo code application occurs.",
+      "expected_result": "Clicking Book Now is blocked: a visible error banner or modal appears indicating the booking/payment subsystem is unavailable (precondition not met); the user is not redirected and the promotional code is not applied",
       "priority": "high"
-    },
-    {
-      "tc_id": "N-006",
-      "wf_ref": "WF-004",
-      "test_case": "Book Now on a promotional banner when booking/search services are unavailable (precondition failure)",
-      "preconditions": [
-        "Offers page is open but booking/search services are unavailable (precondition not met)."
-      ],
-      "steps": [
-        "1. Open the Offers page where booking/search services are unavailable",
-        "2. Click the Book Now button on any Promotional Banner"
-      ],
-      "expected_result": "Action is blocked; user is not redirected and no promotional code is applied; a visible error (inline near the banner or a global banner) indicates booking cannot proceed because required services are unavailable.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": "WF-001",
-      "test_case": "Apply Filters with invalid Travel Dates input",
-      "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions."
-      ],
-      "steps": [
-        "1. Navigate to the Offers page",
-        "2. Enter <invalid/impossible date> in the Travel Dates field",
-        "3. Click the Apply Filters button"
-      ],
-      "expected_result": "Travel Dates field displays an inline validation error indicating the date is invalid or not parsable; Apply Filters does not execute and the offers list remains unfiltered.",
-      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 7,
-    "high_priority": 5,
-    "medium_priority": 2,
+    "total": 5,
+    "high_priority": 2,
+    "medium_priority": 3,
     "low_priority": 0
   }
 }

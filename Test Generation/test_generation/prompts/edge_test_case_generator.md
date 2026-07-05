@@ -44,20 +44,26 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
+- **The spec stating THAT a check exists is not the spec GIVING the check's exact text or number.** "The system checks subject length" or "invalid credentials show an inline error message" describes a *condition*, not a quoted message — it does NOT license inventing a specific string (`"Subject must be between 1 and 250 characters."`) or a specific number (`250`, `200`) to go with it. Only quote text that appears inside quotation marks in the spec itself.
+- ❌ Spec: `"the system checks subject length ... failures display inline guidance"` → fabricating `"Subject must be between 1 and 250 characters."` and testing a `250`-char boundary
+- ✅ Same spec → `"Subject field displays an inline validation error; the form does not submit"` — no invented string, no invented number
 
 ---
 
@@ -91,6 +97,18 @@ Every test must pass ALL three checks:
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
 
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** threshold stated in the spec or AST `constraints` — numeric, date, count, **length/character-limit, word-limit, or any other kind** — do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ❌ No "field rejects input over N characters" / "must be under N characters" — including inventing the number N itself — unless the spec or AST states an exact max length. A spec saying only that a field "checks length" or "validates format" states that a check exists, not what its limit is.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters", "maximum 250 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold (including length), prefer a generic input edge (long text / special chars) that asserts only that the input is **accepted** — never assert an invented rejection or an invented error string — or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
+
 ---
 
 **WHAT TO GENERATE:**
@@ -121,7 +139,7 @@ Rules:
 
 Pick only the ones that apply to field types present in this module's AST:
 
-- **Long text** (any `text/unspecified` or `textarea` field): enter a very long string (200+ characters) → assert it is either accepted or truncated/rejected with a visible indicator
+- **Long text, no stated max length** (any `text/unspecified` or `textarea` field where the spec/AST gives no max-length constraint): enter a long stress string (e.g. several hundred characters — this number is a stress-test size, not a spec threshold; never state it as if it were one) → assert only that it is **accepted and displayed/stored in full**. Do NOT assert or imply rejection, truncation, or any error message — there is no spec basis for one. If the spec/AST *does* state a max length, this is a **boundary test** (see the Boundary Tests table above), not an input edge — use the exact stated number, not an example number.
 - **Special characters / emoji / unicode** (free-text fields): enter special chars → assert accepted or a specific error shown
 - **Leading/trailing whitespace** (text inputs): enter value with leading/trailing spaces → assert trimmed in saved output shown on the detail page, or an inline error shown
 - **Zero as numeric input** (number fields where zero is ambiguous): if the spec states a minimum > 0, assert `0` is blocked with a visible error; if the spec permits zero, assert the form submits successfully and the saved record displays `0`

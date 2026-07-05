@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:20:32.031396
+DEBUG SESSION STARTED: 2026-07-04T22:30:08.755369
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:20:58] Workflow-Validator - SYSTEM PROMPT
+[22:30:21] Workflow-Validator - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Workflow Validator. You receive (1) a raw functional description, (2) a Structural Model JSON, and (3) a generated workflow list for one module.
 
@@ -162,15 +162,15 @@ Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
 
 
 ------------------------------------------------------------
-[21:20:58] Workflow-Validator - USER PROMPT
+[22:30:21] Workflow-Validator - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 6,
   "module_title": "Hotel Details & Booking",
-  "summary": "Displays comprehensive hotel information (gallery, description, location, room types, pricing, reviews, and policies) and presents a room selection and booking form with a detailed price breakdown.",
-  "where_it_fits": "Accessible from the top navigation via Hotels and from the Home Page search results, this module is the step after Hotels Search & Listing and precedes Payment Processing in the booking lifecycle; it feeds selected room and guest details into the payment flow and links to the User Dashboard for booking history after completion.",
-  "assumed_state_on_entry": "A specific hotel has been selected from Hotels Search & Listing (stay dates and guest count chosen); user authentication is required to complete the booking (viewing details may not require login)."
+  "summary": "Displays comprehensive hotel information (photos, description, map), room options with pricing and policies, guest reviews, and a booking form that captures guest details and price breakdown prior to payment.",
+  "where_it_fits": "Accessible from the main navigation via Home -> Hotels or Hotels Search & Listing, this module is the detailed property view users reach after searching for hotels and selecting a result; it precedes Payment Processing and Booking Management in the booking lifecycle.",
+  "assumed_state_on_entry": "User has performed a hotel search and selected a specific hotel and stay dates (guest count and room selection available); booking completion requires an authenticated (logged-in) user."
 }
 </module_context>
 
@@ -192,37 +192,41 @@ The hotel details page displays a photo gallery, full property description, loca
       "row_actions": [
         {
           "action_name": "Select Room",
-          "on_success": "sets Selected_Room_Type and reveals booking form"
+          "on_success": "opens Booking_Form with selected room prefilled; sets Room_Selected == true"
         }
       ]
     },
     "Booking_Form": {
       "type": "form",
-      "visible_when": "Selected_Room_Type is set",
+      "visible_when": "Room_Selected == true",
       "fields": {
         "First_Name": {
-          "type": "unspecified"
+          "type": "text",
+          "required": true
         },
         "Last_Name": {
-          "type": "unspecified"
+          "type": "text",
+          "required": true
         },
         "Email": {
-          "type": "unspecified"
+          "type": "email",
+          "required": true
         },
         "Phone_Number": {
-          "type": "unspecified"
+          "type": "tel",
+          "required": true
         },
         "Special_Requests": {
-          "type": "unspecified"
+          "type": "textarea"
         }
       },
       "submit_actions": [
         {
           "action_name": "Book Now",
+          "on_success": "navigates to Payment Processing",
           "preconditions": [
             "user must be logged in"
-          ],
-          "on_success": "proceeds to the payment page"
+          ]
         }
       ]
     }
@@ -234,19 +238,19 @@ The hotel details page displays a photo gallery, full property description, loca
 [
   {
     "wf_id": "WF-001",
-    "name": "Select a room from the room types list",
-    "actor": "user",
+    "name": "Select Room from Room Types list",
+    "actor": "User",
     "conditional_branch": null,
     "terminal_action": "Select Room",
-    "on_success": "sets Selected_Room_Type and reveals booking form"
+    "on_success": "opens Booking_Form with selected room prefilled; sets Room_Selected == true"
   },
   {
     "wf_id": "WF-002",
-    "name": "Book Now with a selected room while logged in",
-    "actor": "user",
-    "conditional_branch": "Selected_Room_Type is set AND user_logged_in == true",
+    "name": "Submit Booking Form via Book Now (authenticated)",
+    "actor": "Authenticated User",
+    "conditional_branch": "Room_Selected == true AND user_logged_in == true",
     "terminal_action": "Book Now",
-    "on_success": "proceeds to the payment page"
+    "on_success": "navigates to Payment Processing"
   }
 ]
 </workflows>
@@ -254,55 +258,65 @@ The hotel details page displays a photo gallery, full property description, loca
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:21:45] Workflow-Validator - LLM RESPONSE
+[22:31:12] Workflow-Validator - LLM RESPONSE
 ------------------------------------------------------------
 {
   "verdict": "retry",
   "attempt": 1,
-  "summary": "The workflows mostly match the AST, but WF-002's conditional_branch references a non-existent field (user_logged_in), which is a structural error requiring regeneration.",
-  "missing": [],
+  "summary": "Workflows are missing a submit path for unauthenticated users and one workflow references a conditional variable not declared in the AST (structural error); regenerate workflows to include the missing path and correct the conditional.",
+  "missing": [
+    {
+      "path": "Booking_Form submit_action=Book Now when Room_Selected == true AND user_logged_in == false",
+      "severity": "critical",
+      "reason": "submit_actions[] for Booking_Form lists a precondition 'user must be logged in' so clicking 'Book Now' while not authenticated is a distinct path (likely prompting login) but no workflow covers this unauthenticated submit path."
+    }
+  ],
   "phantoms": [],
   "structural_errors": [
-    "WF-002 conditional_branch references 'user_logged_in == true', but 'user_logged_in' is not defined anywhere in the AST under visible_when, required_when, or state keys; conditional branches must reference existing AST fields or state keys."
+    "WF-002 conditional_branch references 'user_logged_in' which is not defined in the AST under visible_when/required_when or as a state key; workflow conditions must only reference fields/states declared in the AST (or the AST must be extended to declare this condition)."
   ],
   "fixes": [
-    "Update WF-002 conditional_branch so it only references AST-backed conditions: replace \"Selected_Room_Type is set AND user_logged_in == true\" with \"Selected_Room_Type is set\" (remove the 'user_logged_in' clause), since authentication is expressed as a submit precondition in the AST rather than a named field.",
-    "Alternatively, modify the AST to explicitly model authentication state (e.g., add a field or state key named 'user_logged_in' in the module or Booking_Form) and then regenerate workflows so WF-002's conditional_branch can validly reference 'user_logged_in == true'.",
-    "If the intended behavior when not logged in is to show a login prompt or redirect, add an explicit workflow for that path (terminal_action like 'Show Login Prompt' or 'Redirect to Login') and reflect that action in the AST so a corresponding workflow can be generated."
+    "Add a workflow for the Booking_Form submit action 'Book Now' covering the unauthenticated branch: terminal_action='Book Now', conditional_branch='Room_Selected == true AND user_logged_in == false', actor='Unauthenticated User', on_success='redirects to Login/Authentication flow (then return to Booking_Form)'.",
+    "Either remove 'user_logged_in' from WF-002's conditional_branch (so it only asserts 'Room_Selected == true') or add 'user_logged_in' as a declared condition in the AST (e.g., document it under Booking_Form visible_when/required_when or a module-level condition) so WF-002's conditional is valid."
   ],
   "clarifications": []
 }
 
 ------------------------------------------------------------
-[21:21:45] Workflow-Validator - PARSED JSON
+[22:31:12] Workflow-Validator - PARSED JSON
 ------------------------------------------------------------
 {
   "verdict": "retry",
   "attempt": 1,
-  "summary": "The workflows mostly match the AST, but WF-002's conditional_branch references a non-existent field (user_logged_in), which is a structural error requiring regeneration.",
-  "missing": [],
+  "summary": "Workflows are missing a submit path for unauthenticated users and one workflow references a conditional variable not declared in the AST (structural error); regenerate workflows to include the missing path and correct the conditional.",
+  "missing": [
+    {
+      "path": "Booking_Form submit_action=Book Now when Room_Selected == true AND user_logged_in == false",
+      "severity": "critical",
+      "reason": "submit_actions[] for Booking_Form lists a precondition 'user must be logged in' so clicking 'Book Now' while not authenticated is a distinct path (likely prompting login) but no workflow covers this unauthenticated submit path."
+    }
+  ],
   "phantoms": [],
   "structural_errors": [
-    "WF-002 conditional_branch references 'user_logged_in == true', but 'user_logged_in' is not defined anywhere in the AST under visible_when, required_when, or state keys; conditional branches must reference existing AST fields or state keys."
+    "WF-002 conditional_branch references 'user_logged_in' which is not defined in the AST under visible_when/required_when or as a state key; workflow conditions must only reference fields/states declared in the AST (or the AST must be extended to declare this condition)."
   ],
   "fixes": [
-    "Update WF-002 conditional_branch so it only references AST-backed conditions: replace \"Selected_Room_Type is set AND user_logged_in == true\" with \"Selected_Room_Type is set\" (remove the 'user_logged_in' clause), since authentication is expressed as a submit precondition in the AST rather than a named field.",
-    "Alternatively, modify the AST to explicitly model authentication state (e.g., add a field or state key named 'user_logged_in' in the module or Booking_Form) and then regenerate workflows so WF-002's conditional_branch can validly reference 'user_logged_in == true'.",
-    "If the intended behavior when not logged in is to show a login prompt or redirect, add an explicit workflow for that path (terminal_action like 'Show Login Prompt' or 'Redirect to Login') and reflect that action in the AST so a corresponding workflow can be generated."
+    "Add a workflow for the Booking_Form submit action 'Book Now' covering the unauthenticated branch: terminal_action='Book Now', conditional_branch='Room_Selected == true AND user_logged_in == false', actor='Unauthenticated User', on_success='redirects to Login/Authentication flow (then return to Booking_Form)'.",
+    "Either remove 'user_logged_in' from WF-002's conditional_branch (so it only asserts 'Room_Selected == true') or add 'user_logged_in' as a declared condition in the AST (e.g., document it under Booking_Form visible_when/required_when or a module-level condition) so WF-002's conditional is valid."
   ],
   "clarifications": []
 }
 
 ------------------------------------------------------------
-[21:22:05] Workflow-Validator - USER PROMPT
+[22:31:48] Workflow-Validator - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 6,
   "module_title": "Hotel Details & Booking",
-  "summary": "Displays comprehensive hotel information (gallery, description, location, room types, pricing, reviews, and policies) and presents a room selection and booking form with a detailed price breakdown.",
-  "where_it_fits": "Accessible from the top navigation via Hotels and from the Home Page search results, this module is the step after Hotels Search & Listing and precedes Payment Processing in the booking lifecycle; it feeds selected room and guest details into the payment flow and links to the User Dashboard for booking history after completion.",
-  "assumed_state_on_entry": "A specific hotel has been selected from Hotels Search & Listing (stay dates and guest count chosen); user authentication is required to complete the booking (viewing details may not require login)."
+  "summary": "Displays comprehensive hotel information (photos, description, map), room options with pricing and policies, guest reviews, and a booking form that captures guest details and price breakdown prior to payment.",
+  "where_it_fits": "Accessible from the main navigation via Home -> Hotels or Hotels Search & Listing, this module is the detailed property view users reach after searching for hotels and selecting a result; it precedes Payment Processing and Booking Management in the booking lifecycle.",
+  "assumed_state_on_entry": "User has performed a hotel search and selected a specific hotel and stay dates (guest count and room selection available); booking completion requires an authenticated (logged-in) user."
 }
 </module_context>
 
@@ -324,37 +338,185 @@ The hotel details page displays a photo gallery, full property description, loca
       "row_actions": [
         {
           "action_name": "Select Room",
-          "on_success": "sets Selected_Room_Type and reveals booking form"
+          "on_success": "opens Booking_Form with selected room prefilled; sets Room_Selected == true"
         }
       ]
     },
     "Booking_Form": {
       "type": "form",
-      "visible_when": "Selected_Room_Type is set",
+      "visible_when": "Room_Selected == true",
       "fields": {
         "First_Name": {
-          "type": "unspecified"
+          "type": "text",
+          "required": true
         },
         "Last_Name": {
-          "type": "unspecified"
+          "type": "text",
+          "required": true
         },
         "Email": {
-          "type": "unspecified"
+          "type": "email",
+          "required": true
         },
         "Phone_Number": {
-          "type": "unspecified"
+          "type": "tel",
+          "required": true
         },
         "Special_Requests": {
-          "type": "unspecified"
+          "type": "textarea"
         }
       },
       "submit_actions": [
         {
           "action_name": "Book Now",
+          "on_success": "navigates to Payment Processing",
           "preconditions": [
             "user must be logged in"
-          ],
-          "on_success": "proceeds to the payment page"
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Select Room from Room Types List",
+    "actor": "User",
+    "conditional_branch": null,
+    "terminal_action": "Select Room",
+    "on_success": "opens Booking_Form with selected room prefilled; sets Room_Selected == true"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Book Now (authenticated user proceeds to payment)",
+    "actor": "Authenticated User",
+    "conditional_branch": "Room_Selected == true",
+    "terminal_action": "Book Now",
+    "on_success": "navigates to Payment Processing"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Book Now (unauthenticated user redirected to login)",
+    "actor": "Unauthenticated User",
+    "conditional_branch": "Room_Selected == true AND user_logged_in == false",
+    "terminal_action": "Book Now",
+    "on_success": "redirects to Login/Authentication flow (then return to Booking_Form)"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[22:32:15] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 2,
+  "summary": "Workflow WF-003 uses a conditional (user_logged_in) that is not represented in the AST; this is a structural error requiring correction.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "Workflow WF-003 conditional_branch references 'user_logged_in' (Room_Selected == true AND user_logged_in == false) but 'user_logged_in' is not defined anywhere in the AST (not present under visible_when/required_when nor as a state key). Conditional branches must reference fields or state keys declared in the AST."
+  ],
+  "fixes": [
+    "Add an authentication state/field to the AST that the workflows can reference, for example: add a module-level state or Booking_Form-visible field 'user_logged_in' (boolean) so conditional_branch 'user_logged_in == false' is valid.",
+    "Or modify WF-003 to remove the undefined field: change its conditional_branch to only 'Room_Selected == true' and distinguish the unauthenticated path by making the submit_action precondition explicit (e.g., mark WF-003 as triggered when the Book Now precondition 'user must be logged in' is not met), and ensure the AST documents this unauthenticated outcome (on_success redirect to Login).",
+    "Ensure that after making the AST change, there remain explicit workflows for both Book Now when authenticated (Room_Selected == true AND user_logged_in == true) and Book Now when unauthenticated (Room_Selected == true AND user_logged_in == false)."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[22:32:15] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 2,
+  "summary": "Workflow WF-003 uses a conditional (user_logged_in) that is not represented in the AST; this is a structural error requiring correction.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "Workflow WF-003 conditional_branch references 'user_logged_in' (Room_Selected == true AND user_logged_in == false) but 'user_logged_in' is not defined anywhere in the AST (not present under visible_when/required_when nor as a state key). Conditional branches must reference fields or state keys declared in the AST."
+  ],
+  "fixes": [
+    "Add an authentication state/field to the AST that the workflows can reference, for example: add a module-level state or Booking_Form-visible field 'user_logged_in' (boolean) so conditional_branch 'user_logged_in == false' is valid.",
+    "Or modify WF-003 to remove the undefined field: change its conditional_branch to only 'Room_Selected == true' and distinguish the unauthenticated path by making the submit_action precondition explicit (e.g., mark WF-003 as triggered when the Book Now precondition 'user must be logged in' is not met), and ensure the AST documents this unauthenticated outcome (on_success redirect to Login).",
+    "Ensure that after making the AST change, there remain explicit workflows for both Book Now when authenticated (Room_Selected == true AND user_logged_in == true) and Book Now when unauthenticated (Room_Selected == true AND user_logged_in == false)."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[22:32:31] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 6,
+  "module_title": "Hotel Details & Booking",
+  "summary": "Displays comprehensive hotel information (photos, description, map), room options with pricing and policies, guest reviews, and a booking form that captures guest details and price breakdown prior to payment.",
+  "where_it_fits": "Accessible from the main navigation via Home -> Hotels or Hotels Search & Listing, this module is the detailed property view users reach after searching for hotels and selecting a result; it precedes Payment Processing and Booking Management in the booking lifecycle.",
+  "assumed_state_on_entry": "User has performed a hotel search and selected a specific hotel and stay dates (guest count and room selection available); booking completion requires an authenticated (logged-in) user."
+}
+</module_context>
+
+<description>
+
+The hotel details page displays a photo gallery, full property description, location map, room types with pricing and maximum occupancy, guest reviews and aggregate rating, and hotel policies including cancellation policy and check-in/check-out times. After selecting a room, a booking form shows the selected hotel and room type, stay dates, guest count, and a price breakdown (room rate, taxes, fees, and total). The user provides First Name, Last Name, Email, Phone Number, and optional Special Requests. Clicking Book Now requires the user to be logged in and proceeds to the payment page.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Hotel Details & Booking",
+  "components": {
+    "Room_Types_List": {
+      "type": "data_table",
+      "row_actions": [
+        {
+          "action_name": "Select Room",
+          "on_success": "opens Booking_Form with selected room prefilled; sets Room_Selected == true"
+        }
+      ]
+    },
+    "Booking_Form": {
+      "type": "form",
+      "visible_when": "Room_Selected == true",
+      "fields": {
+        "First_Name": {
+          "type": "text",
+          "required": true
+        },
+        "Last_Name": {
+          "type": "text",
+          "required": true
+        },
+        "Email": {
+          "type": "email",
+          "required": true
+        },
+        "Phone_Number": {
+          "type": "tel",
+          "required": true
+        },
+        "Special_Requests": {
+          "type": "textarea"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Book Now",
+          "on_success": "navigates to Payment Processing",
+          "preconditions": [
+            "user must be logged in"
+          ]
         }
       ]
     }
@@ -367,18 +529,26 @@ The hotel details page displays a photo gallery, full property description, loca
   {
     "wf_id": "WF-001",
     "name": "Select a room from the room types list",
-    "actor": "<role>",
+    "actor": "User",
     "conditional_branch": null,
     "terminal_action": "Select Room",
-    "on_success": "sets Selected_Room_Type and reveals booking form"
+    "on_success": "opens Booking_Form with selected room prefilled; sets Room_Selected == true"
   },
   {
     "wf_id": "WF-002",
-    "name": "Book Now after selecting a room",
-    "actor": "<role>",
-    "conditional_branch": "Selected_Room_Type is set",
+    "name": "Book Now when a room is selected and user is logged in",
+    "actor": "User",
+    "conditional_branch": "Room_Selected == true AND user_logged_in == true",
     "terminal_action": "Book Now",
-    "on_success": "proceeds to the payment page"
+    "on_success": "navigates to Payment Processing"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Book Now when a room is selected but user is not logged in",
+    "actor": "User",
+    "conditional_branch": "Room_Selected == true AND user_logged_in == false",
+    "terminal_action": "Book Now",
+    "on_success": "redirects to Login"
   }
 ]
 </workflows>
@@ -386,29 +556,43 @@ The hotel details page displays a photo gallery, full property description, loca
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:23:17] Workflow-Validator - LLM RESPONSE
+[22:32:49] Workflow-Validator - LLM RESPONSE
 ------------------------------------------------------------
 {
-  "verdict": "yes",
-  "attempt": 2,
-  "summary": "The workflow list covers the room selection and the Book Now submit paths, matches AST actions and conditional visibility, and has no missing or phantom critical workflows.",
+  "verdict": "retry",
+  "attempt": 3,
+  "summary": "Workflows reference a conditional 'user_logged_in' that is not defined in the AST (structural error); update AST or workflows to make that condition valid.",
   "missing": [],
   "phantoms": [],
-  "structural_errors": [],
-  "fixes": [],
+  "structural_errors": [
+    "WF-002 conditional_branch 'Room_Selected == true AND user_logged_in == true' references 'user_logged_in', which is not defined in the AST under visible_when/required_when or as a state key.",
+    "WF-003 conditional_branch 'Room_Selected == true AND user_logged_in == false' references 'user_logged_in', which is not defined in the AST under visible_when/required_when or as a state key."
+  ],
+  "fixes": [
+    "Add a defined authentication state/field named 'user_logged_in' to the AST (e.g., as a module-level boolean state or as a component-visible flag) so conditional_branch expressions like 'user_logged_in == true/false' reference a real AST field.",
+    "OR remove 'user_logged_in' from the workflows' conditional_branch and treat authentication as a submit precondition: keep conditional_branch = 'Room_Selected == true' for WF-002/WF-003, and represent login-required behavior using the Booking_Form.submit_actions precondition (user must be logged in) with an explicit workflow for the unauthenticated submit that has on_success 'redirects to Login'.",
+    "Update WF-002 and WF-003 to reference the exact AST field name after making the above change (e.g., change conditional_branch to 'Room_Selected == true AND user_logged_in == true' only if 'user_logged_in' is added to the AST)."
+  ],
   "clarifications": []
 }
 
 ------------------------------------------------------------
-[21:23:17] Workflow-Validator - PARSED JSON
+[22:32:49] Workflow-Validator - PARSED JSON
 ------------------------------------------------------------
 {
-  "verdict": "yes",
-  "attempt": 2,
-  "summary": "The workflow list covers the room selection and the Book Now submit paths, matches AST actions and conditional visibility, and has no missing or phantom critical workflows.",
+  "verdict": "retry",
+  "attempt": 3,
+  "summary": "Workflows reference a conditional 'user_logged_in' that is not defined in the AST (structural error); update AST or workflows to make that condition valid.",
   "missing": [],
   "phantoms": [],
-  "structural_errors": [],
-  "fixes": [],
+  "structural_errors": [
+    "WF-002 conditional_branch 'Room_Selected == true AND user_logged_in == true' references 'user_logged_in', which is not defined in the AST under visible_when/required_when or as a state key.",
+    "WF-003 conditional_branch 'Room_Selected == true AND user_logged_in == false' references 'user_logged_in', which is not defined in the AST under visible_when/required_when or as a state key."
+  ],
+  "fixes": [
+    "Add a defined authentication state/field named 'user_logged_in' to the AST (e.g., as a module-level boolean state or as a component-visible flag) so conditional_branch expressions like 'user_logged_in == true/false' reference a real AST field.",
+    "OR remove 'user_logged_in' from the workflows' conditional_branch and treat authentication as a submit precondition: keep conditional_branch = 'Room_Selected == true' for WF-002/WF-003, and represent login-required behavior using the Booking_Form.submit_actions precondition (user must be logged in) with an explicit workflow for the unauthenticated submit that has on_success 'redirects to Login'.",
+    "Update WF-002 and WF-003 to reference the exact AST field name after making the above change (e.g., change conditional_branch to 'Room_Selected == true AND user_logged_in == true' only if 'user_logged_in' is added to the AST)."
+  ],
   "clarifications": []
 }

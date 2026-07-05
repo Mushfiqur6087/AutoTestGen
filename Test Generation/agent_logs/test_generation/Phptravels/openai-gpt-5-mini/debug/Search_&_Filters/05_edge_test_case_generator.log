@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:14.012618
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.275661
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:14] Test-Edge - SYSTEM PROMPT
+[22:33:07] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:14] Test-Edge - USER PROMPT
+[22:33:07] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 18,
   "module_title": "Search & Filters",
-  "summary": "Provides a consistent set of dynamic filtering and sorting controls for listing result pages, allowing users to narrow results by common and listing-specific criteria and see real-time result counts and active-filter summaries.",
-  "where_it_fits": "This module appears on listing pages reached from the top navigation (Hotels, Flights, Tours, Cars) and from the home page search widget; it augments search results by offering left\u2011sidebar filters, sorting controls above results, and active-filter summaries during the browsing and booking discovery flow.",
-  "assumed_state_on_entry": "A search has been performed and listing results for a selected category (Hotels, Flights, Tours, or Cars) are displayed"
+  "summary": "Provides dynamic filtering and sorting controls for listing results across Hotels, Flights, Tours, and Cars, summarizing active filters and updating results in real time.",
+  "where_it_fits": "This module is part of the listing pages reached from the top navigation (Hotels, Flights, Tours, Cars) and the home page search widget; it operates on Search & Listing pages before users view item details or proceed to booking. It sits between initial search results (Home Page & Search / Search results) and the detail/booking flows (Hotel Details & Booking, Flight Booking, Tour Details & Booking, Car Booking).",
+  "assumed_state_on_entry": "A search query has been executed and a listing results page is displayed with results loaded."
 }
 </module_context>
 
@@ -243,157 +257,261 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Search & Filters",
   "components": {
-    "Filters_Sidebar": {
-      "type": "sidebar",
-      "preconditions": [
-        "A search has been performed and listing results for a selected category (Hotels, Flights, Tours, or Cars) are displayed"
-      ],
-      "behavior": {
-        "results_update": "dynamic",
-        "on_change": "updates results and result count in real time"
-      },
-      "sections": [
-        {
-          "section_name": "Common Filters",
+    "Filter_Sidebar": {
+      "type": "panel",
+      "description": "Left sidebar with collapsible filter sections for all listing pages",
+      "fields": {
+        "Common_Filters": {
+          "type": "group",
           "collapsible": true,
+          "default_collapsed": false,
           "fields": {
             "Price_Range": {
-              "type": "unspecified",
-              "control": "slider",
-              "on_change": "updates results and result count"
+              "type": "slider",
+              "label": "Price Range",
+              "on_change": [
+                "update_results",
+                "refresh_active_filters"
+              ]
             },
-            "Star_Or_Review_Ratings": {
-              "type": "unspecified",
-              "control": "rating_selector",
-              "on_change": "updates results and result count"
+            "Star_Review_Ratings": {
+              "type": "rating_selector",
+              "label": "Star / Review Ratings",
+              "on_change": [
+                "update_results",
+                "refresh_active_filters"
+              ]
             }
           }
         },
-        {
-          "section_name": "Hotels",
+        "Hotels_Filters": {
+          "type": "group",
           "collapsible": true,
-          "visible_when": "Selected_Category == Hotels",
+          "default_collapsed": true,
+          "label": "Hotels Filters",
           "fields": {
             "Facilities_Amenities": {
               "type": "unspecified",
-              "on_change": "updates results and result count"
+              "label": "Facilities / Amenities",
+              "on_change": [
+                "update_results",
+                "refresh_active_filters"
+              ]
             },
             "Hotel_Type": {
               "type": "unspecified",
-              "on_change": "updates results and result count"
+              "label": "Hotel Type",
+              "on_change": [
+                "update_results",
+                "refresh_active_filters"
+              ]
             },
             "Board_Basis": {
               "type": "unspecified",
-              "on_change": "updates results and result count"
+              "label": "Board Basis",
+              "on_change": [
+                "update_results",
+                "refresh_active_filters"
+              ]
             },
             "Location_Area": {
               "type": "unspecified",
-              "on_change": "updates results and result count"
+              "label": "Location / Area",
+              "on_change": [
+                "update_results",
+                "refresh_active_filters"
+              ]
             }
           }
         },
-        {
-          "section_name": "Flights",
+        "Flights_Filters": {
+          "type": "group",
           "collapsible": true,
-          "visible_when": "Selected_Category == Flights",
+          "default_collapsed": true,
+          "label": "Flights Filters",
           "fields": {
             "Airlines": {
               "type": "unspecified",
-              "on_change": "updates results and result count"
+              "label": "Airlines",
+              "on_change": [
+                "update_results",
+                "refresh_active_filters"
+              ]
             },
-            "Number_Of_Stops": {
+            "Number_of_Stops": {
               "type": "unspecified",
-              "on_change": "updates results and result count"
+              "label": "Number of Stops",
+              "on_change": [
+                "update_results",
+                "refresh_active_filters"
+              ]
             },
             "Departure_Time_Range": {
-              "type": "unspecified",
-              "control": "time_range",
-              "on_change": "updates results and result count"
+              "type": "time_range",
+              "label": "Departure Time Range",
+              "on_change": [
+                "update_results",
+                "refresh_active_filters"
+              ]
             },
             "Arrival_Time_Range": {
-              "type": "unspecified",
-              "control": "time_range",
-              "on_change": "updates results and result count"
+              "type": "time_range",
+              "label": "Arrival Time Range",
+              "on_change": [
+                "update_results",
+                "refresh_active_filters"
+              ]
             }
           }
         },
-        {
-          "section_name": "Tours",
+        "Tours_Filters": {
+          "type": "group",
           "collapsible": true,
-          "visible_when": "Selected_Category == Tours",
+          "default_collapsed": true,
+          "label": "Tours Filters",
           "fields": {
             "Tour_Type": {
               "type": "unspecified",
-              "on_change": "updates results and result count"
+              "label": "Tour Type",
+              "on_change": [
+                "update_results",
+                "refresh_active_filters"
+              ]
             },
             "Duration": {
               "type": "unspecified",
-              "on_change": "updates results and result count"
+              "label": "Duration",
+              "on_change": [
+                "update_results",
+                "refresh_active_filters"
+              ]
             },
             "Departure_Dates": {
               "type": "unspecified",
-              "control": "date_range",
-              "on_change": "updates results and result count"
+              "label": "Departure Dates",
+              "on_change": [
+                "update_results",
+                "refresh_active_filters"
+              ]
             }
           }
         },
-        {
-          "section_name": "Cars",
+        "Cars_Filters": {
+          "type": "group",
           "collapsible": true,
-          "visible_when": "Selected_Category == Cars",
+          "default_collapsed": true,
+          "label": "Cars Filters",
           "fields": {
             "Car_Type": {
               "type": "unspecified",
-              "on_change": "updates results and result count"
+              "label": "Car Type",
+              "on_change": [
+                "update_results",
+                "refresh_active_filters"
+              ]
             },
             "Transmission": {
               "type": "unspecified",
-              "on_change": "updates results and result count"
+              "label": "Transmission",
+              "on_change": [
+                "update_results",
+                "refresh_active_filters"
+              ]
             },
             "Fuel_Policy": {
               "type": "unspecified",
-              "on_change": "updates results and result count"
+              "label": "Fuel Policy",
+              "on_change": [
+                "update_results",
+                "refresh_active_filters"
+              ]
             },
             "Rental_Company": {
               "type": "unspecified",
-              "on_change": "updates results and result count"
+              "label": "Rental Company",
+              "on_change": [
+                "update_results",
+                "refresh_active_filters"
+              ]
             }
           }
         }
-      ]
+      }
     },
     "Sorting_Controls": {
-      "type": "toolbar",
-      "preconditions": [
-        "A search has been performed and listing results for a selected category (Hotels, Flights, Tours, or Cars) are displayed"
-      ],
+      "type": "controls",
+      "description": "Sorting controls above results grid",
       "fields": {
         "Sort_By": {
           "type": "dropdown",
-          "on_change": "updates results and result count"
+          "label": "Sort By",
+          "options": [
+            "price",
+            "rating",
+            "duration"
+          ],
+          "on_change": [
+            "update_results"
+          ]
+        },
+        "Sort_Direction": {
+          "type": "toggle",
+          "label": "Sort Direction",
+          "options": [
+            "asc",
+            "desc"
+          ],
+          "default": "asc",
+          "on_change": [
+            "update_results"
+          ]
         }
       }
     },
     "Active_Filters_Summary": {
-      "type": "active_filters_summary",
-      "preconditions": [
-        "A search has been performed and listing results for a selected category (Hotels, Flights, Tours, or Cars) are displayed"
-      ],
+      "type": "panel",
+      "label": "Active Filters Summary",
       "fields": {
-        "Reset_All_Filters": {
-          "type": "button",
-          "action_name": "Reset all filters",
-          "on_success": "clears all filters and updates results and result count"
-        },
         "Active_Filters": {
           "type": "repeating_group",
+          "label": "Active Filters",
           "item_fields": {
-            "Remove": {
+            "Filter_Key": {
+              "type": "unspecified",
+              "label": "Filter Name"
+            },
+            "Filter_Value": {
+              "type": "unspecified",
+              "label": "Filter Value"
+            },
+            "Remove_Filter": {
               "type": "button",
               "action_name": "Remove Filter",
-              "on_success": "removes this filter and updates results and result count"
+              "label": "Remove",
+              "on_click": [
+                "remove_filter"
+              ],
+              "on_success": [
+                "update_results",
+                "refresh_active_filters"
+              ]
             }
           }
+        },
+        "Reset_All_Filters": {
+          "type": "button",
+          "action_name": "Reset All Filters",
+          "label": "Reset all filters",
+          "preconditions": [
+            "A search query has been executed and a listing results page is displayed with results loaded."
+          ],
+          "on_click": [
+            "reset_filters"
+          ],
+          "on_success": [
+            "update_results",
+            "refresh_active_filters"
+          ]
         }
       }
     }
@@ -411,32 +529,33 @@ All listing pages include a left sidebar with collapsible filter sections and so
 </description>
 
 <workflows>
-WF-001 | Adjust Price Range filter | actor: <role> | branch: none | terminal: Price_Range | on_success: updates results and result count
-WF-002 | Select Star or Review Ratings filter | actor: <role> | branch: none | terminal: Star_Or_Review_Ratings | on_success: updates results and result count
-WF-003 | Filter by Hotels - Facilities/Amenities | actor: <role> | branch: Selected_Category == Hotels | terminal: Facilities_Amenities | on_success: updates results and result count
-WF-004 | Filter by Hotels - Hotel Type | actor: <role> | branch: Selected_Category == Hotels | terminal: Hotel_Type | on_success: updates results and result count
-WF-005 | Filter by Hotels - Board Basis | actor: <role> | branch: Selected_Category == Hotels | terminal: Board_Basis | on_success: updates results and result count
-WF-006 | Filter by Hotels - Location/Area | actor: <role> | branch: Selected_Category == Hotels | terminal: Location_Area | on_success: updates results and result count
-WF-007 | Filter by Flights - Airlines | actor: <role> | branch: Selected_Category == Flights | terminal: Airlines | on_success: updates results and result count
-WF-008 | Filter by Flights - Number Of Stops | actor: <role> | branch: Selected_Category == Flights | terminal: Number_Of_Stops | on_success: updates results and result count
-WF-009 | Filter by Flights - Departure Time Range | actor: <role> | branch: Selected_Category == Flights | terminal: Departure_Time_Range | on_success: updates results and result count
-WF-010 | Filter by Flights - Arrival Time Range | actor: <role> | branch: Selected_Category == Flights | terminal: Arrival_Time_Range | on_success: updates results and result count
-WF-011 | Filter by Tours - Tour Type | actor: <role> | branch: Selected_Category == Tours | terminal: Tour_Type | on_success: updates results and result count
-WF-012 | Filter by Tours - Duration | actor: <role> | branch: Selected_Category == Tours | terminal: Duration | on_success: updates results and result count
-WF-013 | Filter by Tours - Departure Dates | actor: <role> | branch: Selected_Category == Tours | terminal: Departure_Dates | on_success: updates results and result count
-WF-014 | Filter by Cars - Car Type | actor: <role> | branch: Selected_Category == Cars | terminal: Car_Type | on_success: updates results and result count
-WF-015 | Filter by Cars - Transmission | actor: <role> | branch: Selected_Category == Cars | terminal: Transmission | on_success: updates results and result count
-WF-016 | Filter by Cars - Fuel Policy | actor: <role> | branch: Selected_Category == Cars | terminal: Fuel_Policy | on_success: updates results and result count
-WF-017 | Filter by Cars - Rental Company | actor: <role> | branch: Selected_Category == Cars | terminal: Rental_Company | on_success: updates results and result count
-WF-018 | Change Sort By control | actor: <role> | branch: none | terminal: Sort_By | on_success: updates results and result count
-WF-019 | Reset all filters | actor: <role> | branch: none | terminal: Reset all filters | on_success: clears all filters and updates results and result count
-WF-020 | Remove a single active filter | actor: <role> | branch: none | terminal: Remove Filter | on_success: removes this filter and updates results and result count
+WF-001 | Adjust Price Range filter | actor: <role> | branch: none | terminal: Price_Range | on_success: update_results; refresh_active_filters
+WF-002 | Adjust Star / Review Ratings filter | actor: <role> | branch: none | terminal: Star_Review_Ratings | on_success: update_results; refresh_active_filters
+WF-003 | Change Facilities / Amenities filter (Hotels) | actor: <role> | branch: none | terminal: Facilities_Amenities | on_success: update_results; refresh_active_filters
+WF-004 | Change Hotel Type filter | actor: <role> | branch: none | terminal: Hotel_Type | on_success: update_results; refresh_active_filters
+WF-005 | Change Board Basis filter | actor: <role> | branch: none | terminal: Board_Basis | on_success: update_results; refresh_active_filters
+WF-006 | Change Location / Area filter (Hotels) | actor: <role> | branch: none | terminal: Location_Area | on_success: update_results; refresh_active_filters
+WF-007 | Select Airline filter (Flights) | actor: <role> | branch: none | terminal: Airlines | on_success: update_results; refresh_active_filters
+WF-008 | Change Number of Stops filter | actor: <role> | branch: none | terminal: Number_of_Stops | on_success: update_results; refresh_active_filters
+WF-009 | Adjust Departure Time Range filter | actor: <role> | branch: none | terminal: Departure_Time_Range | on_success: update_results; refresh_active_filters
+WF-010 | Adjust Arrival Time Range filter | actor: <role> | branch: none | terminal: Arrival_Time_Range | on_success: update_results; refresh_active_filters
+WF-011 | Change Tour Type filter | actor: <role> | branch: none | terminal: Tour_Type | on_success: update_results; refresh_active_filters
+WF-012 | Change Duration filter (Tours) | actor: <role> | branch: none | terminal: Duration | on_success: update_results; refresh_active_filters
+WF-013 | Change Departure Dates filter (Tours) | actor: <role> | branch: none | terminal: Departure_Dates | on_success: update_results; refresh_active_filters
+WF-014 | Change Car Type filter | actor: <role> | branch: none | terminal: Car_Type | on_success: update_results; refresh_active_filters
+WF-015 | Change Transmission filter (Cars) | actor: <role> | branch: none | terminal: Transmission | on_success: update_results; refresh_active_filters
+WF-016 | Change Fuel Policy filter (Cars) | actor: <role> | branch: none | terminal: Fuel_Policy | on_success: update_results; refresh_active_filters
+WF-017 | Change Rental Company filter (Cars) | actor: <role> | branch: none | terminal: Rental_Company | on_success: update_results; refresh_active_filters
+WF-018 | Change Sort By control | actor: <role> | branch: none | terminal: Sort_By | on_success: update_results
+WF-019 | Toggle Sort Direction | actor: <role> | branch: none | terminal: Sort_Direction | on_success: update_results
+WF-020 | Remove an active filter (from Active Filters summary) | actor: <role> | branch: none | terminal: Remove Filter | on_success: update_results; refresh_active_filters
+WF-021 | Reset all filters | actor: <role> | branch: none | terminal: Reset All Filters | on_success: update_results; refresh_active_filters
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:28:26] Test-Edge - LLM RESPONSE
+[22:37:11] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Search & Filters",
@@ -444,142 +563,104 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-013",
-      "subcategory": "data_edge",
-      "test_case": "Tours — Departure Dates same-day selection (start == end)",
+      "wf_ref": "WF-006",
+      "subcategory": "input_edge",
+      "test_case": "Very long text in Location / Area filter (Hotels)",
       "preconditions": [
-        "A search has been performed and listing results for Tours are displayed",
-        "Selected_Category == Tours",
-        "Filters sidebar is visible"
+        "A search query has been executed and a listing results page is displayed with results loaded."
       ],
       "steps": [
-        "1. Open the Filters sidebar",
-        "2. Expand the Tours section",
-        "3. Open the Departure Dates date_range control",
-        "4. Set the start date to <today>",
-        "5. Set the end date to <today>",
-        "6. Close the date_range control (if required) to trigger on_change"
+        "1. Expand the 'Hotels Filters' group",
+        "2. Focus the 'Location / Area' input control",
+        "3. Paste a very long string (200+ characters) into the 'Location / Area' input",
+        "4. Press Enter to apply the Location / Area filter"
       ],
-      "expected_result": "The selection succeeds; results update and the result count updates to reflect the same-day departure date range. The Active Filters summary shows a Departure Dates pill with the selected same-day range.",
+      "expected_result": "Succeeds; Active Filters summary contains a 'Location / Area' filter item whose Filter_Value matches the entered long string (the entered text is visible in the filter pill or detail view) and the results grid updates with the active filter applied (visible result count changes).",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-013",
-      "subcategory": "data_edge",
-      "test_case": "Tours — Departure Dates far-future range",
-      "preconditions": [
-        "A search has been performed and listing results for Tours are displayed",
-        "Selected_Category == Tours",
-        "Filters sidebar is visible"
-      ],
-      "steps": [
-        "1. Open the Filters sidebar",
-        "2. Expand the Tours section",
-        "3. Open the Departure Dates date_range control",
-        "4. Set the start date to a <far future date>",
-        "5. Set the end date to a <far future date> on or after the start",
-        "6. Close the date_range control (if required) to trigger on_change"
-      ],
-      "expected_result": "The far-future date range selection succeeds; results update and the result count updates to reflect the future availability. The Active Filters summary shows a Departure Dates pill representing the selected far-future range.",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-003",
-      "wf_ref": "WF-001",
+      "wf_ref": "WF-003",
       "subcategory": "input_edge",
-      "test_case": "Price Range slider — collapse both handles to the same position (zero-width range)",
+      "test_case": "Special characters and emoji in Facilities / Amenities filter (Hotels)",
       "preconditions": [
-        "A search has been performed and listing results are displayed",
-        "Filters sidebar is visible"
+        "A search query has been executed and a listing results page is displayed with results loaded."
       ],
       "steps": [
-        "1. Open the Filters sidebar",
-        "2. Locate the Price Range slider in Common Filters",
-        "3. Drag the minimum handle to a position",
-        "4. Drag the maximum handle to the same position as the minimum handle",
-        "5. Release the slider handles to trigger on_change"
+        "1. Expand the 'Hotels Filters' group",
+        "2. Focus the 'Facilities / Amenities' control",
+        "3. Enter a string that contains special characters and emoji into the control",
+        "4. Apply the Facilities / Amenities filter (select suggestion or press Enter)"
       ],
-      "expected_result": "Setting both slider handles to the same position succeeds; the results update and result count updates to reflect the narrow (zero-width) price range. The Active Filters summary shows a Price Range pill representing the selected identical min/max values.",
+      "expected_result": "Succeeds; Active Filters summary shows a 'Facilities / Amenities' filter item whose Filter_Value includes the entered special characters and emoji exactly as typed, and the results grid updates to reflect the applied filter (visible result count changes).",
       "priority": "medium"
     },
     {
-      "tc_id": "E-004",
-      "wf_ref": "WF-003",
-      "subcategory": "interaction_edge",
-      "test_case": "Category switch while a category-specific filter is active — Hotels filter then switch to Flights",
+      "tc_id": "E-003",
+      "wf_ref": "WF-007",
+      "subcategory": "input_edge",
+      "test_case": "Leading and trailing whitespace in Airlines filter (Flights) is normalized",
       "preconditions": [
-        "A search has been performed and listing results for Hotels are displayed",
-        "Selected_Category == Hotels",
-        "Filters sidebar is visible"
+        "A search query has been executed and a listing results page is displayed with results loaded."
       ],
       "steps": [
-        "1. Open the Filters sidebar",
-        "2. Expand the Hotels section",
-        "3. Apply a Facilities_Amenities filter (select one facility) so it appears in Active Filters summary",
-        "4. Change Selected_Category to Flights (switch category via the page controls)",
-        "5. Wait for the Filters sidebar and results to refresh for Flights"
+        "1. Expand the 'Flights Filters' group",
+        "2. Focus the 'Airlines' control",
+        "3. Enter an airline value with leading and trailing whitespace",
+        "4. Apply the Airlines filter (select suggestion or press Enter)"
       ],
-      "expected_result": "After switching categories, the Hotels-specific filter is no longer applied/visible: the previously-applied Facilities_Amenities pill is removed from the Active Filters summary (or visually marked inactive) and is not counted in the result count. The Flights-specific filter set is displayed. Results and result count update to reflect the Flights category without the Hotels filter. This switch succeeds with no residual Hotels filters affecting Flights results.",
+      "expected_result": "Succeeds; Active Filters summary shows the Airlines filter with the airline name trimmed of leading and trailing whitespace (no extra spaces visible in the Filter_Value) and the results grid updates to reflect the applied airline filter (visible result count changes).",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-004",
+      "wf_ref": "WF-020",
+      "subcategory": "interaction_edge",
+      "test_case": "Double-click Remove on an active filter (prevent duplicate removals)",
+      "preconditions": [
+        "A search query has been executed and a listing results page is displayed with results loaded.",
+        "At least one filter is active and appears in the Active Filters summary."
+      ],
+      "steps": [
+        "1. In the Active Filters summary, locate the Remove button for an active filter",
+        "2. Double-click the Remove button rapidly (two clicks within a short interval)"
+      ],
+      "expected_result": "Succeeds; the selected filter is removed from the Active Filters summary (no duplicate removal artifacts remain) and the results grid visibly updates to reflect the removal (visible result count changes to match remaining filters).",
       "priority": "medium"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": "WF-020",
-      "subcategory": "interaction_edge",
-      "test_case": "Active Filters — add multiple filters then remove them one-by-one until none remain",
+      "wf_ref": "WF-021",
+      "subcategory": "data_edge",
+      "test_case": "Reset all filters after multiple different filters are applied",
       "preconditions": [
-        "A search has been performed and listing results are displayed",
-        "Filters sidebar is visible",
-        "Active Filters summary initially shows zero or more items"
+        "A search query has been executed and a listing results page is displayed with results loaded."
       ],
       "steps": [
-        "1. Open the Filters sidebar",
-        "2. Apply Price_Range filter (adjust slider) so it appears in Active Filters",
-        "3. Apply Star_Or_Review_Ratings filter so it appears in Active Filters",
-        "4. If Selected_Category allows, apply one category-specific filter (e.g., Airlines or Car_Type) so it appears in Active Filters",
-        "5. In the Active Filters summary click Remove on one of the active filter items",
-        "6. Repeat clicking Remove on each remaining active filter item until no active filter items remain",
-        "7. Observe the Active Filters summary and result count after each removal"
+        "1. Adjust the 'Price Range' slider to apply a non-default price range",
+        "2. Select a star/review rating in the 'Star / Review Ratings' control",
+        "3. Apply an Airlines filter in the 'Flights Filters' group",
+        "4. Select a Car Type in the 'Cars Filters' group",
+        "5. Click the 'Reset all filters' button in the Active Filters Summary"
       ],
-      "expected_result": "Each individual Remove action succeeds in removing that filter and triggers results and result count updates. After the last Remove action, the Active Filters summary shows zero active filters and the result count reflects no filters applied. The UI remains stable (no phantom pills). Reset All Filters control remains present and invoking it when no filters are active performs no change.",
+      "expected_result": "Succeeds; Active Filters summary becomes empty (no Filter items visible) and the results grid reverts to the unfiltered listing state (visible result count returns to the initial count shown when the page loaded).",
       "priority": "medium"
-    },
-    {
-      "tc_id": "E-006",
-      "wf_ref": "WF-002",
-      "subcategory": "interaction_edge",
-      "test_case": "Star/Review Ratings — rapid toggle on/off multiple times",
-      "preconditions": [
-        "A search has been performed and listing results are displayed",
-        "Filters sidebar is visible"
-      ],
-      "steps": [
-        "1. Open the Filters sidebar",
-        "2. Locate the Star_Or_Review_Ratings control",
-        "3. Click a single rating option (e.g., 4-star) to apply it",
-        "4. Immediately click the same rating option to remove it",
-        "5. Repeat steps 3–4 rapidly five times total",
-        "6. Pause and observe the Active Filters summary and result count"
-      ],
-      "expected_result": "Rapid toggle actions succeed without creating duplicate Active Filters pills or leaving the filter in an inconsistent state. After the final toggle state, the Active Filters summary reflects the current (single) applied/unapplied state correctly and the result count matches the final state. No error messages are shown; UI does not desynchronize.",
-      "priority": "low"
     }
   ],
   "summary": {
-    "total": 6,
+    "total": 5,
     "boundary": 0,
-    "input_edge": 1,
-    "interaction_edge": 3,
+    "input_edge": 3,
+    "interaction_edge": 1,
     "state_edge": 0,
-    "data_edge": 2,
+    "data_edge": 1,
     "medium_priority": 4,
-    "low_priority": 2
+    "low_priority": 1
   }
 }
 
 ------------------------------------------------------------
-[21:28:26] Test-Edge - PARSED JSON
+[22:37:11] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Search & Filters",
@@ -587,136 +668,98 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-013",
-      "subcategory": "data_edge",
-      "test_case": "Tours \u2014 Departure Dates same-day selection (start == end)",
+      "wf_ref": "WF-006",
+      "subcategory": "input_edge",
+      "test_case": "Very long text in Location / Area filter (Hotels)",
       "preconditions": [
-        "A search has been performed and listing results for Tours are displayed",
-        "Selected_Category == Tours",
-        "Filters sidebar is visible"
+        "A search query has been executed and a listing results page is displayed with results loaded."
       ],
       "steps": [
-        "1. Open the Filters sidebar",
-        "2. Expand the Tours section",
-        "3. Open the Departure Dates date_range control",
-        "4. Set the start date to <today>",
-        "5. Set the end date to <today>",
-        "6. Close the date_range control (if required) to trigger on_change"
+        "1. Expand the 'Hotels Filters' group",
+        "2. Focus the 'Location / Area' input control",
+        "3. Paste a very long string (200+ characters) into the 'Location / Area' input",
+        "4. Press Enter to apply the Location / Area filter"
       ],
-      "expected_result": "The selection succeeds; results update and the result count updates to reflect the same-day departure date range. The Active Filters summary shows a Departure Dates pill with the selected same-day range.",
+      "expected_result": "Succeeds; Active Filters summary contains a 'Location / Area' filter item whose Filter_Value matches the entered long string (the entered text is visible in the filter pill or detail view) and the results grid updates with the active filter applied (visible result count changes).",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-013",
-      "subcategory": "data_edge",
-      "test_case": "Tours \u2014 Departure Dates far-future range",
-      "preconditions": [
-        "A search has been performed and listing results for Tours are displayed",
-        "Selected_Category == Tours",
-        "Filters sidebar is visible"
-      ],
-      "steps": [
-        "1. Open the Filters sidebar",
-        "2. Expand the Tours section",
-        "3. Open the Departure Dates date_range control",
-        "4. Set the start date to a <far future date>",
-        "5. Set the end date to a <far future date> on or after the start",
-        "6. Close the date_range control (if required) to trigger on_change"
-      ],
-      "expected_result": "The far-future date range selection succeeds; results update and the result count updates to reflect the future availability. The Active Filters summary shows a Departure Dates pill representing the selected far-future range.",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-003",
-      "wf_ref": "WF-001",
+      "wf_ref": "WF-003",
       "subcategory": "input_edge",
-      "test_case": "Price Range slider \u2014 collapse both handles to the same position (zero-width range)",
+      "test_case": "Special characters and emoji in Facilities / Amenities filter (Hotels)",
       "preconditions": [
-        "A search has been performed and listing results are displayed",
-        "Filters sidebar is visible"
+        "A search query has been executed and a listing results page is displayed with results loaded."
       ],
       "steps": [
-        "1. Open the Filters sidebar",
-        "2. Locate the Price Range slider in Common Filters",
-        "3. Drag the minimum handle to a position",
-        "4. Drag the maximum handle to the same position as the minimum handle",
-        "5. Release the slider handles to trigger on_change"
+        "1. Expand the 'Hotels Filters' group",
+        "2. Focus the 'Facilities / Amenities' control",
+        "3. Enter a string that contains special characters and emoji into the control",
+        "4. Apply the Facilities / Amenities filter (select suggestion or press Enter)"
       ],
-      "expected_result": "Setting both slider handles to the same position succeeds; the results update and result count updates to reflect the narrow (zero-width) price range. The Active Filters summary shows a Price Range pill representing the selected identical min/max values.",
+      "expected_result": "Succeeds; Active Filters summary shows a 'Facilities / Amenities' filter item whose Filter_Value includes the entered special characters and emoji exactly as typed, and the results grid updates to reflect the applied filter (visible result count changes).",
       "priority": "medium"
     },
     {
-      "tc_id": "E-004",
-      "wf_ref": "WF-003",
-      "subcategory": "interaction_edge",
-      "test_case": "Category switch while a category-specific filter is active \u2014 Hotels filter then switch to Flights",
+      "tc_id": "E-003",
+      "wf_ref": "WF-007",
+      "subcategory": "input_edge",
+      "test_case": "Leading and trailing whitespace in Airlines filter (Flights) is normalized",
       "preconditions": [
-        "A search has been performed and listing results for Hotels are displayed",
-        "Selected_Category == Hotels",
-        "Filters sidebar is visible"
+        "A search query has been executed and a listing results page is displayed with results loaded."
       ],
       "steps": [
-        "1. Open the Filters sidebar",
-        "2. Expand the Hotels section",
-        "3. Apply a Facilities_Amenities filter (select one facility) so it appears in Active Filters summary",
-        "4. Change Selected_Category to Flights (switch category via the page controls)",
-        "5. Wait for the Filters sidebar and results to refresh for Flights"
+        "1. Expand the 'Flights Filters' group",
+        "2. Focus the 'Airlines' control",
+        "3. Enter an airline value with leading and trailing whitespace",
+        "4. Apply the Airlines filter (select suggestion or press Enter)"
       ],
-      "expected_result": "After switching categories, the Hotels-specific filter is no longer applied/visible: the previously-applied Facilities_Amenities pill is removed from the Active Filters summary (or visually marked inactive) and is not counted in the result count. The Flights-specific filter set is displayed. Results and result count update to reflect the Flights category without the Hotels filter. This switch succeeds with no residual Hotels filters affecting Flights results.",
+      "expected_result": "Succeeds; Active Filters summary shows the Airlines filter with the airline name trimmed of leading and trailing whitespace (no extra spaces visible in the Filter_Value) and the results grid updates to reflect the applied airline filter (visible result count changes).",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-004",
+      "wf_ref": "WF-020",
+      "subcategory": "interaction_edge",
+      "test_case": "Double-click Remove on an active filter (prevent duplicate removals)",
+      "preconditions": [
+        "A search query has been executed and a listing results page is displayed with results loaded.",
+        "At least one filter is active and appears in the Active Filters summary."
+      ],
+      "steps": [
+        "1. In the Active Filters summary, locate the Remove button for an active filter",
+        "2. Double-click the Remove button rapidly (two clicks within a short interval)"
+      ],
+      "expected_result": "Succeeds; the selected filter is removed from the Active Filters summary (no duplicate removal artifacts remain) and the results grid visibly updates to reflect the removal (visible result count changes to match remaining filters).",
       "priority": "medium"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": "WF-020",
-      "subcategory": "interaction_edge",
-      "test_case": "Active Filters \u2014 add multiple filters then remove them one-by-one until none remain",
+      "wf_ref": "WF-021",
+      "subcategory": "data_edge",
+      "test_case": "Reset all filters after multiple different filters are applied",
       "preconditions": [
-        "A search has been performed and listing results are displayed",
-        "Filters sidebar is visible",
-        "Active Filters summary initially shows zero or more items"
+        "A search query has been executed and a listing results page is displayed with results loaded."
       ],
       "steps": [
-        "1. Open the Filters sidebar",
-        "2. Apply Price_Range filter (adjust slider) so it appears in Active Filters",
-        "3. Apply Star_Or_Review_Ratings filter so it appears in Active Filters",
-        "4. If Selected_Category allows, apply one category-specific filter (e.g., Airlines or Car_Type) so it appears in Active Filters",
-        "5. In the Active Filters summary click Remove on one of the active filter items",
-        "6. Repeat clicking Remove on each remaining active filter item until no active filter items remain",
-        "7. Observe the Active Filters summary and result count after each removal"
+        "1. Adjust the 'Price Range' slider to apply a non-default price range",
+        "2. Select a star/review rating in the 'Star / Review Ratings' control",
+        "3. Apply an Airlines filter in the 'Flights Filters' group",
+        "4. Select a Car Type in the 'Cars Filters' group",
+        "5. Click the 'Reset all filters' button in the Active Filters Summary"
       ],
-      "expected_result": "Each individual Remove action succeeds in removing that filter and triggers results and result count updates. After the last Remove action, the Active Filters summary shows zero active filters and the result count reflects no filters applied. The UI remains stable (no phantom pills). Reset All Filters control remains present and invoking it when no filters are active performs no change.",
+      "expected_result": "Succeeds; Active Filters summary becomes empty (no Filter items visible) and the results grid reverts to the unfiltered listing state (visible result count returns to the initial count shown when the page loaded).",
       "priority": "medium"
-    },
-    {
-      "tc_id": "E-006",
-      "wf_ref": "WF-002",
-      "subcategory": "interaction_edge",
-      "test_case": "Star/Review Ratings \u2014 rapid toggle on/off multiple times",
-      "preconditions": [
-        "A search has been performed and listing results are displayed",
-        "Filters sidebar is visible"
-      ],
-      "steps": [
-        "1. Open the Filters sidebar",
-        "2. Locate the Star_Or_Review_Ratings control",
-        "3. Click a single rating option (e.g., 4-star) to apply it",
-        "4. Immediately click the same rating option to remove it",
-        "5. Repeat steps 3\u20134 rapidly five times total",
-        "6. Pause and observe the Active Filters summary and result count"
-      ],
-      "expected_result": "Rapid toggle actions succeed without creating duplicate Active Filters pills or leaving the filter in an inconsistent state. After the final toggle state, the Active Filters summary reflects the current (single) applied/unapplied state correctly and the result count matches the final state. No error messages are shown; UI does not desynchronize.",
-      "priority": "low"
     }
   ],
   "summary": {
-    "total": 6,
+    "total": 5,
     "boundary": 0,
-    "input_edge": 1,
-    "interaction_edge": 3,
+    "input_edge": 3,
+    "interaction_edge": 1,
     "state_edge": 0,
-    "data_edge": 2,
+    "data_edge": 1,
     "medium_priority": 4,
-    "low_priority": 2
+    "low_priority": 1
   }
 }

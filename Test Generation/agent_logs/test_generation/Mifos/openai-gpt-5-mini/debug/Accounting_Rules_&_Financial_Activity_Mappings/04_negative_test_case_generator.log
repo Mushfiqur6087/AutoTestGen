@@ -1,0 +1,727 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:08:29.932755
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:08:29] Test-Negative - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Negative Testing:**
+
+The AST represents every interactive element in the module. Each node type has a corresponding failure category:
+
+| AST node / field | What to test for failure |
+|---|---|
+| `required: true` field | Leave it blank and submit — inline validation error |
+| `constraints: []` on a field or action | One TC per unique constraint: violate it specifically |
+| `preconditions: []` on an action | One TC attempting the action when the precondition is NOT met |
+| `visible_when` / `required_when` conditional field | Trigger the condition, then submit the revealed field blank or invalid |
+| `state_bound_action_bar` states | Attempt an action from the wrong state (e.g., Approve an already-Active entity) |
+| `on_success` with quoted text | The negative expected_result is the *blocking* behavior — the entity stays unchanged |
+| `submit_actions[]` | If any button has `preconditions`, test that button when precondition fails |
+
+> If a module has no `form`, no `wizard`, no `state_bound_action_bar`, and no `constraints` — it is display-only. Generate at most 1–2 tests (unauthenticated access, or a non-implemented link if described). Do not invent validation scenarios.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — Name the field, the violated rule, and the visible error indicator.**
+Never write a vague expected result. Always specify what the tester sees.
+
+- ❌ `"Validation error shown"` — too vague
+- ❌ `"Error is displayed"` — too vague
+- ✅ `"Inline validation error appears on the <Field Name> field indicating it is required"`
+- ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
+- ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
+
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
+- ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
+- ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
+
+**Rule C — Assert the blocking behavior, not just the error.**
+The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
+- ❌ `"Error shown"` (doesn't confirm the action was blocked)
+- ✅ `"Form does not submit; <Entity> is not created; error shown on <Field>"`
+- ✅ `"Status remains <Current State>; no transition occurs"`
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Use generic placeholders in angle brackets.
+
+- ✅ `"Enter <invalid email format> in the Email field"`
+- ✅ `"Enter <amount exceeding available balance> in the Amount field"`
+- ✅ `"Enter <password shorter than minimum length> in the Password field"`
+- ❌ `"Enter 'notanemail' in the Email field"`
+- ❌ `"Enter 'abc123' in the Password field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic user action — one field, one click, one navigation. No grouping.
+
+- ✅ `"1. Leave the <Required Field> blank"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill all fields except <Required Field> and submit"`
+
+---
+
+**SCOPE GATE (run before writing any test):**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact sentence in the description or field/constraint/state in the AST justifies this test? If you cannot point to one → delete it.
+2. **UI-executable:** Can a tester trigger this by clicking, typing, selecting, or navigating in a browser? If verification requires dev tools, DOM inspection, concurrent users, API calls, or server-side error simulation → out of scope.
+3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
+
+Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Required field representatives (deduplicated by field type):**
+
+Group required fields by type: `text/unspecified`, `email`, `password`, `number`, `date`, `dropdown`, `file_upload`. Generate:
+- ONE "leave blank and submit" test per **type group** (not per field) — use the most prominent field as representative
+- ONE "submit with ALL required fields empty" test
+
+Do NOT generate a separate blank-field test for every required field. If 5 text fields are all required, one representative covers them all.
+
+**Action dialog required fields — NOT subject to cross-form deduplication:**
+If a `state_bound_action_bar` action opens a dialog with its own required `fields{}` (e.g., Activate requires Activation Date, Reject requires a Reason, Withdraw requires a Reason, Close requires a Closure Reason), each such dialog is its own testing scope. Generate ONE "leave the required dialog field blank and submit" test per distinct action dialog. These are HIGH priority — they block state transitions and are common defect sites. Do not suppress them because the main wizard already has a blank-field test.
+
+**2. Format violations:**
+
+For fields with type-specific format rules (from AST type or description):
+- `email` → one test with invalid format
+- `number` → one test with non-numeric input
+- `date` → one test with invalid/impossible date
+- `password` → ONE representative test for policy violation (not one per sub-rule — see Deduplication)
+
+Only generate if the spec or AST implies format validation for that field.
+
+**3. Numeric bounds and balance violations:**
+
+If the spec describes minimum/maximum values, amount ranges, or balance checks:
+- One test per distinct bound violation (e.g., amount below minimum, amount above maximum, amount exceeding available balance)
+- Use `<amount below minimum>`, `<amount exceeding available balance>` as placeholders
+
+Examples across the dataset:
+- Transfer amount > available balance → error
+- Loan amount outside product min/max → error
+- Deposit below minimum requirement → error
+
+**4. Constraint violations:**
+
+For each unique `constraints[]` entry in the AST, and for cross-field rules described in the spec:
+- `"must be unique"` → submit with a duplicate value
+- `"must match"` (confirm fields) → enter mismatched values
+- `"must not be same as current"` → select the current value
+- `"cannot perform <action> while <condition>"` → attempt the action when the condition is true
+- `"<date> must be after <other date>"` → enter reversed dates
+
+One test per unique constraint. Do not duplicate the same mechanism.
+
+**Constraint timing tests:** If the spec states an action is blocked by a pre-existing system state (e.g., "cannot close with active accounts", "cannot transfer to the same office"), generate TWO tests:
+1. The standard constraint violation test (user opens the dialog, fills required fields, submits → blocked).
+2. A constraint-timing test: user opens the dialog WITHOUT filling required fields → assert whether the block is shown immediately on dialog open (before the user fills anything) OR only on submit. This distinguishes whether the UI enforces the constraint eagerly or lazily. Steps: open the dialog, observe the state → assert what is visible before any interaction. If the spec is silent on timing, generate only the first test.
+
+**5. Precondition violations (auth, role, and state):**
+
+For each `preconditions[]` entry on any action — and for auth/role/state rules described in the spec or the `<module_context>` block:
+
+- **Global Context constraints:** If the `<module_context>` block's `assumed_state_on_entry` explicitly lists required states (e.g., "Requires an active Client profile"), generate one test attempting the module's core action when that precondition fails (e.g., Client profile is missing or inactive).
+- **Unauthenticated access:** If any page or action requires login, generate one test: an unauthenticated user attempts to access it and is redirected to the login page.
+- **Wrong role:** If the spec explicitly states a feature is restricted to a specific role (e.g., Teacher only, Admin only), generate one test: a user of the wrong role attempts the action and is blocked or the control is not visible.
+- **Precondition not met:** For each AST `preconditions[]` entry, attempt the action when that precondition is not satisfied.
+
+**6. State-machine violations:**
+
+From `state_bound_action_bar` nodes:
+- **Every defined state must have at least one wrong-state test.** For each state, identify at least one action that is NOT in its `available_actions` list and generate a test attempting that action from that state.
+- If a state has an empty `available_actions` array, generate one test verifying no action buttons are visible in that state.
+- **Do not stop after 1–2 representative examples** when the module defines 4+ distinct states. The states Active, Pending, Closed, Rejected, and Withdrawn each have different action sets — each must be independently verified.
+- One test per state is sufficient — pick the most distinct unavailable action for that state. Do not enumerate every action × every state (that would be exponential).
+
+---
+
+**DEDUPLICATION GATE (run before outputting):**
+
+1. **Required field dedup:** Multiple required text fields in the **same form or dialog** → ONE representative test, not one per field.
+2. **Sub-rule dedup:** A field with multiple validation sub-rules (e.g., password: length + uppercase + lowercase + number + special char) → ONE representative violation test, not one per sub-rule.
+3. **Cross-form dedup:** If two **main forms** in the same module share the same validation mechanism → test it on the primary form only. **Exception: action dialogs are never suppressed by cross-form dedup** — each action dialog with a required field gets its own blank-field test regardless.
+4. **Uniqueness check:** Before outputting, ask for each TC: "Does this test catch a bug that NO other test in this module would catch?" If no → remove it.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (standard CRUD form, form with constraints): **4–8 tests**
+- Complex module (state machine, multi-form, wizard with many constraints): **10–16 tests**
+
+For modules with a `state_bound_action_bar` defining 4+ states, the state-machine violation tests alone will produce 4–5 tests. This is expected and correct — do not suppress them to hit a lower target.
+
+If you exceed the upper range, apply the deduplication gate again before outputting.
+
+---
+
+**PRIORITY:**
+
+- **High:** State precondition violations, constraint violations that could corrupt data, unauthenticated access, required field representatives
+- **Medium:** Format violations, cross-field validation, numeric bounds, wrong-role access, wrong-state action attempts
+
+---
+
+**WORKFLOW-AWARE FAILURE INJECTION (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow that contains a form interaction (terminal action is a submit/save/create/approve button):
+  - Identify the most **critical blocking failure** for that workflow's `conditional_branch`.
+  - If that failure mode is NOT already covered by another workflow's negative test, generate one negative TC for it.
+- **Do NOT generate one negative TC per workflow mechanically.** Apply the existing deduplication gate first — only add a TC if it catches a bug that no other test would catch.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a workflow. Set `"wf_ref": null` for generic validation tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "What error/block should occur, naming the field and indicator",
+      "priority": "high | medium"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "high_priority": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[23:08:29] Test-Negative - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 20,
+  "module_title": "Accounting Rules & Financial Activity Mappings",
+  "summary": "Manages accounting rules that define debit/credit GL account behavior and maps system financial activities to specific General Ledger (GL) accounts for automated posting.",
+  "where_it_fits": "Located within the application's Accounting area (accessible from the top navigation bar under Accounting or via Institution \u2192 Accounting), this module sits on the configuration side of the accounting lifecycle to control how transactions and system-level financial events are posted to the ledger. It is used alongside chart-of-accounts and journal entry features to ensure automated and consistent accounting postings.",
+  "assumed_state_on_entry": "User is authenticated with accounting/configuration privileges and the organization's chart of GL accounts and Offices are already configured."
+}
+</module_context>
+
+<module_name>Accounting Rules & Financial Activity Mappings</module_name>
+
+<ast>
+{
+  "module_name": "Accounting Rules & Financial Activity Mappings",
+  "components": {
+    "Accounting_Rules_Table": {
+      "type": "data_table",
+      "row_actions": [
+        {
+          "action_name": "Open Rule",
+          "on_success": "navigates to Rule Detail view"
+        }
+      ],
+      "actions": [
+        {
+          "action_name": "+ Create Rule",
+          "preconditions": [
+            "User is authenticated with accounting/configuration privileges and the organization's chart of GL accounts and Offices are already configured."
+          ],
+          "opens_form": "Create_Rule_Form"
+        }
+      ]
+    },
+    "Create_Rule_Form": {
+      "type": "form",
+      "fields": {
+        "Office": {
+          "type": "dropdown",
+          "options_note": "blank option applies to all offices"
+        },
+        "Rule_Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Debit_Account": {
+          "type": "dropdown",
+          "multi_select": true,
+          "description": "GL account dropdown; may support multi-select for multiple debit accounts or tags"
+        },
+        "Allow_Multiple_Debit_Entries": {
+          "type": "checkbox"
+        },
+        "Credit_Account": {
+          "type": "dropdown",
+          "multi_select": true,
+          "description": "GL account dropdown; may support multi-select for multiple credit accounts or tags"
+        },
+        "Allow_Multiple_Credit_Entries": {
+          "type": "checkbox"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create Rule",
+          "preconditions": [
+            "User is authenticated with accounting/configuration privileges and the organization's chart of GL accounts and Offices are already configured."
+          ],
+          "on_success": "creates accounting rule"
+        }
+      ]
+    },
+    "Rule_Detail_Actions": {
+      "type": "action_bar",
+      "available_actions": [
+        {
+          "action_name": "Edit",
+          "preconditions": [
+            "User is authenticated with accounting/configuration privileges and the organization's chart of GL accounts and Offices are already configured."
+          ],
+          "opens_form": "Create_Rule_Form",
+          "note": "opens the rule in edit mode"
+        },
+        {
+          "action_name": "Delete",
+          "preconditions": [
+            "User is authenticated with accounting/configuration privileges and the organization's chart of GL accounts and Offices are already configured."
+          ],
+          "constraints": [
+            "requires explicit user confirmation before deletion"
+          ]
+        }
+      ]
+    },
+    "Financial_Activity_Mappings_Table": {
+      "type": "data_table",
+      "row_actions": [],
+      "actions": [
+        {
+          "action_name": "+ Create Mapping",
+          "preconditions": [
+            "User is authenticated with accounting/configuration privileges and the organization's chart of GL accounts and Offices are already configured."
+          ],
+          "opens_form": "Create_Mapping_Form"
+        }
+      ]
+    },
+    "Create_Mapping_Form": {
+      "type": "form",
+      "fields": {
+        "Financial_Activity": {
+          "type": "dropdown",
+          "options": [
+            "Asset Transfer",
+            "Liability Transfer",
+            "Cash at Mainvault",
+            "Cash at Teller",
+            "Opening Balances Transfer",
+            "Fund Source",
+            "Payable Dividends",
+            "Asset Fund Source",
+            "Overdraft Portfolio"
+          ],
+          "constraints": [
+            "must be unmapped (each financial activity can only be mapped once)"
+          ],
+          "description": "dropdown lists only activities that are not yet mapped"
+        },
+        "GL_Account": {
+          "type": "dropdown",
+          "required": true
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create Mapping",
+          "preconditions": [
+            "User is authenticated with accounting/configuration privileges and the organization's chart of GL accounts and Offices are already configured."
+          ],
+          "on_success": "creates mapping to enable automated posting for the selected financial activity"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Accounting Rules page displays a data table with columns for Rule Name (clickable link), Office, Debit Account(s), and Credit Account(s). A "+ Create Rule" button opens the creation form containing Office (dropdown — blank applies to all offices), Rule Name (required), Debit Tags/Debit Account (GL account dropdown or multi-select), Allow Multiple Debit Entries checkbox, Credit Tags/Credit Account, and Allow Multiple Credit Entries checkbox. Clicking a rule opens its detail view with Edit and Delete options.
+
+The Financial Activity Mappings page displays a table mapping financial activities to GL accounts, where each row shows the Financial Activity (e.g., Asset Transfer, Liability Transfer, Cash at Mainvault, Cash at Teller, Opening Balances Transfer, Fund Source, Payable Dividends, Asset Fund Source, Overdraft Portfolio) and its mapped GL Account. A "+ Create Mapping" button opens the form with Financial Activity dropdown (listing unmapped activities) and GL Account dropdown. Each financial activity can only be mapped once; these mappings enable the system to automatically post accounting entries for internal transfers, teller operations, and other system-level financial activities.
+
+---
+
+
+</description>
+
+<workflows>
+WF-001 | Open rule from Accounting Rules table | actor: User with accounting/configuration privileges | branch: none | terminal: Open Rule | on_success: navigates to Rule Detail view
+WF-002 | Create a new accounting rule (Create Rule form) | actor: User with accounting/configuration privileges | branch: none | terminal: Create Rule | on_success: creates accounting rule
+WF-003 | Edit rule from Rule Detail (opens edit form) | actor: User with accounting/configuration privileges | branch: none | terminal: Edit | on_success: opens the rule in edit mode (Create_Rule_Form)
+WF-004 | Delete rule from Rule Detail (requires confirmation) | actor: User with accounting/configuration privileges | branch: none | terminal: Delete | on_success: deletes accounting rule after explicit user confirmation
+WF-005 | Create a financial activity mapping (Create Mapping form) | actor: User with accounting/configuration privileges | branch: none | terminal: Create Mapping | on_success: creates mapping to enable automated posting for the selected financial activity
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:12:20] Test-Negative - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Accounting Rules & Financial Activity Mappings",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": "WF-002",
+      "test_case": "Create Rule: leave required Rule_Name blank and submit",
+      "preconditions": [
+        "User is authenticated with accounting/configuration privileges",
+        "Organization's chart of GL accounts and Offices are configured"
+      ],
+      "steps": [
+        "1. Navigate to the Accounting Rules page",
+        "2. Click the '+ Create Rule' button",
+        "3. Leave the Rule_Name field blank",
+        "4. (Optional) leave other fields in their default state",
+        "5. Click the 'Create Rule' submit action"
+      ],
+      "expected_result": "Form does not submit; an inline validation error appears on the Rule_Name field indicating it is required; no accounting rule is created or listed in the table",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": "WF-005",
+      "test_case": "Create Mapping: leave required GL_Account blank and submit",
+      "preconditions": [
+        "User is authenticated with accounting/configuration privileges",
+        "There is at least one unmapped Financial Activity available"
+      ],
+      "steps": [
+        "1. Navigate to the Financial Activity Mappings page",
+        "2. Click the '+ Create Mapping' button",
+        "3. Select a Financial_Activity from the dropdown (an unmapped one)",
+        "4. Leave the GL_Account field blank",
+        "5. Click the 'Create Mapping' submit action"
+      ],
+      "expected_result": "Form does not submit; the GL_Account field displays an inline validation error indicating it is required; mapping is not created and the Financial Activity remains unmapped",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-005",
+      "test_case": "Create Mapping: attempt to map a Financial Activity that is already mapped",
+      "preconditions": [
+        "User is authenticated with accounting/configuration privileges",
+        "There exists a Financial Activity that is already mapped to a GL account"
+      ],
+      "steps": [
+        "1. Navigate to the Financial Activity Mappings page",
+        "2. Click the '+ Create Mapping' button",
+        "3. Attempt to select the Financial_Activity field with <already mapped financial activity>",
+        "4. Select a valid <GL account> in the GL_Account field",
+        "5. Click the 'Create Mapping' submit action"
+      ],
+      "expected_result": "Form does not submit; the Financial_Activity field displays an inline validation error indicating the selected activity cannot be mapped because it is already mapped; no new mapping is created",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-002",
+      "test_case": "Create Rule blocked when organization's chart of GL accounts or Offices are not configured",
+      "preconditions": [
+        "User is authenticated with accounting/configuration privileges",
+        "Organization's chart of GL accounts and/or Offices are NOT configured"
+      ],
+      "steps": [
+        "1. Navigate to the Accounting Rules page",
+        "2. Click the '+ Create Rule' button"
+      ],
+      "expected_result": "Create Rule form does not open; the UI shows a visible notice or blocking state indicating required organization configuration is missing and the Create Rule action is blocked; no rule creation dialog appears",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user cannot access Accounting Rules or Create actions",
+      "preconditions": [
+        "User is not authenticated"
+      ],
+      "steps": [
+        "1. Navigate directly to the Accounting Rules page URL (without signing in)",
+        "2. Attempt to click '+ Create Rule' if visible",
+        "3. Navigate directly to the Financial Activity Mappings page URL (without signing in)",
+        "4. Attempt to click '+ Create Mapping' if visible"
+      ],
+      "expected_result": "Access is blocked: the user is redirected to the login page or shown an access-denied screen; Create Rule and Create Mapping actions are not accessible to the unauthenticated user",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": null,
+      "test_case": "User without accounting/configuration privileges cannot see or use create/edit/delete controls",
+      "preconditions": [
+        "User is authenticated but does NOT have accounting/configuration privileges"
+      ],
+      "steps": [
+        "1. Sign in as a user without accounting/configuration privileges",
+        "2. Navigate to the Accounting Rules page",
+        "3. Observe presence of '+ Create Rule' button",
+        "4. Open an existing rule's detail view if accessible and observe presence of Edit and Delete actions",
+        "5. Navigate to the Financial Activity Mappings page and observe presence of '+ Create Mapping' button"
+      ],
+      "expected_result": "Create and modification controls are not available to this user: '+ Create Rule' and '+ Create Mapping' buttons are not visible (or are disabled); Edit and Delete actions are not visible on the Rule Detail view; attempting direct access to create/edit/delete URLs results in access denied",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-004",
+      "test_case": "Delete rule: canceling the explicit confirmation prevents deletion",
+      "preconditions": [
+        "User is authenticated with accounting/configuration privileges",
+        "An accounting rule exists and is visible in Rule Detail view"
+      ],
+      "steps": [
+        "1. Navigate to the Accounting Rules table",
+        "2. Open an existing rule to its Rule Detail view",
+        "3. Click the 'Delete' action",
+        "4. When the explicit deletion confirmation dialog appears, click 'Cancel' (or close the dialog) instead of confirming"
+      ],
+      "expected_result": "The rule is not deleted; the confirmation dialog closes and the Rule Detail view remains showing the rule; no deletion occurs because explicit confirmation was not provided",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-008",
+      "wf_ref": "WF-004",
+      "test_case": "Delete rule blocked when organization's chart of GL accounts or Offices are not configured",
+      "preconditions": [
+        "User is authenticated with accounting/configuration privileges",
+        "Organization's chart of GL accounts and/or Offices are NOT configured",
+        "An accounting rule exists"
+      ],
+      "steps": [
+        "1. Navigate to the Accounting Rules table",
+        "2. Open an existing rule to its Rule Detail view",
+        "3. Click the 'Delete' action"
+      ],
+      "expected_result": "Delete action is blocked; no confirmation leading to deletion is performed and the rule is not deleted; a visible notice or blocking state indicates the Delete action cannot proceed due to missing organization configuration",
+      "priority": "medium"
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "high_priority": 6,
+    "medium_priority": 2,
+    "low_priority": 0
+  }
+}
+
+------------------------------------------------------------
+[23:12:20] Test-Negative - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Accounting Rules & Financial Activity Mappings",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": "WF-002",
+      "test_case": "Create Rule: leave required Rule_Name blank and submit",
+      "preconditions": [
+        "User is authenticated with accounting/configuration privileges",
+        "Organization's chart of GL accounts and Offices are configured"
+      ],
+      "steps": [
+        "1. Navigate to the Accounting Rules page",
+        "2. Click the '+ Create Rule' button",
+        "3. Leave the Rule_Name field blank",
+        "4. (Optional) leave other fields in their default state",
+        "5. Click the 'Create Rule' submit action"
+      ],
+      "expected_result": "Form does not submit; an inline validation error appears on the Rule_Name field indicating it is required; no accounting rule is created or listed in the table",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": "WF-005",
+      "test_case": "Create Mapping: leave required GL_Account blank and submit",
+      "preconditions": [
+        "User is authenticated with accounting/configuration privileges",
+        "There is at least one unmapped Financial Activity available"
+      ],
+      "steps": [
+        "1. Navigate to the Financial Activity Mappings page",
+        "2. Click the '+ Create Mapping' button",
+        "3. Select a Financial_Activity from the dropdown (an unmapped one)",
+        "4. Leave the GL_Account field blank",
+        "5. Click the 'Create Mapping' submit action"
+      ],
+      "expected_result": "Form does not submit; the GL_Account field displays an inline validation error indicating it is required; mapping is not created and the Financial Activity remains unmapped",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-005",
+      "test_case": "Create Mapping: attempt to map a Financial Activity that is already mapped",
+      "preconditions": [
+        "User is authenticated with accounting/configuration privileges",
+        "There exists a Financial Activity that is already mapped to a GL account"
+      ],
+      "steps": [
+        "1. Navigate to the Financial Activity Mappings page",
+        "2. Click the '+ Create Mapping' button",
+        "3. Attempt to select the Financial_Activity field with <already mapped financial activity>",
+        "4. Select a valid <GL account> in the GL_Account field",
+        "5. Click the 'Create Mapping' submit action"
+      ],
+      "expected_result": "Form does not submit; the Financial_Activity field displays an inline validation error indicating the selected activity cannot be mapped because it is already mapped; no new mapping is created",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-002",
+      "test_case": "Create Rule blocked when organization's chart of GL accounts or Offices are not configured",
+      "preconditions": [
+        "User is authenticated with accounting/configuration privileges",
+        "Organization's chart of GL accounts and/or Offices are NOT configured"
+      ],
+      "steps": [
+        "1. Navigate to the Accounting Rules page",
+        "2. Click the '+ Create Rule' button"
+      ],
+      "expected_result": "Create Rule form does not open; the UI shows a visible notice or blocking state indicating required organization configuration is missing and the Create Rule action is blocked; no rule creation dialog appears",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user cannot access Accounting Rules or Create actions",
+      "preconditions": [
+        "User is not authenticated"
+      ],
+      "steps": [
+        "1. Navigate directly to the Accounting Rules page URL (without signing in)",
+        "2. Attempt to click '+ Create Rule' if visible",
+        "3. Navigate directly to the Financial Activity Mappings page URL (without signing in)",
+        "4. Attempt to click '+ Create Mapping' if visible"
+      ],
+      "expected_result": "Access is blocked: the user is redirected to the login page or shown an access-denied screen; Create Rule and Create Mapping actions are not accessible to the unauthenticated user",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": null,
+      "test_case": "User without accounting/configuration privileges cannot see or use create/edit/delete controls",
+      "preconditions": [
+        "User is authenticated but does NOT have accounting/configuration privileges"
+      ],
+      "steps": [
+        "1. Sign in as a user without accounting/configuration privileges",
+        "2. Navigate to the Accounting Rules page",
+        "3. Observe presence of '+ Create Rule' button",
+        "4. Open an existing rule's detail view if accessible and observe presence of Edit and Delete actions",
+        "5. Navigate to the Financial Activity Mappings page and observe presence of '+ Create Mapping' button"
+      ],
+      "expected_result": "Create and modification controls are not available to this user: '+ Create Rule' and '+ Create Mapping' buttons are not visible (or are disabled); Edit and Delete actions are not visible on the Rule Detail view; attempting direct access to create/edit/delete URLs results in access denied",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-004",
+      "test_case": "Delete rule: canceling the explicit confirmation prevents deletion",
+      "preconditions": [
+        "User is authenticated with accounting/configuration privileges",
+        "An accounting rule exists and is visible in Rule Detail view"
+      ],
+      "steps": [
+        "1. Navigate to the Accounting Rules table",
+        "2. Open an existing rule to its Rule Detail view",
+        "3. Click the 'Delete' action",
+        "4. When the explicit deletion confirmation dialog appears, click 'Cancel' (or close the dialog) instead of confirming"
+      ],
+      "expected_result": "The rule is not deleted; the confirmation dialog closes and the Rule Detail view remains showing the rule; no deletion occurs because explicit confirmation was not provided",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-008",
+      "wf_ref": "WF-004",
+      "test_case": "Delete rule blocked when organization's chart of GL accounts or Offices are not configured",
+      "preconditions": [
+        "User is authenticated with accounting/configuration privileges",
+        "Organization's chart of GL accounts and/or Offices are NOT configured",
+        "An accounting rule exists"
+      ],
+      "steps": [
+        "1. Navigate to the Accounting Rules table",
+        "2. Open an existing rule to its Rule Detail view",
+        "3. Click the 'Delete' action"
+      ],
+      "expected_result": "Delete action is blocked; no confirmation leading to deletion is performed and the rule is not deleted; a visible notice or blocking state indicates the Delete action cannot proceed due to missing organization configuration",
+      "priority": "medium"
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "high_priority": 6,
+    "medium_priority": 2,
+    "low_priority": 0
+  }
+}

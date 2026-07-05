@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:34.410985
+DEBUG SESSION STARTED: 2026-07-04T22:41:48.098482
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Edge - SYSTEM PROMPT
+[22:41:48] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Edge - USER PROMPT
+[22:41:48] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 8,
   "module_title": "Activities",
-  "summary": "Provides a consolidated, grouped overview of every course activity with collapsible sections and direct links to each activity page.",
-  "where_it_fits": "Accessible from a course's horizontal tab bar under the Activities tab and complements the Course Page and Course Index sidebar by offering an alternative, grouped listing of activities; it appears in the course-level navigation path shown in the breadcrumbs when viewing activities.",
-  "assumed_state_on_entry": "User is logged in and actively viewing a specific course (on the Course Page)"
+  "summary": "Provides a consolidated, type-grouped overview of all course activities with expandable sections and direct links to each activity page.",
+  "where_it_fits": "Accessible from the course-level horizontal tab bar (Course > Activities) when viewing a specific course, and reachable via the Course Index sidebar or activity breadcrumbs; it sits alongside Participants and Grades as a course navigation hub for locating activities. It is part of the course view lifecycle for browsing and jumping into individual activity pages.",
+  "assumed_state_on_entry": "User is logged in and currently viewing a specific course page with course context and enrollment in that course."
 }
 </module_context>
 
@@ -244,28 +258,28 @@ If a `<workflows>` block is present in the input:
   "module_name": "Activities",
   "components": {
     "Activities_Page": {
-      "type": "page",
+      "type": "accordion",
       "preconditions": [
-        "User is logged in",
-        "Viewing a specific course"
+        "User is logged in and currently viewing a specific course page with course context and enrollment in that course."
       ],
       "sections": [
         {
           "section_name": "Assignments",
+          "collapsible": true,
           "expanded": true,
           "fields": {
             "Assignments_Table": {
               "type": "data_table",
+              "columns": [
+                "Name",
+                "Due date",
+                "Submission status"
+              ],
+              "clickable_column": "Name",
               "row_actions": [
                 {
                   "action_name": "Open Activity",
-                  "action_type": "link",
-                  "trigger": "click Name",
-                  "on_success": "navigates to activity page",
-                  "preconditions": [
-                    "User is logged in",
-                    "Viewing a specific course"
-                  ]
+                  "on_success": "navigates to activity page and shows parent section below"
                 }
               ]
             }
@@ -273,84 +287,37 @@ If a `<workflows>` block is present in the input:
         },
         {
           "section_name": "Forums",
+          "collapsible": true,
           "expanded": false,
-          "expand_toggle": {
-            "action_type": "toggle",
-            "trigger": "click arrow",
-            "on_success": "toggle section expansion"
-          },
-          "fields": {
-            "Forums_List": {
-              "type": "data_table",
-              "row_actions": [
-                {
-                  "action_name": "Open Activity",
-                  "action_type": "link",
-                  "trigger": "click Name",
-                  "on_success": "navigates to activity page",
-                  "preconditions": [
-                    "User is logged in",
-                    "Viewing a specific course"
-                  ]
-                }
-              ]
-            }
-          }
+          "fields": {}
         },
         {
           "section_name": "Resources",
+          "collapsible": true,
           "expanded": false,
-          "expand_toggle": {
-            "action_type": "toggle",
-            "trigger": "click arrow",
-            "on_success": "toggle section expansion"
-          },
-          "fields": {
-            "Resources_List": {
-              "type": "data_table",
-              "row_actions": [
-                {
-                  "action_name": "Open Activity",
-                  "action_type": "link",
-                  "trigger": "click Name",
-                  "on_success": "navigates to activity page",
-                  "preconditions": [
-                    "User is logged in",
-                    "Viewing a specific course"
-                  ]
-                }
-              ]
-            }
-          }
+          "fields": {}
         },
         {
-          "section_name": "Other_Sections",
+          "section_name": "Additional Activity Types",
+          "collapsible": true,
           "expanded": false,
           "fields": {
-            "Other_Sections": {
+            "Activity_Type_Sections": {
               "type": "repeating_group",
               "item_fields": {
-                "Expanded": {
-                  "type": "boolean",
-                  "default": false
+                "Activity_Type_Name": {
+                  "type": "unspecified"
                 },
-                "Expand_Toggle": {
-                  "action_type": "toggle",
-                  "trigger": "click arrow",
-                  "on_success": "toggle item expansion"
-                },
-                "Activities": {
+                "Activities_Table": {
                   "type": "data_table",
+                  "columns": [
+                    "Name"
+                  ],
+                  "clickable_column": "Name",
                   "row_actions": [
                     {
                       "action_name": "Open Activity",
-                      "action_type": "link",
-                      "trigger": "click Name",
-                      "on_success": "navigates to activity page",
-                      "preconditions": [
-                        "User is logged in",
-                        "Viewing a specific course"
-                      ]
+                      "on_success": "navigates to activity page"
                     }
                   ]
                 }
@@ -374,25 +341,16 @@ The Activities page provides a consolidated overview of every activity in the co
 </description>
 
 <workflows>
-WF-001 | Open assignment activity (Assignments section, default expanded) | actor: <role> | branch: none | terminal: Open Activity | on_success: navigates to activity page
-WF-002 | Expand Forums section (Forums collapsed -> click arrow) | actor: <role> | branch: Forums.expanded == false | terminal: expand_toggle | on_success: toggle section expansion
-WF-003 | Collapse Forums section (Forums expanded -> click arrow) | actor: <role> | branch: Forums.expanded == true | terminal: expand_toggle | on_success: toggle section expansion
-WF-004 | Open forum activity when Forums already expanded | actor: <role> | branch: Forums.expanded == true | terminal: Open Activity | on_success: navigates to activity page
-WF-005 | Open forum activity when Forums collapsed (toggle then open) | actor: <role> | branch: Forums.expanded == false | terminal: Open Activity | on_success: navigates to activity page
-WF-006 | Expand Resources section (Resources collapsed -> click arrow) | actor: <role> | branch: Resources.expanded == false | terminal: expand_toggle | on_success: toggle section expansion
-WF-007 | Collapse Resources section (Resources expanded -> click arrow) | actor: <role> | branch: Resources.expanded == true | terminal: expand_toggle | on_success: toggle section expansion
-WF-008 | Open resource activity when Resources already expanded | actor: <role> | branch: Resources.expanded == true | terminal: Open Activity | on_success: navigates to activity page
-WF-009 | Open resource activity when Resources collapsed (toggle then open) | actor: <role> | branch: Resources.expanded == false | terminal: Open Activity | on_success: navigates to activity page
-WF-010 | Expand Other_Sections item (item collapsed -> click arrow) | actor: <role> | branch: Other_Sections.items[<i>].Expanded == false | terminal: Expand_Toggle | on_success: toggle item expansion
-WF-011 | Collapse Other_Sections item (item expanded -> click arrow) | actor: <role> | branch: Other_Sections.items[<i>].Expanded == true | terminal: Expand_Toggle | on_success: toggle item expansion
-WF-012 | Open activity inside an Other_Sections item when item already expanded | actor: <role> | branch: Other_Sections.items[<i>].Expanded == true | terminal: Open Activity | on_success: navigates to activity page
-WF-013 | Open activity inside an Other_Sections item when item collapsed (toggle then open) | actor: <role> | branch: Other_Sections.items[<i>].Expanded == false | terminal: Open Activity | on_success: navigates to activity page
+WF-001 | Open assignment from Assignments table | actor: <role> | branch: Section == Assignments | terminal: Open Activity | on_success: navigates to activity page and shows parent section below
+WF-002 | Open activity from an Additional Activity Types table | actor: <role> | branch: Section == Additional Activity Types (repeating group item) | terminal: Open Activity | on_success: navigates to activity page
+WF-003 | Expand Forums section | actor: <role> | branch: Section == Forums AND expanded == false | terminal: Expand Section | on_success: Forums section expands and displays its activities
+WF-004 | Expand Resources section | actor: <role> | branch: Section == Resources AND expanded == false | terminal: Expand Section | on_success: Resources section expands and displays its activities
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:14:21] Test-Edge - LLM RESPONSE
+[22:43:26] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Activities",
@@ -401,95 +359,83 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "E-001",
       "wf_ref": "WF-002",
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid repeated toggle of Forums expand arrow (parity boundary)",
+      "subcategory": "input_edge",
+      "test_case": "Very long Activity Type Name in repeating group is displayed/truncated",
       "preconditions": [
-        "User is logged in",
-        "Viewing a specific course",
-        "Activities page is open",
-        "Forums section is collapsed"
+        "User is logged in and viewing a specific course page with enrollment (per module precondition).",
+        "Course contains at least one Additional Activity Types repeating-group item whose Activity_Type_Name is a very long string (>= 200 characters).",
+        "Additional Activity Types section is collapsed."
       ],
       "steps": [
-        "1. Click the Forums section expand arrow",
-        "2. Click the Forums section expand arrow",
-        "3. Click the Forums section expand arrow",
-        "4. Click the Forums section expand arrow",
-        "5. Click the Forums section expand arrow",
-        "6. Click the Forums section expand arrow"
+        "1. Click the expand arrow for the 'Additional Activity Types' section.",
+        "2. Locate the repeating-group item with the very long Activity_Type_Name and observe its header/label in the section list."
       ],
-      "expected_result": "All toggle clicks succeed; the final expanded/collapsed state corresponds to the parity of clicks (even number of clicks results in Forums remaining collapsed, odd results in expanded). The arrow control's visible state (e.g., chevron direction and aria-expanded) matches the final state and no JavaScript error banner or persistent animation glitch is shown.",
-      "priority": "medium"
+      "expected_result": "PASS: The very long Activity Type Name is accepted; the Activities page displays the repeating-group item. The name is visually truncated in the section header (ellipsis or similar truncation) with no inline validation error shown.",
+      "priority": "low"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-005",
-      "subcategory": "interaction_edge",
-      "test_case": "Click activity name immediately after expanding Forums (timing boundary during expansion animation)",
+      "wf_ref": "WF-001",
+      "subcategory": "input_edge",
+      "test_case": "Assignment Name containing special characters/emoji navigates correctly",
       "preconditions": [
-        "User is logged in",
-        "Viewing a specific course",
-        "Activities page is open",
-        "Forums section is collapsed",
-        "Forums has at least one activity row"
+        "User is logged in and viewing a specific course page with enrollment (per module precondition).",
+        "Assignments section contains an assignment whose Name includes special characters and emoji.",
+        "Assignments section is expanded (default)."
       ],
       "steps": [
-        "1. Click the Forums section expand arrow",
-        "2. Immediately (while expansion animation or transition is running) click the first activity Name in the Forums list"
+        "1. In the Assignments table, locate the row whose Name contains special characters/emoji.",
+        "2. Click the Name link for that assignment."
       ],
-      "expected_result": "Navigation to the clicked activity's page succeeds; the user arrives on the correct activity page and no intermediate UI error or stuck loading state appears. The target activity corresponds to the row clicked.",
+      "expected_result": "PASS: The UI navigates to the assignment activity page; the activity page header visibly displays the same name including special characters/emoji and no error message is shown on navigation.",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click on an assignment Name (duplicate-click boundary)",
+      "test_case": "Rapid double-click on an assignment Name link does not produce duplicate navigations or UI artifacts",
       "preconditions": [
-        "User is logged in",
-        "Viewing a specific course",
-        "Activities page is open",
-        "Assignments section is expanded",
-        "Assignments table has at least one activity row"
+        "User is logged in and viewing a specific course page with enrollment (per module precondition).",
+        "Assignments section contains at least one assignment row with a clickable Name link.",
+        "Assignments section is expanded (default)."
       ],
       "steps": [
-        "1. Click the first activity Name in the Assignments table",
-        "2. Immediately click the same activity Name again (second click within typical double-click timing)"
+        "1. In the Assignments table, perform two quick successive clicks (rapid double-click) on the same assignment Name link."
       ],
-      "expected_result": "Only one navigation to the activity page succeeds; the second click does not cause a second navigation or open a duplicate page/tab in the same browser context. The activity detail page is displayed and no duplicate UI state or error is shown on return to Activities.",
+      "expected_result": "PASS: Only one navigation is performed; the browser displays the assignment activity page once and no duplicate activity pages, stacked overlays, or duplicated UI artifacts appear. The Assignments section remains shown below when returning to the Activities page.",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-001",
-      "subcategory": "data_edge",
-      "test_case": "Open activity when identical Names exist in different sections (disambiguation boundary)",
+      "wf_ref": "WF-003",
+      "subcategory": "interaction_edge",
+      "test_case": "Expanding Forums when it contains zero activities shows empty state (no crash)",
       "preconditions": [
-        "User is logged in",
-        "Viewing a specific course",
-        "Activities page is open",
-        "Assignments and Resources each contain an activity with the same Name text"
+        "User is logged in and viewing a specific course page with enrollment (per module precondition).",
+        "Forums section is collapsed and the course has zero activities of type Forum (Forums list empty)."
       ],
       "steps": [
-        "1. In the Assignments section, click the activity Name that has an identical title in Resources"
+        "1. Click the expand arrow for the Forums section."
       ],
-      "expected_result": "Navigation to the Assignments activity page succeeds; the activity detail page clearly indicates the correct parent section (e.g., 'Assignments' label or parent section shown below the title) so it is visible that the clicked row in Assignments was the source. No ambiguity remains as to which section the opened activity belongs.",
-      "priority": "medium"
+      "expected_result": "PASS: The Forums section expands and its content area is shown. Because there are no Forum activities, the expanded area visibly shows an empty-state (no activity rows) or an empty list area and no error is displayed.",
+      "priority": "low"
     }
   ],
   "summary": {
     "total": 4,
     "boundary": 0,
-    "input_edge": 0,
-    "interaction_edge": 4,
+    "input_edge": 2,
+    "interaction_edge": 2,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 4,
-    "low_priority": 0
+    "medium_priority": 2,
+    "low_priority": 2
   }
 }
 
 ------------------------------------------------------------
-[21:14:21] Test-Edge - PARSED JSON
+[22:43:26] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Activities",
@@ -498,89 +444,77 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "E-001",
       "wf_ref": "WF-002",
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid repeated toggle of Forums expand arrow (parity boundary)",
+      "subcategory": "input_edge",
+      "test_case": "Very long Activity Type Name in repeating group is displayed/truncated",
       "preconditions": [
-        "User is logged in",
-        "Viewing a specific course",
-        "Activities page is open",
-        "Forums section is collapsed"
+        "User is logged in and viewing a specific course page with enrollment (per module precondition).",
+        "Course contains at least one Additional Activity Types repeating-group item whose Activity_Type_Name is a very long string (>= 200 characters).",
+        "Additional Activity Types section is collapsed."
       ],
       "steps": [
-        "1. Click the Forums section expand arrow",
-        "2. Click the Forums section expand arrow",
-        "3. Click the Forums section expand arrow",
-        "4. Click the Forums section expand arrow",
-        "5. Click the Forums section expand arrow",
-        "6. Click the Forums section expand arrow"
+        "1. Click the expand arrow for the 'Additional Activity Types' section.",
+        "2. Locate the repeating-group item with the very long Activity_Type_Name and observe its header/label in the section list."
       ],
-      "expected_result": "All toggle clicks succeed; the final expanded/collapsed state corresponds to the parity of clicks (even number of clicks results in Forums remaining collapsed, odd results in expanded). The arrow control's visible state (e.g., chevron direction and aria-expanded) matches the final state and no JavaScript error banner or persistent animation glitch is shown.",
-      "priority": "medium"
+      "expected_result": "PASS: The very long Activity Type Name is accepted; the Activities page displays the repeating-group item. The name is visually truncated in the section header (ellipsis or similar truncation) with no inline validation error shown.",
+      "priority": "low"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-005",
-      "subcategory": "interaction_edge",
-      "test_case": "Click activity name immediately after expanding Forums (timing boundary during expansion animation)",
+      "wf_ref": "WF-001",
+      "subcategory": "input_edge",
+      "test_case": "Assignment Name containing special characters/emoji navigates correctly",
       "preconditions": [
-        "User is logged in",
-        "Viewing a specific course",
-        "Activities page is open",
-        "Forums section is collapsed",
-        "Forums has at least one activity row"
+        "User is logged in and viewing a specific course page with enrollment (per module precondition).",
+        "Assignments section contains an assignment whose Name includes special characters and emoji.",
+        "Assignments section is expanded (default)."
       ],
       "steps": [
-        "1. Click the Forums section expand arrow",
-        "2. Immediately (while expansion animation or transition is running) click the first activity Name in the Forums list"
+        "1. In the Assignments table, locate the row whose Name contains special characters/emoji.",
+        "2. Click the Name link for that assignment."
       ],
-      "expected_result": "Navigation to the clicked activity's page succeeds; the user arrives on the correct activity page and no intermediate UI error or stuck loading state appears. The target activity corresponds to the row clicked.",
+      "expected_result": "PASS: The UI navigates to the assignment activity page; the activity page header visibly displays the same name including special characters/emoji and no error message is shown on navigation.",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click on an assignment Name (duplicate-click boundary)",
+      "test_case": "Rapid double-click on an assignment Name link does not produce duplicate navigations or UI artifacts",
       "preconditions": [
-        "User is logged in",
-        "Viewing a specific course",
-        "Activities page is open",
-        "Assignments section is expanded",
-        "Assignments table has at least one activity row"
+        "User is logged in and viewing a specific course page with enrollment (per module precondition).",
+        "Assignments section contains at least one assignment row with a clickable Name link.",
+        "Assignments section is expanded (default)."
       ],
       "steps": [
-        "1. Click the first activity Name in the Assignments table",
-        "2. Immediately click the same activity Name again (second click within typical double-click timing)"
+        "1. In the Assignments table, perform two quick successive clicks (rapid double-click) on the same assignment Name link."
       ],
-      "expected_result": "Only one navigation to the activity page succeeds; the second click does not cause a second navigation or open a duplicate page/tab in the same browser context. The activity detail page is displayed and no duplicate UI state or error is shown on return to Activities.",
+      "expected_result": "PASS: Only one navigation is performed; the browser displays the assignment activity page once and no duplicate activity pages, stacked overlays, or duplicated UI artifacts appear. The Assignments section remains shown below when returning to the Activities page.",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-001",
-      "subcategory": "data_edge",
-      "test_case": "Open activity when identical Names exist in different sections (disambiguation boundary)",
+      "wf_ref": "WF-003",
+      "subcategory": "interaction_edge",
+      "test_case": "Expanding Forums when it contains zero activities shows empty state (no crash)",
       "preconditions": [
-        "User is logged in",
-        "Viewing a specific course",
-        "Activities page is open",
-        "Assignments and Resources each contain an activity with the same Name text"
+        "User is logged in and viewing a specific course page with enrollment (per module precondition).",
+        "Forums section is collapsed and the course has zero activities of type Forum (Forums list empty)."
       ],
       "steps": [
-        "1. In the Assignments section, click the activity Name that has an identical title in Resources"
+        "1. Click the expand arrow for the Forums section."
       ],
-      "expected_result": "Navigation to the Assignments activity page succeeds; the activity detail page clearly indicates the correct parent section (e.g., 'Assignments' label or parent section shown below the title) so it is visible that the clicked row in Assignments was the source. No ambiguity remains as to which section the opened activity belongs.",
-      "priority": "medium"
+      "expected_result": "PASS: The Forums section expands and its content area is shown. Because there are no Forum activities, the expanded area visibly shows an empty-state (no activity rows) or an empty list area and no error is displayed.",
+      "priority": "low"
     }
   ],
   "summary": {
     "total": 4,
     "boundary": 0,
-    "input_edge": 0,
-    "interaction_edge": 4,
+    "input_edge": 2,
+    "interaction_edge": 2,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 4,
-    "low_priority": 0
+    "medium_priority": 2,
+    "low_priority": 2
   }
 }

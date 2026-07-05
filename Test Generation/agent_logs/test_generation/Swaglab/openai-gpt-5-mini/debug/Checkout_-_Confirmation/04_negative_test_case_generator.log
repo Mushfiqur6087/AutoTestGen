@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:04:20.742154
+DEBUG SESSION STARTED: 2026-07-04T22:55:35.980673
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Negative - SYSTEM PROMPT
+[22:55:35] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Negative - USER PROMPT
+[22:55:35] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 7,
   "module_title": "Checkout - Confirmation",
-  "summary": "Displays an order success message and a Back Home action that returns to the Product Inventory and clears the cart.",
-  "where_it_fits": "This is the final step of the checkout flow reached after Product Inventory \u2192 Shopping Cart \u2192 Checkout - Information \u2192 Checkout - Overview \u2192 Checkout - Confirmation, serving as the completion page before returning the user to the Product Inventory. It concludes the purchase lifecycle and resets the cart state for further browsing.",
-  "assumed_state_on_entry": "User is logged in and has completed the Checkout - Overview step with an order submitted."
+  "summary": "Displays the order success message and a Back Home action that returns the user to the Product Inventory and clears the cart.",
+  "where_it_fits": "This is the final step of the checkout flow (Information \u2192 Overview \u2192 Confirmation), reached after navigating from Product Inventory \u2192 Shopping Cart \u2192 Checkout - Information \u2192 Checkout - Overview. It completes the purchase lifecycle and returns the user to the inventory view.",
+  "assumed_state_on_entry": "User is logged in and has completed the checkout steps with an order submitted (checkout process reached the Confirmation step)."
 }
 </module_context>
 
@@ -261,15 +271,15 @@ If a `<workflows>` block is present in the input:
   "module_name": "Checkout - Confirmation",
   "components": {
     "Checkout_Confirmation_Page": {
-      "type": "page",
-      "fields": {},
-      "submit_actions": [
+      "type": "action_bar",
+      "preconditions": [
+        "User is logged in and has completed the checkout steps with an order submitted (checkout process reached the Confirmation step)."
+      ],
+      "actions": [
         {
           "action_name": "Back Home",
-          "on_success": "returns to Product Inventory and clears the cart",
-          "preconditions": [
-            "User is logged in and has completed the Checkout - Overview step with an order submitted."
-          ]
+          "type": "button",
+          "on_success": "navigates to Product Inventory and clears the cart"
         }
       ]
     }
@@ -285,13 +295,13 @@ The confirmation page displays a success message (for example: "Thank you for yo
 </description>
 
 <workflows>
-WF-001 | Back Home — return to Product Inventory and clear cart | actor: User | branch: none | terminal: Back Home | on_success: returns to Product Inventory and clears the cart
+WF-001 | Back Home — return to Product Inventory and clear cart | actor: User | branch: none | terminal: Back Home | on_success: navigates to Product Inventory and clears the cart
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:05:19] Test-Negative - LLM RESPONSE
+[22:56:34] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Checkout - Confirmation",
@@ -300,34 +310,30 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Unauthenticated user cannot access Confirmation page",
+      "test_case": "Unauthenticated user cannot access Confirmation page (login required)",
       "preconditions": [
-        "User is not logged in",
-        "User has items in cart (optional) but has not authenticated in this session"
+        "User is not logged in"
       ],
       "steps": [
-        "1. Ensure the user is logged out",
-        "2. In the browser, navigate to <confirmation page URL> (Checkout - Confirmation)",
-        "3. Observe the browser behavior and displayed page"
+        "1. In a new browser session where no user is authenticated, navigate directly to the Checkout - Confirmation page URL"
       ],
-      "expected_result": "Browser redirects to <login page>; the Confirmation page does not render (no success message like 'Thank you for your order!' is shown) and the Back Home button is not available. The cart state remains unchanged (items remain in cart).",
+      "expected_result": "Access is blocked: the user is redirected to the Login page; the Confirmation page content (success message and 'Back Home' button) is not displayed",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Logged-in user without a submitted order cannot use Back Home from Confirmation",
+      "test_case": "Logged-in user who has not completed checkout cannot view Confirmation page",
       "preconditions": [
         "User is logged in",
-        "User has NOT completed Checkout - Overview and has NOT submitted an order (no completed order exists)"
+        "User has not completed the checkout steps and no order has been submitted for this session"
       ],
       "steps": [
-        "1. Log in as <user account> who has items in cart but has not completed Checkout - Overview",
-        "2. Navigate to <confirmation page URL> (attempt to open Confirmation page directly)",
-        "3. Check whether the Confirmation success message and Back Home button are visible",
-        "4. If Back Home is visible, click the Back Home button"
+        "1. Ensure the user is logged in",
+        "2. From the Product Inventory, do NOT complete Checkout (leave at Shopping Cart or Checkout - Information)",
+        "3. Navigate directly to the Checkout - Confirmation page URL"
       ],
-      "expected_result": "Access is blocked: the Confirmation success message is not shown and the Back Home button is either not visible or disabled. If navigation is attempted, the user is redirected to <shopping cart page> (or the appropriate checkout step) instead of seeing Confirmation. The cart remains unchanged (items still present); no confirmation state is shown.",
+      "expected_result": "Access is blocked: the Confirmation page content (success message and 'Back Home' button) is not displayed; the app returns the user to the checkout flow (redirected to the Checkout - Information page) instead",
       "priority": "high"
     }
   ],
@@ -340,7 +346,7 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
 }
 
 ------------------------------------------------------------
-[21:05:19] Test-Negative - PARSED JSON
+[22:56:34] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Checkout - Confirmation",
@@ -349,34 +355,30 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Unauthenticated user cannot access Confirmation page",
+      "test_case": "Unauthenticated user cannot access Confirmation page (login required)",
       "preconditions": [
-        "User is not logged in",
-        "User has items in cart (optional) but has not authenticated in this session"
+        "User is not logged in"
       ],
       "steps": [
-        "1. Ensure the user is logged out",
-        "2. In the browser, navigate to <confirmation page URL> (Checkout - Confirmation)",
-        "3. Observe the browser behavior and displayed page"
+        "1. In a new browser session where no user is authenticated, navigate directly to the Checkout - Confirmation page URL"
       ],
-      "expected_result": "Browser redirects to <login page>; the Confirmation page does not render (no success message like 'Thank you for your order!' is shown) and the Back Home button is not available. The cart state remains unchanged (items remain in cart).",
+      "expected_result": "Access is blocked: the user is redirected to the Login page; the Confirmation page content (success message and 'Back Home' button) is not displayed",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Logged-in user without a submitted order cannot use Back Home from Confirmation",
+      "test_case": "Logged-in user who has not completed checkout cannot view Confirmation page",
       "preconditions": [
         "User is logged in",
-        "User has NOT completed Checkout - Overview and has NOT submitted an order (no completed order exists)"
+        "User has not completed the checkout steps and no order has been submitted for this session"
       ],
       "steps": [
-        "1. Log in as <user account> who has items in cart but has not completed Checkout - Overview",
-        "2. Navigate to <confirmation page URL> (attempt to open Confirmation page directly)",
-        "3. Check whether the Confirmation success message and Back Home button are visible",
-        "4. If Back Home is visible, click the Back Home button"
+        "1. Ensure the user is logged in",
+        "2. From the Product Inventory, do NOT complete Checkout (leave at Shopping Cart or Checkout - Information)",
+        "3. Navigate directly to the Checkout - Confirmation page URL"
       ],
-      "expected_result": "Access is blocked: the Confirmation success message is not shown and the Back Home button is either not visible or disabled. If navigation is attempted, the user is redirected to <shopping cart page> (or the appropriate checkout step) instead of seeing Confirmation. The cart remains unchanged (items still present); no confirmation state is shown.",
+      "expected_result": "Access is blocked: the Confirmation page content (success message and 'Back Home' button) is not displayed; the app returns the user to the checkout flow (redirected to the Checkout - Information page) instead",
       "priority": "high"
     }
   ],

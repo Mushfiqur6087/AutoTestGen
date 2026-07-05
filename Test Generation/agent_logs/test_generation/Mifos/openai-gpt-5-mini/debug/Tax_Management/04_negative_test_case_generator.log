@@ -1,0 +1,769 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:08:30.010105
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:08:30] Test-Negative - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Negative Testing:**
+
+The AST represents every interactive element in the module. Each node type has a corresponding failure category:
+
+| AST node / field | What to test for failure |
+|---|---|
+| `required: true` field | Leave it blank and submit — inline validation error |
+| `constraints: []` on a field or action | One TC per unique constraint: violate it specifically |
+| `preconditions: []` on an action | One TC attempting the action when the precondition is NOT met |
+| `visible_when` / `required_when` conditional field | Trigger the condition, then submit the revealed field blank or invalid |
+| `state_bound_action_bar` states | Attempt an action from the wrong state (e.g., Approve an already-Active entity) |
+| `on_success` with quoted text | The negative expected_result is the *blocking* behavior — the entity stays unchanged |
+| `submit_actions[]` | If any button has `preconditions`, test that button when precondition fails |
+
+> If a module has no `form`, no `wizard`, no `state_bound_action_bar`, and no `constraints` — it is display-only. Generate at most 1–2 tests (unauthenticated access, or a non-implemented link if described). Do not invent validation scenarios.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — Name the field, the violated rule, and the visible error indicator.**
+Never write a vague expected result. Always specify what the tester sees.
+
+- ❌ `"Validation error shown"` — too vague
+- ❌ `"Error is displayed"` — too vague
+- ✅ `"Inline validation error appears on the <Field Name> field indicating it is required"`
+- ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
+- ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
+
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
+- ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
+- ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
+
+**Rule C — Assert the blocking behavior, not just the error.**
+The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
+- ❌ `"Error shown"` (doesn't confirm the action was blocked)
+- ✅ `"Form does not submit; <Entity> is not created; error shown on <Field>"`
+- ✅ `"Status remains <Current State>; no transition occurs"`
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Use generic placeholders in angle brackets.
+
+- ✅ `"Enter <invalid email format> in the Email field"`
+- ✅ `"Enter <amount exceeding available balance> in the Amount field"`
+- ✅ `"Enter <password shorter than minimum length> in the Password field"`
+- ❌ `"Enter 'notanemail' in the Email field"`
+- ❌ `"Enter 'abc123' in the Password field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic user action — one field, one click, one navigation. No grouping.
+
+- ✅ `"1. Leave the <Required Field> blank"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill all fields except <Required Field> and submit"`
+
+---
+
+**SCOPE GATE (run before writing any test):**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact sentence in the description or field/constraint/state in the AST justifies this test? If you cannot point to one → delete it.
+2. **UI-executable:** Can a tester trigger this by clicking, typing, selecting, or navigating in a browser? If verification requires dev tools, DOM inspection, concurrent users, API calls, or server-side error simulation → out of scope.
+3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
+
+Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Required field representatives (deduplicated by field type):**
+
+Group required fields by type: `text/unspecified`, `email`, `password`, `number`, `date`, `dropdown`, `file_upload`. Generate:
+- ONE "leave blank and submit" test per **type group** (not per field) — use the most prominent field as representative
+- ONE "submit with ALL required fields empty" test
+
+Do NOT generate a separate blank-field test for every required field. If 5 text fields are all required, one representative covers them all.
+
+**Action dialog required fields — NOT subject to cross-form deduplication:**
+If a `state_bound_action_bar` action opens a dialog with its own required `fields{}` (e.g., Activate requires Activation Date, Reject requires a Reason, Withdraw requires a Reason, Close requires a Closure Reason), each such dialog is its own testing scope. Generate ONE "leave the required dialog field blank and submit" test per distinct action dialog. These are HIGH priority — they block state transitions and are common defect sites. Do not suppress them because the main wizard already has a blank-field test.
+
+**2. Format violations:**
+
+For fields with type-specific format rules (from AST type or description):
+- `email` → one test with invalid format
+- `number` → one test with non-numeric input
+- `date` → one test with invalid/impossible date
+- `password` → ONE representative test for policy violation (not one per sub-rule — see Deduplication)
+
+Only generate if the spec or AST implies format validation for that field.
+
+**3. Numeric bounds and balance violations:**
+
+If the spec describes minimum/maximum values, amount ranges, or balance checks:
+- One test per distinct bound violation (e.g., amount below minimum, amount above maximum, amount exceeding available balance)
+- Use `<amount below minimum>`, `<amount exceeding available balance>` as placeholders
+
+Examples across the dataset:
+- Transfer amount > available balance → error
+- Loan amount outside product min/max → error
+- Deposit below minimum requirement → error
+
+**4. Constraint violations:**
+
+For each unique `constraints[]` entry in the AST, and for cross-field rules described in the spec:
+- `"must be unique"` → submit with a duplicate value
+- `"must match"` (confirm fields) → enter mismatched values
+- `"must not be same as current"` → select the current value
+- `"cannot perform <action> while <condition>"` → attempt the action when the condition is true
+- `"<date> must be after <other date>"` → enter reversed dates
+
+One test per unique constraint. Do not duplicate the same mechanism.
+
+**Constraint timing tests:** If the spec states an action is blocked by a pre-existing system state (e.g., "cannot close with active accounts", "cannot transfer to the same office"), generate TWO tests:
+1. The standard constraint violation test (user opens the dialog, fills required fields, submits → blocked).
+2. A constraint-timing test: user opens the dialog WITHOUT filling required fields → assert whether the block is shown immediately on dialog open (before the user fills anything) OR only on submit. This distinguishes whether the UI enforces the constraint eagerly or lazily. Steps: open the dialog, observe the state → assert what is visible before any interaction. If the spec is silent on timing, generate only the first test.
+
+**5. Precondition violations (auth, role, and state):**
+
+For each `preconditions[]` entry on any action — and for auth/role/state rules described in the spec or the `<module_context>` block:
+
+- **Global Context constraints:** If the `<module_context>` block's `assumed_state_on_entry` explicitly lists required states (e.g., "Requires an active Client profile"), generate one test attempting the module's core action when that precondition fails (e.g., Client profile is missing or inactive).
+- **Unauthenticated access:** If any page or action requires login, generate one test: an unauthenticated user attempts to access it and is redirected to the login page.
+- **Wrong role:** If the spec explicitly states a feature is restricted to a specific role (e.g., Teacher only, Admin only), generate one test: a user of the wrong role attempts the action and is blocked or the control is not visible.
+- **Precondition not met:** For each AST `preconditions[]` entry, attempt the action when that precondition is not satisfied.
+
+**6. State-machine violations:**
+
+From `state_bound_action_bar` nodes:
+- **Every defined state must have at least one wrong-state test.** For each state, identify at least one action that is NOT in its `available_actions` list and generate a test attempting that action from that state.
+- If a state has an empty `available_actions` array, generate one test verifying no action buttons are visible in that state.
+- **Do not stop after 1–2 representative examples** when the module defines 4+ distinct states. The states Active, Pending, Closed, Rejected, and Withdrawn each have different action sets — each must be independently verified.
+- One test per state is sufficient — pick the most distinct unavailable action for that state. Do not enumerate every action × every state (that would be exponential).
+
+---
+
+**DEDUPLICATION GATE (run before outputting):**
+
+1. **Required field dedup:** Multiple required text fields in the **same form or dialog** → ONE representative test, not one per field.
+2. **Sub-rule dedup:** A field with multiple validation sub-rules (e.g., password: length + uppercase + lowercase + number + special char) → ONE representative violation test, not one per sub-rule.
+3. **Cross-form dedup:** If two **main forms** in the same module share the same validation mechanism → test it on the primary form only. **Exception: action dialogs are never suppressed by cross-form dedup** — each action dialog with a required field gets its own blank-field test regardless.
+4. **Uniqueness check:** Before outputting, ask for each TC: "Does this test catch a bug that NO other test in this module would catch?" If no → remove it.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (standard CRUD form, form with constraints): **4–8 tests**
+- Complex module (state machine, multi-form, wizard with many constraints): **10–16 tests**
+
+For modules with a `state_bound_action_bar` defining 4+ states, the state-machine violation tests alone will produce 4–5 tests. This is expected and correct — do not suppress them to hit a lower target.
+
+If you exceed the upper range, apply the deduplication gate again before outputting.
+
+---
+
+**PRIORITY:**
+
+- **High:** State precondition violations, constraint violations that could corrupt data, unauthenticated access, required field representatives
+- **Medium:** Format violations, cross-field validation, numeric bounds, wrong-role access, wrong-state action attempts
+
+---
+
+**WORKFLOW-AWARE FAILURE INJECTION (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow that contains a form interaction (terminal action is a submit/save/create/approve button):
+  - Identify the most **critical blocking failure** for that workflow's `conditional_branch`.
+  - If that failure mode is NOT already covered by another workflow's negative test, generate one negative TC for it.
+- **Do NOT generate one negative TC per workflow mechanically.** Apply the existing deduplication gate first — only add a TC if it catches a bug that no other test would catch.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a workflow. Set `"wf_ref": null` for generic validation tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "What error/block should occur, naming the field and indicator",
+      "priority": "high | medium"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "high_priority": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[23:08:30] Test-Negative - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 28,
+  "module_title": "Tax Management",
+  "summary": "Configuration and management of tax components and tax groups that map tax rates to GL accounts and that can be applied to products and charge definitions to automatically calculate and post tax journal entries.",
+  "where_it_fits": "Located within the platform's administrative/accounting configuration area (accessible from the top navigation under Accounting or Admin and related from Products via the left sidebar), this module is part of the product and accounting setup lifecycle and is referenced when creating or editing savings products and charge definitions. It appears as entity listing and detail pages (breadcrumbs shown in the content area) consistent with the app's Material Design tables and forms.",
+  "assumed_state_on_entry": "Logged in with Accounting/Admin privileges and an existing Chart of Accounts (GL accounts) configured; relevant product or charge definitions exist when intending to reference a Tax Group."
+}
+</module_context>
+
+<module_name>Tax Management</module_name>
+
+<ast>
+{
+  "module_name": "Tax Management",
+  "components": {
+    "Tax_Components_Table": {
+      "type": "data_table",
+      "row_actions": [
+        {
+          "action_name": "View"
+        },
+        {
+          "action_name": "Edit"
+        }
+      ],
+      "table_actions": [
+        {
+          "action_name": "+ Create Tax Component",
+          "opens_component": "Tax_Component_Create_Form",
+          "preconditions": [
+            "Logged in with Accounting/Admin privileges",
+            "Chart of Accounts must exist"
+          ]
+        }
+      ]
+    },
+    "Tax_Component_Create_Form": {
+      "type": "form",
+      "preconditions": [
+        "Logged in with Accounting/Admin privileges",
+        "Chart of Accounts must exist"
+      ],
+      "fields": {
+        "Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Percentage": {
+          "type": "number",
+          "required": true
+        },
+        "Debit_Account_Type": {
+          "type": "dropdown",
+          "options": [
+            "Asset",
+            "Liability",
+            "Equity",
+            "Income",
+            "Expense"
+          ]
+        },
+        "Debit_Account": {
+          "type": "gl_account_selector",
+          "options_source": "Chart_of_Accounts"
+        },
+        "Credit_Account_Type": {
+          "type": "dropdown",
+          "options": [
+            "Asset",
+            "Liability",
+            "Equity",
+            "Income",
+            "Expense"
+          ]
+        },
+        "Credit_Account": {
+          "type": "gl_account_selector",
+          "options_source": "Chart_of_Accounts"
+        },
+        "Start_Date": {
+          "type": "date",
+          "required": true
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create",
+          "on_success": "creates tax component and makes it selectable when building Tax Groups"
+        }
+      ]
+    },
+    "Tax_Groups_Table": {
+      "type": "data_table",
+      "row_actions": [
+        {
+          "action_name": "View"
+        },
+        {
+          "action_name": "Edit"
+        }
+      ],
+      "table_actions": [
+        {
+          "action_name": "+ Create Tax Group",
+          "opens_component": "Tax_Group_Create_Form",
+          "preconditions": [
+            "Logged in with Accounting/Admin privileges",
+            "Chart of Accounts must exist"
+          ]
+        }
+      ]
+    },
+    "Tax_Group_Create_Form": {
+      "type": "form",
+      "preconditions": [
+        "Logged in with Accounting/Admin privileges"
+      ],
+      "fields": {
+        "Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Tax_Components": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Tax_Component": {
+              "type": "tax_component_selector",
+              "options_source": "Tax_Components",
+              "required": true
+            },
+            "Start_Date": {
+              "type": "date"
+            },
+            "End_Date": {
+              "type": "date"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create",
+          "on_success": "creates tax group and makes it available to products and charge definitions"
+        }
+      ]
+    },
+    "Savings_Product_Form": {
+      "type": "form",
+      "preconditions": [
+        "Logged in with Accounting/Admin privileges",
+        "Chart of Accounts must exist",
+        "Relevant product or charge definitions exist when intending to reference a Tax Group"
+      ],
+      "fields": {
+        "Enable_Withhold_Tax": {
+          "type": "checkbox",
+          "on_change": "when true, system will apply configured tax rates on applicable transactions and post corresponding journal entries to the mapped GL accounts"
+        },
+        "Tax_Group": {
+          "type": "tax_group_selector",
+          "options_source": "Tax_Groups",
+          "visible_when": "Enable_Withhold_Tax == true"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Save",
+          "on_success": "saves product configuration; when Enable_Withhold_Tax is true, system will apply configured tax rates on applicable transactions and post corresponding journal entries to the mapped GL accounts"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Tax Components page displays a data table with columns for Name (clickable link), Percentage, Debit Account Type, Debit Account, Credit Account Type, Credit Account, and Start Date. A "+ Create Tax Component" button opens the creation form containing Name (required), Percentage (required), Debit Account Type (Asset, Liability, Equity, Income, Expense) and Debit Account (GL account), Credit Account Type and Credit Account (GL account), and Start Date (required).
+
+The Tax Groups page displays a data table with columns for Name (clickable link) and associated components. A "+ Create Tax Group" button opens the form with Name (required) and a Tax Components section allowing multiple components to be added, each with a Start Date and End Date. Tax groups are referenced by Savings Products (Enable Withhold Tax checkbox with Tax Group dropdown) and Charge definitions; when a product has tax enabled, the system automatically applies the configured tax rate on interest income or fees and posts the corresponding journal entries to the mapped GL accounts.
+
+---
+
+
+</description>
+
+<workflows>
+WF-001 | View Tax Component | actor: Accounting/Admin | branch: none | terminal: View | on_success: displays tax component details page
+WF-002 | Edit Tax Component | actor: Accounting/Admin | branch: none | terminal: Edit | on_success: opens tax component edit form
+WF-003 | Create Tax Component | actor: Accounting/Admin | branch: none | terminal: Create | on_success: creates tax component and makes it selectable when building Tax Groups
+WF-004 | View Tax Group | actor: Accounting/Admin | branch: none | terminal: View | on_success: displays tax group details page
+WF-005 | Edit Tax Group | actor: Accounting/Admin | branch: none | terminal: Edit | on_success: opens tax group edit form
+WF-006 | Create Tax Group | actor: Accounting/Admin | branch: none | terminal: Create | on_success: creates tax group and makes it available to products and charge definitions
+WF-007 | Save Savings Product (Withhold Tax disabled) | actor: Accounting/Admin | branch: none | terminal: Save | on_success: saves product configuration; when Enable_Withhold_Tax is true, system will apply configured tax rates on applicable transactions and post corresponding journal entries to the mapped GL accounts
+WF-008 | Save Savings Product (Withhold Tax enabled) | actor: Accounting/Admin | branch: Enable_Withhold_Tax == true | terminal: Save | on_success: saves product configuration; when Enable_Withhold_Tax is true, system will apply configured tax rates on applicable transactions and post corresponding journal entries to the mapped GL accounts
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:13:22] Test-Negative - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Tax Management",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user cannot access Tax Components page",
+      "preconditions": [
+        "User is not authenticated"
+      ],
+      "steps": [
+        "1. In a browser session where no user is logged in, navigate to the Tax Components page URL"
+      ],
+      "expected_result": "User is redirected to the authentication (login) page; the Tax Components listing is not displayed",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": null,
+      "test_case": "Non-Accounting/Admin user cannot invoke Create Tax Component",
+      "preconditions": [
+        "User is logged in with a non-Accounting/non-Admin role"
+      ],
+      "steps": [
+        "1. Log in as a user without Accounting/Admin privileges",
+        "2. Navigate to the Tax Components listing page",
+        "3. Observe the page and attempt to locate the '+ Create Tax Component' control",
+        "4. Attempt to navigate directly to the Create Tax Component form URL"
+      ],
+      "expected_result": "The '+ Create Tax Component' control is not visible on the Tax Components listing; direct navigation to the create form is blocked (access denied or redirected to an insufficient-permissions page), and the creation form is not accessible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-003",
+      "test_case": "Create Tax Component blocked when Chart of Accounts does not exist",
+      "preconditions": [
+        "User is logged in with Accounting/Admin privileges",
+        "Chart of Accounts is empty / no GL accounts configured"
+      ],
+      "steps": [
+        "1. Log in as Accounting/Admin",
+        "2. Navigate to the Tax Components listing page",
+        "3. Click the '+ Create Tax Component' button"
+      ],
+      "expected_result": "The Tax Component creation form does not open; the action is blocked and a visible inline warning is shown indicating a Chart of Accounts must exist before creating a Tax Component; no new tax component is created",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-003",
+      "test_case": "Submit Create Tax Component with all required fields empty",
+      "preconditions": [
+        "User is logged in with Accounting/Admin privileges",
+        "Chart of Accounts exists",
+        "Create Tax Component form is open"
+      ],
+      "steps": [
+        "1. Leave the Name field blank",
+        "2. Leave the Percentage field blank",
+        "3. Leave the Start Date field blank",
+        "4. Click the Create button"
+      ],
+      "expected_result": "Form does not submit; a new Tax Component is not created; inline validation errors appear on Name, Percentage and Start Date indicating each is required",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-003",
+      "test_case": "Name (text) required: leave Name blank and submit Create Tax Component",
+      "preconditions": [
+        "User is logged in with Accounting/Admin privileges",
+        "Chart of Accounts exists",
+        "Create Tax Component form is open"
+      ],
+      "steps": [
+        "1. Enter <valid percentage> into the Percentage field",
+        "2. Select <valid Debit Account Type> and <valid Debit Account>",
+        "3. Select <valid Credit Account Type> and <valid Credit Account>",
+        "4. Enter <valid date> into Start Date",
+        "5. Leave the Name field blank",
+        "6. Click the Create button"
+      ],
+      "expected_result": "Form does not submit; a new Tax Component is not created; an inline validation error appears on the Name field indicating it is required",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": "WF-003",
+      "test_case": "Percentage (number) required: leave Percentage blank and submit Create Tax Component",
+      "preconditions": [
+        "User is logged in with Accounting/Admin privileges",
+        "Chart of Accounts exists",
+        "Create Tax Component form is open"
+      ],
+      "steps": [
+        "1. Enter <valid text> into the Name field",
+        "2. Select <valid Debit Account Type> and <valid Debit Account>",
+        "3. Select <valid Credit Account Type> and <valid Credit Account>",
+        "4. Enter <valid date> into Start Date",
+        "5. Leave the Percentage field blank",
+        "6. Click the Create button"
+      ],
+      "expected_result": "Form does not submit; a new Tax Component is not created; an inline validation error appears on the Percentage field indicating it is required",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-003",
+      "test_case": "Percentage field rejects non-numeric input",
+      "preconditions": [
+        "User is logged in with Accounting/Admin privileges",
+        "Chart of Accounts exists",
+        "Create Tax Component form is open"
+      ],
+      "steps": [
+        "1. Enter <valid text> into the Name field",
+        "2. Enter <non-numeric value> into the Percentage field",
+        "3. Select <valid Debit Account Type> and <valid Debit Account>",
+        "4. Select <valid Credit Account Type> and <valid Credit Account>",
+        "5. Enter <valid date> into Start Date",
+        "6. Click the Create button"
+      ],
+      "expected_result": "Form does not submit; a new Tax Component is not created; the Percentage field displays an inline validation error indicating a numeric value is required (non-numeric input is rejected)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-008",
+      "wf_ref": "WF-006",
+      "test_case": "Tax Group creation blocked when a Tax Component entry is added without selecting a Tax Component",
+      "preconditions": [
+        "User is logged in with Accounting/Admin privileges",
+        "Tax Group Create form is open"
+      ],
+      "steps": [
+        "1. In the Tax Group Create form, enter <valid text> into the Name field",
+        "2. In the Tax Components section, click to add a new component row",
+        "3. Leave the Tax Component selector in the new row blank",
+        "4. Optionally enter <valid date> into the Start Date or End Date fields in the row",
+        "5. Click the Create button"
+      ],
+      "expected_result": "Form does not submit; a new Tax Group is not created; an inline validation error appears on the Tax Component selector in the repeating row indicating the Tax Component field is required",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "high_priority": 7,
+    "medium_priority": 1,
+    "low_priority": 0
+  }
+}
+
+------------------------------------------------------------
+[23:13:22] Test-Negative - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Tax Management",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user cannot access Tax Components page",
+      "preconditions": [
+        "User is not authenticated"
+      ],
+      "steps": [
+        "1. In a browser session where no user is logged in, navigate to the Tax Components page URL"
+      ],
+      "expected_result": "User is redirected to the authentication (login) page; the Tax Components listing is not displayed",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": null,
+      "test_case": "Non-Accounting/Admin user cannot invoke Create Tax Component",
+      "preconditions": [
+        "User is logged in with a non-Accounting/non-Admin role"
+      ],
+      "steps": [
+        "1. Log in as a user without Accounting/Admin privileges",
+        "2. Navigate to the Tax Components listing page",
+        "3. Observe the page and attempt to locate the '+ Create Tax Component' control",
+        "4. Attempt to navigate directly to the Create Tax Component form URL"
+      ],
+      "expected_result": "The '+ Create Tax Component' control is not visible on the Tax Components listing; direct navigation to the create form is blocked (access denied or redirected to an insufficient-permissions page), and the creation form is not accessible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-003",
+      "test_case": "Create Tax Component blocked when Chart of Accounts does not exist",
+      "preconditions": [
+        "User is logged in with Accounting/Admin privileges",
+        "Chart of Accounts is empty / no GL accounts configured"
+      ],
+      "steps": [
+        "1. Log in as Accounting/Admin",
+        "2. Navigate to the Tax Components listing page",
+        "3. Click the '+ Create Tax Component' button"
+      ],
+      "expected_result": "The Tax Component creation form does not open; the action is blocked and a visible inline warning is shown indicating a Chart of Accounts must exist before creating a Tax Component; no new tax component is created",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-003",
+      "test_case": "Submit Create Tax Component with all required fields empty",
+      "preconditions": [
+        "User is logged in with Accounting/Admin privileges",
+        "Chart of Accounts exists",
+        "Create Tax Component form is open"
+      ],
+      "steps": [
+        "1. Leave the Name field blank",
+        "2. Leave the Percentage field blank",
+        "3. Leave the Start Date field blank",
+        "4. Click the Create button"
+      ],
+      "expected_result": "Form does not submit; a new Tax Component is not created; inline validation errors appear on Name, Percentage and Start Date indicating each is required",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-003",
+      "test_case": "Name (text) required: leave Name blank and submit Create Tax Component",
+      "preconditions": [
+        "User is logged in with Accounting/Admin privileges",
+        "Chart of Accounts exists",
+        "Create Tax Component form is open"
+      ],
+      "steps": [
+        "1. Enter <valid percentage> into the Percentage field",
+        "2. Select <valid Debit Account Type> and <valid Debit Account>",
+        "3. Select <valid Credit Account Type> and <valid Credit Account>",
+        "4. Enter <valid date> into Start Date",
+        "5. Leave the Name field blank",
+        "6. Click the Create button"
+      ],
+      "expected_result": "Form does not submit; a new Tax Component is not created; an inline validation error appears on the Name field indicating it is required",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": "WF-003",
+      "test_case": "Percentage (number) required: leave Percentage blank and submit Create Tax Component",
+      "preconditions": [
+        "User is logged in with Accounting/Admin privileges",
+        "Chart of Accounts exists",
+        "Create Tax Component form is open"
+      ],
+      "steps": [
+        "1. Enter <valid text> into the Name field",
+        "2. Select <valid Debit Account Type> and <valid Debit Account>",
+        "3. Select <valid Credit Account Type> and <valid Credit Account>",
+        "4. Enter <valid date> into Start Date",
+        "5. Leave the Percentage field blank",
+        "6. Click the Create button"
+      ],
+      "expected_result": "Form does not submit; a new Tax Component is not created; an inline validation error appears on the Percentage field indicating it is required",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-003",
+      "test_case": "Percentage field rejects non-numeric input",
+      "preconditions": [
+        "User is logged in with Accounting/Admin privileges",
+        "Chart of Accounts exists",
+        "Create Tax Component form is open"
+      ],
+      "steps": [
+        "1. Enter <valid text> into the Name field",
+        "2. Enter <non-numeric value> into the Percentage field",
+        "3. Select <valid Debit Account Type> and <valid Debit Account>",
+        "4. Select <valid Credit Account Type> and <valid Credit Account>",
+        "5. Enter <valid date> into Start Date",
+        "6. Click the Create button"
+      ],
+      "expected_result": "Form does not submit; a new Tax Component is not created; the Percentage field displays an inline validation error indicating a numeric value is required (non-numeric input is rejected)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-008",
+      "wf_ref": "WF-006",
+      "test_case": "Tax Group creation blocked when a Tax Component entry is added without selecting a Tax Component",
+      "preconditions": [
+        "User is logged in with Accounting/Admin privileges",
+        "Tax Group Create form is open"
+      ],
+      "steps": [
+        "1. In the Tax Group Create form, enter <valid text> into the Name field",
+        "2. In the Tax Components section, click to add a new component row",
+        "3. Leave the Tax Component selector in the new row blank",
+        "4. Optionally enter <valid date> into the Start Date or End Date fields in the row",
+        "5. Click the Create button"
+      ],
+      "expected_result": "Form does not submit; a new Tax Group is not created; an inline validation error appears on the Tax Component selector in the repeating row indicating the Tax Component field is required",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "high_priority": 7,
+    "medium_priority": 1,
+    "low_priority": 0
+  }
+}

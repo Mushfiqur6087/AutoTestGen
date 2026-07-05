@@ -1,0 +1,892 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:04:00.633386
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:04:29] Workflow-Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Validator. You receive (1) a raw functional description, (2) a Structural Model JSON, and (3) a generated workflow list for one module.
+
+Your single job: decide whether this workflow list is complete and correct, or whether it must be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the workflow list. You DO NOT generate new workflows. You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+<workflows>
+{workflows}
+</workflows>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**WHAT A WORKFLOW IS:**
+
+A workflow is one complete, executable interaction path through the module — from entry to one terminal action. Two workflows are distinct if they require different user actions to reach the terminal (different conditional branch, different state, different terminal button).
+
+MINOR missing
+  A non-critical row action (e.g., "View" on a data table) where omission does not
+  break any downstream state transition or form submission. Flag it; don't auto-retry
+  for it alone.
+
+CRITICAL missing
+  Any of: a form submit_action with no matching workflow, a state × action pair with
+  no workflow, a bulk_action with no workflow, any submit path through a conditional
+  branch with no workflow.
+
+MINOR phantom
+  A workflow whose terminal_action is not literally named in the AST but is so
+  universally implied by the component type that its presence is unsurprising
+  (e.g., a "Search" workflow when the table has `searchable: true`). Flag it;
+  don't auto-retry for it alone.
+
+CRITICAL phantom
+  A workflow whose terminal_action cannot be traced to any AST node's
+  submit_actions[], available_actions[], row_actions[], or bulk_actions[] —
+  and is not an explicit action verb in the description text.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD — Seven Checks
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Check 1 — Missing form workflows.**
+Walk every `form` node in the AST. For each entry in `submit_actions[]`, there must be at least one workflow with a matching `terminal_action`. If the form has `visible_when` or `required_when` fields, there must be one workflow per unique condition combination × submit action. Flag any missing combinations. Classify each as critical or minor.
+
+**Check 2 — Missing state-machine workflows.**
+Walk every `state_bound_action_bar` node. For each state key in `states{}`, for each entry in `available_actions[]`, there must be one workflow with `terminal_action` matching that action and `conditional_branch` containing `entity_state == <state>`. Flag any missing state × action pairs. Classify each as critical.
+If a `<module_context>` block is present, use its `assumed_state_on_entry` to confirm that the entry state named in the context is represented as a workflow's starting condition where applicable.
+
+**Check 3 — Missing data table workflows.**
+Walk every `data_table` node. For each entry in `row_actions[]` and `bulk_actions[]`, there must be one workflow with `terminal_action` matching that action. Flag any missing entries. This includes read-only actions like View/Details. Classify bulk_actions as critical; row_actions as minor if read-only, critical otherwise.
+
+**Check 4 — Phantom workflows.**
+A workflow is a phantom if its `terminal_action` cannot be found in any AST node's `submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`, or as an explicit action verb in the description text. Classify each as critical or minor per the definitions above.
+
+**Check 5 — Wrong conditional branch.**
+If a workflow has a non-null `conditional_branch`, verify the condition references a real field name that appears in the AST under `visible_when`, `required_when`, or a real state key in `state_bound_action_bar`. Flag any condition that references a field or state that does not exist. Classify as structural error.
+
+**Check 6 — Empty or generic on_success.**
+If a workflow's `on_success` is empty, null, "success", "done", or any single-word generic string, and the AST has a concrete `on_success` value for that action, flag it. The `on_success` must reflect what the AST or description says actually happens. Classify as structural error.
+
+**Check 7 — Zero workflows when module clearly has actions.**
+If the workflow list is empty (total = 0) but the AST contains any `form`, `wizard`, `state_bound_action_bar`, or `data_table` component, that is a critical failure — flag it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERDICT RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Check 5, 6)
+                       AND Check 7 passes
+                       → fixes must be []
+
+  retry                Any CRITICAL missing workflow
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any structural error (wrong conditional, generic on_success)
+                       OR Check 7 failure
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       interaction path exists — not a close call, but truly unresolvable
+                       from the text and AST alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "AST path or state×action pair",
+      "severity": "critical | minor",
+      "reason": "<why this workflow is expected from the AST/description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "WF-NNN terminal_action=X",
+      "severity": "critical | minor",
+      "reason": "<why this workflow has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Check 5/6 violation and the affected workflow>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact missing path or phantom to remove>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+
+------------------------------------------------------------
+[23:04:29] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 4,
+  "module_title": "Global Search",
+  "summary": "Provides a global, case-insensitive search across Clients, Groups, Loans, and Savings accounts with grouped, partial-match results that link to entity detail pages.",
+  "where_it_fits": "Accessible from the top navigation bar's search icon and available from any page after login, it serves as a session-wide navigation and discovery tool alongside the left sidebar shortcuts (Clients, Groups, Centers, Products) and breadcrumb navigation. It operates across Institution-related modules to quickly surface entities and jump to their detail pages.",
+  "assumed_state_on_entry": "User is logged in with access to the application (and permission to view Clients/Groups/Loans/Savings) and is on any in-app page."
+}
+</module_context>
+
+<description>
+
+Global search is accessible from the search icon in the top toolbar from any page after login. Clicking the icon opens a search input field. As the user types, the system searches across Clients, Groups, Loans, and Savings accounts. Matching results appear in a dropdown grouped by entity type, each showing the entity name, identifier, and status. Selecting a result navigates to the corresponding detail page. If no matches are found, a "No results found" message is displayed. The search supports partial matching and is case-insensitive.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Global Search",
+  "components": {
+    "Global_Search": {
+      "type": "component",
+      "preconditions": [
+        "User is logged in with access to the application (and permission to view Clients/Groups/Loans/Savings) and is on any in-app page."
+      ],
+      "actions": [
+        {
+          "action_name": "Open Search",
+          "action_type": "button",
+          "on_success": "focus_search_input"
+        }
+      ],
+      "fields": {
+        "Search_Input": {
+          "type": "search",
+          "on_input": "perform_search_and_update_results_dropdown",
+          "constraints": [
+            "supports partial matching",
+            "case-insensitive"
+          ],
+          "search_scope": [
+            "Clients",
+            "Groups",
+            "Loans",
+            "Savings"
+          ]
+        },
+        "Results": {
+          "type": "grouped_results",
+          "grouped_by": [
+            "Clients",
+            "Groups",
+            "Loans",
+            "Savings"
+          ],
+          "groups": {
+            "Clients": {
+              "item_action_template": {
+                "action_name": "Open Detail",
+                "action_type": "link",
+                "params": [
+                  "Entity_Type",
+                  "Entity_Id"
+                ],
+                "on_success": "navigate_to_detail_page"
+              }
+            },
+            "Groups": {
+              "item_action_template": {
+                "action_name": "Open Detail",
+                "action_type": "link",
+                "params": [
+                  "Entity_Type",
+                  "Entity_Id"
+                ],
+                "on_success": "navigate_to_detail_page"
+              }
+            },
+            "Loans": {
+              "item_action_template": {
+                "action_name": "Open Detail",
+                "action_type": "link",
+                "params": [
+                  "Entity_Type",
+                  "Entity_Id"
+                ],
+                "on_success": "navigate_to_detail_page"
+              }
+            },
+            "Savings": {
+              "item_action_template": {
+                "action_name": "Open Detail",
+                "action_type": "link",
+                "params": [
+                  "Entity_Type",
+                  "Entity_Id"
+                ],
+                "on_success": "navigate_to_detail_page"
+              }
+            }
+          },
+          "no_results_message": "No results found"
+        }
+      }
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Open search input",
+    "actor": "User",
+    "conditional_branch": null,
+    "terminal_action": "Open Search",
+    "on_success": "focus_search_input"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Type query that returns matching results (grouped results displayed)",
+    "actor": "User",
+    "conditional_branch": null,
+    "terminal_action": "Search_Input",
+    "on_success": "perform_search_and_update_results_dropdown"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Type query that returns no matches (no results message)",
+    "actor": "User",
+    "conditional_branch": "Results == No_Results",
+    "terminal_action": "Search_Input",
+    "on_success": "No results found"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Select a Client result to open its detail page",
+    "actor": "User",
+    "conditional_branch": "Selected_Entity_Type == Clients",
+    "terminal_action": "Open Detail",
+    "on_success": "navigate_to_detail_page"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Select a Group result to open its detail page",
+    "actor": "User",
+    "conditional_branch": "Selected_Entity_Type == Groups",
+    "terminal_action": "Open Detail",
+    "on_success": "navigate_to_detail_page"
+  },
+  {
+    "wf_id": "WF-006",
+    "name": "Select a Loan result to open its detail page",
+    "actor": "User",
+    "conditional_branch": "Selected_Entity_Type == Loans",
+    "terminal_action": "Open Detail",
+    "on_success": "navigate_to_detail_page"
+  },
+  {
+    "wf_id": "WF-007",
+    "name": "Select a Savings result to open its detail page",
+    "actor": "User",
+    "conditional_branch": "Selected_Entity_Type == Savings",
+    "terminal_action": "Open Detail",
+    "on_success": "navigate_to_detail_page"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:06:22] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "Workflows contain structural errors (conditional branches reference non-existent fields) and two workflows use a terminal_action ('Search_Input') that is not an AST-declared action (phantom); regenerate workflows after correcting these issues.",
+  "missing": [],
+  "phantoms": [
+    {
+      "path": "WF-002 terminal_action=Search_Input",
+      "severity": "minor",
+      "reason": "Terminal action 'Search_Input' is a field name with an on_input handler in the AST, but it is not an action listed in submit_actions/available_actions/row_actions/bulk_actions nor an explicit action verb in the description; treat as a minor phantom or rename to match the AST handler (perform_search_and_update_results_dropdown)."
+    },
+    {
+      "path": "WF-003 terminal_action=Search_Input",
+      "severity": "minor",
+      "reason": "Same as WF-002: 'Search_Input' is a field, not a declared action name in the AST; the workflow should reference the on_input handler or an explicit 'Type' action instead."
+    }
+  ],
+  "structural_errors": [
+    "WF-003 conditional_branch 'Results == No_Results' references a condition form not defined in the AST (the AST has a Results field with no_results_message but no named condition 'No_Results' or visible/required condition named 'Results'); conditional expressions must reference real fields/state keys.",
+    "WF-004 conditional_branch 'Selected_Entity_Type == Clients' references 'Selected_Entity_Type' which does not exist in the AST; the grouped result items expose a parameter 'Entity_Type' (AST: Results.groups.*.item_action_template.params includes 'Entity_Type'), so the workflow condition is invalid.",
+    "WF-005 conditional_branch 'Selected_Entity_Type == Groups' references a non-existent field 'Selected_Entity_Type' (should use 'Entity_Type' or another AST-defined field).",
+    "WF-006 conditional_branch 'Selected_Entity_Type == Loans' references a non-existent field 'Selected_Entity_Type' (should use 'Entity_Type' or another AST-defined field).",
+    "WF-007 conditional_branch 'Selected_Entity_Type == Savings' references a non-existent field 'Selected_Entity_Type' (should use 'Entity_Type' or another AST-defined field)."
+  ],
+  "fixes": [
+    "For WF-002 and WF-003: replace terminal_action 'Search_Input' with a proper action name that exists in the AST (e.g., use the on_input handler name 'perform_search_and_update_results_dropdown' or use an explicit terminal_action 'Type into Search' that maps to the Search_Input field's on_input), or remove these workflows and regenerate with terminal actions that match AST action names.",
+    "For WF-003: replace conditional_branch 'Results == No_Results' with a valid, AST-referencable condition such as 'Results.count == 0' or remove the conditional_branch and instead document that the on_success is the Results.no_results_message display; ensure the condition references an actual field/property present in the AST.",
+    "For WF-004..WF-007: replace conditional_branch expressions 'Selected_Entity_Type == <Type>' with 'Entity_Type == <Type>' (AST exposes 'Entity_Type' as an item parameter), or otherwise ensure the condition variable name exactly matches an AST field/state key.",
+    "After applying the above corrections, regenerate the workflow list so terminal_action values and conditional_branch expressions exactly match AST action names, handler names, or declared field/param names."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:06:22] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "Workflows contain structural errors (conditional branches reference non-existent fields) and two workflows use a terminal_action ('Search_Input') that is not an AST-declared action (phantom); regenerate workflows after correcting these issues.",
+  "missing": [],
+  "phantoms": [
+    {
+      "path": "WF-002 terminal_action=Search_Input",
+      "severity": "minor",
+      "reason": "Terminal action 'Search_Input' is a field name with an on_input handler in the AST, but it is not an action listed in submit_actions/available_actions/row_actions/bulk_actions nor an explicit action verb in the description; treat as a minor phantom or rename to match the AST handler (perform_search_and_update_results_dropdown)."
+    },
+    {
+      "path": "WF-003 terminal_action=Search_Input",
+      "severity": "minor",
+      "reason": "Same as WF-002: 'Search_Input' is a field, not a declared action name in the AST; the workflow should reference the on_input handler or an explicit 'Type' action instead."
+    }
+  ],
+  "structural_errors": [
+    "WF-003 conditional_branch 'Results == No_Results' references a condition form not defined in the AST (the AST has a Results field with no_results_message but no named condition 'No_Results' or visible/required condition named 'Results'); conditional expressions must reference real fields/state keys.",
+    "WF-004 conditional_branch 'Selected_Entity_Type == Clients' references 'Selected_Entity_Type' which does not exist in the AST; the grouped result items expose a parameter 'Entity_Type' (AST: Results.groups.*.item_action_template.params includes 'Entity_Type'), so the workflow condition is invalid.",
+    "WF-005 conditional_branch 'Selected_Entity_Type == Groups' references a non-existent field 'Selected_Entity_Type' (should use 'Entity_Type' or another AST-defined field).",
+    "WF-006 conditional_branch 'Selected_Entity_Type == Loans' references a non-existent field 'Selected_Entity_Type' (should use 'Entity_Type' or another AST-defined field).",
+    "WF-007 conditional_branch 'Selected_Entity_Type == Savings' references a non-existent field 'Selected_Entity_Type' (should use 'Entity_Type' or another AST-defined field)."
+  ],
+  "fixes": [
+    "For WF-002 and WF-003: replace terminal_action 'Search_Input' with a proper action name that exists in the AST (e.g., use the on_input handler name 'perform_search_and_update_results_dropdown' or use an explicit terminal_action 'Type into Search' that maps to the Search_Input field's on_input), or remove these workflows and regenerate with terminal actions that match AST action names.",
+    "For WF-003: replace conditional_branch 'Results == No_Results' with a valid, AST-referencable condition such as 'Results.count == 0' or remove the conditional_branch and instead document that the on_success is the Results.no_results_message display; ensure the condition references an actual field/property present in the AST.",
+    "For WF-004..WF-007: replace conditional_branch expressions 'Selected_Entity_Type == <Type>' with 'Entity_Type == <Type>' (AST exposes 'Entity_Type' as an item parameter), or otherwise ensure the condition variable name exactly matches an AST field/state key.",
+    "After applying the above corrections, regenerate the workflow list so terminal_action values and conditional_branch expressions exactly match AST action names, handler names, or declared field/param names."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:06:58] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 4,
+  "module_title": "Global Search",
+  "summary": "Provides a global, case-insensitive search across Clients, Groups, Loans, and Savings accounts with grouped, partial-match results that link to entity detail pages.",
+  "where_it_fits": "Accessible from the top navigation bar's search icon and available from any page after login, it serves as a session-wide navigation and discovery tool alongside the left sidebar shortcuts (Clients, Groups, Centers, Products) and breadcrumb navigation. It operates across Institution-related modules to quickly surface entities and jump to their detail pages.",
+  "assumed_state_on_entry": "User is logged in with access to the application (and permission to view Clients/Groups/Loans/Savings) and is on any in-app page."
+}
+</module_context>
+
+<description>
+
+Global search is accessible from the search icon in the top toolbar from any page after login. Clicking the icon opens a search input field. As the user types, the system searches across Clients, Groups, Loans, and Savings accounts. Matching results appear in a dropdown grouped by entity type, each showing the entity name, identifier, and status. Selecting a result navigates to the corresponding detail page. If no matches are found, a "No results found" message is displayed. The search supports partial matching and is case-insensitive.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Global Search",
+  "components": {
+    "Global_Search": {
+      "type": "component",
+      "preconditions": [
+        "User is logged in with access to the application (and permission to view Clients/Groups/Loans/Savings) and is on any in-app page."
+      ],
+      "actions": [
+        {
+          "action_name": "Open Search",
+          "action_type": "button",
+          "on_success": "focus_search_input"
+        }
+      ],
+      "fields": {
+        "Search_Input": {
+          "type": "search",
+          "on_input": "perform_search_and_update_results_dropdown",
+          "constraints": [
+            "supports partial matching",
+            "case-insensitive"
+          ],
+          "search_scope": [
+            "Clients",
+            "Groups",
+            "Loans",
+            "Savings"
+          ]
+        },
+        "Results": {
+          "type": "grouped_results",
+          "grouped_by": [
+            "Clients",
+            "Groups",
+            "Loans",
+            "Savings"
+          ],
+          "groups": {
+            "Clients": {
+              "item_action_template": {
+                "action_name": "Open Detail",
+                "action_type": "link",
+                "params": [
+                  "Entity_Type",
+                  "Entity_Id"
+                ],
+                "on_success": "navigate_to_detail_page"
+              }
+            },
+            "Groups": {
+              "item_action_template": {
+                "action_name": "Open Detail",
+                "action_type": "link",
+                "params": [
+                  "Entity_Type",
+                  "Entity_Id"
+                ],
+                "on_success": "navigate_to_detail_page"
+              }
+            },
+            "Loans": {
+              "item_action_template": {
+                "action_name": "Open Detail",
+                "action_type": "link",
+                "params": [
+                  "Entity_Type",
+                  "Entity_Id"
+                ],
+                "on_success": "navigate_to_detail_page"
+              }
+            },
+            "Savings": {
+              "item_action_template": {
+                "action_name": "Open Detail",
+                "action_type": "link",
+                "params": [
+                  "Entity_Type",
+                  "Entity_Id"
+                ],
+                "on_success": "navigate_to_detail_page"
+              }
+            }
+          },
+          "no_results_message": "No results found"
+        }
+      }
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Open search input (focus)",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Open Search",
+    "on_success": "focus_search_input"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Type into search \u2014 results found",
+    "actor": "<role>",
+    "conditional_branch": "Results.count > 0",
+    "terminal_action": "perform_search_and_update_results_dropdown",
+    "on_success": "Results dropdown updated with grouped matches"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Type into search \u2014 no results",
+    "actor": "<role>",
+    "conditional_branch": "Results.count == 0",
+    "terminal_action": "perform_search_and_update_results_dropdown",
+    "on_success": "No results found"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Open Client detail from results",
+    "actor": "<role>",
+    "conditional_branch": "Entity_Type == Clients",
+    "terminal_action": "Open Detail",
+    "on_success": "navigate_to_detail_page"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Open Group detail from results",
+    "actor": "<role>",
+    "conditional_branch": "Entity_Type == Groups",
+    "terminal_action": "Open Detail",
+    "on_success": "navigate_to_detail_page"
+  },
+  {
+    "wf_id": "WF-006",
+    "name": "Open Loan detail from results",
+    "actor": "<role>",
+    "conditional_branch": "Entity_Type == Loans",
+    "terminal_action": "Open Detail",
+    "on_success": "navigate_to_detail_page"
+  },
+  {
+    "wf_id": "WF-007",
+    "name": "Open Savings account detail from results",
+    "actor": "<role>",
+    "conditional_branch": "Entity_Type == Savings",
+    "terminal_action": "Open Detail",
+    "on_success": "navigate_to_detail_page"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:07:24] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 2,
+  "summary": "Conditional branches in multiple workflows reference fields/states that do not exist in the AST (structural errors), so the workflow list must be regenerated or corrected.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "WF-002: conditional_branch 'Results.count > 0' references 'Results.count' which is not defined under any visible_when/required_when fields or as a state key in the AST; conditional expressions must reference fields declared in visible_when/required_when or valid state keys.",
+    "WF-003: conditional_branch 'Results.count == 0' references 'Results.count' which is not defined under visible_when/required_when fields or as a state key in the AST.",
+    "WF-004: conditional_branch 'Entity_Type == Clients' references 'Entity_Type' which is not declared under visible_when/required_when or as a state key (Entity_Type appears only as an action param in item_action_template).",
+    "WF-005: conditional_branch 'Entity_Type == Groups' references 'Entity_Type' which is not declared under visible_when/required_when or as a state key.",
+    "WF-006: conditional_branch 'Entity_Type == Loans' references 'Entity_Type' which is not declared under visible_when/required_when or as a state key.",
+    "WF-007: conditional_branch 'Entity_Type == Savings' references 'Entity_Type' which is not declared under visible_when/required_when or as a state key."
+  ],
+  "fixes": [
+    "WF-002: Replace or remove the conditional_branch 'Results.count > 0'. Either (a) add a corresponding visible_when/required_when field to the AST that exposes Results.count (e.g., under Results define a boolean or count property and reference it under visible_when), or (b) remove the conditional_branch and treat the success path as unconditional for the search input.",
+    "WF-003: Replace or remove the conditional_branch 'Results.count == 0'. Either (a) add a corresponding visible_when/required_when field to the AST exposing Results.count, or (b) remove the conditional_branch and handle the 'no results' message as part of the same search result update workflow.",
+    "WF-004: Replace or remove the conditional_branch 'Entity_Type == Clients'. Either (a) add a visible field in the AST (e.g., Results.selected_item.Entity_Type) under visible_when/required_when so the condition references a declared field, or (b) remove the conditional and instead document separate workflows that are distinguished by the result group's path (e.g., 'Open Client detail from results' tied to Results.groups.Clients.item_action_template).",
+    "WF-005: Replace or remove the conditional_branch 'Entity_Type == Groups' with the same options as WF-004 but for Groups.",
+    "WF-006: Replace or remove the conditional_branch 'Entity_Type == Loans' with the same options as WF-004 but for Loans.",
+    "WF-007: Replace or remove the conditional_branch 'Entity_Type == Savings' with the same options as WF-004 but for Savings."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:07:24] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 2,
+  "summary": "Conditional branches in multiple workflows reference fields/states that do not exist in the AST (structural errors), so the workflow list must be regenerated or corrected.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "WF-002: conditional_branch 'Results.count > 0' references 'Results.count' which is not defined under any visible_when/required_when fields or as a state key in the AST; conditional expressions must reference fields declared in visible_when/required_when or valid state keys.",
+    "WF-003: conditional_branch 'Results.count == 0' references 'Results.count' which is not defined under visible_when/required_when fields or as a state key in the AST.",
+    "WF-004: conditional_branch 'Entity_Type == Clients' references 'Entity_Type' which is not declared under visible_when/required_when or as a state key (Entity_Type appears only as an action param in item_action_template).",
+    "WF-005: conditional_branch 'Entity_Type == Groups' references 'Entity_Type' which is not declared under visible_when/required_when or as a state key.",
+    "WF-006: conditional_branch 'Entity_Type == Loans' references 'Entity_Type' which is not declared under visible_when/required_when or as a state key.",
+    "WF-007: conditional_branch 'Entity_Type == Savings' references 'Entity_Type' which is not declared under visible_when/required_when or as a state key."
+  ],
+  "fixes": [
+    "WF-002: Replace or remove the conditional_branch 'Results.count > 0'. Either (a) add a corresponding visible_when/required_when field to the AST that exposes Results.count (e.g., under Results define a boolean or count property and reference it under visible_when), or (b) remove the conditional_branch and treat the success path as unconditional for the search input.",
+    "WF-003: Replace or remove the conditional_branch 'Results.count == 0'. Either (a) add a corresponding visible_when/required_when field to the AST exposing Results.count, or (b) remove the conditional_branch and handle the 'no results' message as part of the same search result update workflow.",
+    "WF-004: Replace or remove the conditional_branch 'Entity_Type == Clients'. Either (a) add a visible field in the AST (e.g., Results.selected_item.Entity_Type) under visible_when/required_when so the condition references a declared field, or (b) remove the conditional and instead document separate workflows that are distinguished by the result group's path (e.g., 'Open Client detail from results' tied to Results.groups.Clients.item_action_template).",
+    "WF-005: Replace or remove the conditional_branch 'Entity_Type == Groups' with the same options as WF-004 but for Groups.",
+    "WF-006: Replace or remove the conditional_branch 'Entity_Type == Loans' with the same options as WF-004 but for Loans.",
+    "WF-007: Replace or remove the conditional_branch 'Entity_Type == Savings' with the same options as WF-004 but for Savings."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:07:58] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 4,
+  "module_title": "Global Search",
+  "summary": "Provides a global, case-insensitive search across Clients, Groups, Loans, and Savings accounts with grouped, partial-match results that link to entity detail pages.",
+  "where_it_fits": "Accessible from the top navigation bar's search icon and available from any page after login, it serves as a session-wide navigation and discovery tool alongside the left sidebar shortcuts (Clients, Groups, Centers, Products) and breadcrumb navigation. It operates across Institution-related modules to quickly surface entities and jump to their detail pages.",
+  "assumed_state_on_entry": "User is logged in with access to the application (and permission to view Clients/Groups/Loans/Savings) and is on any in-app page."
+}
+</module_context>
+
+<description>
+
+Global search is accessible from the search icon in the top toolbar from any page after login. Clicking the icon opens a search input field. As the user types, the system searches across Clients, Groups, Loans, and Savings accounts. Matching results appear in a dropdown grouped by entity type, each showing the entity name, identifier, and status. Selecting a result navigates to the corresponding detail page. If no matches are found, a "No results found" message is displayed. The search supports partial matching and is case-insensitive.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Global Search",
+  "components": {
+    "Global_Search": {
+      "type": "component",
+      "preconditions": [
+        "User is logged in with access to the application (and permission to view Clients/Groups/Loans/Savings) and is on any in-app page."
+      ],
+      "actions": [
+        {
+          "action_name": "Open Search",
+          "action_type": "button",
+          "on_success": "focus_search_input"
+        }
+      ],
+      "fields": {
+        "Search_Input": {
+          "type": "search",
+          "on_input": "perform_search_and_update_results_dropdown",
+          "constraints": [
+            "supports partial matching",
+            "case-insensitive"
+          ],
+          "search_scope": [
+            "Clients",
+            "Groups",
+            "Loans",
+            "Savings"
+          ]
+        },
+        "Results": {
+          "type": "grouped_results",
+          "grouped_by": [
+            "Clients",
+            "Groups",
+            "Loans",
+            "Savings"
+          ],
+          "groups": {
+            "Clients": {
+              "item_action_template": {
+                "action_name": "Open Detail",
+                "action_type": "link",
+                "params": [
+                  "Entity_Type",
+                  "Entity_Id"
+                ],
+                "on_success": "navigate_to_detail_page"
+              }
+            },
+            "Groups": {
+              "item_action_template": {
+                "action_name": "Open Detail",
+                "action_type": "link",
+                "params": [
+                  "Entity_Type",
+                  "Entity_Id"
+                ],
+                "on_success": "navigate_to_detail_page"
+              }
+            },
+            "Loans": {
+              "item_action_template": {
+                "action_name": "Open Detail",
+                "action_type": "link",
+                "params": [
+                  "Entity_Type",
+                  "Entity_Id"
+                ],
+                "on_success": "navigate_to_detail_page"
+              }
+            },
+            "Savings": {
+              "item_action_template": {
+                "action_name": "Open Detail",
+                "action_type": "link",
+                "params": [
+                  "Entity_Type",
+                  "Entity_Id"
+                ],
+                "on_success": "navigate_to_detail_page"
+              }
+            }
+          },
+          "no_results_message": "No results found"
+        }
+      }
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Open Search input via top-bar icon",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Open Search",
+    "on_success": "focus_search_input"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Perform search (update results dropdown)",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Search_Input",
+    "on_success": "perform_search_and_update_results_dropdown"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Perform search that returns no matches (show no-results message)",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Search_Input",
+    "on_success": "No results found"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Open Client detail from results",
+    "actor": "<role>",
+    "conditional_branch": "Selected result from Clients group",
+    "terminal_action": "Open Detail",
+    "on_success": "navigate_to_detail_page"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Open Group detail from results",
+    "actor": "<role>",
+    "conditional_branch": "Selected result from Groups group",
+    "terminal_action": "Open Detail",
+    "on_success": "navigate_to_detail_page"
+  },
+  {
+    "wf_id": "WF-006",
+    "name": "Open Loan detail from results",
+    "actor": "<role>",
+    "conditional_branch": "Selected result from Loans group",
+    "terminal_action": "Open Detail",
+    "on_success": "navigate_to_detail_page"
+  },
+  {
+    "wf_id": "WF-007",
+    "name": "Open Savings detail from results",
+    "actor": "<role>",
+    "conditional_branch": "Selected result from Savings group",
+    "terminal_action": "Open Detail",
+    "on_success": "navigate_to_detail_page"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:08:29] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 3,
+  "summary": "Workflows contain 2 critical phantom terminal_actions (Search_Input) and structural errors in conditional_branch usage for result-selection workflows; regenerate to correct terminal_action names and remove/replace invalid conditional_branch expressions.",
+  "missing": [],
+  "phantoms": [
+    {
+      "path": "WF-002 terminal_action=Search_Input",
+      "severity": "critical",
+      "reason": "Terminal_action 'Search_Input' is a field name, not an action listed in the AST; the AST defines an on_input handler 'perform_search_and_update_results_dropdown' but no action named 'Search_Input', so this workflow's terminal_action cannot be traced to the AST or description."
+    },
+    {
+      "path": "WF-003 terminal_action=Search_Input",
+      "severity": "critical",
+      "reason": "Terminal_action 'Search_Input' is not an action or submit_action in the AST; the AST provides an on_input handler and a no_results_message but no action named 'Search_Input', so this workflow is a phantom."
+    }
+  ],
+  "structural_errors": [
+    "WF-004 conditional_branch='Selected result from Clients group' does not reference any visible_when/required_when field or a state key in the AST; conditional_branch must reference a real field or state (structural error).",
+    "WF-005 conditional_branch='Selected result from Groups group' does not reference any visible_when/required_when field or a state key in the AST; conditional_branch must reference a real field or state (structural error).",
+    "WF-006 conditional_branch='Selected result from Loans group' does not reference any visible_when/required_when field or a state key in the AST; conditional_branch must reference a real field or state (structural error).",
+    "WF-007 conditional_branch='Selected result from Savings group' does not reference any visible_when/required_when field or a state key in the AST; conditional_branch must reference a real field or state (structural error)."
+  ],
+  "fixes": [
+    "WF-002: Replace terminal_action 'Search_Input' with a terminal_action that matches the AST action name — use 'perform_search_and_update_results_dropdown' (the field's on_input handler) or add an explicit action 'Perform Search' to the AST and use that; do not use the field name as terminal_action.",
+    "WF-003: Replace terminal_action 'Search_Input' with 'perform_search_and_update_results_dropdown' (matching AST on_input) and, if you need a separate workflow for the empty-results case, add a conditional expression that references a real AST-exposed field (e.g., add a boolean/results_count visible field to the AST) such as 'Results.count == 0'; otherwise remove the conditional_branch and keep on_success = 'No results found'.",
+    "WF-004, WF-005, WF-006, WF-007: Remove the free-text conditional_branch values (e.g., 'Selected result from Clients group') or replace them with conditional expressions that reference real AST fields/states; if the AST will not expose such fields/states, set conditional_branch to null because the item_action 'Open Detail' with params (Entity_Type, Entity_Id) already distinguishes which entity was selected."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:08:29] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 3,
+  "summary": "Workflows contain 2 critical phantom terminal_actions (Search_Input) and structural errors in conditional_branch usage for result-selection workflows; regenerate to correct terminal_action names and remove/replace invalid conditional_branch expressions.",
+  "missing": [],
+  "phantoms": [
+    {
+      "path": "WF-002 terminal_action=Search_Input",
+      "severity": "critical",
+      "reason": "Terminal_action 'Search_Input' is a field name, not an action listed in the AST; the AST defines an on_input handler 'perform_search_and_update_results_dropdown' but no action named 'Search_Input', so this workflow's terminal_action cannot be traced to the AST or description."
+    },
+    {
+      "path": "WF-003 terminal_action=Search_Input",
+      "severity": "critical",
+      "reason": "Terminal_action 'Search_Input' is not an action or submit_action in the AST; the AST provides an on_input handler and a no_results_message but no action named 'Search_Input', so this workflow is a phantom."
+    }
+  ],
+  "structural_errors": [
+    "WF-004 conditional_branch='Selected result from Clients group' does not reference any visible_when/required_when field or a state key in the AST; conditional_branch must reference a real field or state (structural error).",
+    "WF-005 conditional_branch='Selected result from Groups group' does not reference any visible_when/required_when field or a state key in the AST; conditional_branch must reference a real field or state (structural error).",
+    "WF-006 conditional_branch='Selected result from Loans group' does not reference any visible_when/required_when field or a state key in the AST; conditional_branch must reference a real field or state (structural error).",
+    "WF-007 conditional_branch='Selected result from Savings group' does not reference any visible_when/required_when field or a state key in the AST; conditional_branch must reference a real field or state (structural error)."
+  ],
+  "fixes": [
+    "WF-002: Replace terminal_action 'Search_Input' with a terminal_action that matches the AST action name \u2014 use 'perform_search_and_update_results_dropdown' (the field's on_input handler) or add an explicit action 'Perform Search' to the AST and use that; do not use the field name as terminal_action.",
+    "WF-003: Replace terminal_action 'Search_Input' with 'perform_search_and_update_results_dropdown' (matching AST on_input) and, if you need a separate workflow for the empty-results case, add a conditional expression that references a real AST-exposed field (e.g., add a boolean/results_count visible field to the AST) such as 'Results.count == 0'; otherwise remove the conditional_branch and keep on_success = 'No results found'.",
+    "WF-004, WF-005, WF-006, WF-007: Remove the free-text conditional_branch values (e.g., 'Selected result from Clients group') or replace them with conditional expressions that reference real AST fields/states; if the AST will not expose such fields/states, set conditional_branch to null because the item_action 'Open Detail' with params (Entity_Type, Entity_Id) already distinguishes which entity was selected."
+  ],
+  "clarifications": []
+}

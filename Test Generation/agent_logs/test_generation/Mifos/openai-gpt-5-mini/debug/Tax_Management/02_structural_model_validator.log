@@ -1,0 +1,1033 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T22:57:38.886568
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:00:00] Structural Model Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Structural Model Validator. You receive (1) a raw functional description and
+(2) a generated Structural Model JSON.
+
+Your single job: decide whether this AST is good enough to use, or whether it should
+be regenerated.
+
+You DO NOT modify the JSON.
+You DO NOT generate a new JSON.
+You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CANONICAL SCOPE — IDENTICAL TO THE GENERATOR'S SCOPE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+IN SCOPE — an element qualifies if a user can:
+  (a) Input or edit a value: form fields, checkboxes, file uploads, search inputs, toggles
+  (b) Trigger an action: buttons, links, row actions, bulk actions, submit actions
+  (c) Navigate: tabs, sub-tabs, wizard steps
+  (d) Action metadata on interactive elements: on_success, preconditions, state
+      transitions, validation constraints
+
+OUT OF SCOPE — do NOT expect these in the AST:
+  - Passive display labels: "the page shows client name, account number, status badge"
+    → 0 expected items. The AST is correct to omit them.
+  - Chip colors, badge styles, decorative icons, visual styling
+  - Read-only info panels with no interactive element
+  - Display-formatting or rendering rules applied to a passive (non-interactive) value —
+    e.g. masking ("showing only last 4 digits"), truncation, currency/number formatting,
+    default sort order of a read-only column → 0 expected items. These are NOT validation
+    constraints. Do not expect a field/column AST node, a "constraints" entry, or a
+    "columns" block created solely to house one of these rules.
+
+STATE (Pending / Active / Closed) is a routing key in state_bound_action_bar.states{},
+NOT a display field. Do not expect it anywhere else.
+
+"Constraint" (as used everywhere below) means a rule that governs INPUT or ACTION
+behavior — required-ness, format, bounds, uniqueness, cross-field ordering, state
+preconditions. A rule that only describes how an already-displayed, non-interactive
+value is rendered (masked, truncated, formatted, sorted) is a display-formatting rule,
+not a constraint, even if the description uses words like "must" or states a concrete
+detail (e.g. "must show only last 4 digits"). Do not upgrade a display-formatting rule
+to CRITICAL missing just because it is stated precisely.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MINOR missing
+  An optional field (no "required": true, no required_when) with no business logic,
+  state transition, or action consequence attached. Losing it doesn't break any flow.
+  Example: an unlabeled optional "Notes" textarea on a secondary form.
+
+MINOR phantom
+  An element not named in the description but so universally implied by the component
+  type that its presence is unsurprising — e.g., a "Cancel" button on a modal the
+  description never explicitly names. Flag it; don't auto-retry for it alone.
+
+CRITICAL missing
+  Any of: a required field, any state key in a state_bound_action_bar, any submit
+  action, any named tab or wizard step, any element with a stated precondition or
+  on_success consequence, any INTERACTIVE field with a stated constraint (see the
+  constraint definition above — a display-formatting rule on a passive field does
+  NOT qualify and must never be flagged as critical missing).
+
+CRITICAL phantom
+  Any of: a field invented inside a generic-name tab (Add_Note in a Notes tab,
+  Upload_Document in a Documents tab) when the description only names the tab;
+  a passive display field appearing as an AST node — including a "columns" block,
+  or any field/column entry, added only to carry a masking/truncation/formatting rule
+  for a non-interactive value; a constraint with no textual anchor; a display_fields
+  block anywhere in the output; "required": false anywhere.
+
+WORKED EXAMPLE — display-formatting rule, NOT a critical missing:
+
+Description: "Each row shows Account Number (clickable but not implemented yet),
+Account Type, Current Balance, Account Status, and Open Date. Account numbers are
+masked for security (showing only last 4 digits as ****5001)."
+
+AST under review:
+{
+  "Accounts_Table": {
+    "type": "data_table",
+    "row_actions": [
+      { "action_name": "Account Number", "constraints": ["clickable but not implemented yet"] }
+    ]
+  }
+}
+
+CORRECT verdict: the masking rule and the other four listed fields (Account Type,
+Current Balance, Account Status, Open Date) are passive display labels — 0 expected
+AST items for them, per the OUT OF SCOPE rule above. The only interactive element is
+the Account Number click, and it is already present. Do NOT flag
+"components.Accounts_Table.columns.Account_Number" (or any columns block) as a
+CRITICAL missing item. Do NOT instruct the generator to add a "columns" block with
+typed entries (e.g. "Open_Date": {"type": "date"}) — that fabricates interactive
+field types for read-only data and will cause downstream test generators to invent
+boundary/date tests against a page that has none.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Step 1 — Walk the description. List every expected interactive element.
+Apply the canonical scope above. A sentence that only displays data produces 0 expected
+items. For each tab or step named with no described fields, expected output is
+"fields": {} — do NOT expect fields there.
+
+Step 2 — Walk the AST. Check for MISSING elements.
+For each expected element from Step 1, confirm it exists at the correct path.
+Classify each missing item as critical or minor using the definitions above.
+
+Step 3 — Walk the AST. Check for PHANTOMS.
+Flag any AST element with no textual anchor in the description.
+Classify each phantom as critical or minor using the definitions above.
+
+Step 4 — Check conditional logic.
+Count a conditional as EXPECTED only if the description contains an explicit trigger
+phrase. Both affirmative and negative phrasings qualify:
+
+  Affirmative: "when X is selected/checked/chosen", "if X then Y", "Y appears when X",
+               "selecting X reveals Y", "required if X", "enabled when X", "only if X",
+               "Y is shown for X"
+  Negative:    "unless X", "except when X", "disabled if X", "not shown when X",
+               "hidden when X", "required for non-X", "only for X users"
+  Abbreviated: "required for minors", "admin only", "international trips only"
+               → treat as conditional even without explicit trigger syntax
+
+If a visible_when / required_when / enabled_when appears in the AST but no trigger
+phrase (affirmative or negative) exists in the description: flag as critical phantom.
+If a trigger phrase exists in the description but no conditional appears in the AST:
+flag as critical missing.
+
+Step 5 — Check structural integrity. Flag any of these as STRUCTURAL ERRORS:
+  - A constraint floating at form/component level when the description attached it to
+    a specific field or action
+  - Sub-tabs or sub-steps described as nested but flattened in the AST
+  - State keys in state_bound_action_bar that don't match exact status names in the
+    description
+  - A display_fields block anywhere in the AST
+  - "required": false appearing anywhere in the AST
+  - Component or field names not in Pascal_Snake_Case
+
+Step 6 — Decide the verdict.
+
+Precondition note: If a `<module_context>` block is present, cross-check any
+`preconditions[]` in the AST against the `assumed_state_on_entry` value. A precondition
+that directly contradicts or wildly exceeds the described entry state is a CRITICAL phantom.
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Step 5)
+                       → fixes must be []
+
+  retry                Any CRITICAL missing element
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any Step 5 structural error
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       element is interactive — not a close call, but truly unresolvable
+                       from the text alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "Component.path.to.element",
+      "severity": "critical | minor",
+      "reason": "<why this element is expected from the description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "Component.path.to.element",
+      "severity": "critical | minor",
+      "reason": "<why this element has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Step 5 violation and its AST path>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact JSON path and required change>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+------------------------------------------------------------
+[23:00:00] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 28,
+  "module_title": "Tax Management",
+  "summary": "Configuration and management of tax components and tax groups that map tax rates to GL accounts and that can be applied to products and charge definitions to automatically calculate and post tax journal entries.",
+  "where_it_fits": "Located within the platform's administrative/accounting configuration area (accessible from the top navigation under Accounting or Admin and related from Products via the left sidebar), this module is part of the product and accounting setup lifecycle and is referenced when creating or editing savings products and charge definitions. It appears as entity listing and detail pages (breadcrumbs shown in the content area) consistent with the app's Material Design tables and forms.",
+  "assumed_state_on_entry": "Logged in with Accounting/Admin privileges and an existing Chart of Accounts (GL accounts) configured; relevant product or charge definitions exist when intending to reference a Tax Group."
+}
+</module_context>
+
+<description>
+
+The Tax Components page displays a data table with columns for Name (clickable link), Percentage, Debit Account Type, Debit Account, Credit Account Type, Credit Account, and Start Date. A "+ Create Tax Component" button opens the creation form containing Name (required), Percentage (required), Debit Account Type (Asset, Liability, Equity, Income, Expense) and Debit Account (GL account), Credit Account Type and Credit Account (GL account), and Start Date (required).
+
+The Tax Groups page displays a data table with columns for Name (clickable link) and associated components. A "+ Create Tax Group" button opens the form with Name (required) and a Tax Components section allowing multiple components to be added, each with a Start Date and End Date. Tax groups are referenced by Savings Products (Enable Withhold Tax checkbox with Tax Group dropdown) and Charge definitions; when a product has tax enabled, the system automatically applies the configured tax rate on interest income or fees and posts the corresponding journal entries to the mapped GL accounts.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Tax Management",
+  "components": {
+    "Tax_Components_Table": {
+      "type": "data_table",
+      "row_actions": [
+        {
+          "action_name": "View"
+        }
+      ],
+      "page_actions": [
+        {
+          "action_name": "+ Create Tax Component",
+          "preconditions": [
+            "Logged in with Accounting/Admin privileges",
+            "Existing Chart of Accounts (GL accounts) configured",
+            "Relevant product or charge definitions exist when intending to reference a Tax Group"
+          ]
+        }
+      ]
+    },
+    "Create_Tax_Component_Form": {
+      "type": "form",
+      "preconditions": [
+        "Logged in with Accounting/Admin privileges",
+        "Existing Chart of Accounts (GL accounts) configured",
+        "Relevant product or charge definitions exist when intending to reference a Tax Group"
+      ],
+      "fields": {
+        "Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Percentage": {
+          "type": "number",
+          "required": true
+        },
+        "Debit_Account_Type": {
+          "type": "dropdown",
+          "options": [
+            "Asset",
+            "Liability",
+            "Equity",
+            "Income",
+            "Expense"
+          ]
+        },
+        "Debit_Account": {
+          "type": "unspecified"
+        },
+        "Credit_Account_Type": {
+          "type": "dropdown",
+          "options": [
+            "Asset",
+            "Liability",
+            "Equity",
+            "Income",
+            "Expense"
+          ]
+        },
+        "Credit_Account": {
+          "type": "unspecified"
+        },
+        "Start_Date": {
+          "type": "date",
+          "required": true
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create",
+          "on_success": "creates tax component",
+          "preconditions": [
+            "Logged in with Accounting/Admin privileges",
+            "Existing Chart of Accounts (GL accounts) configured",
+            "Relevant product or charge definitions exist when intending to reference a Tax Group"
+          ]
+        }
+      ]
+    },
+    "Tax_Groups_Table": {
+      "type": "data_table",
+      "row_actions": [
+        {
+          "action_name": "View"
+        }
+      ],
+      "page_actions": [
+        {
+          "action_name": "+ Create Tax Group",
+          "preconditions": [
+            "Logged in with Accounting/Admin privileges",
+            "Existing Chart of Accounts (GL accounts) configured",
+            "Relevant product or charge definitions exist when intending to reference a Tax Group"
+          ]
+        }
+      ]
+    },
+    "Create_Tax_Group_Form": {
+      "type": "form",
+      "preconditions": [
+        "Logged in with Accounting/Admin privileges",
+        "Existing Chart of Accounts (GL accounts) configured",
+        "Relevant product or charge definitions exist when intending to reference a Tax Group"
+      ],
+      "fields": {
+        "Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Tax_Components": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Tax_Component": {
+              "type": "unspecified"
+            },
+            "Start_Date": {
+              "type": "date"
+            },
+            "End_Date": {
+              "type": "date"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create",
+          "on_success": "creates tax group",
+          "preconditions": [
+            "Logged in with Accounting/Admin privileges",
+            "Existing Chart of Accounts (GL accounts) configured",
+            "Relevant product or charge definitions exist when intending to reference a Tax Group"
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:01:10] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "The AST captures the Tax Components and Tax Groups pages and forms but is missing the described Savings Products and Charge Definitions references and the conditional behavior for the Tax Group selector, which are critical interactive elements.",
+  "missing": [
+    {
+      "path": "components.Savings_Product_Form.Enable_Withhold_Tax",
+      "severity": "critical",
+      "reason": "The description explicitly names an 'Enable Withhold Tax' checkbox on Savings Products that allows enabling product-level tax behavior; the AST contains no Savings Product form or this checkbox."
+    },
+    {
+      "path": "components.Savings_Product_Form.Tax_Group_Dropdown",
+      "severity": "critical",
+      "reason": "The description explicitly names a 'Tax Group' dropdown on Savings Products (referenced alongside the Enable Withhold Tax checkbox); the AST lacks this field and the conditional relationship to the checkbox."
+    },
+    {
+      "path": "components.Charge_Definition_Form.Tax_Group_Dropdown",
+      "severity": "critical",
+      "reason": "Tax groups are described as being referenced by Charge definitions; the AST contains no Charge Definition form or a Tax Group selector for charges."
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "components.Tax_Components_Table.row_actions[0]",
+      "severity": "minor",
+      "reason": "The description specified the Name column is a clickable link; the AST exposes a row action named 'View' which is not textually anchored in the description (acceptable but not named)."
+    }
+  ],
+  "structural_errors": [],
+  "fixes": [
+    "Add a new component at components.Savings_Product_Form of type 'form' containing a checkbox field at components.Savings_Product_Form.fields.Enable_Withhold_Tax with type 'checkbox'.",
+    "Add a Tax Group selector at components.Savings_Product_Form.fields.Tax_Group_Dropdown with type 'dropdown' (options: list of existing Tax Groups) and a conditional visibility/enabled rule: components.Savings_Product_Form.fields.Tax_Group_Dropdown.visible_when = { \"Enable_Withhold_Tax\": true } (or equivalent), since the description links the Tax Group selection to enabling tax on the product.",
+    "Add a new component at components.Charge_Definition_Form of type 'form' (or augment existing Charge Definition form) including a Tax Group selector at components.Charge_Definition_Form.fields.Tax_Group_Dropdown with type 'dropdown' (options: list of existing Tax Groups) to reflect that Charge definitions reference Tax Groups.",
+    "If desired, replace or alias components.Tax_Components_Table.row_actions[0].action_name ('View') with an action anchored to the 'Name' column (e.g. set action_name to 'Name' or include metadata indicating the row action is triggered by clicking the Name link) at components.Tax_Components_Table.row_actions[0].action_name so it matches the description more closely."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:01:10] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "The AST captures the Tax Components and Tax Groups pages and forms but is missing the described Savings Products and Charge Definitions references and the conditional behavior for the Tax Group selector, which are critical interactive elements.",
+  "missing": [
+    {
+      "path": "components.Savings_Product_Form.Enable_Withhold_Tax",
+      "severity": "critical",
+      "reason": "The description explicitly names an 'Enable Withhold Tax' checkbox on Savings Products that allows enabling product-level tax behavior; the AST contains no Savings Product form or this checkbox."
+    },
+    {
+      "path": "components.Savings_Product_Form.Tax_Group_Dropdown",
+      "severity": "critical",
+      "reason": "The description explicitly names a 'Tax Group' dropdown on Savings Products (referenced alongside the Enable Withhold Tax checkbox); the AST lacks this field and the conditional relationship to the checkbox."
+    },
+    {
+      "path": "components.Charge_Definition_Form.Tax_Group_Dropdown",
+      "severity": "critical",
+      "reason": "Tax groups are described as being referenced by Charge definitions; the AST contains no Charge Definition form or a Tax Group selector for charges."
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "components.Tax_Components_Table.row_actions[0]",
+      "severity": "minor",
+      "reason": "The description specified the Name column is a clickable link; the AST exposes a row action named 'View' which is not textually anchored in the description (acceptable but not named)."
+    }
+  ],
+  "structural_errors": [],
+  "fixes": [
+    "Add a new component at components.Savings_Product_Form of type 'form' containing a checkbox field at components.Savings_Product_Form.fields.Enable_Withhold_Tax with type 'checkbox'.",
+    "Add a Tax Group selector at components.Savings_Product_Form.fields.Tax_Group_Dropdown with type 'dropdown' (options: list of existing Tax Groups) and a conditional visibility/enabled rule: components.Savings_Product_Form.fields.Tax_Group_Dropdown.visible_when = { \"Enable_Withhold_Tax\": true } (or equivalent), since the description links the Tax Group selection to enabling tax on the product.",
+    "Add a new component at components.Charge_Definition_Form of type 'form' (or augment existing Charge Definition form) including a Tax Group selector at components.Charge_Definition_Form.fields.Tax_Group_Dropdown with type 'dropdown' (options: list of existing Tax Groups) to reflect that Charge definitions reference Tax Groups.",
+    "If desired, replace or alias components.Tax_Components_Table.row_actions[0].action_name ('View') with an action anchored to the 'Name' column (e.g. set action_name to 'Name' or include metadata indicating the row action is triggered by clicking the Name link) at components.Tax_Components_Table.row_actions[0].action_name so it matches the description more closely."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:02:07] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 28,
+  "module_title": "Tax Management",
+  "summary": "Configuration and management of tax components and tax groups that map tax rates to GL accounts and that can be applied to products and charge definitions to automatically calculate and post tax journal entries.",
+  "where_it_fits": "Located within the platform's administrative/accounting configuration area (accessible from the top navigation under Accounting or Admin and related from Products via the left sidebar), this module is part of the product and accounting setup lifecycle and is referenced when creating or editing savings products and charge definitions. It appears as entity listing and detail pages (breadcrumbs shown in the content area) consistent with the app's Material Design tables and forms.",
+  "assumed_state_on_entry": "Logged in with Accounting/Admin privileges and an existing Chart of Accounts (GL accounts) configured; relevant product or charge definitions exist when intending to reference a Tax Group."
+}
+</module_context>
+
+<description>
+
+The Tax Components page displays a data table with columns for Name (clickable link), Percentage, Debit Account Type, Debit Account, Credit Account Type, Credit Account, and Start Date. A "+ Create Tax Component" button opens the creation form containing Name (required), Percentage (required), Debit Account Type (Asset, Liability, Equity, Income, Expense) and Debit Account (GL account), Credit Account Type and Credit Account (GL account), and Start Date (required).
+
+The Tax Groups page displays a data table with columns for Name (clickable link) and associated components. A "+ Create Tax Group" button opens the form with Name (required) and a Tax Components section allowing multiple components to be added, each with a Start Date and End Date. Tax groups are referenced by Savings Products (Enable Withhold Tax checkbox with Tax Group dropdown) and Charge definitions; when a product has tax enabled, the system automatically applies the configured tax rate on interest income or fees and posts the corresponding journal entries to the mapped GL accounts.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Tax Management",
+  "components": {
+    "Tax_Components_Table": {
+      "type": "data_table",
+      "columns": [
+        "Name",
+        "Percentage",
+        "Debit Account Type",
+        "Debit Account",
+        "Credit Account Type",
+        "Credit Account",
+        "Start Date"
+      ],
+      "row_actions": [
+        {
+          "action_name": "Name",
+          "triggered_by": "Name_Link",
+          "opens": "Tax_Component_Detail"
+        }
+      ],
+      "top_bar_actions": [
+        {
+          "action_name": "+ Create Tax Component",
+          "opens": "Tax_Component_Create_Form",
+          "preconditions": [
+            "user must be logged in with Accounting/Admin privileges",
+            "Chart of Accounts must exist"
+          ]
+        }
+      ]
+    },
+    "Tax_Component_Create_Form": {
+      "type": "form",
+      "fields": {
+        "Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Percentage": {
+          "type": "number",
+          "required": true
+        },
+        "Debit_Account_Type": {
+          "type": "dropdown",
+          "options": [
+            "Asset",
+            "Liability",
+            "Equity",
+            "Income",
+            "Expense"
+          ]
+        },
+        "Debit_Account": {
+          "type": "unspecified"
+        },
+        "Credit_Account_Type": {
+          "type": "dropdown",
+          "options": [
+            "Asset",
+            "Liability",
+            "Equity",
+            "Income",
+            "Expense"
+          ]
+        },
+        "Credit_Account": {
+          "type": "unspecified"
+        },
+        "Start_Date": {
+          "type": "date",
+          "required": true
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create",
+          "on_success": "creates tax component",
+          "preconditions": [
+            "user must be logged in with Accounting/Admin privileges",
+            "Chart of Accounts must exist"
+          ]
+        }
+      ]
+    },
+    "Tax_Groups_Table": {
+      "type": "data_table",
+      "columns": [
+        "Name",
+        "Associated Components"
+      ],
+      "row_actions": [
+        {
+          "action_name": "Name",
+          "triggered_by": "Name_Link",
+          "opens": "Tax_Group_Detail"
+        }
+      ],
+      "top_bar_actions": [
+        {
+          "action_name": "+ Create Tax Group",
+          "opens": "Tax_Group_Create_Form",
+          "preconditions": [
+            "user must be logged in with Accounting/Admin privileges"
+          ]
+        }
+      ]
+    },
+    "Tax_Group_Create_Form": {
+      "type": "form",
+      "fields": {
+        "Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Tax_Components": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Tax_Component": {
+              "type": "unspecified"
+            },
+            "Start_Date": {
+              "type": "date"
+            },
+            "End_Date": {
+              "type": "date"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create",
+          "on_success": "creates tax group",
+          "preconditions": [
+            "user must be logged in with Accounting/Admin privileges"
+          ]
+        }
+      ]
+    },
+    "Savings_Product_Form": {
+      "type": "form",
+      "fields": {
+        "Enable_Withhold_Tax": {
+          "type": "checkbox"
+        },
+        "Tax_Group_Dropdown": {
+          "type": "dropdown",
+          "options": [],
+          "options_note": "populated from existing Tax Groups",
+          "visible_when": {
+            "Enable_Withhold_Tax": true
+          }
+        }
+      }
+    },
+    "Charge_Definition_Form": {
+      "type": "form",
+      "fields": {
+        "Tax_Group_Dropdown": {
+          "type": "dropdown",
+          "options": [],
+          "options_note": "populated from existing Tax Groups"
+        }
+      }
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:02:42] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 2,
+  "summary": "AST mostly matches the description but is missing the stated automatic application/posting behavior when a product has tax enabled (critical) and a few field type/selector clarifications for GL account and tax-component references (minor).",
+  "missing": [
+    {
+      "path": "components.Savings_Product_Form.fields.Enable_Withhold_Tax",
+      "severity": "critical",
+      "reason": "The description explicitly states that when a product has tax enabled the system automatically applies the configured tax rate and posts corresponding journal entries to the mapped GL accounts; the AST does not attach any on_change/on_success or other action metadata to capture this system consequence on enabling tax."
+    },
+    {
+      "path": "components.Tax_Component_Create_Form.fields.Debit_Account",
+      "severity": "minor",
+      "reason": "Description specifies Debit Account is a GL account selector; the AST includes the field but leaves its type 'unspecified' instead of a GL-account selector reference."
+    },
+    {
+      "path": "components.Tax_Component_Create_Form.fields.Credit_Account",
+      "severity": "minor",
+      "reason": "Description specifies Credit Account is a GL account selector; the AST includes the field but leaves its type 'unspecified' instead of a GL-account selector reference."
+    },
+    {
+      "path": "components.Tax_Group_Create_Form.fields.Tax_Components.item_fields.Tax_Component",
+      "severity": "minor",
+      "reason": "Description implies each repeating Tax Components entry selects an existing Tax Component; the AST includes 'Tax_Component' but its type is 'unspecified' rather than an explicit selector/reference to existing Tax Components."
+    }
+  ],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [
+    "components.Savings_Product_Form.fields.Enable_Withhold_Tax: add action metadata to capture the described system consequence, e.g. add an 'on_change' or attach to form submit (components.Savings_Product_Form.submit_actions) with text/handler stating: when true, system will apply configured tax rates on applicable transactions and post corresponding journal entries to the mapped GL accounts.",
+    "components.Tax_Component_Create_Form.fields.Debit_Account: set 'type' to a GL account selector (e.g. 'gl_account_selector' or 'dropdown' with 'options_source': 'Chart_of_Accounts') and, if applicable, add a precondition reference to ensure Chart of Accounts exists.",
+    "components.Tax_Component_Create_Form.fields.Credit_Account: set 'type' to a GL account selector (e.g. 'gl_account_selector' or 'dropdown' with 'options_source': 'Chart_of_Accounts') and, if applicable, add a precondition reference to ensure Chart of Accounts exists.",
+    "components.Tax_Group_Create_Form.fields.Tax_Components.item_fields.Tax_Component: set 'type' to an explicit selector referencing existing Tax Components (e.g. 'tax_component_selector' or 'dropdown' with 'options_source': 'Tax_Components') and mark as required if the domain requires a component selection for each entry."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:02:42] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 2,
+  "summary": "AST mostly matches the description but is missing the stated automatic application/posting behavior when a product has tax enabled (critical) and a few field type/selector clarifications for GL account and tax-component references (minor).",
+  "missing": [
+    {
+      "path": "components.Savings_Product_Form.fields.Enable_Withhold_Tax",
+      "severity": "critical",
+      "reason": "The description explicitly states that when a product has tax enabled the system automatically applies the configured tax rate and posts corresponding journal entries to the mapped GL accounts; the AST does not attach any on_change/on_success or other action metadata to capture this system consequence on enabling tax."
+    },
+    {
+      "path": "components.Tax_Component_Create_Form.fields.Debit_Account",
+      "severity": "minor",
+      "reason": "Description specifies Debit Account is a GL account selector; the AST includes the field but leaves its type 'unspecified' instead of a GL-account selector reference."
+    },
+    {
+      "path": "components.Tax_Component_Create_Form.fields.Credit_Account",
+      "severity": "minor",
+      "reason": "Description specifies Credit Account is a GL account selector; the AST includes the field but leaves its type 'unspecified' instead of a GL-account selector reference."
+    },
+    {
+      "path": "components.Tax_Group_Create_Form.fields.Tax_Components.item_fields.Tax_Component",
+      "severity": "minor",
+      "reason": "Description implies each repeating Tax Components entry selects an existing Tax Component; the AST includes 'Tax_Component' but its type is 'unspecified' rather than an explicit selector/reference to existing Tax Components."
+    }
+  ],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [
+    "components.Savings_Product_Form.fields.Enable_Withhold_Tax: add action metadata to capture the described system consequence, e.g. add an 'on_change' or attach to form submit (components.Savings_Product_Form.submit_actions) with text/handler stating: when true, system will apply configured tax rates on applicable transactions and post corresponding journal entries to the mapped GL accounts.",
+    "components.Tax_Component_Create_Form.fields.Debit_Account: set 'type' to a GL account selector (e.g. 'gl_account_selector' or 'dropdown' with 'options_source': 'Chart_of_Accounts') and, if applicable, add a precondition reference to ensure Chart of Accounts exists.",
+    "components.Tax_Component_Create_Form.fields.Credit_Account: set 'type' to a GL account selector (e.g. 'gl_account_selector' or 'dropdown' with 'options_source': 'Chart_of_Accounts') and, if applicable, add a precondition reference to ensure Chart of Accounts exists.",
+    "components.Tax_Group_Create_Form.fields.Tax_Components.item_fields.Tax_Component: set 'type' to an explicit selector referencing existing Tax Components (e.g. 'tax_component_selector' or 'dropdown' with 'options_source': 'Tax_Components') and mark as required if the domain requires a component selection for each entry."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:03:27] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 28,
+  "module_title": "Tax Management",
+  "summary": "Configuration and management of tax components and tax groups that map tax rates to GL accounts and that can be applied to products and charge definitions to automatically calculate and post tax journal entries.",
+  "where_it_fits": "Located within the platform's administrative/accounting configuration area (accessible from the top navigation under Accounting or Admin and related from Products via the left sidebar), this module is part of the product and accounting setup lifecycle and is referenced when creating or editing savings products and charge definitions. It appears as entity listing and detail pages (breadcrumbs shown in the content area) consistent with the app's Material Design tables and forms.",
+  "assumed_state_on_entry": "Logged in with Accounting/Admin privileges and an existing Chart of Accounts (GL accounts) configured; relevant product or charge definitions exist when intending to reference a Tax Group."
+}
+</module_context>
+
+<description>
+
+The Tax Components page displays a data table with columns for Name (clickable link), Percentage, Debit Account Type, Debit Account, Credit Account Type, Credit Account, and Start Date. A "+ Create Tax Component" button opens the creation form containing Name (required), Percentage (required), Debit Account Type (Asset, Liability, Equity, Income, Expense) and Debit Account (GL account), Credit Account Type and Credit Account (GL account), and Start Date (required).
+
+The Tax Groups page displays a data table with columns for Name (clickable link) and associated components. A "+ Create Tax Group" button opens the form with Name (required) and a Tax Components section allowing multiple components to be added, each with a Start Date and End Date. Tax groups are referenced by Savings Products (Enable Withhold Tax checkbox with Tax Group dropdown) and Charge definitions; when a product has tax enabled, the system automatically applies the configured tax rate on interest income or fees and posts the corresponding journal entries to the mapped GL accounts.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Tax Management",
+  "components": {
+    "Tax_Components_Table": {
+      "type": "data_table",
+      "row_actions": [
+        {
+          "action_name": "View"
+        },
+        {
+          "action_name": "Edit"
+        }
+      ],
+      "table_actions": [
+        {
+          "action_name": "+ Create Tax Component",
+          "opens_component": "Tax_Component_Create_Form",
+          "preconditions": [
+            "Logged in with Accounting/Admin privileges",
+            "Chart of Accounts must exist"
+          ]
+        }
+      ]
+    },
+    "Tax_Component_Create_Form": {
+      "type": "form",
+      "preconditions": [
+        "Logged in with Accounting/Admin privileges",
+        "Chart of Accounts must exist"
+      ],
+      "fields": {
+        "Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Percentage": {
+          "type": "number",
+          "required": true
+        },
+        "Debit_Account_Type": {
+          "type": "dropdown",
+          "options": [
+            "Asset",
+            "Liability",
+            "Equity",
+            "Income",
+            "Expense"
+          ]
+        },
+        "Debit_Account": {
+          "type": "gl_account_selector",
+          "options_source": "Chart_of_Accounts"
+        },
+        "Credit_Account_Type": {
+          "type": "dropdown",
+          "options": [
+            "Asset",
+            "Liability",
+            "Equity",
+            "Income",
+            "Expense"
+          ]
+        },
+        "Credit_Account": {
+          "type": "gl_account_selector",
+          "options_source": "Chart_of_Accounts"
+        },
+        "Start_Date": {
+          "type": "date",
+          "required": true
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create",
+          "on_success": "creates tax component and makes it selectable when building Tax Groups"
+        }
+      ]
+    },
+    "Tax_Groups_Table": {
+      "type": "data_table",
+      "row_actions": [
+        {
+          "action_name": "View"
+        },
+        {
+          "action_name": "Edit"
+        }
+      ],
+      "table_actions": [
+        {
+          "action_name": "+ Create Tax Group",
+          "opens_component": "Tax_Group_Create_Form",
+          "preconditions": [
+            "Logged in with Accounting/Admin privileges",
+            "Chart of Accounts must exist"
+          ]
+        }
+      ]
+    },
+    "Tax_Group_Create_Form": {
+      "type": "form",
+      "preconditions": [
+        "Logged in with Accounting/Admin privileges"
+      ],
+      "fields": {
+        "Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Tax_Components": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Tax_Component": {
+              "type": "tax_component_selector",
+              "options_source": "Tax_Components",
+              "required": true
+            },
+            "Start_Date": {
+              "type": "date"
+            },
+            "End_Date": {
+              "type": "date"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create",
+          "on_success": "creates tax group and makes it available to products and charge definitions"
+        }
+      ]
+    },
+    "Savings_Product_Form": {
+      "type": "form",
+      "preconditions": [
+        "Logged in with Accounting/Admin privileges",
+        "Chart of Accounts must exist",
+        "Relevant product or charge definitions exist when intending to reference a Tax Group"
+      ],
+      "fields": {
+        "Enable_Withhold_Tax": {
+          "type": "checkbox",
+          "on_change": "when true, system will apply configured tax rates on applicable transactions and post corresponding journal entries to the mapped GL accounts"
+        },
+        "Tax_Group": {
+          "type": "tax_group_selector",
+          "options_source": "Tax_Groups",
+          "visible_when": "Enable_Withhold_Tax == true"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Save",
+          "on_success": "saves product configuration; when Enable_Withhold_Tax is true, system will apply configured tax rates on applicable transactions and post corresponding journal entries to the mapped GL accounts"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:04:00] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 3,
+  "summary": "The AST covers Tax Components, Tax Groups, and Savings Product references but is missing the Charge definitions integration and includes minor unexpected row actions.",
+  "missing": [
+    {
+      "path": "components.Charge_Definition_Form",
+      "severity": "critical",
+      "reason": "The description explicitly states that Tax Groups are referenced by Charge definitions; an interactive element (e.g., a Tax Group selector or equivalent control on the Charge definition form) is expected but is not present in the AST."
+    },
+    {
+      "path": "components.Tax_Components_Table.row_actions.Name_Link",
+      "severity": "minor",
+      "reason": "The description specifies the Name column is a clickable link; the AST provides generic row actions (View/Edit) but does not explicitly model the Name-as-link action."
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "components.Tax_Components_Table.row_actions[0]",
+      "severity": "minor",
+      "reason": "A 'View' row action is not mentioned in the description; the description only names a clickable Name link (no explicit 'View' action)."
+    },
+    {
+      "path": "components.Tax_Components_Table.row_actions[1]",
+      "severity": "minor",
+      "reason": "An 'Edit' row action is not mentioned in the description; no Edit action was described for rows."
+    }
+  ],
+  "structural_errors": [],
+  "fixes": [
+    "Add a new form component at components.Charge_Definition_Form with type 'form', appropriate preconditions (e.g., Logged in with Accounting/Admin privileges), and a field 'Tax_Group' of type 'tax_group_selector' with options_source 'Tax_Groups' so Charge definitions can reference Tax Groups: components.Charge_Definition_Form = { \"type\": \"form\", \"preconditions\": [\"Logged in with Accounting/Admin privileges\"], \"fields\": { \"Tax_Group\": { \"type\": \"tax_group_selector\", \"options_source\": \"Tax_Groups\" } }, \"submit_actions\": [ { \"action_name\": \"Save\" } ] }.",
+    "Explicitly model the clickable Name link in the Tax Components table row actions: insert an action object into components.Tax_Components_Table.row_actions with action_name 'Name' (or 'Open' with a clear note that it represents the clickable Name link) and 'opens_component' pointing to the detail/view component, e.g. components.Tax_Components_Table.row_actions.unshift({ \"action_name\": \"Name\", \"opens_component\": \"Tax_Component_Detail_View\" })."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:04:00] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 3,
+  "summary": "The AST covers Tax Components, Tax Groups, and Savings Product references but is missing the Charge definitions integration and includes minor unexpected row actions.",
+  "missing": [
+    {
+      "path": "components.Charge_Definition_Form",
+      "severity": "critical",
+      "reason": "The description explicitly states that Tax Groups are referenced by Charge definitions; an interactive element (e.g., a Tax Group selector or equivalent control on the Charge definition form) is expected but is not present in the AST."
+    },
+    {
+      "path": "components.Tax_Components_Table.row_actions.Name_Link",
+      "severity": "minor",
+      "reason": "The description specifies the Name column is a clickable link; the AST provides generic row actions (View/Edit) but does not explicitly model the Name-as-link action."
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "components.Tax_Components_Table.row_actions[0]",
+      "severity": "minor",
+      "reason": "A 'View' row action is not mentioned in the description; the description only names a clickable Name link (no explicit 'View' action)."
+    },
+    {
+      "path": "components.Tax_Components_Table.row_actions[1]",
+      "severity": "minor",
+      "reason": "An 'Edit' row action is not mentioned in the description; no Edit action was described for rows."
+    }
+  ],
+  "structural_errors": [],
+  "fixes": [
+    "Add a new form component at components.Charge_Definition_Form with type 'form', appropriate preconditions (e.g., Logged in with Accounting/Admin privileges), and a field 'Tax_Group' of type 'tax_group_selector' with options_source 'Tax_Groups' so Charge definitions can reference Tax Groups: components.Charge_Definition_Form = { \"type\": \"form\", \"preconditions\": [\"Logged in with Accounting/Admin privileges\"], \"fields\": { \"Tax_Group\": { \"type\": \"tax_group_selector\", \"options_source\": \"Tax_Groups\" } }, \"submit_actions\": [ { \"action_name\": \"Save\" } ] }.",
+    "Explicitly model the clickable Name link in the Tax Components table row actions: insert an action object into components.Tax_Components_Table.row_actions with action_name 'Name' (or 'Open' with a clear note that it represents the clickable Name link) and 'opens_component' pointing to the detail/view component, e.g. components.Tax_Components_Table.row_actions.unshift({ \"action_name\": \"Name\", \"opens_component\": \"Tax_Component_Detail_View\" })."
+  ],
+  "clarifications": []
+}

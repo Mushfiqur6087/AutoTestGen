@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:34.344161
+DEBUG SESSION STARTED: 2026-07-04T22:41:48.023594
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Edge - SYSTEM PROMPT
+[22:41:48] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Edge - USER PROMPT
+[22:41:48] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 3,
   "module_title": "My Courses",
-  "summary": "Displays all courses a student is enrolled in as visual cards with filtering, searching, sorting, and per-course actions like starring or hiding.",
-  "where_it_fits": "Accessible from the top navigation bar via the My Courses link, this page is the student's central catalog of enrolled courses and acts as the entry point to individual Course Pages (which show the course tab bar and breadcrumb navigation). It sits alongside Dashboard and Home as a primary navigation destination for accessing course content.",
-  "assumed_state_on_entry": "Authenticated as a student with viewable course enrollments"
+  "summary": "Displays all courses in which the student is enrolled as visual cards with controls for filtering, searching, sorting, layout, and quick actions (star or hide).",
+  "where_it_fits": "Accessible from the top navigation bar via the My Courses link (and reachable from Home or Dashboard), this module is the student-facing course listing page that precedes entering a specific Course Page; clicking a course card navigates to that course's main page where the course tab bar and breadcrumbs are shown.",
+  "assumed_state_on_entry": "Logged in as a student with an active account and enrollment records for one or more courses (or none)."
 }
 </module_context>
 
@@ -243,11 +257,8 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "My Courses",
   "components": {
-    "My_Courses_Page": {
-      "type": "page",
-      "preconditions": [
-        "Authenticated as a student with viewable course enrollments"
-      ],
+    "My_Courses_Controls": {
+      "type": "toolbar",
       "fields": {
         "Status_Filter": {
           "type": "dropdown",
@@ -260,7 +271,7 @@ If a `<workflows>` block is present in the input:
             "Hidden"
           ]
         },
-        "Search": {
+        "Course_Search": {
           "type": "search"
         },
         "Sort_By": {
@@ -276,29 +287,34 @@ If a `<workflows>` block is present in the input:
         }
       }
     },
-    "Courses_Grid": {
+    "My_Courses_Grid": {
       "type": "card_grid",
-      "card_template": {
-        "fields": {
-          "Course_Name": {
-            "type": "link",
-            "navigation_target": "Course Page"
-          },
-          "Card_Menu": {
-            "type": "menu",
-            "menu_actions": [
-              {
-                "action_name": "Star this course",
-                "on_success": "pins the course to the top"
-              },
-              {
-                "action_name": "Remove from view",
-                "on_success": "hides the course from view"
-              }
-            ]
-          }
+      "card_fields": {
+        "Course_Name": {
+          "type": "link",
+          "action_name": "Open Course",
+          "navigates_to": "course main page",
+          "preconditions": [
+            "user must be logged in as a student with an active account"
+          ]
         }
-      }
+      },
+      "card_actions": [
+        {
+          "action_name": "Star this course",
+          "on_success": "pins course to the top",
+          "preconditions": [
+            "user must be logged in as a student with an active account"
+          ]
+        },
+        {
+          "action_name": "Remove from view",
+          "on_success": "hides the course for this user without unenrolling",
+          "preconditions": [
+            "user must be logged in as a student with an active account"
+          ]
+        }
+      ]
     }
   }
 }
@@ -314,26 +330,15 @@ The My Courses page displays all courses in which the student is enrolled as vis
 </description>
 
 <workflows>
-WF-001 | Filter: All courses | actor: Student | branch: Status_Filter == All | terminal: Status_Filter | on_success: Displays all enrolled courses
-WF-002 | Filter: In progress courses | actor: Student | branch: Status_Filter == In progress | terminal: Status_Filter | on_success: Displays courses in progress
-WF-003 | Filter: Future courses | actor: Student | branch: Status_Filter == Future | terminal: Status_Filter | on_success: Displays upcoming (future) courses
-WF-004 | Filter: Past courses | actor: Student | branch: Status_Filter == Past | terminal: Status_Filter | on_success: Displays past courses
-WF-005 | Filter: Starred courses | actor: Student | branch: Status_Filter == Starred | terminal: Status_Filter | on_success: Displays starred (pinned) courses
-WF-006 | Filter: Hidden courses | actor: Student | branch: Status_Filter == Hidden | terminal: Status_Filter | on_success: Displays hidden courses
-WF-007 | Perform search | actor: Student | branch: none | terminal: Search | on_success: Filters courses by search query; displays matching courses
-WF-008 | Change sort | actor: Student | branch: none | terminal: Sort_By | on_success: Sorts courses according to selected sort option
-WF-009 | Change layout to Card | actor: Student | branch: Layout == Card | terminal: Layout | on_success: Changes course grid layout to Card
-WF-010 | Change layout to List | actor: Student | branch: Layout == List | terminal: Layout | on_success: Changes course grid layout to List
-WF-011 | Change layout to Summary | actor: Student | branch: Layout == Summary | terminal: Layout | on_success: Changes course grid layout to Summary
-WF-012 | Open course page via course name link | actor: Student | branch: none | terminal: Course_Name | on_success: navigates to that course's main page
-WF-013 | Card menu action: Star this course | actor: Student | branch: none | terminal: Star this course | on_success: pins the course to the top
-WF-014 | Card menu action: Remove from view | actor: Student | branch: none | terminal: Remove from view | on_success: hides the course from view
+WF-001 | Open course from card | actor: student | branch: none | terminal: Open Course | on_success: navigates to course main page
+WF-002 | Star a course (card action) | actor: student | branch: none | terminal: Star this course | on_success: pins course to the top
+WF-003 | Remove course from view (card action) | actor: student | branch: none | terminal: Remove from view | on_success: hides the course for this user without unenrolling
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:13:06] Test-Edge - LLM RESPONSE
+[22:42:26] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "My Courses",
@@ -341,91 +346,106 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-007",
+      "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Search with a very long query (200+ characters)",
+      "test_case": "Very long search query in Course_Search",
       "preconditions": [
-        "Authenticated as a student with viewable course enrollments",
+        "Student is logged in",
         "My Courses page is open"
       ],
       "steps": [
-        "1. Focus the Search field",
-        "2. Enter a query string of 200+ characters into the Search field",
-        "3. Press Enter or click the Search control"
+        "1. Focus the Course_Search field",
+        "2. Type a very long string (200+ characters) into Course_Search",
+        "3. Press Enter or click the search icon to run the search"
       ],
-      "expected_result": "Search succeeds; the Courses Grid updates without UI errors or visual crashes. If no courses match the long query, the Courses Grid shows an empty-state placeholder indicating zero results; the UI remains responsive.",
+      "expected_result": "succeeds: the Course_Search field retains the full entered string; no inline error is shown; the course grid refreshes and displays either matching course cards or a visible 'no results' message",
       "priority": "low"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-007",
-      "subcategory": "input_edge",
-      "test_case": "Search with leading and trailing whitespace in the query",
+      "wf_ref": "WF-002",
+      "subcategory": "state_edge",
+      "test_case": "Rapid double-click on 'Star this course' (idempotent pin action)",
       "preconditions": [
-        "Authenticated as a student with viewable course enrollments",
-        "My Courses page is open",
-        "There exists at least one course whose name matches the trimmed form of the intended query"
+        "Student is logged in",
+        "At least one enrolled course card is visible in the grid"
       ],
       "steps": [
-        "1. Focus the Search field",
-        "2. Enter a query value with leading and trailing whitespace (e.g., '  <search-term>  ')",
-        "3. Press Enter or click the Search control"
+        "1. Open the three-dot menu on a visible course card",
+        "2. Click 'Star this course'",
+        "3. Immediately click 'Star this course' again before the UI finishes updating"
       ],
-      "expected_result": "Search succeeds; the system treats the query as trimmed (leading/trailing whitespace ignored) and the Courses Grid displays results corresponding to the trimmed query. The Search field shows the trimmed value after execution (no persistent leading/trailing spaces).",
-      "priority": "low"
+      "expected_result": "succeeds: the course is shown in the starred state and pinned to the top of the grid exactly once; the UI shows the starred state on the card and no duplicate card entries or duplicate pins are introduced",
+      "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-013",
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid consecutive card menu actions: Star then Remove from view",
+      "wf_ref": null,
+      "subcategory": "input_edge",
+      "test_case": "Course_Search with leading and trailing whitespace is trimmed for matching",
       "preconditions": [
-        "Authenticated as a student with viewable course enrollments",
+        "Student is logged in",
         "My Courses page is open",
-        "A target course card is visible in the Courses Grid"
+        "There exists at least one enrolled course whose name contains the substring <search_term>"
       ],
       "steps": [
-        "1. Open the three-dot Card_Menu on the target course card",
-        "2. Click the 'Star this course' menu action",
-        "3. Immediately (without waiting for a full page refresh) open the Card_Menu again for the same target course",
-        "4. Click the 'Remove from view' menu action"
+        "1. Focus the Course_Search field",
+        "2. Type the search value with leading and trailing spaces, e.g. '  <search_term>  '",
+        "3. Press Enter or click the search icon to run the search"
       ],
-      "expected_result": "Both menu actions succeed; the target course is removed from the current Courses Grid view after 'Remove from view' completes. When the user sets Status_Filter to Hidden, the previously removed course appears in the Hidden filter results. No UI error is shown during the rapid consecutive actions.",
+      "expected_result": "succeeds: leading and trailing whitespace are trimmed for matching; the course grid displays the course(s) containing <search_term>; the Course_Search field displays the trimmed value (without the leading/trailing spaces)",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-012",
+      "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Navigate to Course Page then immediately press browser Back",
+      "test_case": "Rapid double-click of Course_Name link to open course",
       "preconditions": [
-        "Authenticated as a student with viewable course enrollments",
-        "My Courses page is open",
-        "A target course card is visible in the Courses Grid"
+        "Student is logged in",
+        "At least one enrolled course card is visible in the grid using the current filters/layout"
       ],
       "steps": [
-        "1. Click the Course_Name link on the target course card",
-        "2. Wait for the Course Page to load",
-        "3. Immediately click the browser Back button"
+        "1. Click the Course_Name link on a visible course card",
+        "2. Immediately click the same Course_Name link again before navigation completes"
       ],
-      "expected_result": "Navigation back to My Courses succeeds; the My Courses page displays and no duplicate course cards have been created (the original set of course cards is present once). The user is not left on an error page and no additional course entries appear as a result of the rapid back navigation.",
+      "expected_result": "succeeds: navigation completes to the course main page once and the course main page is displayed; no UI error is shown and the current tab does not open duplicate course pages",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-005",
+      "wf_ref": "WF-003",
+      "subcategory": "data_edge",
+      "test_case": "Remove from view then view under Status_Filter = Hidden",
+      "preconditions": [
+        "Student is logged in",
+        "At least one enrolled course card is visible in the grid using the current filters/layout"
+      ],
+      "steps": [
+        "1. Open the three-dot menu on a visible course card",
+        "2. Click 'Remove from view' for that course",
+        "3. Open the Status_Filter dropdown",
+        "4. Select the 'Hidden' option in Status_Filter",
+        "5. Observe the course grid"
+      ],
+      "expected_result": "succeeds: the course removed from view appears in the grid when Status_Filter is set to Hidden; when Status_Filter is set to any option other than Hidden, the removed course is not shown in the grid",
       "priority": "medium"
     }
   ],
   "summary": {
-    "total": 4,
+    "total": 5,
     "boundary": 0,
     "input_edge": 2,
-    "interaction_edge": 2,
-    "state_edge": 0,
-    "data_edge": 0,
-    "medium_priority": 2,
-    "low_priority": 2
+    "interaction_edge": 1,
+    "state_edge": 1,
+    "data_edge": 1,
+    "medium_priority": 4,
+    "low_priority": 1
   }
 }
 
 ------------------------------------------------------------
-[21:13:06] Test-Edge - PARSED JSON
+[22:42:26] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "My Courses",
@@ -433,85 +453,100 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-007",
+      "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Search with a very long query (200+ characters)",
+      "test_case": "Very long search query in Course_Search",
       "preconditions": [
-        "Authenticated as a student with viewable course enrollments",
+        "Student is logged in",
         "My Courses page is open"
       ],
       "steps": [
-        "1. Focus the Search field",
-        "2. Enter a query string of 200+ characters into the Search field",
-        "3. Press Enter or click the Search control"
+        "1. Focus the Course_Search field",
+        "2. Type a very long string (200+ characters) into Course_Search",
+        "3. Press Enter or click the search icon to run the search"
       ],
-      "expected_result": "Search succeeds; the Courses Grid updates without UI errors or visual crashes. If no courses match the long query, the Courses Grid shows an empty-state placeholder indicating zero results; the UI remains responsive.",
+      "expected_result": "succeeds: the Course_Search field retains the full entered string; no inline error is shown; the course grid refreshes and displays either matching course cards or a visible 'no results' message",
       "priority": "low"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-007",
-      "subcategory": "input_edge",
-      "test_case": "Search with leading and trailing whitespace in the query",
+      "wf_ref": "WF-002",
+      "subcategory": "state_edge",
+      "test_case": "Rapid double-click on 'Star this course' (idempotent pin action)",
       "preconditions": [
-        "Authenticated as a student with viewable course enrollments",
-        "My Courses page is open",
-        "There exists at least one course whose name matches the trimmed form of the intended query"
+        "Student is logged in",
+        "At least one enrolled course card is visible in the grid"
       ],
       "steps": [
-        "1. Focus the Search field",
-        "2. Enter a query value with leading and trailing whitespace (e.g., '  <search-term>  ')",
-        "3. Press Enter or click the Search control"
+        "1. Open the three-dot menu on a visible course card",
+        "2. Click 'Star this course'",
+        "3. Immediately click 'Star this course' again before the UI finishes updating"
       ],
-      "expected_result": "Search succeeds; the system treats the query as trimmed (leading/trailing whitespace ignored) and the Courses Grid displays results corresponding to the trimmed query. The Search field shows the trimmed value after execution (no persistent leading/trailing spaces).",
-      "priority": "low"
+      "expected_result": "succeeds: the course is shown in the starred state and pinned to the top of the grid exactly once; the UI shows the starred state on the card and no duplicate card entries or duplicate pins are introduced",
+      "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-013",
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid consecutive card menu actions: Star then Remove from view",
+      "wf_ref": null,
+      "subcategory": "input_edge",
+      "test_case": "Course_Search with leading and trailing whitespace is trimmed for matching",
       "preconditions": [
-        "Authenticated as a student with viewable course enrollments",
+        "Student is logged in",
         "My Courses page is open",
-        "A target course card is visible in the Courses Grid"
+        "There exists at least one enrolled course whose name contains the substring <search_term>"
       ],
       "steps": [
-        "1. Open the three-dot Card_Menu on the target course card",
-        "2. Click the 'Star this course' menu action",
-        "3. Immediately (without waiting for a full page refresh) open the Card_Menu again for the same target course",
-        "4. Click the 'Remove from view' menu action"
+        "1. Focus the Course_Search field",
+        "2. Type the search value with leading and trailing spaces, e.g. '  <search_term>  '",
+        "3. Press Enter or click the search icon to run the search"
       ],
-      "expected_result": "Both menu actions succeed; the target course is removed from the current Courses Grid view after 'Remove from view' completes. When the user sets Status_Filter to Hidden, the previously removed course appears in the Hidden filter results. No UI error is shown during the rapid consecutive actions.",
+      "expected_result": "succeeds: leading and trailing whitespace are trimmed for matching; the course grid displays the course(s) containing <search_term>; the Course_Search field displays the trimmed value (without the leading/trailing spaces)",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-012",
+      "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Navigate to Course Page then immediately press browser Back",
+      "test_case": "Rapid double-click of Course_Name link to open course",
       "preconditions": [
-        "Authenticated as a student with viewable course enrollments",
-        "My Courses page is open",
-        "A target course card is visible in the Courses Grid"
+        "Student is logged in",
+        "At least one enrolled course card is visible in the grid using the current filters/layout"
       ],
       "steps": [
-        "1. Click the Course_Name link on the target course card",
-        "2. Wait for the Course Page to load",
-        "3. Immediately click the browser Back button"
+        "1. Click the Course_Name link on a visible course card",
+        "2. Immediately click the same Course_Name link again before navigation completes"
       ],
-      "expected_result": "Navigation back to My Courses succeeds; the My Courses page displays and no duplicate course cards have been created (the original set of course cards is present once). The user is not left on an error page and no additional course entries appear as a result of the rapid back navigation.",
+      "expected_result": "succeeds: navigation completes to the course main page once and the course main page is displayed; no UI error is shown and the current tab does not open duplicate course pages",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-005",
+      "wf_ref": "WF-003",
+      "subcategory": "data_edge",
+      "test_case": "Remove from view then view under Status_Filter = Hidden",
+      "preconditions": [
+        "Student is logged in",
+        "At least one enrolled course card is visible in the grid using the current filters/layout"
+      ],
+      "steps": [
+        "1. Open the three-dot menu on a visible course card",
+        "2. Click 'Remove from view' for that course",
+        "3. Open the Status_Filter dropdown",
+        "4. Select the 'Hidden' option in Status_Filter",
+        "5. Observe the course grid"
+      ],
+      "expected_result": "succeeds: the course removed from view appears in the grid when Status_Filter is set to Hidden; when Status_Filter is set to any option other than Hidden, the removed course is not shown in the grid",
       "priority": "medium"
     }
   ],
   "summary": {
-    "total": 4,
+    "total": 5,
     "boundary": 0,
     "input_edge": 2,
-    "interaction_edge": 2,
-    "state_edge": 0,
-    "data_edge": 0,
-    "medium_priority": 2,
-    "low_priority": 2
+    "interaction_edge": 1,
+    "state_edge": 1,
+    "data_edge": 1,
+    "medium_priority": 4,
+    "low_priority": 1
   }
 }

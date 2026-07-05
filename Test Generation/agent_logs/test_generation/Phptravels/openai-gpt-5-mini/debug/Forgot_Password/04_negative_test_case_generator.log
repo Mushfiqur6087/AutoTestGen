@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:13.803376
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.006827
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - SYSTEM PROMPT
+[22:33:07] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - USER PROMPT
+[22:33:07] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 4,
   "module_title": "Forgot Password",
-  "summary": "Allows users to request a password reset by submitting their email so the system sends a 24-hour time-limited reset link if the address exists.",
-  "where_it_fits": "Accessible from the top navigation's Account/Login area, this module is part of the authentication lifecycle alongside User Login and User Registration and leads to the password reset page and back to Login after completion.",
-  "assumed_state_on_entry": "User is unauthenticated and has access to the Account/Login area and the email address associated with their account (or is attempting recovery for an unknown address)."
+  "summary": "Allows an unauthenticated user to request a password reset by submitting their account email so a time-limited reset link is sent.",
+  "where_it_fits": "Accessible from the top navigation's Account/Login path, this module is part of the authentication flow tied to Login/Signup and precedes the Password Reset page reached via the emailed link; it sits outside booking flows and is used to regain account access before reaching the User Dashboard or booking management.",
+  "assumed_state_on_entry": "Unauthenticated user attempting account recovery who knows (or enters) the registered email address."
 }
 </module_context>
 
@@ -264,17 +274,18 @@ If a `<workflows>` block is present in the input:
       "type": "form",
       "fields": {
         "Email": {
-          "type": "email"
+          "type": "email",
+          "required": true
         }
       },
       "submit_actions": [
         {
           "action_name": "Reset Password",
           "preconditions": [
-            "User is unauthenticated and has access to the Account/Login area"
+            "Unauthenticated user attempting account recovery who knows (or enters) the registered email address."
           ],
-          "on_success": "sends a password reset link to the provided email (link expires after 24 hours) and shows a confirmation message",
-          "on_failure": "shows an error if the email is not found and keeps the form editable"
+          "on_success": "If the email exists, send a time-limited reset link (expires after 24 hours) to that address and show a confirmation message.",
+          "on_failure": "If the email is not found, show an error and keep the form editable."
         }
       ]
     },
@@ -285,7 +296,7 @@ If a `<workflows>` block is present in the input:
           "type": "password",
           "required": true
         },
-        "Confirm_New_Password": {
+        "Confirm_Password": {
           "type": "password",
           "required": true,
           "constraints": [
@@ -297,9 +308,10 @@ If a `<workflows>` block is present in the input:
         {
           "action_name": "Change Password",
           "preconditions": [
-            "reset link (token) must be valid and not expired"
+            "reset link must be valid and not expired"
           ],
-          "on_success": "updates the user's password and redirects to the Login page with a success message"
+          "on_success": "Change password succeeds \u2192 redirect to the login page with a success message.",
+          "on_failure": "If the reset link is invalid or expired, show an error and do not change the password."
         }
       ]
     }
@@ -317,14 +329,14 @@ The page presents an Email field and a Reset Password button. If the email exist
 </description>
 
 <workflows>
-WF-001 | Request password reset via email | actor: Unauthenticated user | branch: none | terminal: Reset Password | on_success: sends a password reset link to the provided email (link expires after 24 hours) and shows a confirmation message
-WF-002 | Change password using valid reset link | actor: Unauthenticated user | branch: none | terminal: Change Password | on_success: updates the user's password and redirects to the Login page with a success message
+WF-001 | Request password reset (enter email and submit) | actor: Unauthenticated user | branch: none | terminal: Reset Password | on_success: If the email exists, send a time-limited reset link (expires after 24 hours) to that address and show a confirmation message.
+WF-002 | Change password via valid reset link | actor: Unauthenticated user | branch: none | terminal: Change Password | on_success: Change password succeeds → redirect to the login page with a success message.
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:25:13] Test-Negative - LLM RESPONSE
+[22:34:19] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Forgot Password",
@@ -333,107 +345,119 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Submit unknown email address",
+      "test_case": "Submit Forgot Password with Email left blank",
       "preconditions": [
-        "Unauthenticated user is on the Forgot Password page"
+        "User is unauthenticated",
+        "Navigate to the Forgot Password page"
       ],
       "steps": [
-        "1. Navigate to the Forgot Password page",
-        "2. Enter <unknown email address> in the Email field",
-        "3. Click the Reset Password button"
+        "1. Ensure the Email field is empty",
+        "2. Click the Reset Password button"
       ],
-      "expected_result": "An inline or page-level error appears indicating the email address was not found (Email field shows an error that the address is not recognized); the form remains editable; no reset email is sent and the user is not redirected.",
+      "expected_result": "Inline validation error appears on the Email field indicating it is required; the form does not submit; no reset confirmation message is shown and the Forgot Password form remains editable",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Enter invalid email format and submit",
+      "test_case": "Submit Forgot Password with invalid email format",
       "preconditions": [
-        "Unauthenticated user is on the Forgot Password page"
+        "User is unauthenticated",
+        "Navigate to the Forgot Password page"
       ],
       "steps": [
-        "1. Navigate to the Forgot Password page",
-        "2. Enter <invalid email format> in the Email field",
-        "3. Click the Reset Password button"
+        "1. Enter <invalid email format> into the Email field",
+        "2. Click the Reset Password button"
       ],
-      "expected_result": "Email field displays an inline validation error indicating the value is not a valid email address; the form does not submit; no confirmation message is shown and no reset email is sent.",
+      "expected_result": "Email field displays an inline validation error indicating the value is not a valid email format; the form does not submit; no reset confirmation message is shown",
       "priority": "medium"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Attempt password reset while authenticated (precondition violation)",
+      "test_case": "Submit Forgot Password with an email not found in the system",
       "preconditions": [
-        "User is authenticated (signed in)"
+        "User is unauthenticated",
+        "Navigate to the Forgot Password page"
       ],
       "steps": [
-        "1. Sign in as <authenticated user>",
-        "2. Attempt to navigate to the Forgot Password page (or click the Forgot Password link)",
-        "3. If the Forgot Password page is reachable, enter <known email address> and click Reset Password"
+        "1. Enter <email not found in system> into the Email field",
+        "2. Click the Reset Password button"
       ],
-      "expected_result": "Reset Password action is blocked due to failed precondition: the UI prevents the flow for authenticated users (user is either redirected away from the Forgot Password page or the Reset Password control is not actionable). No reset email is sent and no confirmation is shown.",
+      "expected_result": "The page shows an error indicating the entered email address is not found and the Forgot Password form remains editable; no reset confirmation message is shown and no reset link is sent",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-002",
-      "test_case": "Leave required password fields blank on reset page and submit",
+      "test_case": "Password reset page: required New Password left blank (dialog required-field representative)",
       "preconditions": [
-        "User has opened the Password Reset page via a valid (non-expired) reset link"
+        "Open the Password Reset page using a valid, non-expired reset link"
       ],
       "steps": [
-        "1. Navigate to the Password Reset page using a <valid reset token>",
-        "2. Do not enter any value into the New_Password field",
-        "3. Do not enter any value into the Confirm_New_Password field",
-        "4. Click the Change Password button"
+        "1. Leave the New_Password field blank",
+        "2. Enter <valid password> in the Confirm_Password field",
+        "3. Click the Change Password button"
       ],
-      "expected_result": "Inline validation errors appear on New_Password and Confirm_New_Password indicating they are required; the form does not submit; the user's password is not changed and the user is not redirected to the Login page.",
+      "expected_result": "Inline validation error appears on the New_Password field indicating it is required; the form does not submit; the password is not changed and the user remains on the Password Reset page",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
       "wf_ref": "WF-002",
-      "test_case": "Confirm password does not match New Password",
+      "test_case": "Password reset: Confirm_Password does not match New_Password (constraint violation)",
       "preconditions": [
-        "User has opened the Password Reset page via a valid (non-expired) reset link"
+        "Open the Password Reset page using a valid, non-expired reset link"
       ],
       "steps": [
-        "1. Navigate to the Password Reset page using a <valid reset token>",
-        "2. Enter <new password> in the New_Password field",
-        "3. Enter <different password> in the Confirm_New_Password field",
-        "4. Click the Change Password button"
+        "1. Enter <valid new password> in the New_Password field",
+        "2. Enter <different password> in the Confirm_Password field",
+        "3. Click the Change Password button"
       ],
-      "expected_result": "Confirm_New_Password field displays an inline validation error stating it must match New_Password; the form does not submit; the user's password is not changed and the user remains on the Password Reset page.",
-      "priority": "medium"
+      "expected_result": "Confirm_Password field displays an inline validation error indicating it must match the New_Password field; the form does not submit; the password is not changed and the user stays on the Password Reset page",
+      "priority": "high"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-002",
-      "test_case": "Attempt to change password with an expired or invalid reset token",
+      "test_case": "Attempt Change Password with an expired reset link",
       "preconditions": [
-        "User navigates to the Password Reset page using an <expired or invalid reset token>"
+        "Open the Password Reset page using an expired reset link"
       ],
       "steps": [
-        "1. Navigate to the Password Reset page using an <expired or invalid reset token>",
-        "2. Enter <new password> in the New_Password field",
-        "3. Enter the same <new password> in the Confirm_New_Password field",
-        "4. Click the Change Password button"
+        "1. Enter <valid new password> in the New_Password field",
+        "2. Enter the same <valid new password> in the Confirm_Password field",
+        "3. Click the Change Password button"
       ],
-      "expected_result": "Change Password action is blocked because the reset token is invalid or expired: the page shows an error message indicating the reset link is invalid or has expired; the password is not updated; the user is not redirected to Login.",
+      "expected_result": "An error is shown indicating the reset link is invalid or expired; the password is not changed; the user is not redirected to the login page and remains on the Password Reset page with the form editable",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-001",
+      "test_case": "Authenticated user cannot use Forgot Password (precondition not met)",
+      "preconditions": [
+        "User is authenticated and on their account/dashboard"
+      ],
+      "steps": [
+        "1. While authenticated, navigate to the Forgot Password page or the Account/Login path",
+        "2. Observe whether the Forgot Password form and Reset Password button are available",
+        "3. If the Reset Password button is present, attempt to click it"
+      ],
+      "expected_result": "Reset Password submission is not available to authenticated users: the Email field and/or Reset Password button are absent or disabled so no reset request can be made; no reset confirmation is shown",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 6,
-    "high_priority": 4,
-    "medium_priority": 2,
+    "total": 7,
+    "high_priority": 6,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:25:13] Test-Negative - PARSED JSON
+[22:34:19] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Forgot Password",
@@ -442,101 +466,113 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Submit unknown email address",
+      "test_case": "Submit Forgot Password with Email left blank",
       "preconditions": [
-        "Unauthenticated user is on the Forgot Password page"
+        "User is unauthenticated",
+        "Navigate to the Forgot Password page"
       ],
       "steps": [
-        "1. Navigate to the Forgot Password page",
-        "2. Enter <unknown email address> in the Email field",
-        "3. Click the Reset Password button"
+        "1. Ensure the Email field is empty",
+        "2. Click the Reset Password button"
       ],
-      "expected_result": "An inline or page-level error appears indicating the email address was not found (Email field shows an error that the address is not recognized); the form remains editable; no reset email is sent and the user is not redirected.",
+      "expected_result": "Inline validation error appears on the Email field indicating it is required; the form does not submit; no reset confirmation message is shown and the Forgot Password form remains editable",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Enter invalid email format and submit",
+      "test_case": "Submit Forgot Password with invalid email format",
       "preconditions": [
-        "Unauthenticated user is on the Forgot Password page"
+        "User is unauthenticated",
+        "Navigate to the Forgot Password page"
       ],
       "steps": [
-        "1. Navigate to the Forgot Password page",
-        "2. Enter <invalid email format> in the Email field",
-        "3. Click the Reset Password button"
+        "1. Enter <invalid email format> into the Email field",
+        "2. Click the Reset Password button"
       ],
-      "expected_result": "Email field displays an inline validation error indicating the value is not a valid email address; the form does not submit; no confirmation message is shown and no reset email is sent.",
+      "expected_result": "Email field displays an inline validation error indicating the value is not a valid email format; the form does not submit; no reset confirmation message is shown",
       "priority": "medium"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Attempt password reset while authenticated (precondition violation)",
+      "test_case": "Submit Forgot Password with an email not found in the system",
       "preconditions": [
-        "User is authenticated (signed in)"
+        "User is unauthenticated",
+        "Navigate to the Forgot Password page"
       ],
       "steps": [
-        "1. Sign in as <authenticated user>",
-        "2. Attempt to navigate to the Forgot Password page (or click the Forgot Password link)",
-        "3. If the Forgot Password page is reachable, enter <known email address> and click Reset Password"
+        "1. Enter <email not found in system> into the Email field",
+        "2. Click the Reset Password button"
       ],
-      "expected_result": "Reset Password action is blocked due to failed precondition: the UI prevents the flow for authenticated users (user is either redirected away from the Forgot Password page or the Reset Password control is not actionable). No reset email is sent and no confirmation is shown.",
+      "expected_result": "The page shows an error indicating the entered email address is not found and the Forgot Password form remains editable; no reset confirmation message is shown and no reset link is sent",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-002",
-      "test_case": "Leave required password fields blank on reset page and submit",
+      "test_case": "Password reset page: required New Password left blank (dialog required-field representative)",
       "preconditions": [
-        "User has opened the Password Reset page via a valid (non-expired) reset link"
+        "Open the Password Reset page using a valid, non-expired reset link"
       ],
       "steps": [
-        "1. Navigate to the Password Reset page using a <valid reset token>",
-        "2. Do not enter any value into the New_Password field",
-        "3. Do not enter any value into the Confirm_New_Password field",
-        "4. Click the Change Password button"
+        "1. Leave the New_Password field blank",
+        "2. Enter <valid password> in the Confirm_Password field",
+        "3. Click the Change Password button"
       ],
-      "expected_result": "Inline validation errors appear on New_Password and Confirm_New_Password indicating they are required; the form does not submit; the user's password is not changed and the user is not redirected to the Login page.",
+      "expected_result": "Inline validation error appears on the New_Password field indicating it is required; the form does not submit; the password is not changed and the user remains on the Password Reset page",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
       "wf_ref": "WF-002",
-      "test_case": "Confirm password does not match New Password",
+      "test_case": "Password reset: Confirm_Password does not match New_Password (constraint violation)",
       "preconditions": [
-        "User has opened the Password Reset page via a valid (non-expired) reset link"
+        "Open the Password Reset page using a valid, non-expired reset link"
       ],
       "steps": [
-        "1. Navigate to the Password Reset page using a <valid reset token>",
-        "2. Enter <new password> in the New_Password field",
-        "3. Enter <different password> in the Confirm_New_Password field",
-        "4. Click the Change Password button"
+        "1. Enter <valid new password> in the New_Password field",
+        "2. Enter <different password> in the Confirm_Password field",
+        "3. Click the Change Password button"
       ],
-      "expected_result": "Confirm_New_Password field displays an inline validation error stating it must match New_Password; the form does not submit; the user's password is not changed and the user remains on the Password Reset page.",
-      "priority": "medium"
+      "expected_result": "Confirm_Password field displays an inline validation error indicating it must match the New_Password field; the form does not submit; the password is not changed and the user stays on the Password Reset page",
+      "priority": "high"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-002",
-      "test_case": "Attempt to change password with an expired or invalid reset token",
+      "test_case": "Attempt Change Password with an expired reset link",
       "preconditions": [
-        "User navigates to the Password Reset page using an <expired or invalid reset token>"
+        "Open the Password Reset page using an expired reset link"
       ],
       "steps": [
-        "1. Navigate to the Password Reset page using an <expired or invalid reset token>",
-        "2. Enter <new password> in the New_Password field",
-        "3. Enter the same <new password> in the Confirm_New_Password field",
-        "4. Click the Change Password button"
+        "1. Enter <valid new password> in the New_Password field",
+        "2. Enter the same <valid new password> in the Confirm_Password field",
+        "3. Click the Change Password button"
       ],
-      "expected_result": "Change Password action is blocked because the reset token is invalid or expired: the page shows an error message indicating the reset link is invalid or has expired; the password is not updated; the user is not redirected to Login.",
+      "expected_result": "An error is shown indicating the reset link is invalid or expired; the password is not changed; the user is not redirected to the login page and remains on the Password Reset page with the form editable",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-001",
+      "test_case": "Authenticated user cannot use Forgot Password (precondition not met)",
+      "preconditions": [
+        "User is authenticated and on their account/dashboard"
+      ],
+      "steps": [
+        "1. While authenticated, navigate to the Forgot Password page or the Account/Login path",
+        "2. Observe whether the Forgot Password form and Reset Password button are available",
+        "3. If the Reset Password button is present, attempt to click it"
+      ],
+      "expected_result": "Reset Password submission is not available to authenticated users: the Email field and/or Reset Password button are absent or disabled so no reset request can be made; no reset confirmation is shown",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 6,
-    "high_priority": 4,
-    "medium_priority": 2,
+    "total": 7,
+    "high_priority": 6,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }

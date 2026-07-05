@@ -1,0 +1,893 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:08:29.890337
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:08:29] Test-Edge - SYSTEM PROMPT
+------------------------------------------------------------
+You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
+
+You are NOT producing happy paths (positive prompt) or standard validation failures (negative prompt). You are finding the cracks between valid and invalid, and the unusual paths real users take.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Edge Testing:**
+
+| AST node / field | What to look for |
+|---|---|
+| `constraints: []` with numeric/date/count threshold | The boundary values — test AT and JUST PAST each limit |
+| `repeating_group` with `max` | Test adding exactly `max` entries (should succeed) then one more (should block) |
+| `visible_when` / `required_when` | Edge: trigger condition, fill revealed field with boundary value |
+| `state_bound_action_bar` | State edges: rapid consecutive state transitions, transition from a boundary state |
+
+| `type: "date"` fields | Data edges: today, yesterday, far future, Feb 29 leap year |
+| `type: "file_upload"` | Edge: file exactly at size limit, file at 1 byte over limit |
+
+> If the module has no `constraints`, no `repeating_group`, no `date` or `number` fields, and no `state_bound_action_bar` — it has minimal edge surface. Produce 1–3 generic input edge cases (long text, special characters) and stop. Do not invent boundary tests where no boundary exists.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
+- ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
+- ✅ `"Form submits successfully; entity is created with the <minimum value>"`
+- ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
+
+**Rule B — For edge cases, describe the precise visible outcome.**
+Same rule as the positive/negative prompts — name the UI element that changes.
+- ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
+- ✅ `"Second submission attempt is blocked; only one record appears in the table"`
+- ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
+
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Express boundary values relative to the constraint.
+
+- ✅ `"Enter <minimum allowed value> in the <field>"`
+- ✅ `"Enter <one unit below minimum> in the <field>"`
+- ✅ `"Enter <maximum length string> in the <text field>"`
+- ✅ `"Add <maximum allowed entries + 1> rows to the repeating group"`
+- ❌ `"Enter '$25' in the Amount field"`
+- ❌ `"Enter 'aaaaaaaaaa' (10 chars) in the field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic action — one field, one click, one navigation. No grouping.
+- ✅ `"1. Enter <minimum allowed value> in the <Amount> field"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill the form with minimum value and submit"`
+
+---
+
+**SCOPE GATE:**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
+2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
+3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Boundary Tests (from AST constraints):**
+
+Scan every `constraints: []` array and every numeric/date/count threshold mentioned in the description. For each threshold:
+
+| Constraint | Boundary (should PASS) | Past-boundary (should FAIL) |
+|---|---|---|
+| `"minimum <X>"` | Enter exactly `<minimum value>` | Enter `<one unit below minimum>` |
+| `"maximum <N> entries"` | Add exactly `<N>` entries | Attempt to add `<N+1>` entry |
+| `"<date A> must not be before <date B>"` | `<date A>` = `<date B>` (same day) | `<date A>` = `<date B>` minus 1 day |
+| `"<X>–<Y> range"` | Enter `<X>` → pass; enter `<Y>` → pass | Enter `<X-1>` → fail; enter `<Y+1>` → fail |
+| `"at least <N> characters"` | Enter exactly `<N>` characters | Enter `<N-1>` characters |
+| `"must be ≥ <P>% of <reference>"` | Enter exactly `<P>%` | Enter `<P minus small delta>%` |
+
+Rules:
+- If a constraint has both a minimum AND maximum, test both ends (up to 4 tests total for that constraint).
+- If a constraint has no numeric/date/count threshold (e.g., "must be unique", "cannot transition while children exist") → **skip it** — it belongs in negative tests, not boundary tests.
+- Generate zero boundary tests if zero thresholds exist — do not invent them.
+
+**Cross-field boundary tests** (only if the description/AST shows a field ordering constraint — e.g., date A must not be before date B, closing date must be after opening date):
+- ONE test where field A equals field B exactly (same-day / same-value boundary) → assert this **succeeds** per spec
+- ONE test where field A is one unit before field B → assert **blocked with a visible error**
+
+**2. Input Edge Cases:**
+
+Pick only the ones that apply to field types present in this module's AST:
+
+- **Long text** (any `text/unspecified` or `textarea` field): enter a very long string (200+ characters) → assert it is either accepted or truncated/rejected with a visible indicator
+- **Special characters / emoji / unicode** (free-text fields): enter special chars → assert accepted or a specific error shown
+- **Leading/trailing whitespace** (text inputs): enter value with leading/trailing spaces → assert trimmed in saved output shown on the detail page, or an inline error shown
+- **Zero as numeric input** (number fields where zero is ambiguous): if the spec states a minimum > 0, assert `0` is blocked with a visible error; if the spec permits zero, assert the form submits successfully and the saved record displays `0`
+- **Decimal precision** (financial/numeric fields): enter a value with more decimal places than the field supports → assert rounding behavior is visible in the saved output, or an inline error is shown
+
+**3. Interaction Edge Cases:**
+
+Pick only the ones that match component types in this module's AST:
+
+- **Rapid re-submission after redirect** (any form that redirects to a detail page on success): after a successful submit, press the browser back button → assert the creation form is shown blank (not pre-filled) OR the user is redirected to the detail page without a second entity being created
+- **Wizard step skip — enforced navigation** (wizard where steps must be completed sequentially): attempt to click a later step tab directly without completing earlier steps → assert navigation is blocked and the earlier step remains active
+- **Wizard step skip — free navigation** (wizard that allows free tab navigation): navigate to a later step without filling earlier steps → assert the later step displays and returning to the earlier step shows fields blank (no data was lost from the later step)
+- **Repeating group: add then remove all** (any `repeating_group`): add entries → remove all entries → submit → assert behavior: if spec states no minimum, form submits successfully; if spec requires at least one entry, a visible error is shown
+
+**4. State / Data Edge Cases:**
+
+Pick only what applies to this module:
+
+- **Rapid consecutive state transitions** (`state_bound_action_bar`): complete one transition → immediately attempt the next → assert the action succeeds or the expected blocking message is shown per spec
+- **State boundary condition:** If the `<module_context>` block specifies an `assumed_state_on_entry` that is on the boundary of an entity's lifecycle (e.g. "Newly created", "Pending Review"), generate an edge case testing an action immediately following that state entry.
+- **Date edges** (`date` fields): test today's date, yesterday, and a far future date — assert which are accepted per spec and describe the visible outcome for each
+- **Leap year date** (`date` fields, free-text entry only): enter February 29 on a non-leap year → assert error; on a leap year → assert accepted. *Skip this test if the field uses a calendar date picker — pickers remove February 29 from non-leap years at the UI level and the test is not UI-executable.*
+- **File at exact size limit** (`file_upload`): upload a file exactly at the stated size limit → assert accepted with a visible success indicator; upload a file one unit over the limit → assert a visible error naming the size constraint
+
+**RELEVANCE RULE:** Only generate edge cases that match component types present in this module's AST. A login form does not need repeating-group edge cases. A data table does not need wizard-step-skip tests.
+
+**`visible_when` fields:** If the spec reveals a conditional field via a toggle/dropdown, test a boundary value in that revealed field. If the revealed field has no numeric or date constraint, generate one `input_edge` test using a long-text or special-character value instead.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (form with numeric/date constraints): **4–8 tests**
+- Complex module (state machine, wizard, repeating groups): **6–10 tests**
+
+If you exceed these, you are generating generic edges that don't apply to this module. Apply the relevance rule and scope gate again.
+
+---
+
+**MINIMUM OUTPUT RULE:**
+
+If the module has any numeric/date/count threshold in the AST or description, produce at least 2 boundary tests. Zero boundary tests when thresholds exist is a generation failure.
+
+---
+
+**PRIORITY:**
+
+- **High:** None — edge tests are secondary to core functionality
+- **Medium:** Boundary tests at thresholds (financial amounts, date ordering, count limits, file size limits)
+- **Low:** Input edge cases (long text, special chars, whitespace, decimal precision), interaction edge cases (browser back, wizard skip)
+
+---
+
+**WORKFLOW-AWARE BOUNDARY SCOPING (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow where `conditional_branch` activates a numeric or date field, check if that field has a boundary (a numeric/date threshold in the AST `constraints` or description).
+- If yes, that workflow's branch is a **candidate for a boundary edge test** — add or confirm a boundary TC exists for it.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a specific workflow's boundary. Set `"wf_ref": null` for generic input/interaction edge tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "wf_ref": null,
+      "subcategory": "boundary | input_edge | interaction_edge | state_edge | data_edge",
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "Precise visible outcome — state pass or fail explicitly for boundary tests",
+      "priority": "medium | low"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "boundary": 0,
+    "input_edge": 0,
+    "interaction_edge": 0,
+    "state_edge": 0,
+    "data_edge": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[23:08:29] Test-Edge - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 15,
+  "module_title": "Savings Account",
+  "summary": "Manages creation, lifecycle and transaction handling for client savings accounts, including balances, status transitions, charges, and interest operations.",
+  "where_it_fits": "Reached from a Client's Detail page (accessible via Institution \u2192 Clients in the top nav or the Clients shortcut in the left sidebar) and displayed in the main content area beneath breadcrumbs; it links account operations (deposits, withdrawals, interest posting, status changes) into the broader accounting and reporting areas of the application.",
+  "assumed_state_on_entry": "Logged in user with permissions to manage accounts, viewing a specific Client Detail page, and at least one Savings Product configured/available for selection."
+}
+</module_context>
+
+<module_name>Savings Account</module_name>
+
+<ast>
+{
+  "module_name": "Savings Account",
+  "components": {
+    "Savings_Account_Creation_Form": {
+      "type": "form",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "at least one Savings Product configured/available for selection"
+      ],
+      "fields": {
+        "Product_Name": {
+          "type": "dropdown",
+          "on_change": "auto_populate_defaults_from_product"
+        },
+        "Field_Officer": {
+          "type": "unspecified"
+        },
+        "Submitted_On": {
+          "type": "date"
+        },
+        "Nominal_Annual_Interest_Rate": {
+          "type": "dropdown"
+        },
+        "Interest_Compounding_Period": {
+          "type": "dropdown"
+        },
+        "Interest_Posting_Period": {
+          "type": "dropdown"
+        },
+        "Interest_Calculated_Using": {
+          "type": "dropdown"
+        },
+        "Days_In_Year": {
+          "type": "dropdown"
+        },
+        "Minimum_Opening_Balance": {
+          "type": "number"
+        },
+        "Lock_In_Period": {
+          "type": "unspecified"
+        },
+        "Allow_Overdraft": {
+          "type": "checkbox"
+        },
+        "Charges": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Charge": {
+              "type": "unspecified"
+            },
+            "Amount": {
+              "type": "number"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Submit",
+          "on_success": "creates account in Submitted and Pending Approval",
+          "preconditions": [
+            "Logged in user with permissions to manage accounts",
+            "at least one Savings Product configured/available for selection"
+          ]
+        }
+      ]
+    },
+    "Savings_Account_Detail_Tabs": {
+      "type": "tab_container",
+      "tabs": [
+        {
+          "tab_name": "Summary",
+          "fields": {}
+        },
+        {
+          "tab_name": "Transactions",
+          "fields": {
+            "Transactions_Table": {
+              "type": "data_table"
+            }
+          }
+        },
+        {
+          "tab_name": "Charges",
+          "fields": {}
+        },
+        {
+          "tab_name": "Documents",
+          "fields": {}
+        }
+      ]
+    },
+    "Savings_Account_Detail_Actions": {
+      "type": "state_bound_action_bar",
+      "states": {
+        "Submitted and Pending Approval": {
+          "available_actions": [
+            {
+              "action_name": "Approve"
+            },
+            {
+              "action_name": "Reject"
+            },
+            {
+              "action_name": "Withdraw Application"
+            }
+          ]
+        },
+        "Approved": {
+          "available_actions": [
+            {
+              "action_name": "Activate"
+            },
+            {
+              "action_name": "Undo Approval"
+            }
+          ]
+        },
+        "Active": {
+          "available_actions": [
+            {
+              "action_name": "Deposit",
+              "fields": {
+                "Transaction_Date": {
+                  "type": "date"
+                },
+                "Transaction_Amount": {
+                  "type": "number"
+                },
+                "Payment_Type": {
+                  "type": "dropdown",
+                  "options": [
+                    "Cash",
+                    "Check",
+                    "Mobile Money"
+                  ]
+                },
+                "Payment_Details": {
+                  "type": "unspecified"
+                }
+              },
+              "on_success": "credits the account"
+            },
+            {
+              "action_name": "Withdraw",
+              "fields": {
+                "Transaction_Date": {
+                  "type": "date"
+                },
+                "Transaction_Amount": {
+                  "type": "number"
+                },
+                "Payment_Type": {
+                  "type": "dropdown",
+                  "options": [
+                    "Cash",
+                    "Check",
+                    "Mobile Money"
+                  ]
+                },
+                "Payment_Details": {
+                  "type": "unspecified"
+                }
+              },
+              "constraints": [
+                "validate withdrawal does not exceed available balance unless overdraft is enabled",
+                "if minimum balance is enforced and withdrawal would breach it, show an error and prevent transaction"
+              ]
+            },
+            {
+              "action_name": "Post Interest"
+            },
+            {
+              "action_name": "Calculate Interest"
+            },
+            {
+              "action_name": "Close"
+            },
+            {
+              "action_name": "Block Account"
+            },
+            {
+              "action_name": "Block Debit"
+            },
+            {
+              "action_name": "Block Credit"
+            }
+          ]
+        },
+        "Dormant": {
+          "available_actions": []
+        },
+        "Closed": {
+          "available_actions": []
+        },
+        "Blocked": {
+          "available_actions": []
+        }
+      }
+    }
+  }
+}
+</ast>
+
+<description>
+
+A new savings account is created from the Client Detail page. The creation form contains Product Name dropdown (selecting a product auto-populates default values), Field Officer, Submitted On date, Nominal Annual Interest Rate, Interest Compounding Period, Interest Posting Period, Interest Calculated Using, Days in Year (all dropdowns, pre-filled from product), Minimum Opening Balance, Lock-in Period, Allow Overdraft checkbox, and a Charges section listing product charges with an option to add more. Clicking "Submit" creates the account in "Submitted and Pending Approval" status.
+
+The Savings Account Detail page displays the account number, product name, client name, status badge, account balance, and available balance. Status badges include Submitted and Pending Approval, Approved, Active, Dormant, Closed, and Blocked. Action buttons change based on status: Pending offers Approve, Reject, and Withdraw Application; Approved offers Activate and Undo Approval; Active offers Deposit (form with Transaction Date, Transaction Amount, Payment Type — Cash, Check, Mobile Money — and payment detail fields; submitting credits the account), Withdraw (same form as Deposit — the system validates the withdrawal does not exceed available balance unless overdraft is enabled; if minimum balance is enforced and the withdrawal would breach it, an error is shown), Post Interest, Calculate Interest, Close, Block Account, Block Debit, and Block Credit. Tabs show Summary, Transactions (table of all deposits, withdrawals, and interest postings with Date, Type, Amount, and Running Balance), Charges, and Documents.
+
+---
+
+
+</description>
+
+<workflows>
+WF-001 | Create savings account (Submit form) | actor: <role> | branch: none | terminal: Submit | on_success: creates account in Submitted and Pending Approval
+WF-002 | Approve a submitted account | actor: <role> | branch: entity_state == Submitted and Pending Approval | terminal: Approve | on_success: changes status to Approved
+WF-003 | Reject a submitted account | actor: <role> | branch: entity_state == Submitted and Pending Approval | terminal: Reject | on_success: changes status to Rejected
+WF-004 | Withdraw application for submitted account | actor: <role> | branch: entity_state == Submitted and Pending Approval | terminal: Withdraw Application | on_success: withdraws the application
+WF-005 | Activate an approved account | actor: <role> | branch: entity_state == Approved | terminal: Activate | on_success: changes status to Active
+WF-006 | Undo approval of an approved account | actor: <role> | branch: entity_state == Approved | terminal: Undo Approval | on_success: reverts approval; changes status to Submitted and Pending Approval
+WF-007 | Make a deposit to an active account | actor: <role> | branch: entity_state == Active | terminal: Deposit | on_success: credits the account
+WF-008 | Make a withdrawal from an active account | actor: <role> | branch: entity_state == Active | terminal: Withdraw | on_success: creates withdrawal transaction and debits the account
+WF-009 | Post interest to an active account | actor: <role> | branch: entity_state == Active | terminal: Post Interest | on_success: posts interest to the account
+WF-010 | Calculate interest for an active account | actor: <role> | branch: entity_state == Active | terminal: Calculate Interest | on_success: calculates interest according to product settings
+WF-011 | Close an active account | actor: <role> | branch: entity_state == Active | terminal: Close | on_success: changes status to Closed
+WF-012 | Block an active account | actor: <role> | branch: entity_state == Active | terminal: Block Account | on_success: changes status to Blocked
+WF-013 | Block debit on an active account | actor: <role> | branch: entity_state == Active | terminal: Block Debit | on_success: blocks debit transactions on the account
+WF-014 | Block credit on an active account | actor: <role> | branch: entity_state == Active | terminal: Block Credit | on_success: blocks credit transactions on the account
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:11:27] Test-Edge - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Savings Account",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "wf_ref": "WF-008",
+      "subcategory": "boundary",
+      "test_case": "Withdraw exactly the available balance (overdraft disabled)",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "An Active savings account exists for the client with Available Balance = <available balance>",
+        "Account has Allow Overdraft unchecked"
+      ],
+      "steps": [
+        "1. On the account detail page, click the 'Active' state's 'Withdraw' action",
+        "2. Enter a valid Transaction_Date",
+        "3. Enter Transaction_Amount = <available balance>",
+        "4. Select Payment_Type",
+        "5. Enter Payment_Details if required",
+        "6. Click the confirm/submit button for the withdrawal"
+      ],
+      "expected_result": "Succeeds; the Transactions tab shows a new withdrawal row with Amount = <available balance> and the account's Available Balance displayed on the summary updates to reflect the withdrawal (visible balance equals previous available balance minus <available balance>)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-002",
+      "wf_ref": "WF-008",
+      "subcategory": "boundary",
+      "test_case": "Withdraw one unit more than available balance when overdraft is disabled",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "An Active savings account exists for the client with Available Balance = <available balance>",
+        "Account has Allow Overdraft unchecked"
+      ],
+      "steps": [
+        "1. On the account detail page, click the 'Active' state's 'Withdraw' action",
+        "2. Enter a valid Transaction_Date",
+        "3. Enter Transaction_Amount = <available balance + 1 unit>",
+        "4. Select Payment_Type",
+        "5. Enter Payment_Details if required",
+        "6. Click the confirm/submit button for the withdrawal"
+      ],
+      "expected_result": "Is blocked / error shown; an inline error is displayed on the withdrawal form indicating the amount exceeds the available balance and the withdrawal is not created (no new row appears in Transactions)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-003",
+      "wf_ref": "WF-008",
+      "subcategory": "boundary",
+      "test_case": "Withdraw amount that leaves post-withdrawal balance exactly at enforced minimum balance",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "An Active savings account exists with Available Balance = <available balance>",
+        "Product/account enforces a Minimum Balance = <minimum balance>",
+        "Allow Overdraft is unchecked"
+      ],
+      "steps": [
+        "1. On the account detail page, click the 'Active' state's 'Withdraw' action",
+        "2. Enter a valid Transaction_Date",
+        "3. Enter Transaction_Amount = <available balance - minimum balance>",
+        "4. Select Payment_Type",
+        "5. Enter Payment_Details if required",
+        "6. Click the confirm/submit button for the withdrawal"
+      ],
+      "expected_result": "Succeeds; withdrawal is recorded and the account Available Balance shown on the summary equals <minimum balance> (Transactions shows the withdrawal row)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-004",
+      "wf_ref": "WF-008",
+      "subcategory": "boundary",
+      "test_case": "Withdraw amount that would breach enforced minimum balance by one unit",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "An Active savings account exists with Available Balance = <available balance>",
+        "Product/account enforces a Minimum Balance = <minimum balance>",
+        "Allow Overdraft is unchecked"
+      ],
+      "steps": [
+        "1. On the account detail page, click the 'Active' state's 'Withdraw' action",
+        "2. Enter a valid Transaction_Date",
+        "3. Enter Transaction_Amount = <available balance - minimum balance + 1 unit>",
+        "4. Select Payment_Type",
+        "5. Enter Payment_Details if required",
+        "6. Click the confirm/submit button for the withdrawal"
+      ],
+      "expected_result": "Is blocked / error shown; an inline error is displayed stating the withdrawal would breach the minimum balance and the transaction is not created (no new transaction row appears)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-005",
+      "wf_ref": "WF-008",
+      "subcategory": "boundary",
+      "test_case": "Withdraw exceeding available balance by one unit when overdraft is enabled",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "An Active savings account exists with Available Balance = <available balance>",
+        "Account has Allow Overdraft checked"
+      ],
+      "steps": [
+        "1. On the account detail page, click the 'Active' state's 'Withdraw' action",
+        "2. Enter a valid Transaction_Date",
+        "3. Enter Transaction_Amount = <available balance + 1 unit>",
+        "4. Select Payment_Type",
+        "5. Enter Payment_Details if required",
+        "6. Click the confirm/submit button for the withdrawal"
+      ],
+      "expected_result": "Succeeds; withdrawal is recorded, Transactions shows the new withdrawal row and the account Available Balance displays the overdrawn value (visible negative or overdrawn balance as per UI conventions)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-006",
+      "wf_ref": "WF-007",
+      "subcategory": "input_edge",
+      "test_case": "Enter a long Payment_Details string (200+ chars) when making a deposit",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "An Active savings account exists for the client with sufficient balance context for deposits"
+      ],
+      "steps": [
+        "1. On the account detail page, click the 'Active' state's 'Deposit' action",
+        "2. Enter a valid Transaction_Date",
+        "3. Enter a valid Transaction_Amount",
+        "4. Select Payment_Type",
+        "5. Enter Payment_Details = <string of 200+ characters including unicode and punctuation>",
+        "6. Click the confirm/submit button for the deposit"
+      ],
+      "expected_result": "Succeeds; the deposit is recorded and the Transactions table row for the deposit shows the Payment Details column containing the full entered 200+ character string (visible on the transaction detail or expanded view if the table truncates in-list)",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-007",
+      "wf_ref": "WF-007",
+      "subcategory": "data_edge",
+      "test_case": "Enter Transaction_Amount with excessive decimal precision on deposit",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "An Active savings account exists"
+      ],
+      "steps": [
+        "1. On the account detail page, click the 'Active' state's 'Deposit' action",
+        "2. Enter a valid Transaction_Date",
+        "3. Enter Transaction_Amount = <value with more decimal places than the UI typically supports>",
+        "4. Select Payment_Type",
+        "5. Enter Payment_Details if required",
+        "6. Click the confirm/submit button for the deposit"
+      ],
+      "expected_result": "Is blocked / error shown; an inline validation error is displayed on the Transaction_Amount field preventing submission due to unsupported decimal precision (no deposit row is created)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-008",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click Submit when creating a new savings account",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "On the Client Detail page with Savings Account Creation Form visible and at least one Savings Product selectable"
+      ],
+      "steps": [
+        "1. In the Savings Account Creation Form, select a Product_Name",
+        "2. Fill any required fields shown by the product defaults",
+        "3. Click the form 'Submit' button twice in rapid succession"
+      ],
+      "expected_result": "Succeeds; only one account is created — the UI navigates to the new account's detail view once and the client's accounts list shows a single new 'Submitted and Pending Approval' account (no duplicate account visible)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-009",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Remove all pre-filled charges from Charges repeating group then submit creation form",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "Savings Product pre-fills one or more Charges in the Creation Form's Charges repeating_group"
+      ],
+      "steps": [
+        "1. In the Savings Account Creation Form, locate the Charges repeating_group",
+        "2. For each pre-filled charge row, click its remove/delete control until no charge rows remain",
+        "3. Fill all other required fields in the form",
+        "4. Click the form 'Submit' button"
+      ],
+      "expected_result": "Succeeds; the account is created in 'Submitted and Pending Approval' and on the new account's Charges tab the list shows no additional custom charges (the Charges tab displays an empty list or a 'no charges' indicator)",
+      "priority": "low"
+    }
+  ],
+  "summary": {
+    "total": 9,
+    "boundary": 5,
+    "input_edge": 1,
+    "interaction_edge": 2,
+    "state_edge": 0,
+    "data_edge": 1,
+    "medium_priority": 6,
+    "low_priority": 3
+  }
+}
+
+------------------------------------------------------------
+[23:11:27] Test-Edge - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Savings Account",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "wf_ref": "WF-008",
+      "subcategory": "boundary",
+      "test_case": "Withdraw exactly the available balance (overdraft disabled)",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "An Active savings account exists for the client with Available Balance = <available balance>",
+        "Account has Allow Overdraft unchecked"
+      ],
+      "steps": [
+        "1. On the account detail page, click the 'Active' state's 'Withdraw' action",
+        "2. Enter a valid Transaction_Date",
+        "3. Enter Transaction_Amount = <available balance>",
+        "4. Select Payment_Type",
+        "5. Enter Payment_Details if required",
+        "6. Click the confirm/submit button for the withdrawal"
+      ],
+      "expected_result": "Succeeds; the Transactions tab shows a new withdrawal row with Amount = <available balance> and the account's Available Balance displayed on the summary updates to reflect the withdrawal (visible balance equals previous available balance minus <available balance>)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-002",
+      "wf_ref": "WF-008",
+      "subcategory": "boundary",
+      "test_case": "Withdraw one unit more than available balance when overdraft is disabled",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "An Active savings account exists for the client with Available Balance = <available balance>",
+        "Account has Allow Overdraft unchecked"
+      ],
+      "steps": [
+        "1. On the account detail page, click the 'Active' state's 'Withdraw' action",
+        "2. Enter a valid Transaction_Date",
+        "3. Enter Transaction_Amount = <available balance + 1 unit>",
+        "4. Select Payment_Type",
+        "5. Enter Payment_Details if required",
+        "6. Click the confirm/submit button for the withdrawal"
+      ],
+      "expected_result": "Is blocked / error shown; an inline error is displayed on the withdrawal form indicating the amount exceeds the available balance and the withdrawal is not created (no new row appears in Transactions)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-003",
+      "wf_ref": "WF-008",
+      "subcategory": "boundary",
+      "test_case": "Withdraw amount that leaves post-withdrawal balance exactly at enforced minimum balance",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "An Active savings account exists with Available Balance = <available balance>",
+        "Product/account enforces a Minimum Balance = <minimum balance>",
+        "Allow Overdraft is unchecked"
+      ],
+      "steps": [
+        "1. On the account detail page, click the 'Active' state's 'Withdraw' action",
+        "2. Enter a valid Transaction_Date",
+        "3. Enter Transaction_Amount = <available balance - minimum balance>",
+        "4. Select Payment_Type",
+        "5. Enter Payment_Details if required",
+        "6. Click the confirm/submit button for the withdrawal"
+      ],
+      "expected_result": "Succeeds; withdrawal is recorded and the account Available Balance shown on the summary equals <minimum balance> (Transactions shows the withdrawal row)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-004",
+      "wf_ref": "WF-008",
+      "subcategory": "boundary",
+      "test_case": "Withdraw amount that would breach enforced minimum balance by one unit",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "An Active savings account exists with Available Balance = <available balance>",
+        "Product/account enforces a Minimum Balance = <minimum balance>",
+        "Allow Overdraft is unchecked"
+      ],
+      "steps": [
+        "1. On the account detail page, click the 'Active' state's 'Withdraw' action",
+        "2. Enter a valid Transaction_Date",
+        "3. Enter Transaction_Amount = <available balance - minimum balance + 1 unit>",
+        "4. Select Payment_Type",
+        "5. Enter Payment_Details if required",
+        "6. Click the confirm/submit button for the withdrawal"
+      ],
+      "expected_result": "Is blocked / error shown; an inline error is displayed stating the withdrawal would breach the minimum balance and the transaction is not created (no new transaction row appears)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-005",
+      "wf_ref": "WF-008",
+      "subcategory": "boundary",
+      "test_case": "Withdraw exceeding available balance by one unit when overdraft is enabled",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "An Active savings account exists with Available Balance = <available balance>",
+        "Account has Allow Overdraft checked"
+      ],
+      "steps": [
+        "1. On the account detail page, click the 'Active' state's 'Withdraw' action",
+        "2. Enter a valid Transaction_Date",
+        "3. Enter Transaction_Amount = <available balance + 1 unit>",
+        "4. Select Payment_Type",
+        "5. Enter Payment_Details if required",
+        "6. Click the confirm/submit button for the withdrawal"
+      ],
+      "expected_result": "Succeeds; withdrawal is recorded, Transactions shows the new withdrawal row and the account Available Balance displays the overdrawn value (visible negative or overdrawn balance as per UI conventions)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-006",
+      "wf_ref": "WF-007",
+      "subcategory": "input_edge",
+      "test_case": "Enter a long Payment_Details string (200+ chars) when making a deposit",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "An Active savings account exists for the client with sufficient balance context for deposits"
+      ],
+      "steps": [
+        "1. On the account detail page, click the 'Active' state's 'Deposit' action",
+        "2. Enter a valid Transaction_Date",
+        "3. Enter a valid Transaction_Amount",
+        "4. Select Payment_Type",
+        "5. Enter Payment_Details = <string of 200+ characters including unicode and punctuation>",
+        "6. Click the confirm/submit button for the deposit"
+      ],
+      "expected_result": "Succeeds; the deposit is recorded and the Transactions table row for the deposit shows the Payment Details column containing the full entered 200+ character string (visible on the transaction detail or expanded view if the table truncates in-list)",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-007",
+      "wf_ref": "WF-007",
+      "subcategory": "data_edge",
+      "test_case": "Enter Transaction_Amount with excessive decimal precision on deposit",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "An Active savings account exists"
+      ],
+      "steps": [
+        "1. On the account detail page, click the 'Active' state's 'Deposit' action",
+        "2. Enter a valid Transaction_Date",
+        "3. Enter Transaction_Amount = <value with more decimal places than the UI typically supports>",
+        "4. Select Payment_Type",
+        "5. Enter Payment_Details if required",
+        "6. Click the confirm/submit button for the deposit"
+      ],
+      "expected_result": "Is blocked / error shown; an inline validation error is displayed on the Transaction_Amount field preventing submission due to unsupported decimal precision (no deposit row is created)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-008",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click Submit when creating a new savings account",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "On the Client Detail page with Savings Account Creation Form visible and at least one Savings Product selectable"
+      ],
+      "steps": [
+        "1. In the Savings Account Creation Form, select a Product_Name",
+        "2. Fill any required fields shown by the product defaults",
+        "3. Click the form 'Submit' button twice in rapid succession"
+      ],
+      "expected_result": "Succeeds; only one account is created \u2014 the UI navigates to the new account's detail view once and the client's accounts list shows a single new 'Submitted and Pending Approval' account (no duplicate account visible)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-009",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Remove all pre-filled charges from Charges repeating group then submit creation form",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "Savings Product pre-fills one or more Charges in the Creation Form's Charges repeating_group"
+      ],
+      "steps": [
+        "1. In the Savings Account Creation Form, locate the Charges repeating_group",
+        "2. For each pre-filled charge row, click its remove/delete control until no charge rows remain",
+        "3. Fill all other required fields in the form",
+        "4. Click the form 'Submit' button"
+      ],
+      "expected_result": "Succeeds; the account is created in 'Submitted and Pending Approval' and on the new account's Charges tab the list shows no additional custom charges (the Charges tab displays an empty list or a 'no charges' indicator)",
+      "priority": "low"
+    }
+  ],
+  "summary": {
+    "total": 9,
+    "boundary": 5,
+    "input_edge": 1,
+    "interaction_edge": 2,
+    "state_edge": 0,
+    "data_edge": 1,
+    "medium_priority": 6,
+    "low_priority": 3
+  }
+}

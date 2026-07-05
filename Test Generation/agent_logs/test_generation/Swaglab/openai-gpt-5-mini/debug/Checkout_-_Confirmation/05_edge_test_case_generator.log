@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:04:20.742940
+DEBUG SESSION STARTED: 2026-07-04T22:55:35.987079
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Edge - SYSTEM PROMPT
+[22:55:35] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Edge - USER PROMPT
+[22:55:35] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 7,
   "module_title": "Checkout - Confirmation",
-  "summary": "Displays an order success message and a Back Home action that returns to the Product Inventory and clears the cart.",
-  "where_it_fits": "This is the final step of the checkout flow reached after Product Inventory \u2192 Shopping Cart \u2192 Checkout - Information \u2192 Checkout - Overview \u2192 Checkout - Confirmation, serving as the completion page before returning the user to the Product Inventory. It concludes the purchase lifecycle and resets the cart state for further browsing.",
-  "assumed_state_on_entry": "User is logged in and has completed the Checkout - Overview step with an order submitted."
+  "summary": "Displays the order success message and a Back Home action that returns the user to the Product Inventory and clears the cart.",
+  "where_it_fits": "This is the final step of the checkout flow (Information \u2192 Overview \u2192 Confirmation), reached after navigating from Product Inventory \u2192 Shopping Cart \u2192 Checkout - Information \u2192 Checkout - Overview. It completes the purchase lifecycle and returns the user to the inventory view.",
+  "assumed_state_on_entry": "User is logged in and has completed the checkout steps with an order submitted (checkout process reached the Confirmation step)."
 }
 </module_context>
 
@@ -244,15 +258,15 @@ If a `<workflows>` block is present in the input:
   "module_name": "Checkout - Confirmation",
   "components": {
     "Checkout_Confirmation_Page": {
-      "type": "page",
-      "fields": {},
-      "submit_actions": [
+      "type": "action_bar",
+      "preconditions": [
+        "User is logged in and has completed the checkout steps with an order submitted (checkout process reached the Confirmation step)."
+      ],
+      "actions": [
         {
           "action_name": "Back Home",
-          "on_success": "returns to Product Inventory and clears the cart",
-          "preconditions": [
-            "User is logged in and has completed the Checkout - Overview step with an order submitted."
-          ]
+          "type": "button",
+          "on_success": "navigates to Product Inventory and clears the cart"
         }
       ]
     }
@@ -268,13 +282,13 @@ The confirmation page displays a success message (for example: "Thank you for yo
 </description>
 
 <workflows>
-WF-001 | Back Home — return to Product Inventory and clear cart | actor: User | branch: none | terminal: Back Home | on_success: returns to Product Inventory and clears the cart
+WF-001 | Back Home — return to Product Inventory and clear cart | actor: User | branch: none | terminal: Back Home | on_success: navigates to Product Inventory and clears the cart
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:05:29] Test-Edge - LLM RESPONSE
+[22:56:57] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Checkout - Confirmation",
@@ -284,89 +298,75 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click of Back Home is idempotent and clears cart once",
+      "test_case": "Rapid double-click of Back Home button",
       "preconditions": [
-        "User is logged in and has completed the Checkout - Overview step with an order submitted",
-        "User is on the Checkout - Confirmation page showing the success message and Back Home button"
+        "User is logged in and has completed the checkout steps with an order submitted (on Confirmation page with cart cleared on success)"
       ],
       "steps": [
-        "1. Click the Back Home button",
-        "2. Immediately click the Back Home button a second time (within <1 second) without waiting for navigation to complete",
-        "3. Observe the Product Inventory page and the cart item count indicator"
+        "1. On the Confirmation page, locate the Back Home button",
+        "2. Click the Back Home button twice in rapid succession (double-click)"
       ],
-      "expected_result": "First click succeeds: user is navigated to Product Inventory and the cart item count indicator displays 0. The second click is ignored (no error shown, no duplicate navigation and no duplicate order creation).",
+      "expected_result": "Succeeds: Product Inventory page is displayed and the cart count UI shows 0 (cart cleared); the UI shows a single navigation to Product Inventory (user ends on Product Inventory and the Confirmation-specific UI is no longer visible).",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Back Home clicked while network is offline shows a visible error and does not clear the cart",
+      "wf_ref": null,
+      "subcategory": "input_edge",
+      "test_case": "Confirmation page display with very long product name in the completed order",
       "preconditions": [
-        "User is logged in and has completed the Checkout - Overview step with an order submitted",
-        "User is on the Checkout - Confirmation page showing the success message and Back Home button",
-        "User can toggle the client device network connectivity (simulate offline)"
+        "User is logged in and completed checkout with an order that includes at least one product whose name is extremely long (200+ characters)"
       ],
       "steps": [
-        "1. Disable network connectivity on the client device (go offline)",
-        "2. Click the Back Home button",
-        "3. Observe the Confirmation page UI and the cart item count indicator"
+        "1. Navigate to the Confirmation page for that completed order"
       ],
-      "expected_result": "Action is blocked / error shown: an inline error message is displayed indicating the return failed due to network/connectivity issues, the user remains on the Confirmation page, and the cart remains populated (cart indicator is not cleared).",
-      "priority": "medium"
+      "expected_result": "Succeeds: Confirmation page displays the success message and the long product name is visible in the order summary area without obscuring or removing the Back Home button (the Back Home button remains visible and clickable).",
+      "priority": "low"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-001",
-      "subcategory": "state_edge",
-      "test_case": "Use browser Back after Back Home navigation — cart remains cleared and re-invoking Back Home is safe",
+      "wf_ref": null,
+      "subcategory": "input_edge",
+      "test_case": "Confirmation page display with product names containing emoji and special unicode characters",
       "preconditions": [
-        "User is logged in and has completed the Checkout - Overview step with an order submitted",
-        "User is on the Checkout - Confirmation page showing the success message and Back Home button"
+        "User is logged in and completed checkout with an order that includes product names containing emoji and special unicode characters"
       ],
       "steps": [
-        "1. Click the Back Home button",
-        "2. Observe the Product Inventory page and the cart item count indicator",
-        "3. Press the browser Back button once",
-        "4. Observe the Confirmation page and the cart item count indicator",
-        "5. Click the Back Home button again from the Confirmation page"
+        "1. Navigate to the Confirmation page for that completed order"
       ],
-      "expected_result": "First Back Home click succeeds: user is navigated to Product Inventory and cart indicator displays 0. Pressing browser Back returns to the Confirmation page (may be cached) but the cart indicator remains 0 (cart not resurrected). Re-clicking Back Home succeeds and the cart remains 0; no duplicate orders are created.",
-      "priority": "medium"
+      "expected_result": "Succeeds: Confirmation page displays the success message and the product names with emoji/special characters are rendered in the order summary area (characters appear in the UI rather than being removed); Back Home button remains visible and clickable.",
+      "priority": "low"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Back Home invoked from multiple browser tabs — action is idempotent and cart remains cleared",
+      "subcategory": "state_edge",
+      "test_case": "Click Back Home then immediately add an item from Product Inventory",
       "preconditions": [
-        "User is logged in and has completed the Checkout - Overview step with an order submitted",
-        "Two browser tabs (Tab A and Tab B) both have the Checkout - Confirmation page loaded"
+        "User is logged in and has completed the checkout steps with an order submitted (on Confirmation page)"
       ],
       "steps": [
-        "1. In Tab A, click the Back Home button",
-        "2. Observe Tab A navigates to Product Inventory and the cart item count indicator",
-        "3. Switch to Tab B (which still displays the Confirmation page) and click the Back Home button",
-        "4. Observe Tab B navigates to Product Inventory and the cart item count indicator"
+        "1. On the Confirmation page, click the Back Home button once",
+        "2. On the Product Inventory page (arrived from Back Home), immediately click Add-to-cart on a product"
       ],
-      "expected_result": "Tab A's Back Home click succeeds and clears the cart (cart indicator 0). Tab B's Back Home click also succeeds but does not cause errors or duplicate orders; both tabs show Product Inventory and the cart indicator remains 0 (action is idempotent).",
+      "expected_result": "Succeeds: After clicking Back Home the Product Inventory page is shown and the cart count UI initially shows 0; after immediately adding a product the cart count UI increments to 1 (cart was cleared by Back Home and new add is reflected).",
       "priority": "medium"
     }
   ],
   "summary": {
     "total": 4,
     "boundary": 0,
-    "input_edge": 0,
-    "interaction_edge": 3,
+    "input_edge": 2,
+    "interaction_edge": 1,
     "state_edge": 1,
     "data_edge": 0,
-    "medium_priority": 4,
-    "low_priority": 0
+    "medium_priority": 2,
+    "low_priority": 2
   }
 }
 
 ------------------------------------------------------------
-[21:05:29] Test-Edge - PARSED JSON
+[22:56:57] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Checkout - Confirmation",
@@ -376,83 +376,69 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click of Back Home is idempotent and clears cart once",
+      "test_case": "Rapid double-click of Back Home button",
       "preconditions": [
-        "User is logged in and has completed the Checkout - Overview step with an order submitted",
-        "User is on the Checkout - Confirmation page showing the success message and Back Home button"
+        "User is logged in and has completed the checkout steps with an order submitted (on Confirmation page with cart cleared on success)"
       ],
       "steps": [
-        "1. Click the Back Home button",
-        "2. Immediately click the Back Home button a second time (within <1 second) without waiting for navigation to complete",
-        "3. Observe the Product Inventory page and the cart item count indicator"
+        "1. On the Confirmation page, locate the Back Home button",
+        "2. Click the Back Home button twice in rapid succession (double-click)"
       ],
-      "expected_result": "First click succeeds: user is navigated to Product Inventory and the cart item count indicator displays 0. The second click is ignored (no error shown, no duplicate navigation and no duplicate order creation).",
+      "expected_result": "Succeeds: Product Inventory page is displayed and the cart count UI shows 0 (cart cleared); the UI shows a single navigation to Product Inventory (user ends on Product Inventory and the Confirmation-specific UI is no longer visible).",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Back Home clicked while network is offline shows a visible error and does not clear the cart",
+      "wf_ref": null,
+      "subcategory": "input_edge",
+      "test_case": "Confirmation page display with very long product name in the completed order",
       "preconditions": [
-        "User is logged in and has completed the Checkout - Overview step with an order submitted",
-        "User is on the Checkout - Confirmation page showing the success message and Back Home button",
-        "User can toggle the client device network connectivity (simulate offline)"
+        "User is logged in and completed checkout with an order that includes at least one product whose name is extremely long (200+ characters)"
       ],
       "steps": [
-        "1. Disable network connectivity on the client device (go offline)",
-        "2. Click the Back Home button",
-        "3. Observe the Confirmation page UI and the cart item count indicator"
+        "1. Navigate to the Confirmation page for that completed order"
       ],
-      "expected_result": "Action is blocked / error shown: an inline error message is displayed indicating the return failed due to network/connectivity issues, the user remains on the Confirmation page, and the cart remains populated (cart indicator is not cleared).",
-      "priority": "medium"
+      "expected_result": "Succeeds: Confirmation page displays the success message and the long product name is visible in the order summary area without obscuring or removing the Back Home button (the Back Home button remains visible and clickable).",
+      "priority": "low"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-001",
-      "subcategory": "state_edge",
-      "test_case": "Use browser Back after Back Home navigation \u2014 cart remains cleared and re-invoking Back Home is safe",
+      "wf_ref": null,
+      "subcategory": "input_edge",
+      "test_case": "Confirmation page display with product names containing emoji and special unicode characters",
       "preconditions": [
-        "User is logged in and has completed the Checkout - Overview step with an order submitted",
-        "User is on the Checkout - Confirmation page showing the success message and Back Home button"
+        "User is logged in and completed checkout with an order that includes product names containing emoji and special unicode characters"
       ],
       "steps": [
-        "1. Click the Back Home button",
-        "2. Observe the Product Inventory page and the cart item count indicator",
-        "3. Press the browser Back button once",
-        "4. Observe the Confirmation page and the cart item count indicator",
-        "5. Click the Back Home button again from the Confirmation page"
+        "1. Navigate to the Confirmation page for that completed order"
       ],
-      "expected_result": "First Back Home click succeeds: user is navigated to Product Inventory and cart indicator displays 0. Pressing browser Back returns to the Confirmation page (may be cached) but the cart indicator remains 0 (cart not resurrected). Re-clicking Back Home succeeds and the cart remains 0; no duplicate orders are created.",
-      "priority": "medium"
+      "expected_result": "Succeeds: Confirmation page displays the success message and the product names with emoji/special characters are rendered in the order summary area (characters appear in the UI rather than being removed); Back Home button remains visible and clickable.",
+      "priority": "low"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Back Home invoked from multiple browser tabs \u2014 action is idempotent and cart remains cleared",
+      "subcategory": "state_edge",
+      "test_case": "Click Back Home then immediately add an item from Product Inventory",
       "preconditions": [
-        "User is logged in and has completed the Checkout - Overview step with an order submitted",
-        "Two browser tabs (Tab A and Tab B) both have the Checkout - Confirmation page loaded"
+        "User is logged in and has completed the checkout steps with an order submitted (on Confirmation page)"
       ],
       "steps": [
-        "1. In Tab A, click the Back Home button",
-        "2. Observe Tab A navigates to Product Inventory and the cart item count indicator",
-        "3. Switch to Tab B (which still displays the Confirmation page) and click the Back Home button",
-        "4. Observe Tab B navigates to Product Inventory and the cart item count indicator"
+        "1. On the Confirmation page, click the Back Home button once",
+        "2. On the Product Inventory page (arrived from Back Home), immediately click Add-to-cart on a product"
       ],
-      "expected_result": "Tab A's Back Home click succeeds and clears the cart (cart indicator 0). Tab B's Back Home click also succeeds but does not cause errors or duplicate orders; both tabs show Product Inventory and the cart indicator remains 0 (action is idempotent).",
+      "expected_result": "Succeeds: After clicking Back Home the Product Inventory page is shown and the cart count UI initially shows 0; after immediately adding a product the cart count UI increments to 1 (cart was cleared by Back Home and new add is reflected).",
       "priority": "medium"
     }
   ],
   "summary": {
     "total": 4,
     "boundary": 0,
-    "input_edge": 0,
-    "interaction_edge": 3,
+    "input_edge": 2,
+    "interaction_edge": 1,
     "state_edge": 1,
     "data_edge": 0,
-    "medium_priority": 4,
-    "low_priority": 0
+    "medium_priority": 2,
+    "low_priority": 2
   }
 }

@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:34.338427
+DEBUG SESSION STARTED: 2026-07-04T22:41:48.016583
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Negative - SYSTEM PROMPT
+[22:41:48] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Negative - USER PROMPT
+[22:41:48] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 3,
   "module_title": "My Courses",
-  "summary": "Displays all courses a student is enrolled in as visual cards with filtering, searching, sorting, and per-course actions like starring or hiding.",
-  "where_it_fits": "Accessible from the top navigation bar via the My Courses link, this page is the student's central catalog of enrolled courses and acts as the entry point to individual Course Pages (which show the course tab bar and breadcrumb navigation). It sits alongside Dashboard and Home as a primary navigation destination for accessing course content.",
-  "assumed_state_on_entry": "Authenticated as a student with viewable course enrollments"
+  "summary": "Displays all courses in which the student is enrolled as visual cards with controls for filtering, searching, sorting, layout, and quick actions (star or hide).",
+  "where_it_fits": "Accessible from the top navigation bar via the My Courses link (and reachable from Home or Dashboard), this module is the student-facing course listing page that precedes entering a specific Course Page; clicking a course card navigates to that course's main page where the course tab bar and breadcrumbs are shown.",
+  "assumed_state_on_entry": "Logged in as a student with an active account and enrollment records for one or more courses (or none)."
 }
 </module_context>
 
@@ -260,11 +270,8 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "My Courses",
   "components": {
-    "My_Courses_Page": {
-      "type": "page",
-      "preconditions": [
-        "Authenticated as a student with viewable course enrollments"
-      ],
+    "My_Courses_Controls": {
+      "type": "toolbar",
       "fields": {
         "Status_Filter": {
           "type": "dropdown",
@@ -277,7 +284,7 @@ If a `<workflows>` block is present in the input:
             "Hidden"
           ]
         },
-        "Search": {
+        "Course_Search": {
           "type": "search"
         },
         "Sort_By": {
@@ -293,29 +300,34 @@ If a `<workflows>` block is present in the input:
         }
       }
     },
-    "Courses_Grid": {
+    "My_Courses_Grid": {
       "type": "card_grid",
-      "card_template": {
-        "fields": {
-          "Course_Name": {
-            "type": "link",
-            "navigation_target": "Course Page"
-          },
-          "Card_Menu": {
-            "type": "menu",
-            "menu_actions": [
-              {
-                "action_name": "Star this course",
-                "on_success": "pins the course to the top"
-              },
-              {
-                "action_name": "Remove from view",
-                "on_success": "hides the course from view"
-              }
-            ]
-          }
+      "card_fields": {
+        "Course_Name": {
+          "type": "link",
+          "action_name": "Open Course",
+          "navigates_to": "course main page",
+          "preconditions": [
+            "user must be logged in as a student with an active account"
+          ]
         }
-      }
+      },
+      "card_actions": [
+        {
+          "action_name": "Star this course",
+          "on_success": "pins course to the top",
+          "preconditions": [
+            "user must be logged in as a student with an active account"
+          ]
+        },
+        {
+          "action_name": "Remove from view",
+          "on_success": "hides the course for this user without unenrolling",
+          "preconditions": [
+            "user must be logged in as a student with an active account"
+          ]
+        }
+      ]
     }
   }
 }
@@ -331,26 +343,15 @@ The My Courses page displays all courses in which the student is enrolled as vis
 </description>
 
 <workflows>
-WF-001 | Filter: All courses | actor: Student | branch: Status_Filter == All | terminal: Status_Filter | on_success: Displays all enrolled courses
-WF-002 | Filter: In progress courses | actor: Student | branch: Status_Filter == In progress | terminal: Status_Filter | on_success: Displays courses in progress
-WF-003 | Filter: Future courses | actor: Student | branch: Status_Filter == Future | terminal: Status_Filter | on_success: Displays upcoming (future) courses
-WF-004 | Filter: Past courses | actor: Student | branch: Status_Filter == Past | terminal: Status_Filter | on_success: Displays past courses
-WF-005 | Filter: Starred courses | actor: Student | branch: Status_Filter == Starred | terminal: Status_Filter | on_success: Displays starred (pinned) courses
-WF-006 | Filter: Hidden courses | actor: Student | branch: Status_Filter == Hidden | terminal: Status_Filter | on_success: Displays hidden courses
-WF-007 | Perform search | actor: Student | branch: none | terminal: Search | on_success: Filters courses by search query; displays matching courses
-WF-008 | Change sort | actor: Student | branch: none | terminal: Sort_By | on_success: Sorts courses according to selected sort option
-WF-009 | Change layout to Card | actor: Student | branch: Layout == Card | terminal: Layout | on_success: Changes course grid layout to Card
-WF-010 | Change layout to List | actor: Student | branch: Layout == List | terminal: Layout | on_success: Changes course grid layout to List
-WF-011 | Change layout to Summary | actor: Student | branch: Layout == Summary | terminal: Layout | on_success: Changes course grid layout to Summary
-WF-012 | Open course page via course name link | actor: Student | branch: none | terminal: Course_Name | on_success: navigates to that course's main page
-WF-013 | Card menu action: Star this course | actor: Student | branch: none | terminal: Star this course | on_success: pins the course to the top
-WF-014 | Card menu action: Remove from view | actor: Student | branch: none | terminal: Remove from view | on_success: hides the course from view
+WF-001 | Open course from card | actor: student | branch: none | terminal: Open Course | on_success: navigates to course main page
+WF-002 | Star a course (card action) | actor: student | branch: none | terminal: Star this course | on_success: pins course to the top
+WF-003 | Remove course from view (card action) | actor: student | branch: none | terminal: Remove from view | on_success: hides the course for this user without unenrolling
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:12:57] Test-Negative - LLM RESPONSE
+[22:42:21] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "My Courses",
@@ -358,57 +359,90 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": null,
-      "test_case": "Unauthenticated user cannot access My Courses page",
+      "wf_ref": "WF-001",
+      "test_case": "Open course card while not authenticated (unauthenticated access blocked)",
       "preconditions": [
-        "User is not authenticated"
+        "User is not authenticated (no active session)"
       ],
       "steps": [
-        "1. Ensure the user is logged out",
-        "2. Navigate to the My Courses page via the top navigation link or direct URL"
+        "1. In a browser session where no user is logged in, navigate to the My Courses URL or click the My Courses top-nav link.",
+        "2. If the My Courses page loads, click a course card's course name link."
       ],
-      "expected_result": "Navigation is blocked: the user is redirected to the login page (or a sign-in prompt is shown) and the My Courses content (course grid and controls) is not displayed. The page must not show any course cards, and Star/Remove menu actions are not available.",
+      "expected_result": "Navigation is blocked: the user is redirected to the login page; the My Courses card grid content and course link are not displayed. The course main page is not reached.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": null,
-      "test_case": "Non-student role is prevented from accessing My Courses",
+      "wf_ref": "WF-002",
+      "test_case": "Star a course while logged in as a student with an inactive account (precondition failure)",
       "preconditions": [
-        "Authenticated as a non-student role (e.g., Instructor or Admin without student enrollments)"
+        "User is logged in as a student whose account status is inactive",
+        "There is at least one course card visible for that account"
       ],
       "steps": [
-        "1. Sign in as a user with a non-student role",
-        "2. Click the My Courses link in the top navigation"
+        "1. As the inactive student, navigate to the My Courses page.",
+        "2. On a course card, open the three-dot menu.",
+        "3. Click the 'Star this course' action."
       ],
-      "expected_result": "Access is blocked: the My Courses page displays an access-denied / insufficient-permissions indicator and does not show the course grid or the page controls (Status_Filter, Search, Sort_By, Layout). Course cards and the card menu actions ('Star this course', 'Remove from view') are not accessible.",
+      "expected_result": "Action is blocked: 'Star this course' does not pin the course to the top. The course remains in its original position and the UI shows a visible blocking indication — either the 'Star this course' option is disabled or an inline validation error on the action menu indicating an active student account is required. No navigation or pinning occurs.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": null,
-      "test_case": "Authenticated student with no viewable enrollments is blocked from core course actions",
+      "wf_ref": "WF-003",
+      "test_case": "Remove from view while logged in as a student with an inactive account (precondition failure)",
       "preconditions": [
-        "Authenticated as a student with zero viewable course enrollments"
+        "User is logged in as a student whose account status is inactive",
+        "There is at least one course card visible for that account"
       ],
       "steps": [
-        "1. Sign in as a student account that has no enrolled courses",
-        "2. Navigate to the My Courses page"
+        "1. As the inactive student, navigate to the My Courses page.",
+        "2. On a course card, open the three-dot menu.",
+        "3. Click the 'Remove from view' action."
       ],
-      "expected_result": "The My Courses grid is not shown; the page displays an empty-state message indicating there are no enrolled courses and core controls are not usable: Status_Filter, Search, Sort_By and Layout are disabled or hidden, and there are no course cards or card menu actions ('Star this course', 'Remove from view'). No navigation to any Course Page occurs.",
+      "expected_result": "Action is blocked: the course is not hidden from the view. The course card remains visible in the grid and an inline indication appears on the action menu that an active student account is required (or the menu option is disabled). No course hiding occurs.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": null,
+      "test_case": "Access My Courses while logged in as a non-student role (access/visibility restricted)",
+      "preconditions": [
+        "User is logged in with a non-student role (e.g., instructor or admin)"
+      ],
+      "steps": [
+        "1. While logged in as the non-student role, inspect the top navigation bar for the My Courses link.",
+        "2. Attempt to navigate to the My Courses URL directly."
+      ],
+      "expected_result": "Access is blocked or restricted: the My Courses link is not visible in the top navigation bar for this role, and navigating directly to the My Courses URL does not display course cards — instead the page shows an access-restricted/empty state and no course card actions are available.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-001",
+      "test_case": "Open course card while logged in as a student with an inactive account (precondition failure)",
+      "preconditions": [
+        "User is logged in as a student whose account status is inactive",
+        "There is at least one course card visible for that account"
+      ],
+      "steps": [
+        "1. As the inactive student, navigate to the My Courses page.",
+        "2. Click the course name link on a course card to open the course."
+      ],
+      "expected_result": "Navigation is blocked: clicking the course name does not navigate to the course main page. The user remains on My Courses and an inline blocking indication appears (e.g., the course link is disabled or an inline message indicates an active student account is required). No course main page is shown.",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 3,
-    "high_priority": 3,
+    "total": 5,
+    "high_priority": 5,
     "medium_priority": 0,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:12:57] Test-Negative - PARSED JSON
+[22:42:21] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "My Courses",
@@ -416,50 +450,83 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": null,
-      "test_case": "Unauthenticated user cannot access My Courses page",
+      "wf_ref": "WF-001",
+      "test_case": "Open course card while not authenticated (unauthenticated access blocked)",
       "preconditions": [
-        "User is not authenticated"
+        "User is not authenticated (no active session)"
       ],
       "steps": [
-        "1. Ensure the user is logged out",
-        "2. Navigate to the My Courses page via the top navigation link or direct URL"
+        "1. In a browser session where no user is logged in, navigate to the My Courses URL or click the My Courses top-nav link.",
+        "2. If the My Courses page loads, click a course card's course name link."
       ],
-      "expected_result": "Navigation is blocked: the user is redirected to the login page (or a sign-in prompt is shown) and the My Courses content (course grid and controls) is not displayed. The page must not show any course cards, and Star/Remove menu actions are not available.",
+      "expected_result": "Navigation is blocked: the user is redirected to the login page; the My Courses card grid content and course link are not displayed. The course main page is not reached.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": null,
-      "test_case": "Non-student role is prevented from accessing My Courses",
+      "wf_ref": "WF-002",
+      "test_case": "Star a course while logged in as a student with an inactive account (precondition failure)",
       "preconditions": [
-        "Authenticated as a non-student role (e.g., Instructor or Admin without student enrollments)"
+        "User is logged in as a student whose account status is inactive",
+        "There is at least one course card visible for that account"
       ],
       "steps": [
-        "1. Sign in as a user with a non-student role",
-        "2. Click the My Courses link in the top navigation"
+        "1. As the inactive student, navigate to the My Courses page.",
+        "2. On a course card, open the three-dot menu.",
+        "3. Click the 'Star this course' action."
       ],
-      "expected_result": "Access is blocked: the My Courses page displays an access-denied / insufficient-permissions indicator and does not show the course grid or the page controls (Status_Filter, Search, Sort_By, Layout). Course cards and the card menu actions ('Star this course', 'Remove from view') are not accessible.",
+      "expected_result": "Action is blocked: 'Star this course' does not pin the course to the top. The course remains in its original position and the UI shows a visible blocking indication \u2014 either the 'Star this course' option is disabled or an inline validation error on the action menu indicating an active student account is required. No navigation or pinning occurs.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": null,
-      "test_case": "Authenticated student with no viewable enrollments is blocked from core course actions",
+      "wf_ref": "WF-003",
+      "test_case": "Remove from view while logged in as a student with an inactive account (precondition failure)",
       "preconditions": [
-        "Authenticated as a student with zero viewable course enrollments"
+        "User is logged in as a student whose account status is inactive",
+        "There is at least one course card visible for that account"
       ],
       "steps": [
-        "1. Sign in as a student account that has no enrolled courses",
-        "2. Navigate to the My Courses page"
+        "1. As the inactive student, navigate to the My Courses page.",
+        "2. On a course card, open the three-dot menu.",
+        "3. Click the 'Remove from view' action."
       ],
-      "expected_result": "The My Courses grid is not shown; the page displays an empty-state message indicating there are no enrolled courses and core controls are not usable: Status_Filter, Search, Sort_By and Layout are disabled or hidden, and there are no course cards or card menu actions ('Star this course', 'Remove from view'). No navigation to any Course Page occurs.",
+      "expected_result": "Action is blocked: the course is not hidden from the view. The course card remains visible in the grid and an inline indication appears on the action menu that an active student account is required (or the menu option is disabled). No course hiding occurs.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": null,
+      "test_case": "Access My Courses while logged in as a non-student role (access/visibility restricted)",
+      "preconditions": [
+        "User is logged in with a non-student role (e.g., instructor or admin)"
+      ],
+      "steps": [
+        "1. While logged in as the non-student role, inspect the top navigation bar for the My Courses link.",
+        "2. Attempt to navigate to the My Courses URL directly."
+      ],
+      "expected_result": "Access is blocked or restricted: the My Courses link is not visible in the top navigation bar for this role, and navigating directly to the My Courses URL does not display course cards \u2014 instead the page shows an access-restricted/empty state and no course card actions are available.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-001",
+      "test_case": "Open course card while logged in as a student with an inactive account (precondition failure)",
+      "preconditions": [
+        "User is logged in as a student whose account status is inactive",
+        "There is at least one course card visible for that account"
+      ],
+      "steps": [
+        "1. As the inactive student, navigate to the My Courses page.",
+        "2. Click the course name link on a course card to open the course."
+      ],
+      "expected_result": "Navigation is blocked: clicking the course name does not navigate to the course main page. The user remains on My Courses and an inline blocking indication appears (e.g., the course link is disabled or an inline message indicates an active student account is required). No course main page is shown.",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 3,
-    "high_priority": 3,
+    "total": 5,
+    "high_priority": 5,
     "medium_priority": 0,
     "low_priority": 0
   }

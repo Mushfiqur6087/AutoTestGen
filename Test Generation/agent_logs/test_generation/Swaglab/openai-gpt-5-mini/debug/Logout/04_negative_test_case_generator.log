@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:04:20.744357
+DEBUG SESSION STARTED: 2026-07-04T22:55:35.994829
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Negative - SYSTEM PROMPT
+[22:55:35] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Negative - USER PROMPT
+[22:55:35] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 8,
   "module_title": "Logout",
-  "summary": "Ends the current authenticated session and returns the user to the login page, preventing access to protected pages until re-authentication.",
-  "where_it_fits": "Accessible from the hamburger menu in the persistent header after sign-in (hamburger menu options: All Items, About, Logout, Reset App State), Logout is part of session management and is used at any point after landing on the Product Inventory or other protected pages to terminate the session and send the user back to the sign-in screen.",
-  "assumed_state_on_entry": "An active authenticated user session (logged in) on a protected page such as Product Inventory, Product Detail, Shopping Cart, or any Checkout step."
+  "summary": "Terminates the user's session and returns the application to the login page, preventing access to protected pages until re-authentication.",
+  "where_it_fits": "Accessible from the hamburger menu in the persistent header after login (e.g., from Product Inventory and other protected pages), Logout is a global action that ends the current session and returns the user to the sign-in page. It sits alongside other header menu items like All Items, About, and Reset App State as a session-control navigation option.",
+  "assumed_state_on_entry": "User is currently authenticated and on a protected page (e.g., Product Inventory, Product Detail, Shopping Cart, or Checkout)."
 }
 </module_context>
 
@@ -260,30 +270,13 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Logout",
   "components": {
-    "Hamburger_Menu": {
-      "type": "navigation_menu",
+    "Header_Logout": {
+      "type": "button",
+      "action_name": "Logout",
       "preconditions": [
-        "An active authenticated user session (logged in) on a protected page such as Product Inventory, Product Detail, Shopping Cart, or any Checkout step."
+        "User is currently authenticated and on a protected page (e.g., Product Inventory, Product Detail, Shopping Cart, or Checkout)."
       ],
-      "fields": {
-        "All_Items": {
-          "type": "link"
-        },
-        "About": {
-          "type": "link"
-        },
-        "Logout": {
-          "type": "link",
-          "preconditions": [
-            "An active authenticated user session (logged in) on a protected page such as Product Inventory, Product Detail, Shopping Cart, or any Checkout step."
-          ],
-          "on_success": "Ends the current authenticated session and navigates the user to the login page; protected pages are not accessible until re-authentication."
-        },
-        "Reset_App_State": {
-          "type": "button",
-          "on_success": "Resets the application's local state"
-        }
-      }
+      "on_success": "Terminates the user's session and redirects to the sign-in page, preventing access to protected pages until re-authentication."
     }
   }
 }
@@ -297,16 +290,13 @@ Logout ends the session and returns the user to the login page. After logout, pr
 </description>
 
 <workflows>
-WF-001 | Navigate to All Items | actor: Authenticated User | branch: none | terminal: All_Items | on_success: Navigates to the All Items page.
-WF-002 | Open About page | actor: Authenticated User | branch: none | terminal: About | on_success: Navigates to the About page.
-WF-003 | Logout (end session) | actor: Authenticated User | branch: none | terminal: Logout | on_success: Ends the current authenticated session and navigates the user to the login page; protected pages are not accessible until re-authentication.
-WF-004 | Reset application local state | actor: Authenticated User | branch: none | terminal: Reset_App_State | on_success: Resets the application's local state
+WF-001 | Logout via header button | actor: Authenticated User | branch: none | terminal: Logout | on_success: Terminates the user's session and redirects to the sign-in page, preventing access to protected pages until re-authentication.
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:05:28] Test-Negative - LLM RESPONSE
+[22:57:00] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Logout",
@@ -314,45 +304,61 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": "WF-003",
-      "test_case": "Logout option not available when user is unauthenticated",
+      "wf_ref": "WF-001",
+      "test_case": "Unauthenticated user cannot access Logout; protected page access is blocked",
       "preconditions": [
-        "User is not authenticated (no active session)"
+        "User is not authenticated"
       ],
       "steps": [
-        "1. Navigate to the application's public entry page as an unauthenticated user",
-        "2. Click the hamburger menu in the header"
+        "1. In a new browser session, navigate to a protected page: <Product Inventory page URL>",
+        "2. Observe the page that loads",
+        "3. Open the header / hamburger menu"
       ],
-      "expected_result": "The Logout link is not present in the hamburger menu; there is no visible control to end a session. The user cannot initiate a logout action because the Logout option is not shown.",
+      "expected_result": "Navigation to <Product Inventory page> does not reveal protected content and the application displays or redirects to the sign-in page; the header/hamburger menu does not contain a Logout button (Logout is not available to unauthenticated users).",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-003",
-      "test_case": "Protected pages remain inaccessible after logging out",
+      "wf_ref": "WF-001",
+      "test_case": "Logout is not available when authenticated user is on a public (non-protected) page; precondition 'on a protected page' not met",
       "preconditions": [
-        "User has an active authenticated session"
+        "User is authenticated and on a public/non-protected page (e.g., <About page>)"
       ],
       "steps": [
-        "1. Sign in using <valid user credentials>",
-        "2. Click the hamburger menu in the header",
-        "3. Click the Logout link",
-        "4. After logout completes, attempt to navigate directly to the <Product Inventory URL>"
+        "1. Log in as <valid user>",
+        "2. Navigate to a public page: <About page>",
+        "3. Open the header / hamburger menu",
+        "4. Attempt to click a Logout button if it is present"
       ],
-      "expected_result": "After step 3 the app navigates to the login page and the authenticated session is terminated. On step 4 navigation to <Product Inventory URL> is blocked: the user is redirected to the login page and Product Inventory content is not displayed. The user remains unauthenticated until re-authentication.",
+      "expected_result": "Header/hamburger menu does not show a Logout button while on the public page (precondition 'on a protected page' not met). If a Logout control is present despite the precondition, clicking it does not terminate the session or redirect the user to the sign-in page; the user remains on the public page and the session remains active.",
       "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-001",
+      "test_case": "Logout control must not be usable when user is already unauthenticated (stale UI protection)",
+      "preconditions": [
+        "User session is not active (user is already logged out and on the sign-in page)"
+      ],
+      "steps": [
+        "1. Ensure the application is on the sign-in page and the user is logged out",
+        "2. Open the header / hamburger menu if visible",
+        "3. If a Logout button is visible, click the Logout button"
+      ],
+      "expected_result": "Logout button should not be present on the sign-in page. If a Logout button is visible despite the user being unauthenticated, clicking it does not change application state: the app remains on the sign-in page and no protected content becomes accessible (no session termination/transition occurs because no session exists).",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 2,
+    "total": 3,
     "high_priority": 2,
-    "medium_priority": 0,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:05:28] Test-Negative - PARSED JSON
+[22:57:00] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Logout",
@@ -360,39 +366,55 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": "WF-003",
-      "test_case": "Logout option not available when user is unauthenticated",
+      "wf_ref": "WF-001",
+      "test_case": "Unauthenticated user cannot access Logout; protected page access is blocked",
       "preconditions": [
-        "User is not authenticated (no active session)"
+        "User is not authenticated"
       ],
       "steps": [
-        "1. Navigate to the application's public entry page as an unauthenticated user",
-        "2. Click the hamburger menu in the header"
+        "1. In a new browser session, navigate to a protected page: <Product Inventory page URL>",
+        "2. Observe the page that loads",
+        "3. Open the header / hamburger menu"
       ],
-      "expected_result": "The Logout link is not present in the hamburger menu; there is no visible control to end a session. The user cannot initiate a logout action because the Logout option is not shown.",
+      "expected_result": "Navigation to <Product Inventory page> does not reveal protected content and the application displays or redirects to the sign-in page; the header/hamburger menu does not contain a Logout button (Logout is not available to unauthenticated users).",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-003",
-      "test_case": "Protected pages remain inaccessible after logging out",
+      "wf_ref": "WF-001",
+      "test_case": "Logout is not available when authenticated user is on a public (non-protected) page; precondition 'on a protected page' not met",
       "preconditions": [
-        "User has an active authenticated session"
+        "User is authenticated and on a public/non-protected page (e.g., <About page>)"
       ],
       "steps": [
-        "1. Sign in using <valid user credentials>",
-        "2. Click the hamburger menu in the header",
-        "3. Click the Logout link",
-        "4. After logout completes, attempt to navigate directly to the <Product Inventory URL>"
+        "1. Log in as <valid user>",
+        "2. Navigate to a public page: <About page>",
+        "3. Open the header / hamburger menu",
+        "4. Attempt to click a Logout button if it is present"
       ],
-      "expected_result": "After step 3 the app navigates to the login page and the authenticated session is terminated. On step 4 navigation to <Product Inventory URL> is blocked: the user is redirected to the login page and Product Inventory content is not displayed. The user remains unauthenticated until re-authentication.",
+      "expected_result": "Header/hamburger menu does not show a Logout button while on the public page (precondition 'on a protected page' not met). If a Logout control is present despite the precondition, clicking it does not terminate the session or redirect the user to the sign-in page; the user remains on the public page and the session remains active.",
       "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-001",
+      "test_case": "Logout control must not be usable when user is already unauthenticated (stale UI protection)",
+      "preconditions": [
+        "User session is not active (user is already logged out and on the sign-in page)"
+      ],
+      "steps": [
+        "1. Ensure the application is on the sign-in page and the user is logged out",
+        "2. Open the header / hamburger menu if visible",
+        "3. If a Logout button is visible, click the Logout button"
+      ],
+      "expected_result": "Logout button should not be present on the sign-in page. If a Logout button is visible despite the user being unauthenticated, clicking it does not change application state: the app remains on the sign-in page and no protected content becomes accessible (no session termination/transition occurs because no session exists).",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 2,
+    "total": 3,
     "high_priority": 2,
-    "medium_priority": 0,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }

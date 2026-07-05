@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:02:39.089494
+DEBUG SESSION STARTED: 2026-07-04T22:22:17.233096
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Edge - SYSTEM PROMPT
+[22:22:17] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Edge - USER PROMPT
+[22:22:17] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 5,
   "module_title": "Transfer Funds",
-  "summary": "Module for initiating fund transfers either between the user's ParaBank accounts or to an external account, including validation of amounts and account numbers and displaying success or error messages.",
-  "where_it_fits": "Accessible from the left-hand navigation under 'Transfer Funds' after successful sign-in and arrival at the Accounts Overview/dashboard; it is used during regular account operations to move money within the user's accounts or to external accounts and occurs after account selection in the session lifecycle.",
-  "assumed_state_on_entry": "User is logged in and has at least one active Checking or Savings account available to select as a source; for external transfers the user may provide an external account number to confirm."
+  "summary": "Allows a logged-in customer to move money between their own Parabank accounts or to/from an external account with validation and transaction confirmation.",
+  "where_it_fits": "This module is accessed from the authenticated user's left-hand navigation as option \u2462 Transfer Funds and is part of post-login account management workflows, typically used after viewing the Accounts Overview dashboard. It operates alongside other account actions like Open New Account, Payments, and Account Statements.",
+  "assumed_state_on_entry": "User is logged in as a customer and has at least one Checking or Savings account available as a source; for external transfers the user has the external account details to enter and confirm."
 }
 </module_context>
 
@@ -243,7 +257,7 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Transfer Funds",
   "components": {
-    "Transfer_Funds_Form": {
+    "Transfer_Form": {
       "type": "form",
       "fields": {
         "Transfer_Type": {
@@ -254,25 +268,27 @@ If a `<workflows>` block is present in the input:
           ]
         },
         "Transfer_Amount": {
-          "type": "number",
+          "type": "unspecified",
           "constraints": [
-            "must be greater than 0",
-            "sufficient funds validated against selected Source_Account"
+            "must be a positive value",
+            "sufficient funds must be available in the selected Source_Account (system will validate)"
           ]
         },
         "Source_Account": {
           "type": "dropdown",
           "constraints": [
-            "only Checking and Savings accounts are shown to select as source"
+            "source account must be a Checking or Savings account"
           ]
         },
         "Destination_Account": {
           "type": "dropdown",
-          "visible_when": "Transfer_Type == My ParaBank Account"
+          "visible_when": "Transfer_Type == My ParaBank Account",
+          "required_when": "Transfer_Type == My ParaBank Account"
         },
         "External_Account_Number": {
           "type": "unspecified",
           "visible_when": "Transfer_Type == External Account",
+          "required_when": "Transfer_Type == External Account",
           "constraints": [
             "account number format validated by system"
           ]
@@ -280,6 +296,7 @@ If a `<workflows>` block is present in the input:
         "Confirm_External_Account_Number": {
           "type": "unspecified",
           "visible_when": "Transfer_Type == External Account",
+          "required_when": "Transfer_Type == External Account",
           "constraints": [
             "must match External_Account_Number"
           ]
@@ -287,14 +304,17 @@ If a `<workflows>` block is present in the input:
       },
       "submit_actions": [
         {
-          "action_name": "Submit",
+          "action_name": "Transfer",
           "preconditions": [
-            "User is logged in and has at least one active Checking or Savings account available to select as a source"
+            "User is logged in as a customer",
+            "User has at least one Checking or Savings account available as a source",
+            "For external transfers the user has external account details to enter and confirm"
           ],
-          "on_success": "Transfer completed successfully. Returns transaction ID.",
+          "on_success": "Shows \"Transfer completed successfully.\" and returns a transaction ID",
           "on_failure": [
             "Insufficient funds",
-            "Account numbers do not match"
+            "Account numbers do not match",
+            "Validation errors"
           ]
         }
       ]
@@ -310,14 +330,15 @@ The transfer page presents a form with radio buttons to select transfer type (My
 </description>
 
 <workflows>
-WF-001 | Internal transfer between ParaBank accounts | actor: User | branch: Transfer_Type == My ParaBank Account | terminal: Submit | on_success: Transfer completed successfully. Returns transaction ID.
-WF-002 | External transfer to an external account | actor: User | branch: Transfer_Type == External Account | terminal: Submit | on_success: Transfer completed successfully. Returns transaction ID.
+WF-001 | Submit transfer (base) | actor: Customer | branch: none | terminal: Transfer | on_success: Shows "Transfer completed successfully." and returns a transaction ID
+WF-002 | Internal transfer between ParaBank accounts | actor: Customer | branch: Transfer_Type == My ParaBank Account | terminal: Transfer | on_success: Shows "Transfer completed successfully." and returns a transaction ID
+WF-003 | External transfer to an external account (with account number confirmation) | actor: Customer | branch: Transfer_Type == External Account | terminal: Transfer | on_success: Shows "Transfer completed successfully." and returns a transaction ID
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:04:13] Test-Edge - LLM RESPONSE
+[22:23:35] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Transfer Funds",
@@ -325,230 +346,150 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-001",
+      "wf_ref": "WF-002",
       "subcategory": "boundary",
-      "test_case": "Transfer amount = smallest allowed positive amount (just above 0) for internal transfer",
+      "test_case": "Transfer amount equal to source account available balance succeeds",
       "preconditions": [
-        "User is logged in",
-        "User has at least one active Checking or Savings account available as Source_Account with balance >= <one unit above 0>",
-        "User has at least one other ParaBank account to select as Destination_Account"
+        "User is logged in and on the Transfer Funds page",
+        "Source account selected in test has a known available balance"
       ],
       "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Select radio option 'My ParaBank Account'",
-        "3. Select Source_Account (an account with balance >= <one unit above 0>)",
-        "4. Select Destination_Account (a different ParaBank account)",
-        "5. Enter Transfer_Amount equal to the smallest allowed positive amount (one unit above 0)",
-        "6. Click Submit"
+        "1. Select Transfer_Type = My ParaBank Account",
+        "2. Select Source_Account = <account with known available balance>",
+        "3. Enter <amount equal to the source account available balance> in Transfer_Amount",
+        "4. Select Destination_Account that is different from Source_Account",
+        "5. Click the Transfer button"
       ],
-      "expected_result": "Form submits successfully; transfer completes and the UI shows 'Transfer completed successfully.' with a transaction ID (test succeeds).",
+      "expected_result": "The page shows the success banner \"Transfer completed successfully.\" and a transaction ID is visible (transfer succeeds)",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-001",
+      "wf_ref": "WF-002",
       "subcategory": "boundary",
-      "test_case": "Transfer amount = 0 for internal transfer (should be blocked because amount must be > 0)",
+      "test_case": "Transfer amount one smallest currency unit above available balance is blocked with Insufficient funds",
       "preconditions": [
-        "User is logged in",
-        "User has at least one active Checking or Savings account available to select as Source_Account",
-        "User has at least one other ParaBank account to select as Destination_Account"
+        "User is logged in and on the Transfer Funds page",
+        "Source account selected in test has a known available balance"
       ],
       "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Select radio option 'My ParaBank Account'",
-        "3. Select Source_Account",
-        "4. Select Destination_Account",
-        "5. Enter Transfer_Amount = 0",
-        "6. Click Submit"
+        "1. Select Transfer_Type = My ParaBank Account",
+        "2. Select Source_Account = <account with known available balance>",
+        "3. Enter <amount equal to the source account available balance + one smallest currency unit> in Transfer_Amount",
+        "4. Select Destination_Account that is different from Source_Account",
+        "5. Click the Transfer button"
       ],
-      "expected_result": "Submission is blocked; Transfer_Amount displays an inline error indicating the amount must be greater than 0 and the transfer is not performed (is blocked / error shown).",
+      "expected_result": "A visible error message 'Insufficient funds' is shown on the page and the transfer is blocked (no success banner shown)",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Transfer amount equal to Source_Account balance (boundary of sufficient funds) succeeds",
+      "test_case": "Entering zero in Transfer_Amount is blocked (amount must be positive)",
       "preconditions": [
-        "User is logged in",
-        "User has an active Checking or Savings Source_Account with balance = <source balance>",
-        "User has a Destination_Account to receive the funds"
+        "User is logged in and on the Transfer Funds page",
+        "Source account available"
       ],
       "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Select radio option 'My ParaBank Account'",
-        "3. Select Source_Account with balance = <source balance>",
+        "1. Select Transfer_Type = My ParaBank Account",
+        "2. Select Source_Account",
+        "3. Enter 0 in Transfer_Amount",
         "4. Select Destination_Account",
-        "5. Enter Transfer_Amount equal to <source balance>",
-        "6. Click Submit"
+        "5. Click the Transfer button"
       ],
-      "expected_result": "Form submits successfully; transfer completes and the UI shows 'Transfer completed successfully.' with a transaction ID (succeeds).",
+      "expected_result": "An inline validation error appears adjacent to Transfer_Amount indicating the amount must be a positive value and the transfer is blocked",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Transfer amount one unit greater than Source_Account balance is blocked with 'Insufficient funds'",
+      "test_case": "Transfer_Amount with excessive decimal precision (more decimals than system supports) is rejected",
       "preconditions": [
-        "User is logged in",
-        "User has an active Checking or Savings Source_Account with balance = <source balance>",
-        "User has a Destination_Account to receive the funds"
+        "User is logged in and on the Transfer Funds page",
+        "Source account has sufficient funds for a rounded value"
       ],
       "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Select radio option 'My ParaBank Account'",
-        "3. Select Source_Account with balance = <source balance>",
+        "1. Select Transfer_Type = My ParaBank Account",
+        "2. Select Source_Account",
+        "3. Enter <amount containing more decimal places than the system supports> in Transfer_Amount",
         "4. Select Destination_Account",
-        "5. Enter Transfer_Amount equal to <source balance + 1 unit>",
-        "6. Click Submit"
+        "5. Click the Transfer button"
       ],
-      "expected_result": "Submission is blocked; an error message 'Insufficient funds' is shown and the transfer is not performed (is blocked / error shown).",
+      "expected_result": "An inline validation error is shown next to Transfer_Amount indicating the decimal precision is not supported and the transfer is blocked",
       "priority": "medium"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": "WF-002",
-      "subcategory": "boundary",
-      "test_case": "External account number and confirmation match exactly (external transfer succeeds)",
+      "wf_ref": "WF-003",
+      "subcategory": "input_edge",
+      "test_case": "External account number containing Unicode / emoji is rejected by format validation",
       "preconditions": [
-        "User is logged in",
-        "User has at least one active Checking or Savings account available as Source_Account",
-        "User has determined a valid external account number format accepted by the system"
+        "User is logged in and on the Transfer Funds page",
+        "Transfer_Type = External Account is selectable"
       ],
       "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Select radio option 'External Account'",
-        "3. Enter External_Account_Number with a valid formatted account number",
-        "4. Enter Confirm_External_Account_Number identical to External_Account_Number",
-        "5. Select Source_Account with sufficient funds",
-        "6. Enter Transfer_Amount greater than 0 and <= Source_Account balance",
-        "7. Click Submit"
+        "1. Select Transfer_Type = External Account",
+        "2. Enter <external account number containing Unicode characters or emoji> in External_Account_Number",
+        "3. Enter the same value in Confirm_External_Account_Number",
+        "4. Fill Source_Account and Transfer_Amount with valid values",
+        "5. Click the Transfer button"
       ],
-      "expected_result": "Form submits successfully; external transfer completes and the UI shows 'Transfer completed successfully.' with a transaction ID (succeeds).",
+      "expected_result": "An inline validation error is shown adjacent to External_Account_Number indicating the account number format is invalid and the transfer is blocked",
       "priority": "medium"
     },
     {
       "tc_id": "E-006",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "External account confirmation differs by a single character (should be blocked with 'Account numbers do not match')",
+      "test_case": "Confirm_External_Account_Number that differs only by leading/trailing whitespace is treated as non-matching and blocked",
       "preconditions": [
-        "User is logged in",
-        "User has at least one active Checking or Savings account available as Source_Account",
-        "User is using External Account transfer branch"
+        "User is logged in and on the Transfer Funds page",
+        "Transfer_Type = External Account"
       ],
       "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Select radio option 'External Account'",
-        "3. Enter External_Account_Number with a valid formatted account number",
-        "4. Enter Confirm_External_Account_Number that differs from External_Account_Number by one character",
-        "5. Select Source_Account",
-        "6. Enter Transfer_Amount greater than 0 and <= Source_Account balance",
-        "7. Click Submit"
+        "1. Select Transfer_Type = External Account",
+        "2. Enter <valid external account number> in External_Account_Number",
+        "3. Enter <the same account number with leading and/or trailing whitespace> in Confirm_External_Account_Number",
+        "4. Fill Source_Account and Transfer_Amount with valid values",
+        "5. Click the Transfer button"
       ],
-      "expected_result": "Submission is blocked; an error message 'Account numbers do not match' is shown and the transfer is not performed (is blocked / error shown).",
+      "expected_result": "A visible error 'Account numbers do not match' is displayed adjacent to the confirmation field and the transfer is blocked",
       "priority": "medium"
     },
     {
       "tc_id": "E-007",
-      "wf_ref": null,
-      "subcategory": "input_edge",
-      "test_case": "Transfer_Amount entered with high decimal precision (many decimal places) to observe rounding or rejection behavior",
-      "preconditions": [
-        "User is logged in",
-        "User has at least one active Checking or Savings Source_Account with sufficient funds"
-      ],
-      "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Select either 'My ParaBank Account' or 'External Account' branch as applicable",
-        "3. Select Source_Account",
-        "4. Enter Transfer_Amount using a value with more decimal places than typical currency precision (many fractional digits)",
-        "5. If External Account branch chosen, fill required external account fields correctly",
-        "6. Click Submit"
-      ],
-      "expected_result": "Form submits successfully; the confirmation/transaction details show the Transfer_Amount rounded to the system's supported decimal precision (succeeds) — the rounded amount is visible on the success/transaction page.",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-008",
-      "wf_ref": "WF-002",
-      "subcategory": "input_edge",
-      "test_case": "External account number entries contain leading/trailing whitespace (should be trimmed before validation)",
-      "preconditions": [
-        "User is logged in",
-        "User is performing an External Account transfer"
-      ],
-      "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Select radio option 'External Account'",
-        "3. Enter External_Account_Number with leading and trailing whitespace surrounding the valid number",
-        "4. Enter Confirm_External_Account_Number matching the same value but without the whitespace",
-        "5. Select Source_Account with sufficient funds",
-        "6. Enter Transfer_Amount > 0 and <= Source_Account balance",
-        "7. Click Submit"
-      ],
-      "expected_result": "Form submits successfully; leading/trailing whitespace is trimmed and the transfer completes showing 'Transfer completed successfully.' with a transaction ID (succeeds).",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-009",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Switch transfer type after filling external fields: ensure hidden external fields are ignored when switching to internal transfer",
+      "test_case": "Press browser Back after successful transfer shows blank form (no duplicate success banner)",
       "preconditions": [
-        "User is logged in",
-        "User has at least one active Checking or Savings Source_Account and at least one other ParaBank Destination_Account"
+        "User is logged in and on the Transfer Funds page",
+        "User can perform a successful transfer with available funds"
       ],
       "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Select radio option 'External Account'",
-        "3. Enter External_Account_Number and Confirm_External_Account_Number",
-        "4. Switch radio option to 'My ParaBank Account'",
-        "5. Select Source_Account",
-        "6. Select Destination_Account (ParaBank account)",
-        "7. Enter Transfer_Amount > 0 and <= Source_Account balance",
-        "8. Click Submit"
+        "1. Complete a valid transfer (select Transfer_Type, Source_Account, Destination or External account, enter valid Transfer_Amount) and click Transfer",
+        "2. Observe the success banner \"Transfer completed successfully.\" and transaction ID",
+        "3. Press the browser Back button immediately"
       ],
-      "expected_result": "Form submits successfully; external account fields are ignored after switching and the transfer is performed between ParaBank accounts showing 'Transfer completed successfully.' with a transaction ID (succeeds).",
+      "expected_result": "The Transfer Funds form is displayed and is blank (no visible 'Transfer completed successfully.' banner), and no second success banner appears (user sees the form ready for a fresh transfer)",
       "priority": "low"
-    },
-    {
-      "tc_id": "E-010",
-      "wf_ref": null,
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid re-submission after successful transfer: use browser Back then attempt to re-submit the form (prevent duplicate transfer)",
-      "preconditions": [
-        "User is logged in",
-        "User can perform a transfer successfully",
-        "User has at least one active Source_Account with sufficient funds"
-      ],
-      "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Complete a valid transfer (internal or external) and submit",
-        "3. Observe success page showing 'Transfer completed successfully.' with a transaction ID",
-        "4. Click the browser Back button to return to the transfer form",
-        "5. If the form shows previously-entered values, click Submit again without changing values"
-      ],
-      "expected_result": "Second submission attempt is blocked; no duplicate transaction is created and the user sees either the original transaction confirmation or a clear message preventing duplicate submission (is blocked / error shown).",
-      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 10,
-    "boundary": 6,
-    "input_edge": 2,
-    "interaction_edge": 2,
+    "total": 7,
+    "boundary": 5,
+    "input_edge": 1,
+    "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
     "medium_priority": 6,
-    "low_priority": 4
+    "low_priority": 1
   }
 }
 
 ------------------------------------------------------------
-[21:04:13] Test-Edge - PARSED JSON
+[22:23:35] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Transfer Funds",
@@ -556,224 +497,144 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-001",
+      "wf_ref": "WF-002",
       "subcategory": "boundary",
-      "test_case": "Transfer amount = smallest allowed positive amount (just above 0) for internal transfer",
+      "test_case": "Transfer amount equal to source account available balance succeeds",
       "preconditions": [
-        "User is logged in",
-        "User has at least one active Checking or Savings account available as Source_Account with balance >= <one unit above 0>",
-        "User has at least one other ParaBank account to select as Destination_Account"
+        "User is logged in and on the Transfer Funds page",
+        "Source account selected in test has a known available balance"
       ],
       "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Select radio option 'My ParaBank Account'",
-        "3. Select Source_Account (an account with balance >= <one unit above 0>)",
-        "4. Select Destination_Account (a different ParaBank account)",
-        "5. Enter Transfer_Amount equal to the smallest allowed positive amount (one unit above 0)",
-        "6. Click Submit"
+        "1. Select Transfer_Type = My ParaBank Account",
+        "2. Select Source_Account = <account with known available balance>",
+        "3. Enter <amount equal to the source account available balance> in Transfer_Amount",
+        "4. Select Destination_Account that is different from Source_Account",
+        "5. Click the Transfer button"
       ],
-      "expected_result": "Form submits successfully; transfer completes and the UI shows 'Transfer completed successfully.' with a transaction ID (test succeeds).",
+      "expected_result": "The page shows the success banner \"Transfer completed successfully.\" and a transaction ID is visible (transfer succeeds)",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-001",
+      "wf_ref": "WF-002",
       "subcategory": "boundary",
-      "test_case": "Transfer amount = 0 for internal transfer (should be blocked because amount must be > 0)",
+      "test_case": "Transfer amount one smallest currency unit above available balance is blocked with Insufficient funds",
       "preconditions": [
-        "User is logged in",
-        "User has at least one active Checking or Savings account available to select as Source_Account",
-        "User has at least one other ParaBank account to select as Destination_Account"
+        "User is logged in and on the Transfer Funds page",
+        "Source account selected in test has a known available balance"
       ],
       "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Select radio option 'My ParaBank Account'",
-        "3. Select Source_Account",
-        "4. Select Destination_Account",
-        "5. Enter Transfer_Amount = 0",
-        "6. Click Submit"
+        "1. Select Transfer_Type = My ParaBank Account",
+        "2. Select Source_Account = <account with known available balance>",
+        "3. Enter <amount equal to the source account available balance + one smallest currency unit> in Transfer_Amount",
+        "4. Select Destination_Account that is different from Source_Account",
+        "5. Click the Transfer button"
       ],
-      "expected_result": "Submission is blocked; Transfer_Amount displays an inline error indicating the amount must be greater than 0 and the transfer is not performed (is blocked / error shown).",
+      "expected_result": "A visible error message 'Insufficient funds' is shown on the page and the transfer is blocked (no success banner shown)",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Transfer amount equal to Source_Account balance (boundary of sufficient funds) succeeds",
+      "test_case": "Entering zero in Transfer_Amount is blocked (amount must be positive)",
       "preconditions": [
-        "User is logged in",
-        "User has an active Checking or Savings Source_Account with balance = <source balance>",
-        "User has a Destination_Account to receive the funds"
+        "User is logged in and on the Transfer Funds page",
+        "Source account available"
       ],
       "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Select radio option 'My ParaBank Account'",
-        "3. Select Source_Account with balance = <source balance>",
+        "1. Select Transfer_Type = My ParaBank Account",
+        "2. Select Source_Account",
+        "3. Enter 0 in Transfer_Amount",
         "4. Select Destination_Account",
-        "5. Enter Transfer_Amount equal to <source balance>",
-        "6. Click Submit"
+        "5. Click the Transfer button"
       ],
-      "expected_result": "Form submits successfully; transfer completes and the UI shows 'Transfer completed successfully.' with a transaction ID (succeeds).",
+      "expected_result": "An inline validation error appears adjacent to Transfer_Amount indicating the amount must be a positive value and the transfer is blocked",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Transfer amount one unit greater than Source_Account balance is blocked with 'Insufficient funds'",
+      "test_case": "Transfer_Amount with excessive decimal precision (more decimals than system supports) is rejected",
       "preconditions": [
-        "User is logged in",
-        "User has an active Checking or Savings Source_Account with balance = <source balance>",
-        "User has a Destination_Account to receive the funds"
+        "User is logged in and on the Transfer Funds page",
+        "Source account has sufficient funds for a rounded value"
       ],
       "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Select radio option 'My ParaBank Account'",
-        "3. Select Source_Account with balance = <source balance>",
+        "1. Select Transfer_Type = My ParaBank Account",
+        "2. Select Source_Account",
+        "3. Enter <amount containing more decimal places than the system supports> in Transfer_Amount",
         "4. Select Destination_Account",
-        "5. Enter Transfer_Amount equal to <source balance + 1 unit>",
-        "6. Click Submit"
+        "5. Click the Transfer button"
       ],
-      "expected_result": "Submission is blocked; an error message 'Insufficient funds' is shown and the transfer is not performed (is blocked / error shown).",
+      "expected_result": "An inline validation error is shown next to Transfer_Amount indicating the decimal precision is not supported and the transfer is blocked",
       "priority": "medium"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": "WF-002",
-      "subcategory": "boundary",
-      "test_case": "External account number and confirmation match exactly (external transfer succeeds)",
+      "wf_ref": "WF-003",
+      "subcategory": "input_edge",
+      "test_case": "External account number containing Unicode / emoji is rejected by format validation",
       "preconditions": [
-        "User is logged in",
-        "User has at least one active Checking or Savings account available as Source_Account",
-        "User has determined a valid external account number format accepted by the system"
+        "User is logged in and on the Transfer Funds page",
+        "Transfer_Type = External Account is selectable"
       ],
       "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Select radio option 'External Account'",
-        "3. Enter External_Account_Number with a valid formatted account number",
-        "4. Enter Confirm_External_Account_Number identical to External_Account_Number",
-        "5. Select Source_Account with sufficient funds",
-        "6. Enter Transfer_Amount greater than 0 and <= Source_Account balance",
-        "7. Click Submit"
+        "1. Select Transfer_Type = External Account",
+        "2. Enter <external account number containing Unicode characters or emoji> in External_Account_Number",
+        "3. Enter the same value in Confirm_External_Account_Number",
+        "4. Fill Source_Account and Transfer_Amount with valid values",
+        "5. Click the Transfer button"
       ],
-      "expected_result": "Form submits successfully; external transfer completes and the UI shows 'Transfer completed successfully.' with a transaction ID (succeeds).",
+      "expected_result": "An inline validation error is shown adjacent to External_Account_Number indicating the account number format is invalid and the transfer is blocked",
       "priority": "medium"
     },
     {
       "tc_id": "E-006",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "External account confirmation differs by a single character (should be blocked with 'Account numbers do not match')",
+      "test_case": "Confirm_External_Account_Number that differs only by leading/trailing whitespace is treated as non-matching and blocked",
       "preconditions": [
-        "User is logged in",
-        "User has at least one active Checking or Savings account available as Source_Account",
-        "User is using External Account transfer branch"
+        "User is logged in and on the Transfer Funds page",
+        "Transfer_Type = External Account"
       ],
       "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Select radio option 'External Account'",
-        "3. Enter External_Account_Number with a valid formatted account number",
-        "4. Enter Confirm_External_Account_Number that differs from External_Account_Number by one character",
-        "5. Select Source_Account",
-        "6. Enter Transfer_Amount greater than 0 and <= Source_Account balance",
-        "7. Click Submit"
+        "1. Select Transfer_Type = External Account",
+        "2. Enter <valid external account number> in External_Account_Number",
+        "3. Enter <the same account number with leading and/or trailing whitespace> in Confirm_External_Account_Number",
+        "4. Fill Source_Account and Transfer_Amount with valid values",
+        "5. Click the Transfer button"
       ],
-      "expected_result": "Submission is blocked; an error message 'Account numbers do not match' is shown and the transfer is not performed (is blocked / error shown).",
+      "expected_result": "A visible error 'Account numbers do not match' is displayed adjacent to the confirmation field and the transfer is blocked",
       "priority": "medium"
     },
     {
       "tc_id": "E-007",
-      "wf_ref": null,
-      "subcategory": "input_edge",
-      "test_case": "Transfer_Amount entered with high decimal precision (many decimal places) to observe rounding or rejection behavior",
-      "preconditions": [
-        "User is logged in",
-        "User has at least one active Checking or Savings Source_Account with sufficient funds"
-      ],
-      "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Select either 'My ParaBank Account' or 'External Account' branch as applicable",
-        "3. Select Source_Account",
-        "4. Enter Transfer_Amount using a value with more decimal places than typical currency precision (many fractional digits)",
-        "5. If External Account branch chosen, fill required external account fields correctly",
-        "6. Click Submit"
-      ],
-      "expected_result": "Form submits successfully; the confirmation/transaction details show the Transfer_Amount rounded to the system's supported decimal precision (succeeds) \u2014 the rounded amount is visible on the success/transaction page.",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-008",
-      "wf_ref": "WF-002",
-      "subcategory": "input_edge",
-      "test_case": "External account number entries contain leading/trailing whitespace (should be trimmed before validation)",
-      "preconditions": [
-        "User is logged in",
-        "User is performing an External Account transfer"
-      ],
-      "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Select radio option 'External Account'",
-        "3. Enter External_Account_Number with leading and trailing whitespace surrounding the valid number",
-        "4. Enter Confirm_External_Account_Number matching the same value but without the whitespace",
-        "5. Select Source_Account with sufficient funds",
-        "6. Enter Transfer_Amount > 0 and <= Source_Account balance",
-        "7. Click Submit"
-      ],
-      "expected_result": "Form submits successfully; leading/trailing whitespace is trimmed and the transfer completes showing 'Transfer completed successfully.' with a transaction ID (succeeds).",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-009",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Switch transfer type after filling external fields: ensure hidden external fields are ignored when switching to internal transfer",
+      "test_case": "Press browser Back after successful transfer shows blank form (no duplicate success banner)",
       "preconditions": [
-        "User is logged in",
-        "User has at least one active Checking or Savings Source_Account and at least one other ParaBank Destination_Account"
+        "User is logged in and on the Transfer Funds page",
+        "User can perform a successful transfer with available funds"
       ],
       "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Select radio option 'External Account'",
-        "3. Enter External_Account_Number and Confirm_External_Account_Number",
-        "4. Switch radio option to 'My ParaBank Account'",
-        "5. Select Source_Account",
-        "6. Select Destination_Account (ParaBank account)",
-        "7. Enter Transfer_Amount > 0 and <= Source_Account balance",
-        "8. Click Submit"
+        "1. Complete a valid transfer (select Transfer_Type, Source_Account, Destination or External account, enter valid Transfer_Amount) and click Transfer",
+        "2. Observe the success banner \"Transfer completed successfully.\" and transaction ID",
+        "3. Press the browser Back button immediately"
       ],
-      "expected_result": "Form submits successfully; external account fields are ignored after switching and the transfer is performed between ParaBank accounts showing 'Transfer completed successfully.' with a transaction ID (succeeds).",
+      "expected_result": "The Transfer Funds form is displayed and is blank (no visible 'Transfer completed successfully.' banner), and no second success banner appears (user sees the form ready for a fresh transfer)",
       "priority": "low"
-    },
-    {
-      "tc_id": "E-010",
-      "wf_ref": null,
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid re-submission after successful transfer: use browser Back then attempt to re-submit the form (prevent duplicate transfer)",
-      "preconditions": [
-        "User is logged in",
-        "User can perform a transfer successfully",
-        "User has at least one active Source_Account with sufficient funds"
-      ],
-      "steps": [
-        "1. Navigate to Transfer Funds",
-        "2. Complete a valid transfer (internal or external) and submit",
-        "3. Observe success page showing 'Transfer completed successfully.' with a transaction ID",
-        "4. Click the browser Back button to return to the transfer form",
-        "5. If the form shows previously-entered values, click Submit again without changing values"
-      ],
-      "expected_result": "Second submission attempt is blocked; no duplicate transaction is created and the user sees either the original transaction confirmation or a clear message preventing duplicate submission (is blocked / error shown).",
-      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 10,
-    "boundary": 6,
-    "input_edge": 2,
-    "interaction_edge": 2,
+    "total": 7,
+    "boundary": 5,
+    "input_edge": 1,
+    "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
     "medium_priority": 6,
-    "low_priority": 4
+    "low_priority": 1
   }
 }

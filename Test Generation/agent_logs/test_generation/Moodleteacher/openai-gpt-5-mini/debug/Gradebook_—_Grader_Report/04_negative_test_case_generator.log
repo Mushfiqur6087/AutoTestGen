@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.226801
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.925140
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - SYSTEM PROMPT
+[22:49:29] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - USER PROMPT
+[22:49:29] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 12,
   "module_title": "Gradebook \u2014 Grader Report",
-  "summary": "A spreadsheet-style Grader report that displays enrolled students as rows and course activities as columns, with per-column and per-cell controls, inline editing when Edit mode is enabled, and class averages shown.",
-  "where_it_fits": "Located within a course's Grades tab in the horizontal course tab bar (Teachers see the Settings and Grades tabs), and selectable from the report-type dropdown when viewing grade reports; it complements other reports reachable from the user menu's Reports link and the course navigation. It is used during course assessment and grading workflows to view and edit grades for enrolled students.",
-  "assumed_state_on_entry": "Logged in as a Teacher (role with grading privileges) viewing a specific course that has enrolled students and course activities, on the Grades tab with the Grader report available."
+  "summary": "A spreadsheet-style report showing enrolled students as rows and activities as columns with filtering, per-cell and per-column editing, inline save, and class averages.",
+  "where_it_fits": "Reached from a course's horizontal tab bar under Grades (and also via the user menu's Grades link), the Grader report sits in the grading workflow as the teacher-facing interface for reviewing and editing grades after activities and submissions exist.",
+  "assumed_state_on_entry": "Logged in as a teacher and viewing a course that has enrolled students and graded activities/submissions."
 }
 </module_context>
 
@@ -260,65 +270,69 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Gradebook \u2014 Grader Report",
   "components": {
-    "Report_Type_Selector": {
-      "type": "form",
-      "fields": {
-        "Report_Type": {
-          "type": "dropdown",
-          "options": [
-            "Grader report",
-            "User report",
-            "Overview report"
-          ]
-        }
-      }
+    "Report_Selector": {
+      "type": "dropdown",
+      "options": [
+        "Grader report",
+        "User report",
+        "Overview report"
+      ]
     },
-    "User_Filters": {
-      "type": "form",
-      "fields": {
-        "User_Search": {
-          "type": "search"
-        },
-        "Group_Filter": {
-          "type": "dropdown"
-        },
-        "Edit_Mode_Toggle": {
-          "type": "checkbox"
-        }
-      }
+    "User_Search": {
+      "type": "search"
     },
-    "Gradebook_Table": {
+    "Group_Filter": {
+      "type": "dropdown"
+    },
+    "Edit_Mode_Control": {
+      "type": "checkbox"
+    },
+    "Grades_Data_Table": {
       "type": "data_table",
       "searchable": true,
-      "column_header_actions": [
+      "filterable_columns": [
+        "Student Name",
+        "Group"
+      ],
+      "column_actions": [
         {
-          "action_name": "Edit activity settings"
+          "action_name": "Edit Activity Settings",
+          "menu_type": "three-dot"
         }
       ],
+      "cell_template": {
+        "type": "unspecified",
+        "editable_when": "Edit_Mode_Control == true",
+        "constraints": [
+          "value must be within configured grade range"
+        ]
+      },
       "cell_actions": [
         {
-          "action_name": "Edit grade"
+          "action_name": "Edit Grade",
+          "menu_type": "three-dot",
+          "fields": {
+            "New_Grade": {
+              "type": "number",
+              "required": true,
+              "constraints": [
+                "must be within configured grade range"
+              ]
+            }
+          }
         }
       ],
-      "cell_definition": {
-        "Grade_Cell": {
-          "type": "unspecified",
-          "editable_when": "Edit_Mode_Toggle == true",
-          "constraints": [
-            "must be within the activity's configured grade range"
-          ]
-        }
-      },
       "submit_actions": [
         {
           "action_name": "Save changes",
+          "visible_when": "Edit_Mode_Control == true",
           "preconditions": [
-            "Logged in as a Teacher (role with grading privileges) viewing a specific course that has enrolled students and course activities, on the Grades tab with the Grader report available."
+            "Logged in as a teacher and viewing a course that has enrolled students and graded activities/submissions"
           ],
           "constraints": [
-            "cannot save if any grade value is outside the configured grade range"
+            "no cell value outside configured grade range"
           ],
-          "on_success": "applies inline grade edits"
+          "on_success": "persist inline grade edits"
         }
       ]
     }
@@ -336,15 +350,15 @@ The Gradebook Grader report provides a spreadsheet-style view of grades. A repor
 </description>
 
 <workflows>
-WF-001 | Open activity grade settings from column header | actor: Teacher | branch: none | terminal: Edit activity settings | on_success: opens activity's grade settings
-WF-002 | Edit an individual grade from a cell | actor: Teacher | branch: none | terminal: Edit grade | on_success: opens grade edit dialog for the selected cell
-WF-003 | Save inline edits in Edit mode | actor: Teacher | branch: Edit_Mode_Toggle == true | terminal: Save changes | on_success: applies inline grade edits
+WF-001 | Edit an individual grade via cell action | actor: Teacher | branch: none | terminal: Edit Grade | on_success: persist individual grade edit
+WF-002 | Open Edit Activity Settings from column menu | actor: Teacher | branch: none | terminal: Edit Activity Settings | on_success: open activity grade settings
+WF-003 | Save inline edits while Edit mode is enabled | actor: Teacher | branch: Edit_Mode_Control == true | terminal: Save changes | on_success: persist inline grade edits
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:15:04] Test-Negative - LLM RESPONSE
+[22:52:01] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Gradebook — Grader Report",
@@ -352,130 +366,160 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": null,
-      "test_case": "Unauthenticated user cannot access Grader report",
+      "wf_ref": "WF-001",
+      "test_case": "Edit Grade dialog: leave required New_Grade field blank and submit",
       "preconditions": [
-        "User is logged out",
-        "Course with enrolled students and activities exists"
+        "Logged in as a teacher and viewing a course that has enrolled students and graded activities/submissions",
+        "Grader report is open"
       ],
       "steps": [
-        "1. Navigate to the course Grades tab URL for a course that has enrolled students and activities",
-        "2. Attempt to open the Grader report page"
+        "1. Open the three-dot menu on any grade cell for a student",
+        "2. Click 'Edit Grade' to open the Edit Grade dialog",
+        "3. Leave the New_Grade field blank",
+        "4. Click the dialog's Save button"
       ],
-      "expected_result": "User is redirected to the login page (login form visible); the Grader report table and edit controls are not displayed and the page does not show any student grades",
+      "expected_result": "An inline validation error appears on the New_Grade field indicating it is required; the dialog remains open and the grade is not changed (no save occurs)",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-003",
-      "test_case": "Non-teacher role (no grading privileges) cannot enable Edit mode or save inline edits",
+      "wf_ref": "WF-001",
+      "test_case": "Edit Grade dialog: enter non-numeric input in New_Grade",
       "preconditions": [
-        "User is logged in with a role that does NOT have grading privileges (e.g., Student)",
-        "Course with enrolled students and activities exists",
-        "Viewing the Grades tab with the Grader report selected"
+        "Logged in as a teacher and viewing a course that has enrolled students and graded activities/submissions",
+        "Grader report is open"
       ],
       "steps": [
-        "1. Attempt to toggle the Edit Mode checkbox (Edit_Mode_Toggle) ON",
-        "2. Attempt to open a grade cell's edit control (three-dot menu -> Edit grade)",
-        "3. Observe presence/state of the Save changes action"
+        "1. Open the three-dot menu on any grade cell",
+        "2. Click 'Edit Grade' to open the Edit Grade dialog",
+        "3. Enter <non-numeric input> into the New_Grade field",
+        "4. Click the dialog's Save button"
       ],
-      "expected_result": "Edit Mode toggle is not present or remains disabled; per-cell Edit grade action is not available or disabled; Save changes button is not visible or is disabled. No inline editors open and no edits can be made (authorization prevents editing or saving).",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-003",
-      "wf_ref": "WF-002",
-      "test_case": "Cannot edit grade cell when Edit mode is OFF",
-      "preconditions": [
-        "User is logged in as a Teacher (role with grading privileges)",
-        "Viewing the Grades tab with the Grader report selected",
-        "Edit_Mode_Toggle is OFF"
-      ],
-      "steps": [
-        "1. Click a grade cell's three-dot menu",
-        "2. Attempt to select Edit grade or click inside the grade cell to edit"
-      ],
-      "expected_result": "No inline editor opens; the Grade cell remains read-only and does not accept input; the Edit grade option is absent or disabled. No change is made to the cell.",
+      "expected_result": "The New_Grade field displays an inline validation error indicating the value must be numeric; the dialog remains open and the grade is not changed",
       "priority": "medium"
     },
     {
-      "tc_id": "N-004",
-      "wf_ref": "WF-003",
-      "test_case": "Entering a grade value outside the activity's configured grade range blocks saving",
+      "tc_id": "N-003",
+      "wf_ref": "WF-001",
+      "test_case": "Edit Grade dialog: enter a value below the configured grade range",
       "preconditions": [
-        "User is logged in as a Teacher (role with grading privileges)",
-        "Viewing the Grades tab with the Grader report selected",
-        "Edit_Mode_Toggle is ON",
-        "Activity column has a configured grade range (min and max)"
+        "Logged in as a teacher and viewing a course that has enrolled students and graded activities/submissions",
+        "Grader report is open"
       ],
       "steps": [
-        "1. Click a grade cell in the activity column to open inline edit",
-        "2. Enter <value outside activity's configured grade range> into the Grade cell",
-        "3. Click the Save changes action"
+        "1. Open the three-dot menu on any grade cell",
+        "2. Click 'Edit Grade' to open the Edit Grade dialog",
+        "3. Enter <value below minimum> into the New_Grade field",
+        "4. Click the dialog's Save button"
       ],
-      "expected_result": "The Grade cell displays an inline validation error indicating the value is outside the activity's configured grade range; the Save changes action is disabled or, if clicked, submission is blocked and no inline edits are applied (grades remain unchanged).",
+      "expected_result": "An inline validation error appears on the New_Grade field indicating the value must be within the configured grade range; the dialog remains open and the grade is not changed",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-001",
+      "test_case": "Edit Grade dialog: enter a value above the configured grade range",
+      "preconditions": [
+        "Logged in as a teacher and viewing a course that has enrolled students and graded activities/submissions",
+        "Grader report is open"
+      ],
+      "steps": [
+        "1. Open the three-dot menu on any grade cell",
+        "2. Click 'Edit Grade' to open the Edit Grade dialog",
+        "3. Enter <value above maximum> into the New_Grade field",
+        "4. Click the dialog's Save button"
+      ],
+      "expected_result": "An inline validation error appears on the New_Grade field indicating the value must be within the configured grade range; the dialog remains open and the grade is not changed",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": null,
-      "test_case": "Entering non-numeric input into a grade cell is rejected",
-      "preconditions": [
-        "User is logged in as a Teacher (role with grading privileges)",
-        "Viewing the Grades tab with the Grader report selected",
-        "Edit_Mode_Toggle is ON"
-      ],
-      "steps": [
-        "1. Click a grade cell to open inline edit",
-        "2. Enter <non-numeric input> into the Grade cell",
-        "3. Attempt to move focus away from the cell (blur) or click Save changes"
-      ],
-      "expected_result": "The Grade cell displays an inline validation error indicating the value must be numeric/valid for the activity; the Save changes action is disabled or, if clicked, submission is blocked and no inline edits are applied.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-006",
       "wf_ref": "WF-003",
-      "test_case": "Save changes blocked when existing table contains out-of-range values (timing check)",
+      "test_case": "Save changes is blocked when any edited cell contains a value outside the configured grade range",
       "preconditions": [
-        "User is logged in as a Teacher (role with grading privileges)",
-        "Viewing the Grades tab with the Grader report selected",
-        "Edit_Mode_Toggle is ON",
-        "At least one Grade cell currently contains a value that is outside its activity's configured grade range (pre-existing)"
+        "Logged in as a teacher and viewing a course that has enrolled students and graded activities/submissions",
+        "Grader report is open"
       ],
       "steps": [
-        "1. Do not edit any cells",
-        "2. Click the Save changes action"
+        "1. Enable Edit mode (check Edit_Mode_Control)",
+        "2. Click into any grade cell to edit inline",
+        "3. Enter <value above maximum> into the cell and leave focus (so the cell shows the edited value)",
+        "4. Click the 'Save changes' button"
       ],
-      "expected_result": "Save changes is blocked; a validation message is shown indicating some grade values are outside configured ranges (or the Save changes button is disabled); no inline edits are applied and the table remains unchanged.",
+      "expected_result": "The offending cell is flagged with an inline validation indicator showing the value is outside the configured grade range; the Save changes action is blocked, the form does not submit, and no edits are persisted",
       "priority": "high"
     },
     {
-      "tc_id": "N-007",
-      "wf_ref": "WF-001",
-      "test_case": "Column header 'Edit activity settings' action is not available when not viewing the Grader report",
+      "tc_id": "N-006",
+      "wf_ref": null,
+      "test_case": "Attempt inline editing while Edit mode is disabled",
       "preconditions": [
-        "User is logged in as a Teacher (role with grading privileges)",
-        "Viewing the course Grades tab with Report_Type selector set to 'Overview report' (not 'Grader report')"
+        "Logged in as a teacher and viewing a course that has enrolled students and graded activities/submissions",
+        "Grader report is open",
+        "Edit mode checkbox (Edit_Mode_Control) is unchecked"
       ],
       "steps": [
-        "1. Set Report_Type to 'Overview report' using the Report_Type dropdown",
-        "2. Attempt to open a column header action menu and select Edit activity settings"
+        "1. Ensure Edit mode is disabled (Edit_Mode_Control unchecked)",
+        "2. Click directly into a grade cell",
+        "3. Type <numeric value> into the cell"
       ],
-      "expected_result": "The per-column Edit activity settings action is not visible or is disabled when Report_Type is not 'Grader report'; selecting the column header does not open the activity grade settings. No activity settings page/dialog opens.",
+      "expected_result": "The cell remains read-only and no inline editor opens; typed input is not accepted and the grade value does not change; the 'Save changes' button is not visible",
       "priority": "medium"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-002",
+      "test_case": "Non-teacher user cannot open Edit Activity Settings from column menu",
+      "preconditions": [
+        "Logged in as a non-teacher user (e.g., Student) and viewing the course",
+        "Grader report is open"
+      ],
+      "steps": [
+        "1. Open the three-dot menu on an activity column header",
+        "2. Attempt to click 'Edit Activity Settings' from the column menu"
+      ],
+      "expected_result": "The 'Edit Activity Settings' option is not visible or selectable for non-teacher users; attempting to access it is blocked and the activity settings modal/page does not open",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-008",
+      "wf_ref": "WF-003",
+      "test_case": "Non-teacher user is prevented from using Save changes (precondition failure)",
+      "preconditions": [
+        "Logged in as a non-teacher user (e.g., Student) and viewing the course",
+        "Grader report is open"
+      ],
+      "steps": [
+        "1. Attempt to enable Edit mode (if checkbox is visible) or locate the 'Save changes' button",
+        "2. Attempt to click 'Save changes'"
+      ],
+      "expected_result": "The 'Save changes' button is not visible or is disabled for non-teacher users; any attempt to invoke it is blocked and no edits are persisted",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-009",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user cannot access the Grader report",
+      "preconditions": [
+        "User is not logged in"
+      ],
+      "steps": [
+        "1. Navigate to the course Grades > Grader report URL"
+      ],
+      "expected_result": "Access is blocked: the user is redirected to the login page or shown an access denied screen and the Grader report content is not displayed",
+      "priority": "high"
     }
   ],
   "summary": {
-    "total": 7,
-    "high_priority": 4,
-    "medium_priority": 3,
+    "total": 9,
+    "high_priority": 7,
+    "medium_priority": 2,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:15:04] Test-Negative - PARSED JSON
+[22:52:01] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Gradebook \u2014 Grader Report",
@@ -483,124 +527,154 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": null,
-      "test_case": "Unauthenticated user cannot access Grader report",
+      "wf_ref": "WF-001",
+      "test_case": "Edit Grade dialog: leave required New_Grade field blank and submit",
       "preconditions": [
-        "User is logged out",
-        "Course with enrolled students and activities exists"
+        "Logged in as a teacher and viewing a course that has enrolled students and graded activities/submissions",
+        "Grader report is open"
       ],
       "steps": [
-        "1. Navigate to the course Grades tab URL for a course that has enrolled students and activities",
-        "2. Attempt to open the Grader report page"
+        "1. Open the three-dot menu on any grade cell for a student",
+        "2. Click 'Edit Grade' to open the Edit Grade dialog",
+        "3. Leave the New_Grade field blank",
+        "4. Click the dialog's Save button"
       ],
-      "expected_result": "User is redirected to the login page (login form visible); the Grader report table and edit controls are not displayed and the page does not show any student grades",
+      "expected_result": "An inline validation error appears on the New_Grade field indicating it is required; the dialog remains open and the grade is not changed (no save occurs)",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-003",
-      "test_case": "Non-teacher role (no grading privileges) cannot enable Edit mode or save inline edits",
+      "wf_ref": "WF-001",
+      "test_case": "Edit Grade dialog: enter non-numeric input in New_Grade",
       "preconditions": [
-        "User is logged in with a role that does NOT have grading privileges (e.g., Student)",
-        "Course with enrolled students and activities exists",
-        "Viewing the Grades tab with the Grader report selected"
+        "Logged in as a teacher and viewing a course that has enrolled students and graded activities/submissions",
+        "Grader report is open"
       ],
       "steps": [
-        "1. Attempt to toggle the Edit Mode checkbox (Edit_Mode_Toggle) ON",
-        "2. Attempt to open a grade cell's edit control (three-dot menu -> Edit grade)",
-        "3. Observe presence/state of the Save changes action"
+        "1. Open the three-dot menu on any grade cell",
+        "2. Click 'Edit Grade' to open the Edit Grade dialog",
+        "3. Enter <non-numeric input> into the New_Grade field",
+        "4. Click the dialog's Save button"
       ],
-      "expected_result": "Edit Mode toggle is not present or remains disabled; per-cell Edit grade action is not available or disabled; Save changes button is not visible or is disabled. No inline editors open and no edits can be made (authorization prevents editing or saving).",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-003",
-      "wf_ref": "WF-002",
-      "test_case": "Cannot edit grade cell when Edit mode is OFF",
-      "preconditions": [
-        "User is logged in as a Teacher (role with grading privileges)",
-        "Viewing the Grades tab with the Grader report selected",
-        "Edit_Mode_Toggle is OFF"
-      ],
-      "steps": [
-        "1. Click a grade cell's three-dot menu",
-        "2. Attempt to select Edit grade or click inside the grade cell to edit"
-      ],
-      "expected_result": "No inline editor opens; the Grade cell remains read-only and does not accept input; the Edit grade option is absent or disabled. No change is made to the cell.",
+      "expected_result": "The New_Grade field displays an inline validation error indicating the value must be numeric; the dialog remains open and the grade is not changed",
       "priority": "medium"
     },
     {
-      "tc_id": "N-004",
-      "wf_ref": "WF-003",
-      "test_case": "Entering a grade value outside the activity's configured grade range blocks saving",
+      "tc_id": "N-003",
+      "wf_ref": "WF-001",
+      "test_case": "Edit Grade dialog: enter a value below the configured grade range",
       "preconditions": [
-        "User is logged in as a Teacher (role with grading privileges)",
-        "Viewing the Grades tab with the Grader report selected",
-        "Edit_Mode_Toggle is ON",
-        "Activity column has a configured grade range (min and max)"
+        "Logged in as a teacher and viewing a course that has enrolled students and graded activities/submissions",
+        "Grader report is open"
       ],
       "steps": [
-        "1. Click a grade cell in the activity column to open inline edit",
-        "2. Enter <value outside activity's configured grade range> into the Grade cell",
-        "3. Click the Save changes action"
+        "1. Open the three-dot menu on any grade cell",
+        "2. Click 'Edit Grade' to open the Edit Grade dialog",
+        "3. Enter <value below minimum> into the New_Grade field",
+        "4. Click the dialog's Save button"
       ],
-      "expected_result": "The Grade cell displays an inline validation error indicating the value is outside the activity's configured grade range; the Save changes action is disabled or, if clicked, submission is blocked and no inline edits are applied (grades remain unchanged).",
+      "expected_result": "An inline validation error appears on the New_Grade field indicating the value must be within the configured grade range; the dialog remains open and the grade is not changed",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-001",
+      "test_case": "Edit Grade dialog: enter a value above the configured grade range",
+      "preconditions": [
+        "Logged in as a teacher and viewing a course that has enrolled students and graded activities/submissions",
+        "Grader report is open"
+      ],
+      "steps": [
+        "1. Open the three-dot menu on any grade cell",
+        "2. Click 'Edit Grade' to open the Edit Grade dialog",
+        "3. Enter <value above maximum> into the New_Grade field",
+        "4. Click the dialog's Save button"
+      ],
+      "expected_result": "An inline validation error appears on the New_Grade field indicating the value must be within the configured grade range; the dialog remains open and the grade is not changed",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": null,
-      "test_case": "Entering non-numeric input into a grade cell is rejected",
-      "preconditions": [
-        "User is logged in as a Teacher (role with grading privileges)",
-        "Viewing the Grades tab with the Grader report selected",
-        "Edit_Mode_Toggle is ON"
-      ],
-      "steps": [
-        "1. Click a grade cell to open inline edit",
-        "2. Enter <non-numeric input> into the Grade cell",
-        "3. Attempt to move focus away from the cell (blur) or click Save changes"
-      ],
-      "expected_result": "The Grade cell displays an inline validation error indicating the value must be numeric/valid for the activity; the Save changes action is disabled or, if clicked, submission is blocked and no inline edits are applied.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-006",
       "wf_ref": "WF-003",
-      "test_case": "Save changes blocked when existing table contains out-of-range values (timing check)",
+      "test_case": "Save changes is blocked when any edited cell contains a value outside the configured grade range",
       "preconditions": [
-        "User is logged in as a Teacher (role with grading privileges)",
-        "Viewing the Grades tab with the Grader report selected",
-        "Edit_Mode_Toggle is ON",
-        "At least one Grade cell currently contains a value that is outside its activity's configured grade range (pre-existing)"
+        "Logged in as a teacher and viewing a course that has enrolled students and graded activities/submissions",
+        "Grader report is open"
       ],
       "steps": [
-        "1. Do not edit any cells",
-        "2. Click the Save changes action"
+        "1. Enable Edit mode (check Edit_Mode_Control)",
+        "2. Click into any grade cell to edit inline",
+        "3. Enter <value above maximum> into the cell and leave focus (so the cell shows the edited value)",
+        "4. Click the 'Save changes' button"
       ],
-      "expected_result": "Save changes is blocked; a validation message is shown indicating some grade values are outside configured ranges (or the Save changes button is disabled); no inline edits are applied and the table remains unchanged.",
+      "expected_result": "The offending cell is flagged with an inline validation indicator showing the value is outside the configured grade range; the Save changes action is blocked, the form does not submit, and no edits are persisted",
       "priority": "high"
     },
     {
-      "tc_id": "N-007",
-      "wf_ref": "WF-001",
-      "test_case": "Column header 'Edit activity settings' action is not available when not viewing the Grader report",
+      "tc_id": "N-006",
+      "wf_ref": null,
+      "test_case": "Attempt inline editing while Edit mode is disabled",
       "preconditions": [
-        "User is logged in as a Teacher (role with grading privileges)",
-        "Viewing the course Grades tab with Report_Type selector set to 'Overview report' (not 'Grader report')"
+        "Logged in as a teacher and viewing a course that has enrolled students and graded activities/submissions",
+        "Grader report is open",
+        "Edit mode checkbox (Edit_Mode_Control) is unchecked"
       ],
       "steps": [
-        "1. Set Report_Type to 'Overview report' using the Report_Type dropdown",
-        "2. Attempt to open a column header action menu and select Edit activity settings"
+        "1. Ensure Edit mode is disabled (Edit_Mode_Control unchecked)",
+        "2. Click directly into a grade cell",
+        "3. Type <numeric value> into the cell"
       ],
-      "expected_result": "The per-column Edit activity settings action is not visible or is disabled when Report_Type is not 'Grader report'; selecting the column header does not open the activity grade settings. No activity settings page/dialog opens.",
+      "expected_result": "The cell remains read-only and no inline editor opens; typed input is not accepted and the grade value does not change; the 'Save changes' button is not visible",
       "priority": "medium"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-002",
+      "test_case": "Non-teacher user cannot open Edit Activity Settings from column menu",
+      "preconditions": [
+        "Logged in as a non-teacher user (e.g., Student) and viewing the course",
+        "Grader report is open"
+      ],
+      "steps": [
+        "1. Open the three-dot menu on an activity column header",
+        "2. Attempt to click 'Edit Activity Settings' from the column menu"
+      ],
+      "expected_result": "The 'Edit Activity Settings' option is not visible or selectable for non-teacher users; attempting to access it is blocked and the activity settings modal/page does not open",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-008",
+      "wf_ref": "WF-003",
+      "test_case": "Non-teacher user is prevented from using Save changes (precondition failure)",
+      "preconditions": [
+        "Logged in as a non-teacher user (e.g., Student) and viewing the course",
+        "Grader report is open"
+      ],
+      "steps": [
+        "1. Attempt to enable Edit mode (if checkbox is visible) or locate the 'Save changes' button",
+        "2. Attempt to click 'Save changes'"
+      ],
+      "expected_result": "The 'Save changes' button is not visible or is disabled for non-teacher users; any attempt to invoke it is blocked and no edits are persisted",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-009",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user cannot access the Grader report",
+      "preconditions": [
+        "User is not logged in"
+      ],
+      "steps": [
+        "1. Navigate to the course Grades > Grader report URL"
+      ],
+      "expected_result": "Access is blocked: the user is redirected to the login page or shown an access denied screen and the Grader report content is not displayed",
+      "priority": "high"
     }
   ],
   "summary": {
-    "total": 7,
-    "high_priority": 4,
-    "medium_priority": 3,
+    "total": 9,
+    "high_priority": 7,
+    "medium_priority": 2,
     "low_priority": 0
   }
 }

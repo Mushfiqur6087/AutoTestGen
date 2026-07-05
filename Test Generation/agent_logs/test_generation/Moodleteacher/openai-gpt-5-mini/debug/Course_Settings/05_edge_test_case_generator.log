@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.181555
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.889621
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Edge - SYSTEM PROMPT
+[22:49:29] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Edge - USER PROMPT
+[22:49:29] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 8,
   "module_title": "Course Settings",
-  "summary": "A collapsible form for viewing and editing a course's metadata, appearance, enrollment and participation settings, and completion/grouping options with inline validation and image/summary fields.",
-  "where_it_fits": "This module is accessed from a course's horizontal tab bar under the Settings tab (visible to teachers) and sits within the course page workflow between Course Page and Course Edit Mode, persisting changes back to the course view (Save and display) or aborting (Cancel). It is reachable via the course breadcrumbs and the Course Index when a specific course is active.",
-  "assumed_state_on_entry": "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
+  "summary": "Provides a collapsible form for configuring course metadata, appearance, format, enrollment and completion settings, and media with inline validation and save/cancel actions.",
+  "where_it_fits": "Accessed from a course's horizontal tab bar (the Settings tab shown to teachers) when viewing a course; saving returns to the course page while canceling leaves settings unchanged. It sits alongside other course-level tools such as Participants, Grades, and Activities and is part of the course configuration lifecycle.",
+  "assumed_state_on_entry": "User is logged in, viewing an existing course, and has teacher/editing permissions (Settings tab visible)."
 }
 </module_context>
 
@@ -245,6 +259,11 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Course_Settings_Form": {
       "type": "form",
+      "preconditions": [
+        "User is logged in",
+        "Viewing an existing course",
+        "User has teacher/editing permissions"
+      ],
       "panels": [
         {
           "panel_name": "General",
@@ -254,22 +273,19 @@ If a `<workflows>` block is present in the input:
               "type": "unspecified",
               "required": true,
               "constraints": [
-                "required, inline validation"
+                "inline validation: must not be empty"
               ]
             },
             "Course_Short_Name": {
               "type": "unspecified",
               "required": true,
               "constraints": [
-                "required, inline validation"
+                "inline validation: must not be empty"
               ]
             },
             "Course_Category": {
               "type": "dropdown",
-              "required": true,
-              "constraints": [
-                "required, inline validation"
-              ]
+              "required": true
             },
             "Course_Visibility": {
               "type": "dropdown",
@@ -278,35 +294,44 @@ If a `<workflows>` block is present in the input:
                 "Hide"
               ]
             },
+            "Course_Start_Date": {
+              "type": "date",
+              "constraints": [
+                "must be a valid date"
+              ]
+            },
+            "Enable_Course_End_Date": {
+              "type": "checkbox"
+            },
+            "Course_End_Date": {
+              "type": "date",
+              "enabled_when": "Enable_Course_End_Date == true",
+              "constraints": [
+                "must be a valid date"
+              ]
+            },
             "Course_ID_Number": {
               "type": "unspecified"
             },
             "Course_Summary": {
-              "type": "rich_text_editor"
-            },
+              "type": "unspecified",
+              "constraints": [
+                "rich text editor with inline validation"
+              ]
+            }
+          }
+        },
+        {
+          "panel_name": "Media",
+          "collapsible": true,
+          "fields": {
             "Course_Image_Upload": {
               "type": "file_upload"
             }
           }
         },
         {
-          "panel_name": "Dates",
-          "collapsible": true,
-          "fields": {
-            "Course_Start_Date": {
-              "type": "date"
-            },
-            "Course_End_Date_Enable": {
-              "type": "checkbox"
-            },
-            "Course_End_Date": {
-              "type": "date",
-              "enabled_when": "Course_End_Date_Enable == true"
-            }
-          }
-        },
-        {
-          "panel_name": "Format & Layout",
+          "panel_name": "Format",
           "collapsible": true,
           "fields": {
             "Course_Format": {
@@ -315,18 +340,16 @@ If a `<workflows>` block is present in the input:
                 "Topics format",
                 "Weekly format"
               ],
-              "metadata": {
-                "options_note": "partial \u2014 others not specified in description"
-              }
+              "options_note": "partial \u2014 others not specified in description"
             },
             "Layout_Controls": {
               "type": "unspecified",
-              "visible_when": "Course_Format == Topics format OR Course_Format == Weekly format"
+              "visible_when": "Course_Format is set"
             }
           }
         },
         {
-          "panel_name": "Appearance & Participation",
+          "panel_name": "Appearance",
           "collapsible": true,
           "fields": {
             "Language": {
@@ -335,15 +358,25 @@ If a `<workflows>` block is present in the input:
             "News_Items": {
               "type": "unspecified"
             },
-            "Activity_Dates_Display": {
-              "type": "checkbox"
+            "Activity_Dates": {
+              "type": "unspecified"
             },
             "Completion_Conditions_Display": {
               "type": "checkbox"
             },
             "Maximum_Upload_Size": {
-              "type": "unspecified"
-            },
+              "type": "number",
+              "constraints": [
+                "must be a valid number",
+                "inline validation enforced"
+              ]
+            }
+          }
+        },
+        {
+          "panel_name": "Enrollment_and_Completion",
+          "collapsible": true,
+          "fields": {
             "Completion_Tracking": {
               "type": "checkbox"
             },
@@ -362,14 +395,21 @@ If a `<workflows>` block is present in the input:
       "submit_actions": [
         {
           "action_name": "Save and display",
-          "on_success": "persists configuration and returns to course page",
+          "on_success": "persists configuration and returns to the course page",
           "preconditions": [
-            "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
+            "User is logged in",
+            "Viewing an existing course",
+            "User has teacher/editing permissions"
           ]
         },
         {
           "action_name": "Cancel",
-          "on_success": "abandons changes and returns to course page"
+          "on_success": "leaves settings unchanged",
+          "preconditions": [
+            "User is logged in",
+            "Viewing an existing course",
+            "User has teacher/editing permissions"
+          ]
         }
       ]
     }
@@ -387,24 +427,18 @@ The Course Settings form is organized into collapsible panels with the following
 </description>
 
 <workflows>
-WF-001 | Save with End Date enabled and Topics format | actor: Teacher/Manager | branch: Course_End_Date_Enable == true AND Course_Format == Topics format | terminal: Save and display | on_success: persists configuration and returns to course page
-WF-002 | Cancel with End Date enabled and Topics format | actor: Teacher/Manager | branch: Course_End_Date_Enable == true AND Course_Format == Topics format | terminal: Cancel | on_success: abandons changes and returns to course page
-WF-003 | Save with End Date disabled and Topics format | actor: Teacher/Manager | branch: Course_End_Date_Enable == false AND Course_Format == Topics format | terminal: Save and display | on_success: persists configuration and returns to course page
-WF-004 | Cancel with End Date disabled and Topics format | actor: Teacher/Manager | branch: Course_End_Date_Enable == false AND Course_Format == Topics format | terminal: Cancel | on_success: abandons changes and returns to course page
-WF-005 | Save with End Date enabled and Weekly format | actor: Teacher/Manager | branch: Course_End_Date_Enable == true AND Course_Format == Weekly format | terminal: Save and display | on_success: persists configuration and returns to course page
-WF-006 | Cancel with End Date enabled and Weekly format | actor: Teacher/Manager | branch: Course_End_Date_Enable == true AND Course_Format == Weekly format | terminal: Cancel | on_success: abandons changes and returns to course page
-WF-007 | Save with End Date disabled and Weekly format | actor: Teacher/Manager | branch: Course_End_Date_Enable == false AND Course_Format == Weekly format | terminal: Save and display | on_success: persists configuration and returns to course page
-WF-008 | Cancel with End Date disabled and Weekly format | actor: Teacher/Manager | branch: Course_End_Date_Enable == false AND Course_Format == Weekly format | terminal: Cancel | on_success: abandons changes and returns to course page
-WF-009 | Save with End Date enabled and Other format | actor: Teacher/Manager | branch: Course_End_Date_Enable == true AND Course_Format == Other | terminal: Save and display | on_success: persists configuration and returns to course page
-WF-010 | Cancel with End Date enabled and Other format | actor: Teacher/Manager | branch: Course_End_Date_Enable == true AND Course_Format == Other | terminal: Cancel | on_success: abandons changes and returns to course page
-WF-011 | Save with End Date disabled and Other format | actor: Teacher/Manager | branch: Course_End_Date_Enable == false AND Course_Format == Other | terminal: Save and display | on_success: persists configuration and returns to course page
-WF-012 | Cancel with End Date disabled and Other format | actor: Teacher/Manager | branch: Course_End_Date_Enable == false AND Course_Format == Other | terminal: Cancel | on_success: abandons changes and returns to course page
+WF-001 | Save and display (base) | actor: Teacher | branch: none | terminal: Save and display | on_success: persists configuration and returns to the course page
+WF-002 | Save and display with Course_Format set | actor: Teacher | branch: Course_Format is set | terminal: Save and display | on_success: persists configuration and returns to the course page
+WF-003 | Save and display with Course_Format not set | actor: Teacher | branch: Course_Format is not set | terminal: Save and display | on_success: persists configuration and returns to the course page
+WF-004 | Cancel (base) | actor: Teacher | branch: none | terminal: Cancel | on_success: leaves settings unchanged
+WF-005 | Cancel with Course_Format set | actor: Teacher | branch: Course_Format is set | terminal: Cancel | on_success: leaves settings unchanged
+WF-006 | Cancel with Course_Format not set | actor: Teacher | branch: Course_Format is not set | terminal: Cancel | on_success: leaves settings unchanged
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:14:19] Test-Edge - LLM RESPONSE
+[22:51:14] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Course Settings",
@@ -414,165 +448,175 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Enable End Date and save with Course_End_Date = today",
+      "test_case": "Enable end date and enter a valid Course_End_Date then save",
       "preconditions": [
-        "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
+        "User is logged in",
+        "Viewing an existing course",
+        "User has teacher/editing permissions",
+        "Course Settings form is open"
       ],
       "steps": [
-        "1. Click the Settings tab for the active course",
-        "2. Expand the Dates panel",
-        "3. Check the Course_End_Date_Enable checkbox",
-        "4. Enter <today's date> into the Course_End_Date field",
-        "5. Fill required fields: enter valid values for Course_Full_Name, Course_Short_Name, and select a Course_Category",
-        "6. Click Save and display"
+        "1. Click the General panel to expand it (if collapsed)",
+        "2. Click the Enable_Course_End_Date checkbox",
+        "3. Enter a valid calendar date into Course_End_Date",
+        "4. Fill Course_Full_Name with a non-empty value",
+        "5. Fill Course_Short_Name with a non-empty value",
+        "6. Select a value in Course_Category",
+        "7. Click Save and display"
       ],
-      "expected_result": "Save and display succeeds; the course page is shown and the course details display Course End Date = <today's date>",
+      "expected_result": "Form submits successfully and returns to the course page (succeeds); when reopening Course Settings the Course_End_Date field shows the entered valid date with no inline validation error visible.",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Enable End Date and save with Course_End_Date = yesterday (past date)",
+      "test_case": "Enable end date and enter a nonexistent/invalid Course_End_Date then attempt save",
       "preconditions": [
-        "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
+        "User is logged in",
+        "Viewing an existing course",
+        "User has teacher/editing permissions",
+        "Course Settings form is open"
       ],
       "steps": [
-        "1. Click the Settings tab for the active course",
-        "2. Expand the Dates panel",
-        "3. Check the Course_End_Date_Enable checkbox",
-        "4. Enter <yesterday's date> into the Course_End_Date field",
-        "5. Fill required fields: enter valid values for Course_Full_Name, Course_Short_Name, and select a Course_Category",
-        "6. Click Save and display"
+        "1. Click the General panel to expand it (if collapsed)",
+        "2. Click the Enable_Course_End_Date checkbox",
+        "3. Enter a date value into Course_End_Date that is not a valid calendar date (a nonexistent date)",
+        "4. Fill Course_Full_Name with a non-empty value",
+        "5. Fill Course_Short_Name with a non-empty value",
+        "6. Select a value in Course_Category",
+        "7. Click Save and display"
       ],
-      "expected_result": "Save and display succeeds; the course page is shown and the course details display Course End Date = <yesterday's date>",
+      "expected_result": "Course_End_Date displays an inline validation error indicating the date is invalid and the Save action is blocked / error shown.",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Enable End Date and save with Course_End_Date set to a far-future date",
+      "test_case": "Enter only whitespace into Course_Short_Name and attempt to save",
       "preconditions": [
-        "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
+        "User is logged in",
+        "Viewing an existing course",
+        "User has teacher/editing permissions",
+        "Course Settings form is open"
       ],
       "steps": [
-        "1. Click the Settings tab for the active course",
-        "2. Expand the Dates panel",
-        "3. Check the Course_End_Date_Enable checkbox",
-        "4. Enter <a far-future date> into the Course_End_Date field",
-        "5. Fill required fields: enter valid values for Course_Full_Name, Course_Short_Name, and select a Course_Category",
-        "6. Click Save and display"
+        "1. Click the General panel to expand it (if collapsed)",
+        "2. Enter a value composed solely of whitespace characters into Course_Short_Name",
+        "3. Fill Course_Full_Name with a non-empty value",
+        "4. Select a value in Course_Category",
+        "5. Click Save and display"
       ],
-      "expected_result": "Save and display succeeds; the course page is shown and the course details display Course End Date = <the far-future date>",
+      "expected_result": "Course_Short_Name displays an inline validation error indicating the field must not be empty and the Save action is blocked / error shown.",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": null,
-      "subcategory": "data_edge",
-      "test_case": "Enter February 29 on a non-leap year into Course_Start_Date (invalid calendar date)",
+      "wf_ref": "WF-001",
+      "subcategory": "boundary",
+      "test_case": "Enter a non-numeric value into Maximum_Upload_Size then attempt save",
       "preconditions": [
-        "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible.",
-        "The year being entered is a known non-leap year."
+        "User is logged in",
+        "Viewing an existing course",
+        "User has teacher/editing permissions",
+        "Course Settings form is open",
+        "Appearance panel is visible or expandable"
       ],
       "steps": [
-        "1. Click the Settings tab for the active course",
-        "2. Expand the Dates panel",
-        "3. Enter February 29 of <the non-leap year> into Course_Start_Date (type the date into the field)",
-        "4. Fill required fields: enter valid values for Course_Full_Name, Course_Short_Name, and select a Course_Category",
-        "5. Click Save and display"
+        "1. Click the Appearance panel to expand it (if collapsed)",
+        "2. Enter a non-numeric string into Maximum_Upload_Size",
+        "3. Fill Course_Full_Name with a non-empty value",
+        "4. Fill Course_Short_Name with a non-empty value",
+        "5. Select a value in Course_Category",
+        "6. Click Save and display"
       ],
-      "expected_result": "Save is blocked; Course_Start_Date displays an inline validation error indicating the entered date is invalid and the form does not navigate to the course page",
+      "expected_result": "Maximum_Upload_Size displays an inline validation error indicating the value is not a valid number and the Save action is blocked / error shown.",
       "priority": "medium"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": null,
+      "wf_ref": "WF-002",
       "subcategory": "input_edge",
-      "test_case": "Very long Course_Full_Name and very long Course_Summary (rich text) submission",
+      "test_case": "Set Course_Format to reveal Layout_Controls and enter a very long value then save",
       "preconditions": [
-        "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
+        "User is logged in",
+        "Viewing an existing course",
+        "User has teacher/editing permissions",
+        "Course Settings form is open"
       ],
       "steps": [
-        "1. Click the Settings tab for the active course",
-        "2. In the General panel, enter a very long string (200+ characters) into Course_Full_Name",
-        "3. In the General panel, enter a very long rich-text string (2000+ characters) into Course_Summary",
-        "4. Fill required fields: enter valid value for Course_Short_Name and select a Course_Category",
-        "5. Click Save and display"
+        "1. Click the Format panel to expand it (if collapsed)",
+        "2. Select any Course_Format value to trigger Layout_Controls visibility",
+        "3. Wait until Layout_Controls becomes visible",
+        "4. Enter a very long text value (200+ characters) into Layout_Controls",
+        "5. Fill Course_Full_Name with a non-empty value",
+        "6. Fill Course_Short_Name with a non-empty value",
+        "7. Select a value in Course_Category",
+        "8. Click Save and display"
       ],
-      "expected_result": "Save and display succeeds; the course page is shown and the course details show the Course Full Name and Course Summary matching the entered text (no truncation visible in the saved detail view)",
-      "priority": "low"
+      "expected_result": "Form submits successfully and returns to the course page (succeeds); when reopening Course Settings the Layout_Controls field displays the full saved text (no truncation visible).",
+      "priority": "medium"
     },
     {
       "tc_id": "E-006",
       "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Leading and trailing whitespace in Course_Short_Name is submitted",
+      "test_case": "Paste very long rich-text content (including emoji/special characters) into Course_Summary and save",
       "preconditions": [
-        "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
+        "User is logged in",
+        "Viewing an existing course",
+        "User has teacher/editing permissions",
+        "Course Settings form is open"
       ],
       "steps": [
-        "1. Click the Settings tab for the active course",
-        "2. In the General panel, enter a Course_Short_Name value that includes leading and trailing whitespace (e.g., whitespace before and after the visible characters)",
-        "3. Fill required fields: enter valid value for Course_Full_Name and select a Course_Category",
-        "4. Click Save and display"
+        "1. Click the General panel to expand it (if collapsed)",
+        "2. Focus the Course_Summary rich text editor",
+        "3. Paste a very long rich-text fragment (includes emojis and special Unicode characters) into Course_Summary",
+        "4. Fill Course_Full_Name with a non-empty value",
+        "5. Fill Course_Short_Name with a non-empty value",
+        "6. Select a value in Course_Category",
+        "7. Click Save and display"
       ],
-      "expected_result": "Save and display succeeds; the course page is shown and the Course Short Name displayed in course details is trimmed (no leading or trailing whitespace visible)",
+      "expected_result": "Form submits successfully and returns to the course page (succeeds); when reopening Course Settings the Course_Summary rich text editor displays the full pasted content with emojis/special characters preserved (no loss or visible corruption).",
       "priority": "low"
     },
     {
       "tc_id": "E-007",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Enable End Date toggle, leave Course_End_Date blank, and Save",
+      "test_case": "Rapid double-click the Save and display button to check duplicate submit handling",
       "preconditions": [
-        "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
+        "User is logged in",
+        "Viewing an existing course",
+        "User has teacher/editing permissions",
+        "Course Settings form is open",
+        "Required fields are filled with valid values"
       ],
       "steps": [
-        "1. Click the Settings tab for the active course",
-        "2. Expand the Dates panel",
-        "3. Check the Course_End_Date_Enable checkbox",
-        "4. Do not enter a value into Course_End_Date (leave it blank)",
-        "5. Fill required fields: enter valid values for Course_Full_Name, Course_Short_Name, and select a Course_Category",
-        "6. Click Save and display"
+        "1. Ensure Course_Full_Name is filled with a non-empty value",
+        "2. Ensure Course_Short_Name is filled with a non-empty value",
+        "3. Ensure Course_Category has a selection",
+        "4. Rapidly click the Save and display button twice in quick succession"
       ],
-      "expected_result": "Save and display succeeds; the course page is shown and the course details indicate no Course End Date is set (the enable toggle change persists but Course End Date remains unset)",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-008",
-      "wf_ref": null,
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid re-submission: save, use browser Back to return to form, then attempt to Save again",
-      "preconditions": [
-        "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
-      ],
-      "steps": [
-        "1. Click the Settings tab for the active course",
-        "2. Fill required fields: enter valid values for Course_Full_Name, Course_Short_Name, and select a Course_Category",
-        "3. Click Save and display",
-        "4. After the course page is shown, press the browser Back button to return to the Course Settings form",
-        "5. Without changing values, click Save and display again"
-      ],
-      "expected_result": "Second submission is blocked from creating a duplicate entity; only the original save persists and the course page is shown after the second click without creating an additional course or duplicate settings entry",
+      "expected_result": "Second click is ignored: Save button becomes disabled or shows a single saving state and the user is returned once to the course page (succeeds); no duplicate save confirmation or multiple navigations are visible.",
       "priority": "medium"
     }
   ],
   "summary": {
-    "total": 8,
+    "total": 7,
     "boundary": 4,
     "input_edge": 2,
-    "interaction_edge": 2,
+    "interaction_edge": 1,
     "state_edge": 0,
-    "data_edge": 1,
-    "medium_priority": 5,
-    "low_priority": 3
+    "data_edge": 0,
+    "medium_priority": 6,
+    "low_priority": 1
   }
 }
 
 ------------------------------------------------------------
-[21:14:19] Test-Edge - PARSED JSON
+[22:51:14] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Course Settings",
@@ -582,159 +626,169 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Enable End Date and save with Course_End_Date = today",
+      "test_case": "Enable end date and enter a valid Course_End_Date then save",
       "preconditions": [
-        "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
+        "User is logged in",
+        "Viewing an existing course",
+        "User has teacher/editing permissions",
+        "Course Settings form is open"
       ],
       "steps": [
-        "1. Click the Settings tab for the active course",
-        "2. Expand the Dates panel",
-        "3. Check the Course_End_Date_Enable checkbox",
-        "4. Enter <today's date> into the Course_End_Date field",
-        "5. Fill required fields: enter valid values for Course_Full_Name, Course_Short_Name, and select a Course_Category",
-        "6. Click Save and display"
+        "1. Click the General panel to expand it (if collapsed)",
+        "2. Click the Enable_Course_End_Date checkbox",
+        "3. Enter a valid calendar date into Course_End_Date",
+        "4. Fill Course_Full_Name with a non-empty value",
+        "5. Fill Course_Short_Name with a non-empty value",
+        "6. Select a value in Course_Category",
+        "7. Click Save and display"
       ],
-      "expected_result": "Save and display succeeds; the course page is shown and the course details display Course End Date = <today's date>",
+      "expected_result": "Form submits successfully and returns to the course page (succeeds); when reopening Course Settings the Course_End_Date field shows the entered valid date with no inline validation error visible.",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Enable End Date and save with Course_End_Date = yesterday (past date)",
+      "test_case": "Enable end date and enter a nonexistent/invalid Course_End_Date then attempt save",
       "preconditions": [
-        "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
+        "User is logged in",
+        "Viewing an existing course",
+        "User has teacher/editing permissions",
+        "Course Settings form is open"
       ],
       "steps": [
-        "1. Click the Settings tab for the active course",
-        "2. Expand the Dates panel",
-        "3. Check the Course_End_Date_Enable checkbox",
-        "4. Enter <yesterday's date> into the Course_End_Date field",
-        "5. Fill required fields: enter valid values for Course_Full_Name, Course_Short_Name, and select a Course_Category",
-        "6. Click Save and display"
+        "1. Click the General panel to expand it (if collapsed)",
+        "2. Click the Enable_Course_End_Date checkbox",
+        "3. Enter a date value into Course_End_Date that is not a valid calendar date (a nonexistent date)",
+        "4. Fill Course_Full_Name with a non-empty value",
+        "5. Fill Course_Short_Name with a non-empty value",
+        "6. Select a value in Course_Category",
+        "7. Click Save and display"
       ],
-      "expected_result": "Save and display succeeds; the course page is shown and the course details display Course End Date = <yesterday's date>",
+      "expected_result": "Course_End_Date displays an inline validation error indicating the date is invalid and the Save action is blocked / error shown.",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Enable End Date and save with Course_End_Date set to a far-future date",
+      "test_case": "Enter only whitespace into Course_Short_Name and attempt to save",
       "preconditions": [
-        "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
+        "User is logged in",
+        "Viewing an existing course",
+        "User has teacher/editing permissions",
+        "Course Settings form is open"
       ],
       "steps": [
-        "1. Click the Settings tab for the active course",
-        "2. Expand the Dates panel",
-        "3. Check the Course_End_Date_Enable checkbox",
-        "4. Enter <a far-future date> into the Course_End_Date field",
-        "5. Fill required fields: enter valid values for Course_Full_Name, Course_Short_Name, and select a Course_Category",
-        "6. Click Save and display"
+        "1. Click the General panel to expand it (if collapsed)",
+        "2. Enter a value composed solely of whitespace characters into Course_Short_Name",
+        "3. Fill Course_Full_Name with a non-empty value",
+        "4. Select a value in Course_Category",
+        "5. Click Save and display"
       ],
-      "expected_result": "Save and display succeeds; the course page is shown and the course details display Course End Date = <the far-future date>",
+      "expected_result": "Course_Short_Name displays an inline validation error indicating the field must not be empty and the Save action is blocked / error shown.",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": null,
-      "subcategory": "data_edge",
-      "test_case": "Enter February 29 on a non-leap year into Course_Start_Date (invalid calendar date)",
+      "wf_ref": "WF-001",
+      "subcategory": "boundary",
+      "test_case": "Enter a non-numeric value into Maximum_Upload_Size then attempt save",
       "preconditions": [
-        "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible.",
-        "The year being entered is a known non-leap year."
+        "User is logged in",
+        "Viewing an existing course",
+        "User has teacher/editing permissions",
+        "Course Settings form is open",
+        "Appearance panel is visible or expandable"
       ],
       "steps": [
-        "1. Click the Settings tab for the active course",
-        "2. Expand the Dates panel",
-        "3. Enter February 29 of <the non-leap year> into Course_Start_Date (type the date into the field)",
-        "4. Fill required fields: enter valid values for Course_Full_Name, Course_Short_Name, and select a Course_Category",
-        "5. Click Save and display"
+        "1. Click the Appearance panel to expand it (if collapsed)",
+        "2. Enter a non-numeric string into Maximum_Upload_Size",
+        "3. Fill Course_Full_Name with a non-empty value",
+        "4. Fill Course_Short_Name with a non-empty value",
+        "5. Select a value in Course_Category",
+        "6. Click Save and display"
       ],
-      "expected_result": "Save is blocked; Course_Start_Date displays an inline validation error indicating the entered date is invalid and the form does not navigate to the course page",
+      "expected_result": "Maximum_Upload_Size displays an inline validation error indicating the value is not a valid number and the Save action is blocked / error shown.",
       "priority": "medium"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": null,
+      "wf_ref": "WF-002",
       "subcategory": "input_edge",
-      "test_case": "Very long Course_Full_Name and very long Course_Summary (rich text) submission",
+      "test_case": "Set Course_Format to reveal Layout_Controls and enter a very long value then save",
       "preconditions": [
-        "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
+        "User is logged in",
+        "Viewing an existing course",
+        "User has teacher/editing permissions",
+        "Course Settings form is open"
       ],
       "steps": [
-        "1. Click the Settings tab for the active course",
-        "2. In the General panel, enter a very long string (200+ characters) into Course_Full_Name",
-        "3. In the General panel, enter a very long rich-text string (2000+ characters) into Course_Summary",
-        "4. Fill required fields: enter valid value for Course_Short_Name and select a Course_Category",
-        "5. Click Save and display"
+        "1. Click the Format panel to expand it (if collapsed)",
+        "2. Select any Course_Format value to trigger Layout_Controls visibility",
+        "3. Wait until Layout_Controls becomes visible",
+        "4. Enter a very long text value (200+ characters) into Layout_Controls",
+        "5. Fill Course_Full_Name with a non-empty value",
+        "6. Fill Course_Short_Name with a non-empty value",
+        "7. Select a value in Course_Category",
+        "8. Click Save and display"
       ],
-      "expected_result": "Save and display succeeds; the course page is shown and the course details show the Course Full Name and Course Summary matching the entered text (no truncation visible in the saved detail view)",
-      "priority": "low"
+      "expected_result": "Form submits successfully and returns to the course page (succeeds); when reopening Course Settings the Layout_Controls field displays the full saved text (no truncation visible).",
+      "priority": "medium"
     },
     {
       "tc_id": "E-006",
       "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Leading and trailing whitespace in Course_Short_Name is submitted",
+      "test_case": "Paste very long rich-text content (including emoji/special characters) into Course_Summary and save",
       "preconditions": [
-        "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
+        "User is logged in",
+        "Viewing an existing course",
+        "User has teacher/editing permissions",
+        "Course Settings form is open"
       ],
       "steps": [
-        "1. Click the Settings tab for the active course",
-        "2. In the General panel, enter a Course_Short_Name value that includes leading and trailing whitespace (e.g., whitespace before and after the visible characters)",
-        "3. Fill required fields: enter valid value for Course_Full_Name and select a Course_Category",
-        "4. Click Save and display"
+        "1. Click the General panel to expand it (if collapsed)",
+        "2. Focus the Course_Summary rich text editor",
+        "3. Paste a very long rich-text fragment (includes emojis and special Unicode characters) into Course_Summary",
+        "4. Fill Course_Full_Name with a non-empty value",
+        "5. Fill Course_Short_Name with a non-empty value",
+        "6. Select a value in Course_Category",
+        "7. Click Save and display"
       ],
-      "expected_result": "Save and display succeeds; the course page is shown and the Course Short Name displayed in course details is trimmed (no leading or trailing whitespace visible)",
+      "expected_result": "Form submits successfully and returns to the course page (succeeds); when reopening Course Settings the Course_Summary rich text editor displays the full pasted content with emojis/special characters preserved (no loss or visible corruption).",
       "priority": "low"
     },
     {
       "tc_id": "E-007",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Enable End Date toggle, leave Course_End_Date blank, and Save",
+      "test_case": "Rapid double-click the Save and display button to check duplicate submit handling",
       "preconditions": [
-        "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
+        "User is logged in",
+        "Viewing an existing course",
+        "User has teacher/editing permissions",
+        "Course Settings form is open",
+        "Required fields are filled with valid values"
       ],
       "steps": [
-        "1. Click the Settings tab for the active course",
-        "2. Expand the Dates panel",
-        "3. Check the Course_End_Date_Enable checkbox",
-        "4. Do not enter a value into Course_End_Date (leave it blank)",
-        "5. Fill required fields: enter valid values for Course_Full_Name, Course_Short_Name, and select a Course_Category",
-        "6. Click Save and display"
+        "1. Ensure Course_Full_Name is filled with a non-empty value",
+        "2. Ensure Course_Short_Name is filled with a non-empty value",
+        "3. Ensure Course_Category has a selection",
+        "4. Rapidly click the Save and display button twice in quick succession"
       ],
-      "expected_result": "Save and display succeeds; the course page is shown and the course details indicate no Course End Date is set (the enable toggle change persists but Course End Date remains unset)",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-008",
-      "wf_ref": null,
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid re-submission: save, use browser Back to return to form, then attempt to Save again",
-      "preconditions": [
-        "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
-      ],
-      "steps": [
-        "1. Click the Settings tab for the active course",
-        "2. Fill required fields: enter valid values for Course_Full_Name, Course_Short_Name, and select a Course_Category",
-        "3. Click Save and display",
-        "4. After the course page is shown, press the browser Back button to return to the Course Settings form",
-        "5. Without changing values, click Save and display again"
-      ],
-      "expected_result": "Second submission is blocked from creating a duplicate entity; only the original save persists and the course page is shown after the second click without creating an additional course or duplicate settings entry",
+      "expected_result": "Second click is ignored: Save button becomes disabled or shows a single saving state and the user is returned once to the course page (succeeds); no duplicate save confirmation or multiple navigations are visible.",
       "priority": "medium"
     }
   ],
   "summary": {
-    "total": 8,
+    "total": 7,
     "boundary": 4,
     "input_edge": 2,
-    "interaction_edge": 2,
+    "interaction_edge": 1,
     "state_edge": 0,
-    "data_edge": 1,
-    "medium_priority": 5,
-    "low_priority": 3
+    "data_edge": 0,
+    "medium_priority": 6,
+    "low_priority": 1
   }
 }

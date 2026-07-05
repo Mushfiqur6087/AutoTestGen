@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:09:37.909363
+DEBUG SESSION STARTED: 2026-07-04T22:39:33.999932
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:09:37] Workflow-Extractor - SYSTEM PROMPT
+[22:39:34] Workflow-Extractor - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Workflow Extractor. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to enumerate every distinct, executable interaction path through this module — one entry per workflow.
 
@@ -54,12 +54,12 @@ Two workflows are **distinct** if they require different user actions to reach t
 
 ## What Paths to Enumerate
 
-Enumerate **all** distinct paths — not one-per-type. The rule: if two paths require the user to do something different to reach the terminal action, they are separate workflows.
+Enumerate **distinct-outcome** paths — not one-per-type, and **not** the cartesian product of every toggle. The rule: two paths are separate workflows only if the user does something different that leads to a **different terminal outcome** (different `on_success`) **or** exercises a **different revealed required-field group** that needs its own coverage.
 
 | AST node type | What to enumerate |
 |---|---|
 | `form` with no conditionals | One workflow per `submit_actions[]` entry |
-| `form` with `visible_when` fields | One workflow per unique combination of conditional branches activated, times each `submit_actions[]` entry |
+| `form` with `visible_when` / toggle fields | One base workflow per `submit_actions[]` entry, PLUS one workflow for **each conditional branch that reveals a distinct required-field group** (e.g. enabling File submissions reveals max-files/size/types). Do **NOT** multiply independent toggles together. |
 | `wizard` | One workflow per distinct step sequence (if all steps are linear, one workflow per `submit_actions[]`; if any step is conditional, enumerate each branch) |
 | `state_bound_action_bar` | One workflow per `available_actions[]` entry per state (state × action = one workflow) |
 | `data_table` | One workflow per `row_actions[]` entry + one per `bulk_actions[]` entry (include View, Edit, Delete, and all others) |
@@ -67,6 +67,20 @@ Enumerate **all** distinct paths — not one-per-type. The rule: if two paths re
 | `repeating_group` | Not a standalone workflow source — it is part of a form workflow that activates it |
 
 **Include all data table row actions** — View, Edit, Delete, and any others. Even read-only row actions (e.g., "View") must be included because they still require a positive test case.
+
+### DO NOT enumerate the cartesian product of toggles (CRITICAL)
+
+A form with independent toggles A, B, C and submit buttons {Save, Save+display, Cancel} must **not** produce 2×2×2×3 = 24 workflows. Independent toggles that do **not** change the terminal outcome are covered **once each**, not in combination:
+- If toggle A (e.g. `File_Submissions`) and toggle B (e.g. `Group_Submissions`) both still reach the same `on_success` ("assignment created"), they are **not** two dimensions to multiply. Emit one workflow that activates A's revealed fields, and one that activates B's revealed fields — not A×B.
+- An `+ Add restriction` / optional-picker step that does not change `on_success` is **not** a separate workflow dimension. Fold it into an existing workflow or add at most one workflow for it.
+
+### Discard / Cancel collapse rule (CRITICAL)
+
+A `Cancel` / `discard` / `abandon` terminal action discards **all** field state, so field/toggle combinations are irrelevant to it. Emit **exactly ONE** Cancel workflow for the module, regardless of how many toggles or revealed-field groups exist. Never produce a Cancel workflow per toggle combination.
+
+**Worked example — Assignment Creation** (toggles: File submissions, Group submissions, Add restriction; buttons: Save and return, Save and display, Cancel):
+- ✅ Correct (~6–8): base Save-and-return, base Save-and-display, one Save covering File-submission revealed fields, one Save covering Group-submission revealed fields, one Save covering an added restriction, one Cancel.
+- ❌ Wrong (24): every `{File}×{Group}×{Restriction}×{Save/Display/Cancel}` combination.
 
 ---
 
@@ -101,9 +115,11 @@ Go through these one by one. If any check fails, fix it before outputting.
 □ 4. Every tab with a form submission in a `tab_container` has one workflow.
 □ 5. `wf_id` numbering is sequential (WF-001, WF-002, ...) with no gaps.
 □ 6. Every `terminal_action` matches an exact `action_name` or `element_name` from the AST.
-□ 7. No two workflows share the same `conditional_branch` AND `terminal_action`.
-□ 8. No workflow crosses module boundaries (steps in another module).
-□ 9. Every `on_success` reflects the AST or description — no generic "success" strings.
+□ 7. No two workflows reach the **same `on_success` via the same code path** — even if their `conditional_branch` strings differ. If they do, merge them (keep the one that activates a distinct revealed required-field group; drop pure toggle-combination duplicates).
+□ 8. There is **at most ONE** `Cancel`/`discard` workflow for the whole module.
+□ 9. No independent toggles are multiplied together — the workflow count is roughly (base submits) + (revealed required-field groups) + 1 Cancel, NOT the product of all toggles × all buttons.
+□ 10. No workflow crosses module boundaries (steps in another module).
+□ 11. Every `on_success` reflects the AST or description — no generic "success" strings.
 
 ---
 
@@ -111,7 +127,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 1. Does each workflow trace back to a specific AST node (`submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`) or an explicit action described in the description text? If no → delete it.
 2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
-3. Are two workflows identical in `conditional_branch` AND `terminal_action`? If yes → merge them into one.
+3. Do two workflows reach the same `on_success` via the same code path (e.g. differing only by an independent toggle that does not change the outcome, or being repeated Cancel variants)? If yes → merge them into one. Keep a separate workflow only when its branch reveals a **distinct required-field group** that needs its own coverage.
 4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
 5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
 
@@ -120,7 +136,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 ## Calibration
 
 - Simple form module (no conditionals, one submit): 1–3 workflows
-- Form with conditionals: 3–8 workflows
+- Form with conditionals/toggles: **(base submit outcomes) + (one per revealed required-field group) + 1 Cancel** — typically 4–8, NOT the product of all toggles × all buttons. A multi-toggle form like Assignment Creation should land near 6–8, never 20+.
 - Module with state machine: add 1 per (state × action) combination
 - Module with data table: add 1 per row_action + 1 per bulk_action
 
@@ -153,15 +169,15 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 
 ------------------------------------------------------------
-[21:09:37] Workflow-Extractor - USER PROMPT
+[22:39:34] Workflow-Extractor - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 3,
   "module_title": "My Courses",
-  "summary": "Displays all courses a student is enrolled in as visual cards with filtering, searching, sorting, and per-course actions like starring or hiding.",
-  "where_it_fits": "Accessible from the top navigation bar via the My Courses link, this page is the student's central catalog of enrolled courses and acts as the entry point to individual Course Pages (which show the course tab bar and breadcrumb navigation). It sits alongside Dashboard and Home as a primary navigation destination for accessing course content.",
-  "assumed_state_on_entry": "Authenticated as a student with viewable course enrollments"
+  "summary": "Displays all courses in which the student is enrolled as visual cards with controls for filtering, searching, sorting, layout, and quick actions (star or hide).",
+  "where_it_fits": "Accessible from the top navigation bar via the My Courses link (and reachable from Home or Dashboard), this module is the student-facing course listing page that precedes entering a specific Course Page; clicking a course card navigates to that course's main page where the course tab bar and breadcrumbs are shown.",
+  "assumed_state_on_entry": "Logged in as a student with an active account and enrollment records for one or more courses (or none)."
 }
 </module_context>
 
@@ -171,11 +187,8 @@ Go through these one by one. If any check fails, fix it before outputting.
 {
   "module_name": "My Courses",
   "components": {
-    "My_Courses_Page": {
-      "type": "page",
-      "preconditions": [
-        "Authenticated as a student with viewable course enrollments"
-      ],
+    "My_Courses_Controls": {
+      "type": "toolbar",
       "fields": {
         "Status_Filter": {
           "type": "dropdown",
@@ -188,7 +201,7 @@ Go through these one by one. If any check fails, fix it before outputting.
             "Hidden"
           ]
         },
-        "Search": {
+        "Course_Search": {
           "type": "search"
         },
         "Sort_By": {
@@ -204,29 +217,34 @@ Go through these one by one. If any check fails, fix it before outputting.
         }
       }
     },
-    "Courses_Grid": {
+    "My_Courses_Grid": {
       "type": "card_grid",
-      "card_template": {
-        "fields": {
-          "Course_Name": {
-            "type": "link",
-            "navigation_target": "Course Page"
-          },
-          "Card_Menu": {
-            "type": "menu",
-            "menu_actions": [
-              {
-                "action_name": "Star this course",
-                "on_success": "pins the course to the top"
-              },
-              {
-                "action_name": "Remove from view",
-                "on_success": "hides the course from view"
-              }
-            ]
-          }
+      "card_fields": {
+        "Course_Name": {
+          "type": "link",
+          "action_name": "Open Course",
+          "navigates_to": "course main page",
+          "preconditions": [
+            "user must be logged in as a student with an active account"
+          ]
         }
-      }
+      },
+      "card_actions": [
+        {
+          "action_name": "Star this course",
+          "on_success": "pins course to the top",
+          "preconditions": [
+            "user must be logged in as a student with an active account"
+          ]
+        },
+        {
+          "action_name": "Remove from view",
+          "on_success": "hides the course for this user without unenrolling",
+          "preconditions": [
+            "user must be logged in as a student with an active account"
+          ]
+        }
+      ]
     }
   }
 }
@@ -244,245 +262,69 @@ The My Courses page displays all courses in which the student is enrolled as vis
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:10:00] Workflow-Extractor - LLM RESPONSE
+[22:39:49] Workflow-Extractor - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "My Courses",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Filter: All courses",
-      "actor": "Student",
-      "conditional_branch": "Status_Filter == All",
-      "terminal_action": "Status_Filter",
-      "on_success": "Displays all enrolled courses"
+      "name": "Open course from card",
+      "actor": "student",
+      "conditional_branch": null,
+      "terminal_action": "Open Course",
+      "on_success": "navigates to course main page"
     },
     {
       "wf_id": "WF-002",
-      "name": "Filter: In progress courses",
-      "actor": "Student",
-      "conditional_branch": "Status_Filter == In progress",
-      "terminal_action": "Status_Filter",
-      "on_success": "Displays courses in progress"
+      "name": "Star a course (card action)",
+      "actor": "student",
+      "conditional_branch": null,
+      "terminal_action": "Star this course",
+      "on_success": "pins course to the top"
     },
     {
       "wf_id": "WF-003",
-      "name": "Filter: Future courses",
-      "actor": "Student",
-      "conditional_branch": "Status_Filter == Future",
-      "terminal_action": "Status_Filter",
-      "on_success": "Displays upcoming (future) courses"
-    },
-    {
-      "wf_id": "WF-004",
-      "name": "Filter: Past courses",
-      "actor": "Student",
-      "conditional_branch": "Status_Filter == Past",
-      "terminal_action": "Status_Filter",
-      "on_success": "Displays past courses"
-    },
-    {
-      "wf_id": "WF-005",
-      "name": "Filter: Starred courses",
-      "actor": "Student",
-      "conditional_branch": "Status_Filter == Starred",
-      "terminal_action": "Status_Filter",
-      "on_success": "Displays starred (pinned) courses"
-    },
-    {
-      "wf_id": "WF-006",
-      "name": "Filter: Hidden courses",
-      "actor": "Student",
-      "conditional_branch": "Status_Filter == Hidden",
-      "terminal_action": "Status_Filter",
-      "on_success": "Displays hidden courses"
-    },
-    {
-      "wf_id": "WF-007",
-      "name": "Perform search",
-      "actor": "Student",
-      "conditional_branch": null,
-      "terminal_action": "Search",
-      "on_success": "Filters courses by search query; displays matching courses"
-    },
-    {
-      "wf_id": "WF-008",
-      "name": "Change sort",
-      "actor": "Student",
-      "conditional_branch": null,
-      "terminal_action": "Sort_By",
-      "on_success": "Sorts courses according to selected sort option"
-    },
-    {
-      "wf_id": "WF-009",
-      "name": "Change layout to Card",
-      "actor": "Student",
-      "conditional_branch": "Layout == Card",
-      "terminal_action": "Layout",
-      "on_success": "Changes course grid layout to Card"
-    },
-    {
-      "wf_id": "WF-010",
-      "name": "Change layout to List",
-      "actor": "Student",
-      "conditional_branch": "Layout == List",
-      "terminal_action": "Layout",
-      "on_success": "Changes course grid layout to List"
-    },
-    {
-      "wf_id": "WF-011",
-      "name": "Change layout to Summary",
-      "actor": "Student",
-      "conditional_branch": "Layout == Summary",
-      "terminal_action": "Layout",
-      "on_success": "Changes course grid layout to Summary"
-    },
-    {
-      "wf_id": "WF-012",
-      "name": "Open course page via course name link",
-      "actor": "Student",
-      "conditional_branch": null,
-      "terminal_action": "Course_Name",
-      "on_success": "navigates to that course's main page"
-    },
-    {
-      "wf_id": "WF-013",
-      "name": "Card menu action: Star this course",
-      "actor": "Student",
-      "conditional_branch": null,
-      "terminal_action": "Star this course",
-      "on_success": "pins the course to the top"
-    },
-    {
-      "wf_id": "WF-014",
-      "name": "Card menu action: Remove from view",
-      "actor": "Student",
+      "name": "Remove course from view (card action)",
+      "actor": "student",
       "conditional_branch": null,
       "terminal_action": "Remove from view",
-      "on_success": "hides the course from view"
+      "on_success": "hides the course for this user without unenrolling"
     }
   ],
-  "total": 14
+  "total": 3
 }
 
 ------------------------------------------------------------
-[21:10:00] Workflow-Extractor - PARSED JSON
+[22:39:49] Workflow-Extractor - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "My Courses",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Filter: All courses",
-      "actor": "Student",
-      "conditional_branch": "Status_Filter == All",
-      "terminal_action": "Status_Filter",
-      "on_success": "Displays all enrolled courses"
+      "name": "Open course from card",
+      "actor": "student",
+      "conditional_branch": null,
+      "terminal_action": "Open Course",
+      "on_success": "navigates to course main page"
     },
     {
       "wf_id": "WF-002",
-      "name": "Filter: In progress courses",
-      "actor": "Student",
-      "conditional_branch": "Status_Filter == In progress",
-      "terminal_action": "Status_Filter",
-      "on_success": "Displays courses in progress"
+      "name": "Star a course (card action)",
+      "actor": "student",
+      "conditional_branch": null,
+      "terminal_action": "Star this course",
+      "on_success": "pins course to the top"
     },
     {
       "wf_id": "WF-003",
-      "name": "Filter: Future courses",
-      "actor": "Student",
-      "conditional_branch": "Status_Filter == Future",
-      "terminal_action": "Status_Filter",
-      "on_success": "Displays upcoming (future) courses"
-    },
-    {
-      "wf_id": "WF-004",
-      "name": "Filter: Past courses",
-      "actor": "Student",
-      "conditional_branch": "Status_Filter == Past",
-      "terminal_action": "Status_Filter",
-      "on_success": "Displays past courses"
-    },
-    {
-      "wf_id": "WF-005",
-      "name": "Filter: Starred courses",
-      "actor": "Student",
-      "conditional_branch": "Status_Filter == Starred",
-      "terminal_action": "Status_Filter",
-      "on_success": "Displays starred (pinned) courses"
-    },
-    {
-      "wf_id": "WF-006",
-      "name": "Filter: Hidden courses",
-      "actor": "Student",
-      "conditional_branch": "Status_Filter == Hidden",
-      "terminal_action": "Status_Filter",
-      "on_success": "Displays hidden courses"
-    },
-    {
-      "wf_id": "WF-007",
-      "name": "Perform search",
-      "actor": "Student",
-      "conditional_branch": null,
-      "terminal_action": "Search",
-      "on_success": "Filters courses by search query; displays matching courses"
-    },
-    {
-      "wf_id": "WF-008",
-      "name": "Change sort",
-      "actor": "Student",
-      "conditional_branch": null,
-      "terminal_action": "Sort_By",
-      "on_success": "Sorts courses according to selected sort option"
-    },
-    {
-      "wf_id": "WF-009",
-      "name": "Change layout to Card",
-      "actor": "Student",
-      "conditional_branch": "Layout == Card",
-      "terminal_action": "Layout",
-      "on_success": "Changes course grid layout to Card"
-    },
-    {
-      "wf_id": "WF-010",
-      "name": "Change layout to List",
-      "actor": "Student",
-      "conditional_branch": "Layout == List",
-      "terminal_action": "Layout",
-      "on_success": "Changes course grid layout to List"
-    },
-    {
-      "wf_id": "WF-011",
-      "name": "Change layout to Summary",
-      "actor": "Student",
-      "conditional_branch": "Layout == Summary",
-      "terminal_action": "Layout",
-      "on_success": "Changes course grid layout to Summary"
-    },
-    {
-      "wf_id": "WF-012",
-      "name": "Open course page via course name link",
-      "actor": "Student",
-      "conditional_branch": null,
-      "terminal_action": "Course_Name",
-      "on_success": "navigates to that course's main page"
-    },
-    {
-      "wf_id": "WF-013",
-      "name": "Card menu action: Star this course",
-      "actor": "Student",
-      "conditional_branch": null,
-      "terminal_action": "Star this course",
-      "on_success": "pins the course to the top"
-    },
-    {
-      "wf_id": "WF-014",
-      "name": "Card menu action: Remove from view",
-      "actor": "Student",
+      "name": "Remove course from view (card action)",
+      "actor": "student",
       "conditional_branch": null,
       "terminal_action": "Remove from view",
-      "on_success": "hides the course from view"
+      "on_success": "hides the course for this user without unenrolling"
     }
   ],
-  "total": 14
+  "total": 3
 }

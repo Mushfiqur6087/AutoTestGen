@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:20:32.108920
+DEBUG SESSION STARTED: 2026-07-04T22:30:08.820349
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:20:32] Workflow-Extractor - SYSTEM PROMPT
+[22:30:08] Workflow-Extractor - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Workflow Extractor. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to enumerate every distinct, executable interaction path through this module — one entry per workflow.
 
@@ -54,12 +54,12 @@ Two workflows are **distinct** if they require different user actions to reach t
 
 ## What Paths to Enumerate
 
-Enumerate **all** distinct paths — not one-per-type. The rule: if two paths require the user to do something different to reach the terminal action, they are separate workflows.
+Enumerate **distinct-outcome** paths — not one-per-type, and **not** the cartesian product of every toggle. The rule: two paths are separate workflows only if the user does something different that leads to a **different terminal outcome** (different `on_success`) **or** exercises a **different revealed required-field group** that needs its own coverage.
 
 | AST node type | What to enumerate |
 |---|---|
 | `form` with no conditionals | One workflow per `submit_actions[]` entry |
-| `form` with `visible_when` fields | One workflow per unique combination of conditional branches activated, times each `submit_actions[]` entry |
+| `form` with `visible_when` / toggle fields | One base workflow per `submit_actions[]` entry, PLUS one workflow for **each conditional branch that reveals a distinct required-field group** (e.g. enabling File submissions reveals max-files/size/types). Do **NOT** multiply independent toggles together. |
 | `wizard` | One workflow per distinct step sequence (if all steps are linear, one workflow per `submit_actions[]`; if any step is conditional, enumerate each branch) |
 | `state_bound_action_bar` | One workflow per `available_actions[]` entry per state (state × action = one workflow) |
 | `data_table` | One workflow per `row_actions[]` entry + one per `bulk_actions[]` entry (include View, Edit, Delete, and all others) |
@@ -67,6 +67,20 @@ Enumerate **all** distinct paths — not one-per-type. The rule: if two paths re
 | `repeating_group` | Not a standalone workflow source — it is part of a form workflow that activates it |
 
 **Include all data table row actions** — View, Edit, Delete, and any others. Even read-only row actions (e.g., "View") must be included because they still require a positive test case.
+
+### DO NOT enumerate the cartesian product of toggles (CRITICAL)
+
+A form with independent toggles A, B, C and submit buttons {Save, Save+display, Cancel} must **not** produce 2×2×2×3 = 24 workflows. Independent toggles that do **not** change the terminal outcome are covered **once each**, not in combination:
+- If toggle A (e.g. `File_Submissions`) and toggle B (e.g. `Group_Submissions`) both still reach the same `on_success` ("assignment created"), they are **not** two dimensions to multiply. Emit one workflow that activates A's revealed fields, and one that activates B's revealed fields — not A×B.
+- An `+ Add restriction` / optional-picker step that does not change `on_success` is **not** a separate workflow dimension. Fold it into an existing workflow or add at most one workflow for it.
+
+### Discard / Cancel collapse rule (CRITICAL)
+
+A `Cancel` / `discard` / `abandon` terminal action discards **all** field state, so field/toggle combinations are irrelevant to it. Emit **exactly ONE** Cancel workflow for the module, regardless of how many toggles or revealed-field groups exist. Never produce a Cancel workflow per toggle combination.
+
+**Worked example — Assignment Creation** (toggles: File submissions, Group submissions, Add restriction; buttons: Save and return, Save and display, Cancel):
+- ✅ Correct (~6–8): base Save-and-return, base Save-and-display, one Save covering File-submission revealed fields, one Save covering Group-submission revealed fields, one Save covering an added restriction, one Cancel.
+- ❌ Wrong (24): every `{File}×{Group}×{Restriction}×{Save/Display/Cancel}` combination.
 
 ---
 
@@ -101,9 +115,11 @@ Go through these one by one. If any check fails, fix it before outputting.
 □ 4. Every tab with a form submission in a `tab_container` has one workflow.
 □ 5. `wf_id` numbering is sequential (WF-001, WF-002, ...) with no gaps.
 □ 6. Every `terminal_action` matches an exact `action_name` or `element_name` from the AST.
-□ 7. No two workflows share the same `conditional_branch` AND `terminal_action`.
-□ 8. No workflow crosses module boundaries (steps in another module).
-□ 9. Every `on_success` reflects the AST or description — no generic "success" strings.
+□ 7. No two workflows reach the **same `on_success` via the same code path** — even if their `conditional_branch` strings differ. If they do, merge them (keep the one that activates a distinct revealed required-field group; drop pure toggle-combination duplicates).
+□ 8. There is **at most ONE** `Cancel`/`discard` workflow for the whole module.
+□ 9. No independent toggles are multiplied together — the workflow count is roughly (base submits) + (revealed required-field groups) + 1 Cancel, NOT the product of all toggles × all buttons.
+□ 10. No workflow crosses module boundaries (steps in another module).
+□ 11. Every `on_success` reflects the AST or description — no generic "success" strings.
 
 ---
 
@@ -111,7 +127,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 1. Does each workflow trace back to a specific AST node (`submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`) or an explicit action described in the description text? If no → delete it.
 2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
-3. Are two workflows identical in `conditional_branch` AND `terminal_action`? If yes → merge them into one.
+3. Do two workflows reach the same `on_success` via the same code path (e.g. differing only by an independent toggle that does not change the outcome, or being repeated Cancel variants)? If yes → merge them into one. Keep a separate workflow only when its branch reveals a **distinct required-field group** that needs its own coverage.
 4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
 5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
 
@@ -120,7 +136,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 ## Calibration
 
 - Simple form module (no conditionals, one submit): 1–3 workflows
-- Form with conditionals: 3–8 workflows
+- Form with conditionals/toggles: **(base submit outcomes) + (one per revealed required-field group) + 1 Cancel** — typically 4–8, NOT the product of all toggles × all buttons. A multi-toggle form like Assignment Creation should land near 6–8, never 20+.
 - Module with state machine: add 1 per (state × action) combination
 - Module with data table: add 1 per row_action + 1 per bulk_action
 
@@ -153,15 +169,15 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 
 ------------------------------------------------------------
-[21:20:32] Workflow-Extractor - USER PROMPT
+[22:30:08] Workflow-Extractor - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 15,
   "module_title": "Booking Management",
-  "summary": "Displays detailed information for a specific booking (confirmation number, service and traveler details, payment and status) and provides options to modify or cancel the booking where permitted, with automated email notifications for status changes.",
-  "where_it_fits": "Accessible from the User Dashboard/Booking Management area after authentication, this module is part of the post-booking lifecycle for managing existing reservations discovered via the main navigation (Account/Login \u2192 Dashboard \u2192 Booking Management). It complements listing and detail flows for Hotels, Flights, Tours, and Cars by handling downstream changes and cancellations.",
-  "assumed_state_on_entry": "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)"
+  "summary": "Shows detailed information for an individual booking including confirmation number, service and traveler details, payment information, current status, and available modify or cancel actions when allowed.",
+  "where_it_fits": "Located within the User Dashboard/Booking Management area that is accessible after authentication via Account/Login; it is reached from the dashboard booking history or profile account links while the main navigation remains available (Home, Hotels, Flights, Tours, Cars, Visa, Offers, Blog, Account/Login).",
+  "assumed_state_on_entry": "Authenticated user with at least one existing booking (a specific booking selected or accessed from booking history)"
 }
 </module_context>
 
@@ -169,82 +185,83 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 <ast>
 {
+  "module_id": 15,
   "module_name": "Booking Management",
   "components": {
     "Booking_Detail_Actions": {
       "type": "action_bar",
-      "available_actions": [
-        {
-          "action_name": "Modify",
+      "actions": {
+        "Modify": {
+          "type": "button",
           "preconditions": [
-            "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
-            "modification permitted by booking type and cancellation policy"
+            "user must be authenticated",
+            "booking type permits modification",
+            "cancellation policy permits modification"
           ],
-          "fields": {
-            "New_Travel_Dates": {
-              "type": "date",
-              "constraints": [
-                "subject to availability",
-                "may incur change fees"
-              ]
-            },
-            "Special_Requests": {
-              "type": "unspecified"
-            },
-            "Traveler_Updates": {
-              "type": "repeating_group",
-              "item_fields": {
-                "Traveler_Identifier": {
-                  "type": "unspecified"
-                },
-                "Update_Details": {
-                  "type": "unspecified"
-                }
+          "opens": "Modify_Modal",
+          "modal": {
+            "type": "modal",
+            "title": "Modify Booking",
+            "fields": {
+              "Travel_Dates": {
+                "type": "date"
+              },
+              "Special_Requests": {
+                "type": "unspecified"
+              },
+              "Update_Traveler_Info": {
+                "type": "link",
+                "action": "edit_travelers"
               }
-            }
+            },
+            "submit_actions": [
+              {
+                "action_name": "Save Changes",
+                "on_success": [
+                  "apply_modifications",
+                  "send_email_notification"
+                ],
+                "constraints": [
+                  "subject to availability checks",
+                  "applicable fees may apply"
+                ]
+              }
+            ]
           },
-          "submit_actions": [
-            {
-              "action_name": "Submit Changes",
-              "on_success": "updates booking and sends email notification for modification",
-              "constraints": [
-                "changes are subject to availability and applicable fees"
-              ],
-              "preconditions": [
-                "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
-                "modification permitted by booking type and cancellation policy"
-              ]
-            }
-          ]
-        },
-        {
-          "action_name": "Cancel",
-          "preconditions": [
-            "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
-            "cancellation permitted by booking type and cancellation policy"
+          "constraints": [
+            "subject to availability",
+            "applicable fees may apply"
           ],
-          "fields": {
-            "Confirm_Cancellation": {
-              "type": "checkbox",
+          "on_success": "send_email_notification"
+        },
+        "Cancel": {
+          "type": "button",
+          "preconditions": [
+            "user must be authenticated",
+            "cancellation policy permits cancellation"
+          ],
+          "on_click": "open_confirmation_dialog",
+          "Confirmation_Dialog": {
+            "type": "confirmation_dialog",
+            "title": "Confirm Cancellation",
+            "Confirm_Button": {
+              "type": "button",
+              "action": "confirm_cancellation",
+              "required": true,
+              "on_success": [
+                "process_cancellation",
+                "initiate_refund_to_original_payment_method",
+                "send_email_notification"
+              ]
+            },
+            "Cancel_Button": {
+              "type": "button",
+              "action": "dismiss_confirmation",
               "required": true
             }
-          },
-          "submit_actions": [
-            {
-              "action_name": "Confirm Cancellation",
-              "on_success": "processes cancellation, initiates refund to original payment method, and sends email notification for cancellation",
-              "constraints": [
-                "refund amount determined by applicable cancellation policy"
-              ],
-              "preconditions": [
-                "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
-                "cancellation permitted by booking type and cancellation policy",
-                "Confirm_Cancellation == true"
-              ]
-            }
-          ]
+          }
         }
-      ]
+      }
     }
   }
 }
@@ -262,67 +279,83 @@ Each booking's detail view shows confirmation number, full service information, 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:21:04] Workflow-Extractor - LLM RESPONSE
+[22:30:41] Workflow-Extractor - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Booking Management",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Modify booking — Submit Changes",
-      "actor": "Authenticated user",
-      "conditional_branch": null,
-      "terminal_action": "Submit Changes",
-      "on_success": "updates booking and sends email notification for modification"
+      "name": "Modify booking and save changes",
+      "actor": "Authenticated User",
+      "conditional_branch": "booking_type permits modification AND cancellation_policy permits modification",
+      "terminal_action": "Save Changes",
+      "on_success": "apply_modifications; send_email_notification"
     },
     {
       "wf_id": "WF-002",
-      "name": "Cancel booking — Confirm Cancellation",
-      "actor": "Authenticated user",
-      "conditional_branch": "Confirm_Cancellation == true AND cancellation permitted by booking type and cancellation policy",
-      "terminal_action": "Confirm Cancellation",
-      "on_success": "processes cancellation, initiates refund to original payment method, and sends email notification for cancellation"
+      "name": "Confirm booking cancellation",
+      "actor": "Authenticated User",
+      "conditional_branch": "cancellation_policy permits cancellation",
+      "terminal_action": "confirm_cancellation",
+      "on_success": "process_cancellation; initiate_refund_to_original_payment_method; send_email_notification"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Dismiss cancellation confirmation (cancel the cancel)",
+      "actor": "Authenticated User",
+      "conditional_branch": null,
+      "terminal_action": "dismiss_confirmation",
+      "on_success": "confirmation dialog dismissed; booking remains unchanged"
     }
   ],
-  "total": 2
+  "total": 3
 }
 
 ------------------------------------------------------------
-[21:21:04] Workflow-Extractor - PARSED JSON
+[22:30:41] Workflow-Extractor - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Booking Management",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Modify booking \u2014 Submit Changes",
-      "actor": "Authenticated user",
-      "conditional_branch": null,
-      "terminal_action": "Submit Changes",
-      "on_success": "updates booking and sends email notification for modification"
+      "name": "Modify booking and save changes",
+      "actor": "Authenticated User",
+      "conditional_branch": "booking_type permits modification AND cancellation_policy permits modification",
+      "terminal_action": "Save Changes",
+      "on_success": "apply_modifications; send_email_notification"
     },
     {
       "wf_id": "WF-002",
-      "name": "Cancel booking \u2014 Confirm Cancellation",
-      "actor": "Authenticated user",
-      "conditional_branch": "Confirm_Cancellation == true AND cancellation permitted by booking type and cancellation policy",
-      "terminal_action": "Confirm Cancellation",
-      "on_success": "processes cancellation, initiates refund to original payment method, and sends email notification for cancellation"
+      "name": "Confirm booking cancellation",
+      "actor": "Authenticated User",
+      "conditional_branch": "cancellation_policy permits cancellation",
+      "terminal_action": "confirm_cancellation",
+      "on_success": "process_cancellation; initiate_refund_to_original_payment_method; send_email_notification"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Dismiss cancellation confirmation (cancel the cancel)",
+      "actor": "Authenticated User",
+      "conditional_branch": null,
+      "terminal_action": "dismiss_confirmation",
+      "on_success": "confirmation dialog dismissed; booking remains unchanged"
     }
   ],
-  "total": 2
+  "total": 3
 }
 
 ------------------------------------------------------------
-[21:21:43] Workflow-Extractor - USER PROMPT
+[22:31:27] Workflow-Extractor - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 15,
   "module_title": "Booking Management",
-  "summary": "Displays detailed information for a specific booking (confirmation number, service and traveler details, payment and status) and provides options to modify or cancel the booking where permitted, with automated email notifications for status changes.",
-  "where_it_fits": "Accessible from the User Dashboard/Booking Management area after authentication, this module is part of the post-booking lifecycle for managing existing reservations discovered via the main navigation (Account/Login \u2192 Dashboard \u2192 Booking Management). It complements listing and detail flows for Hotels, Flights, Tours, and Cars by handling downstream changes and cancellations.",
-  "assumed_state_on_entry": "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)"
+  "summary": "Shows detailed information for an individual booking including confirmation number, service and traveler details, payment information, current status, and available modify or cancel actions when allowed.",
+  "where_it_fits": "Located within the User Dashboard/Booking Management area that is accessible after authentication via Account/Login; it is reached from the dashboard booking history or profile account links while the main navigation remains available (Home, Hotels, Flights, Tours, Cars, Visa, Offers, Blog, Account/Login).",
+  "assumed_state_on_entry": "Authenticated user with at least one existing booking (a specific booking selected or accessed from booking history)"
 }
 </module_context>
 
@@ -330,82 +363,83 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
 
 <ast>
 {
+  "module_id": 15,
   "module_name": "Booking Management",
   "components": {
     "Booking_Detail_Actions": {
       "type": "action_bar",
-      "available_actions": [
-        {
-          "action_name": "Modify",
+      "actions": {
+        "Modify": {
+          "type": "button",
           "preconditions": [
-            "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
-            "modification permitted by booking type and cancellation policy"
+            "user must be authenticated",
+            "booking type permits modification",
+            "cancellation policy permits modification"
           ],
-          "fields": {
-            "New_Travel_Dates": {
-              "type": "date",
-              "constraints": [
-                "subject to availability",
-                "may incur change fees"
-              ]
-            },
-            "Special_Requests": {
-              "type": "unspecified"
-            },
-            "Traveler_Updates": {
-              "type": "repeating_group",
-              "item_fields": {
-                "Traveler_Identifier": {
-                  "type": "unspecified"
-                },
-                "Update_Details": {
-                  "type": "unspecified"
-                }
+          "opens": "Modify_Modal",
+          "modal": {
+            "type": "modal",
+            "title": "Modify Booking",
+            "fields": {
+              "Travel_Dates": {
+                "type": "date"
+              },
+              "Special_Requests": {
+                "type": "unspecified"
+              },
+              "Update_Traveler_Info": {
+                "type": "link",
+                "action": "edit_travelers"
               }
-            }
+            },
+            "submit_actions": [
+              {
+                "action_name": "Save Changes",
+                "on_success": [
+                  "apply_modifications",
+                  "send_email_notification"
+                ],
+                "constraints": [
+                  "subject to availability checks",
+                  "applicable fees may apply"
+                ]
+              }
+            ]
           },
-          "submit_actions": [
-            {
-              "action_name": "Submit Changes",
-              "on_success": "updates booking and sends email notification for modification",
-              "constraints": [
-                "changes are subject to availability and applicable fees"
-              ],
-              "preconditions": [
-                "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
-                "modification permitted by booking type and cancellation policy"
-              ]
-            }
-          ]
-        },
-        {
-          "action_name": "Cancel",
-          "preconditions": [
-            "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
-            "cancellation permitted by booking type and cancellation policy"
+          "constraints": [
+            "subject to availability",
+            "applicable fees may apply"
           ],
-          "fields": {
-            "Confirm_Cancellation": {
-              "type": "checkbox",
+          "on_success": "send_email_notification"
+        },
+        "Cancel": {
+          "type": "button",
+          "preconditions": [
+            "user must be authenticated",
+            "cancellation policy permits cancellation"
+          ],
+          "on_click": "open_confirmation_dialog",
+          "Confirmation_Dialog": {
+            "type": "confirmation_dialog",
+            "title": "Confirm Cancellation",
+            "Confirm_Button": {
+              "type": "button",
+              "action": "confirm_cancellation",
+              "required": true,
+              "on_success": [
+                "process_cancellation",
+                "initiate_refund_to_original_payment_method",
+                "send_email_notification"
+              ]
+            },
+            "Cancel_Button": {
+              "type": "button",
+              "action": "dismiss_confirmation",
               "required": true
             }
-          },
-          "submit_actions": [
-            {
-              "action_name": "Confirm Cancellation",
-              "on_success": "processes cancellation, initiates refund to original payment method, and sends email notification for cancellation",
-              "constraints": [
-                "refund amount determined by applicable cancellation policy"
-              ],
-              "preconditions": [
-                "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
-                "cancellation permitted by booking type and cancellation policy",
-                "Confirm_Cancellation == true"
-              ]
-            }
-          ]
+          }
         }
-      ]
+      }
     }
   }
 }
@@ -423,53 +457,261 @@ Each booking's detail view shows confirmation number, full service information, 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:22:06] Workflow-Extractor - LLM RESPONSE
+[22:32:12] Workflow-Extractor - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Booking Management",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Modify booking and submit changes",
+      "name": "Modify booking and save changes",
       "actor": "Authenticated user",
-      "conditional_branch": null,
-      "terminal_action": "Submit Changes",
-      "on_success": "updates booking and sends email notification for modification"
+      "conditional_branch": "booking type permits modification AND cancellation policy permits modification",
+      "terminal_action": "Save Changes",
+      "on_success": [
+        "apply_modifications",
+        "send_email_notification"
+      ]
     },
     {
       "wf_id": "WF-002",
-      "name": "Confirm cancellation (user checked confirmation)",
+      "name": "Confirm booking cancellation",
       "actor": "Authenticated user",
-      "conditional_branch": "Confirm_Cancellation == true",
-      "terminal_action": "Confirm Cancellation",
-      "on_success": "processes cancellation, initiates refund to original payment method, and sends email notification for cancellation"
+      "conditional_branch": "cancellation policy permits cancellation",
+      "terminal_action": "confirm_cancellation",
+      "on_success": [
+        "process_cancellation",
+        "initiate_refund_to_original_payment_method",
+        "send_email_notification"
+      ]
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Dismiss cancellation confirmation (no change)",
+      "actor": "Authenticated user",
+      "conditional_branch": "cancellation policy permits cancellation",
+      "terminal_action": "dismiss_confirmation",
+      "on_success": "confirmation_dialog_dismissed; no changes made"
     }
   ],
-  "total": 2
+  "total": 3
 }
 
 ------------------------------------------------------------
-[21:22:06] Workflow-Extractor - PARSED JSON
+[22:32:12] Workflow-Extractor - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Booking Management",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Modify booking and submit changes",
+      "name": "Modify booking and save changes",
       "actor": "Authenticated user",
-      "conditional_branch": null,
-      "terminal_action": "Submit Changes",
-      "on_success": "updates booking and sends email notification for modification"
+      "conditional_branch": "booking type permits modification AND cancellation policy permits modification",
+      "terminal_action": "Save Changes",
+      "on_success": [
+        "apply_modifications",
+        "send_email_notification"
+      ]
     },
     {
       "wf_id": "WF-002",
-      "name": "Confirm cancellation (user checked confirmation)",
+      "name": "Confirm booking cancellation",
       "actor": "Authenticated user",
-      "conditional_branch": "Confirm_Cancellation == true",
-      "terminal_action": "Confirm Cancellation",
-      "on_success": "processes cancellation, initiates refund to original payment method, and sends email notification for cancellation"
+      "conditional_branch": "cancellation policy permits cancellation",
+      "terminal_action": "confirm_cancellation",
+      "on_success": [
+        "process_cancellation",
+        "initiate_refund_to_original_payment_method",
+        "send_email_notification"
+      ]
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Dismiss cancellation confirmation (no change)",
+      "actor": "Authenticated user",
+      "conditional_branch": "cancellation policy permits cancellation",
+      "terminal_action": "dismiss_confirmation",
+      "on_success": "confirmation_dialog_dismissed; no changes made"
     }
   ],
-  "total": 2
+  "total": 3
+}
+
+------------------------------------------------------------
+[22:32:41] Workflow-Extractor - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 15,
+  "module_title": "Booking Management",
+  "summary": "Shows detailed information for an individual booking including confirmation number, service and traveler details, payment information, current status, and available modify or cancel actions when allowed.",
+  "where_it_fits": "Located within the User Dashboard/Booking Management area that is accessible after authentication via Account/Login; it is reached from the dashboard booking history or profile account links while the main navigation remains available (Home, Hotels, Flights, Tours, Cars, Visa, Offers, Blog, Account/Login).",
+  "assumed_state_on_entry": "Authenticated user with at least one existing booking (a specific booking selected or accessed from booking history)"
+}
+</module_context>
+
+<module_name>Booking Management</module_name>
+
+<ast>
+{
+  "module_id": 15,
+  "module_name": "Booking Management",
+  "components": {
+    "Booking_Detail_Actions": {
+      "type": "action_bar",
+      "actions": {
+        "Modify": {
+          "type": "button",
+          "preconditions": [
+            "user must be authenticated",
+            "booking type permits modification",
+            "cancellation policy permits modification"
+          ],
+          "opens": "Modify_Modal",
+          "modal": {
+            "type": "modal",
+            "title": "Modify Booking",
+            "fields": {
+              "Travel_Dates": {
+                "type": "date"
+              },
+              "Special_Requests": {
+                "type": "unspecified"
+              },
+              "Update_Traveler_Info": {
+                "type": "link",
+                "action": "edit_travelers"
+              }
+            },
+            "submit_actions": [
+              {
+                "action_name": "Save Changes",
+                "on_success": [
+                  "apply_modifications",
+                  "send_email_notification"
+                ],
+                "constraints": [
+                  "subject to availability checks",
+                  "applicable fees may apply"
+                ]
+              }
+            ]
+          },
+          "constraints": [
+            "subject to availability",
+            "applicable fees may apply"
+          ],
+          "on_success": "send_email_notification"
+        },
+        "Cancel": {
+          "type": "button",
+          "preconditions": [
+            "user must be authenticated",
+            "cancellation policy permits cancellation"
+          ],
+          "on_click": "open_confirmation_dialog",
+          "Confirmation_Dialog": {
+            "type": "confirmation_dialog",
+            "title": "Confirm Cancellation",
+            "Confirm_Button": {
+              "type": "button",
+              "action": "confirm_cancellation",
+              "required": true,
+              "on_success": [
+                "process_cancellation",
+                "initiate_refund_to_original_payment_method",
+                "send_email_notification"
+              ]
+            },
+            "Cancel_Button": {
+              "type": "button",
+              "action": "dismiss_confirmation",
+              "required": true
+            }
+          }
+        }
+      }
+    }
+  }
+}
+</ast>
+
+<description>
+
+Each booking's detail view shows confirmation number, full service information, traveler details, payment information, and current booking status. Where the booking type and cancellation policy permit, a Modify button allows changing travel dates (subject to availability and applicable fees), adding special requests, or updating traveler information. Clicking Cancel opens a cancellation confirmation flow showing the applicable refund amount; the user must explicitly confirm before the cancellation is processed and a refund is initiated to the original payment method. Email notifications are sent for all status changes including confirmation, modification, and cancellation.
+
+---
+
+
+</description>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[22:32:55] Workflow-Extractor - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Booking Management",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Modify booking and save changes",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Save Changes",
+      "on_success": "apply_modifications; send_email_notification"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Cancel booking — confirm cancellation",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "confirm_cancellation",
+      "on_success": "process_cancellation; initiate_refund_to_original_payment_method; send_email_notification"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Cancel booking — dismiss confirmation dialog",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "dismiss_confirmation",
+      "on_success": "confirmation dialog dismissed; no cancellation processed"
+    }
+  ],
+  "total": 3
+}
+
+------------------------------------------------------------
+[22:32:55] Workflow-Extractor - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Booking Management",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Modify booking and save changes",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Save Changes",
+      "on_success": "apply_modifications; send_email_notification"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Cancel booking \u2014 confirm cancellation",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "confirm_cancellation",
+      "on_success": "process_cancellation; initiate_refund_to_original_payment_method; send_email_notification"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Cancel booking \u2014 dismiss confirmation dialog",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "dismiss_confirmation",
+      "on_success": "confirmation dialog dismissed; no cancellation processed"
+    }
+  ],
+  "total": 3
 }

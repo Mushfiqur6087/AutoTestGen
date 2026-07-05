@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:02:39.101849
+DEBUG SESSION STARTED: 2026-07-04T22:22:17.296167
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Edge - SYSTEM PROMPT
+[22:22:17] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Edge - USER PROMPT
+[22:22:17] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 10,
   "module_title": "Investments",
-  "summary": "Provides a portfolio snapshot and workflows for executing same-day fund trades and creating recurring investment plans, with input validation and confirmation messages.",
-  "where_it_fits": "Accessible from the left-hand navigation (Investments, item \u2467) after successful login and landing on the account dashboard; it is the application area for managing brokerage-style holdings and scheduling contributions as part of account management features.",
-  "assumed_state_on_entry": "Logged in customer session with at least one linked funding/destination account and investment privileges (existing holdings or funding account available)."
+  "summary": "Displays a portfolio snapshot and provides forms to execute same-day buy/sell trades and to create recurring investment plans with inline validation and success confirmations.",
+  "where_it_fits": "Accessible from the left-hand navigation as the Investments option after successful sign-in, it complements the Accounts Overview and other account-management features (e.g., Transfer Funds, Manage Cards) by handling investment holdings and trade activity within the user's account lifecycle. Actions on this page update the user's holdings and are reflected in portfolio data shown across the application.",
+  "assumed_state_on_entry": "Logged in as a customer with an active account and at least one funding/destination account available for trades."
 }
 </module_context>
 
@@ -256,37 +270,30 @@ If a `<workflows>` block is present in the input:
         "Fund_Symbol": {
           "type": "search",
           "constraints": [
-            "symbol must exist"
+            "symbol must exist (validated against available funds)"
           ]
         },
         "Quantity": {
           "type": "number",
           "constraints": [
-            "must be greater than zero"
+            "must be greater than 0"
           ]
         },
         "Funding_Or_Destination_Account": {
           "type": "dropdown"
         }
       },
-      "constraints": [
-        "if Action == Buy then customer must have sufficient buying power for the requested Quantity",
-        "if Action == Sell then customer must have sufficient share balance of Fund_Symbol for the requested Quantity"
-      ],
       "submit_actions": [
         {
           "action_name": "Execute Trade",
           "preconditions": [
-            "Logged in customer session with at least one linked funding/destination account and investment privileges (existing holdings or funding account available)."
+            "Logged in as a customer with an active account and at least one funding/destination account available for trades."
           ],
           "constraints": [
-            "Fund_Symbol must exist (validated inline)",
-            "Quantity must be greater than zero",
             "if Action == Buy then customer must have sufficient buying power",
             "if Action == Sell then customer must have sufficient share balance"
           ],
-          "on_success": "Trade executed successfully. Returns Order ID and updates holdings.",
-          "validation_errors_display": "inline"
+          "on_success": "executes same-day trade, updates holdings, displays \"Trade executed successfully.\" with order ID"
         }
       ]
     },
@@ -296,13 +303,13 @@ If a `<workflows>` block is present in the input:
         "Fund_Symbol": {
           "type": "search",
           "constraints": [
-            "symbol must exist"
+            "symbol must exist (validated against available funds)"
           ]
         },
         "Contribution_Amount": {
           "type": "number",
           "constraints": [
-            "must meet the minimum contribution"
+            "must meet the minimum contribution requirement"
           ]
         },
         "Frequency": {
@@ -315,7 +322,8 @@ If a `<workflows>` block is present in the input:
         "Start_Date": {
           "type": "date",
           "constraints": [
-            "must be in the future"
+            "must be in the future",
+            "Start date must be in the future"
           ]
         },
         "Funding_Account": {
@@ -326,15 +334,14 @@ If a `<workflows>` block is present in the input:
         {
           "action_name": "Create Plan",
           "preconditions": [
-            "Logged in customer session with at least one linked funding/destination account and investment privileges (existing holdings or funding account available)."
+            "Logged in as a customer with an active account and at least one funding/destination account available for trades."
           ],
           "constraints": [
-            "Start_Date must be in the future",
-            "Contribution_Amount must meet the minimum contribution",
-            "funding account must have adequate balance to cover initial contribution and scheduled transfers"
+            "funding account must have adequate balance",
+            "contribution amount must meet the minimum contribution requirement",
+            "start date must be in the future"
           ],
-          "on_success": "Plan created successfully. Schedule stored.",
-          "validation_errors_display": "inline"
+          "on_success": "stores schedule and shows \"Plan created successfully.\""
         }
       ]
     }
@@ -349,15 +356,15 @@ The Investments page is a multi-section workspace.The portfolio snapshot is a re
 </description>
 
 <workflows>
-WF-001 | Execute Trade — Buy | actor: Customer | branch: Action == Buy | terminal: Execute Trade | on_success: Trade executed successfully. Returns Order ID and updates holdings.
-WF-002 | Execute Trade — Sell | actor: Customer | branch: Action == Sell | terminal: Execute Trade | on_success: Trade executed successfully. Returns Order ID and updates holdings.
-WF-003 | Create Recurring Investment Plan | actor: Customer | branch: none | terminal: Create Plan | on_success: Plan created successfully. Schedule stored.
+WF-001 | Execute Buy trade | actor: Customer | branch: Action == Buy | terminal: Execute Trade | on_success: executes same-day trade, updates holdings, displays "Trade executed successfully." with order ID
+WF-002 | Execute Sell trade | actor: Customer | branch: Action == Sell | terminal: Execute Trade | on_success: executes same-day trade, updates holdings, displays "Trade executed successfully." with order ID
+WF-003 | Create recurring investment plan | actor: Customer | branch: none | terminal: Create Plan | on_success: stores schedule and shows "Plan created successfully."
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:05:05] Test-Edge - LLM RESPONSE
+[22:24:52] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Investments",
@@ -367,238 +374,227 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Buy — Quantity equal to maximum purchasable with selected funding account succeeds",
+      "test_case": "Buy trade with Quantity set to the smallest accepted positive unit",
       "preconditions": [
-        "Logged in customer session with at least one linked funding/destination account and investment privileges",
-        "Funding_Account selected for the test has buying power exactly equal to the cost of <maximum purchasable quantity> for the chosen Fund_Symbol",
-        "Fund_Symbol exists and is tradable"
+        "Logged in as a customer with an active account and at least one funding account available for trades.",
+        "Customer has sufficient buying power to purchase the requested quantity of the selected fund.",
+        "A valid fund symbol exists and is selectable from the Fund Symbol search."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Trade Funds form",
-        "3. Select Action = Buy",
-        "4. Enter Fund_Symbol that exists",
-        "5. Select Funding_Or_Destination_Account that has buying power exactly equal to the cost of <maximum purchasable quantity>",
-        "6. Enter Quantity = <maximum purchasable given selected funding account>",
-        "7. Click Execute Trade"
+        "1. Navigate to the Investments page.",
+        "2. In the Trade Funds form, select Action = Buy.",
+        "3. In Fund Symbol, type and select a valid existing fund symbol.",
+        "4. Enter <one unit above 0> in the Quantity field.",
+        "5. Select a Funding_Or_Destination_Account that has sufficient buying power.",
+        "6. Click Execute Trade."
       ],
-      "expected_result": "Form submits successfully; 'Trade executed successfully.' message shown with an Order ID and holdings updated to reflect the executed Quantity (succeeds)",
+      "expected_result": "succeeds — the page shows a visible confirmation banner 'Trade executed successfully.' and displays a single order ID in the confirmation area.",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Buy — Quantity one unit above maximum purchasable is blocked",
+      "test_case": "Buy trade with Quantity equal to zero (boundary below allowed)",
       "preconditions": [
-        "Logged in customer session with at least one linked funding/destination account and investment privileges",
-        "Funding_Account selected for the test has buying power exactly equal to the cost of <maximum purchasable quantity> for the chosen Fund_Symbol",
-        "Fund_Symbol exists and is tradable"
+        "Logged in as a customer with an active account and at least one funding account available for trades.",
+        "A valid fund symbol exists and is selectable from the Fund Symbol search."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Trade Funds form",
-        "3. Select Action = Buy",
-        "4. Enter Fund_Symbol that exists",
-        "5. Select Funding_Or_Destination_Account that has buying power exactly equal to the cost of <maximum purchasable quantity>",
-        "6. Enter Quantity = <maximum purchasable given selected funding account + 1 unit>",
-        "7. Click Execute Trade"
+        "1. Navigate to the Investments page.",
+        "2. In the Trade Funds form, select Action = Buy.",
+        "3. In Fund Symbol, type and select a valid existing fund symbol.",
+        "4. Enter 0 in the Quantity field.",
+        "5. Select a Funding_Or_Destination_Account.",
+        "6. Click Execute Trade."
       ],
-      "expected_result": "Submission is blocked; Quantity displays an inline error indicating insufficient buying power (is blocked / error shown)",
+      "expected_result": "is blocked; the Quantity field displays an inline validation error indicating the value must be greater than 0, and no 'Trade executed successfully.' confirmation is shown.",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-002",
       "subcategory": "boundary",
-      "test_case": "Sell — Quantity equal to current share balance succeeds",
+      "test_case": "Sell trade where Quantity equals the user's entire share balance (exact sufficiency)",
       "preconditions": [
-        "Logged in customer session with at least one linked funding/destination account and investment privileges",
-        "Customer holds exactly <current share balance> of the chosen Fund_Symbol",
-        "Fund_Symbol exists and is tradable"
+        "Logged in as a customer with an active account and at least one destination account available for trades.",
+        "Customer currently holds shares of the selected fund.",
+        "Customer's share balance for the selected fund equals <one unit above 0> (i.e., balance exactly matches the quantity to sell).",
+        "A valid fund symbol exists and is selectable from the Fund Symbol search."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Trade Funds form",
-        "3. Select Action = Sell",
-        "4. Enter Fund_Symbol that the customer holds",
-        "5. Select Funding_Or_Destination_Account as destination for proceeds",
-        "6. Enter Quantity = <current share balance>",
-        "7. Click Execute Trade"
+        "1. Navigate to the Investments page.",
+        "2. In the Trade Funds form, select Action = Sell.",
+        "3. In Fund Symbol, type and select the fund symbol that the customer currently holds.",
+        "4. Enter <one unit above 0> in the Quantity field (equal to the customer's current share balance).",
+        "5. Select a Funding_Or_Destination_Account as the destination.",
+        "6. Click Execute Trade."
       ],
-      "expected_result": "Form submits successfully; 'Trade executed successfully.' message shown with an Order ID and holdings updated to remove the sold Quantity (succeeds)",
+      "expected_result": "succeeds — the page shows a visible confirmation banner 'Trade executed successfully.' and displays a single order ID in the confirmation area.",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-002",
       "subcategory": "boundary",
-      "test_case": "Sell — Quantity one unit above current share balance is blocked",
+      "test_case": "Sell trade where Quantity exceeds share balance by one unit (just over sufficiency)",
       "preconditions": [
-        "Logged in customer session with at least one linked funding/destination account and investment privileges",
-        "Customer holds exactly <current share balance> of the chosen Fund_Symbol",
-        "Fund_Symbol exists and is tradable"
+        "Logged in as a customer with an active account and at least one destination account available for trades.",
+        "Customer currently holds shares of the selected fund, with a balance that is exactly one unit less than the requested Quantity.",
+        "A valid fund symbol exists and is selectable from the Fund Symbol search."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Trade Funds form",
-        "3. Select Action = Sell",
-        "4. Enter Fund_Symbol that the customer holds",
-        "5. Select Funding_Or_Destination_Account as destination for proceeds",
-        "6. Enter Quantity = <current share balance + 1 unit>",
-        "7. Click Execute Trade"
+        "1. Navigate to the Investments page.",
+        "2. In the Trade Funds form, select Action = Sell.",
+        "3. In Fund Symbol, type and select the fund symbol that the customer currently holds.",
+        "4. Enter a Quantity that is one unit greater than the customer's current share balance.",
+        "5. Select a Funding_Or_Destination_Account as the destination.",
+        "6. Click Execute Trade."
       ],
-      "expected_result": "Submission is blocked; Quantity displays an inline error indicating insufficient share balance for the requested Quantity (is blocked / error shown)",
+      "expected_result": "is blocked; the Quantity field displays an inline error indicating insufficient share balance (insufficient holdings), and no 'Trade executed successfully.' confirmation is shown.",
       "priority": "medium"
     },
     {
       "tc_id": "E-005",
       "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Create Plan — Start_Date set to tomorrow (first valid future day) succeeds",
+      "test_case": "Create recurring plan with Start Date set to the next calendar day (future boundary)",
       "preconditions": [
-        "Logged in customer session with at least one linked funding account and investment privileges",
-        "Fund_Symbol exists",
-        "Funding_Account has adequate balance to cover the initial contribution"
+        "Logged in as a customer with an active account and at least one funding account available for trades.",
+        "Funding account has adequate balance to cover the contribution amount entered.",
+        "Contribution amount entered meets or exceeds the minimum contribution requirement.",
+        "A valid fund symbol exists and is selectable from the Fund Symbol search."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Recurring Investment Plan form",
-        "3. Enter Fund_Symbol that exists",
-        "4. Enter Contribution_Amount that meets the minimum contribution",
-        "5. Select Frequency = Monthly (or Weekly)",
-        "6. Enter Start_Date = <tomorrow>",
-        "7. Select Funding_Account with adequate balance",
-        "8. Click Create Plan"
+        "1. Navigate to the Investments page.",
+        "2. In the Recurring Investment Plan form, in Fund Symbol enter and select a valid existing fund symbol.",
+        "3. Enter <minimum contribution> in Contribution Amount.",
+        "4. Select Frequency = Monthly (or Weekly).",
+        "5. Set Start Date = <one day in the future>.",
+        "6. Select a Funding_Account that has adequate balance.",
+        "7. Click Create Plan."
       ],
-      "expected_result": "Form submits successfully; 'Plan created successfully.' message shown and schedule stored (succeeds)",
+      "expected_result": "succeeds — the page displays a visible confirmation 'Plan created successfully.' and the created plan appears in the list/schedule area.",
       "priority": "medium"
     },
     {
       "tc_id": "E-006",
       "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Create Plan — Start_Date set to today is blocked with explicit inline error",
+      "test_case": "Create recurring plan with Start Date set to today (boundary violation)",
       "preconditions": [
-        "Logged in customer session with at least one linked funding account and investment privileges",
-        "Fund_Symbol exists",
-        "Funding_Account has adequate balance to cover the initial contribution"
+        "Logged in as a customer with an active account and at least one funding account available for trades.",
+        "Funding account has adequate balance to cover the contribution amount entered.",
+        "Contribution amount entered meets or exceeds the minimum contribution requirement.",
+        "A valid fund symbol exists and is selectable from the Fund Symbol search."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Recurring Investment Plan form",
-        "3. Enter Fund_Symbol that exists",
-        "4. Enter Contribution_Amount that meets the minimum contribution",
-        "5. Select Frequency = Monthly (or Weekly)",
-        "6. Enter Start_Date = <today>",
-        "7. Select Funding_Account with adequate balance",
-        "8. Click Create Plan"
+        "1. Navigate to the Investments page.",
+        "2. In the Recurring Investment Plan form, in Fund Symbol enter and select a valid existing fund symbol.",
+        "3. Enter <minimum contribution> in Contribution Amount.",
+        "4. Select Frequency = Monthly (or Weekly).",
+        "5. Set Start Date = today.",
+        "6. Select a Funding_Account that has adequate balance.",
+        "7. Click Create Plan."
       ],
-      "expected_result": "Submission is blocked; Start_Date field displays the inline error 'Start date must be in the future' (is blocked / error shown)",
+      "expected_result": "is blocked; the Start Date field displays the inline error \"Start date must be in the future\" and no 'Plan created successfully.' confirmation is shown.",
       "priority": "medium"
     },
     {
       "tc_id": "E-007",
       "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Create Plan — Contribution_Amount exactly equals the minimum contribution succeeds",
+      "test_case": "Create recurring plan with Contribution Amount equal to the minimum contribution",
       "preconditions": [
-        "Logged in customer session with at least one linked funding account and investment privileges",
-        "Funding_Account has adequate balance to cover the minimum contribution",
-        "Fund_Symbol exists"
+        "Logged in as a customer with an active account and at least one funding account available for trades.",
+        "Funding account has an available balance equal to or greater than <minimum contribution> (adequate balance).",
+        "A valid fund symbol exists and is selectable from the Fund Symbol search.",
+        "Start Date is set to a date in the future."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Recurring Investment Plan form",
-        "3. Enter Fund_Symbol that exists",
-        "4. Enter Contribution_Amount = <minimum contribution>",
-        "5. Select Frequency = Monthly (or Weekly)",
-        "6. Enter Start_Date = <tomorrow>",
-        "7. Select Funding_Account with adequate balance",
-        "8. Click Create Plan"
+        "1. Navigate to the Investments page.",
+        "2. In the Recurring Investment Plan form, in Fund Symbol enter and select a valid existing fund symbol.",
+        "3. Enter <minimum contribution> in Contribution Amount.",
+        "4. Select Frequency = Monthly (or Weekly).",
+        "5. Set Start Date = <one day in the future>.",
+        "6. Select the Funding_Account that has an available balance equal to or greater than <minimum contribution>.",
+        "7. Click Create Plan."
       ],
-      "expected_result": "Form submits successfully; 'Plan created successfully.' message shown and schedule stored (succeeds)",
+      "expected_result": "succeeds — the page displays a visible confirmation 'Plan created successfully.' and the created plan appears in the list/schedule area.",
       "priority": "medium"
     },
     {
       "tc_id": "E-008",
       "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Create Plan — Contribution_Amount one unit below the minimum is blocked",
+      "test_case": "Create recurring plan with Contribution Amount one unit below the minimum contribution",
       "preconditions": [
-        "Logged in customer session with at least one linked funding account and investment privileges",
-        "Funding_Account has adequate balance excluding the missing unit",
-        "Fund_Symbol exists"
+        "Logged in as a customer with an active account and at least one funding account available for trades.",
+        "A valid fund symbol exists and is selectable from the Fund Symbol search.",
+        "Start Date is set to a date in the future."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Recurring Investment Plan form",
-        "3. Enter Fund_Symbol that exists",
-        "4. Enter Contribution_Amount = <minimum contribution - 1 unit>",
-        "5. Select Frequency = Monthly (or Weekly)",
-        "6. Enter Start_Date = <tomorrow>",
-        "7. Select Funding_Account",
-        "8. Click Create Plan"
+        "1. Navigate to the Investments page.",
+        "2. In the Recurring Investment Plan form, in Fund Symbol enter and select a valid existing fund symbol.",
+        "3. Enter <one unit below minimum contribution> in Contribution Amount.",
+        "4. Select Frequency = Monthly (or Weekly).",
+        "5. Set Start Date = <one day in the future>.",
+        "6. Select a Funding_Account.",
+        "7. Click Create Plan."
       ],
-      "expected_result": "Submission is blocked; Contribution_Amount displays an inline error indicating the amount is below the minimum allowed (is blocked / error shown)",
+      "expected_result": "is blocked; the Contribution Amount field displays an inline validation error indicating the value does not meet the minimum contribution requirement, and no 'Plan created successfully.' confirmation is shown.",
       "priority": "medium"
     },
     {
       "tc_id": "E-009",
       "wf_ref": null,
-      "subcategory": "boundary",
-      "test_case": "Trade — Quantity = 0 is blocked with explicit inline validation",
+      "subcategory": "input_edge",
+      "test_case": "Fund Symbol search with an extremely long string (200+ characters)",
       "preconditions": [
-        "Logged in customer session with at least one linked funding/destination account and investment privileges",
-        "Fund_Symbol exists"
+        "Logged in as a customer with an active account and at least one funding account available for trades."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Trade Funds form",
-        "3. Select Action = Buy",
-        "4. Enter Fund_Symbol that exists",
-        "5. Select Funding_Or_Destination_Account",
-        "6. Enter Quantity = 0",
-        "7. Click Execute Trade"
+        "1. Navigate to the Investments page.",
+        "2. In the Trade Funds form, focus the Fund Symbol search input.",
+        "3. Type a very long string (200+ characters) into the Fund Symbol search input."
       ],
-      "expected_result": "Submission is blocked; Quantity displays an inline error 'Quantity must be greater than zero' (is blocked / error shown)",
-      "priority": "medium"
+      "expected_result": "is blocked; the Fund Symbol field displays an inline error or ‘no results’ state indicating the symbol does not exist (symbol validation fails visibly), and autocomplete shows no selectable results.",
+      "priority": "low"
     },
     {
       "tc_id": "E-010",
       "wf_ref": null,
-      "subcategory": "input_edge",
-      "test_case": "Fund_Symbol entry with leading/trailing whitespace is trimmed and validated",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click of Execute Trade immediately after a successful submit",
       "preconditions": [
-        "Logged in customer session with at least one linked funding/destination account and investment privileges",
-        "There is a known Fund_Symbol that exists for validation"
+        "Logged in as a customer with an active account and at least one funding account available for trades.",
+        "Customer has sufficient buying power or share balance as appropriate for the trade.",
+        "A valid fund symbol exists and is selectable from the Fund Symbol search."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Trade Funds form",
-        "3. In Fund_Symbol input, type ' <existing symbol> ' including leading and trailing spaces",
-        "4. Wait for autocomplete validation to run",
-        "5. Select the trimmed symbol suggestion if presented",
-        "6. Complete other required fields and click Execute Trade"
+        "1. Navigate to the Investments page.",
+        "2. In the Trade Funds form, select Action and Fund Symbol, enter a valid Quantity, and select a Funding_Or_Destination_Account.",
+        "3. Click Execute Trade once.",
+        "4. Immediately (without changing form fields) click Execute Trade again."
       ],
-      "expected_result": "Whitespace is trimmed before validation; the symbol is recognized and the trade attempt proceeds (succeeds) — the saved/used symbol shown in any confirmation or detail view contains no leading or trailing spaces",
+      "expected_result": "is blocked; the second Execute Trade click does not create a second trade — the UI shows only one 'Trade executed successfully.' confirmation with a single order ID, and no duplicate confirmation appears.",
       "priority": "low"
     }
   ],
   "summary": {
     "total": 10,
-    "boundary": 9,
+    "boundary": 8,
     "input_edge": 1,
-    "interaction_edge": 0,
+    "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 9,
-    "low_priority": 1
+    "medium_priority": 8,
+    "low_priority": 2
   }
 }
 
 ------------------------------------------------------------
-[21:05:05] Test-Edge - PARSED JSON
+[22:24:52] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Investments",
@@ -608,232 +604,221 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Buy \u2014 Quantity equal to maximum purchasable with selected funding account succeeds",
+      "test_case": "Buy trade with Quantity set to the smallest accepted positive unit",
       "preconditions": [
-        "Logged in customer session with at least one linked funding/destination account and investment privileges",
-        "Funding_Account selected for the test has buying power exactly equal to the cost of <maximum purchasable quantity> for the chosen Fund_Symbol",
-        "Fund_Symbol exists and is tradable"
+        "Logged in as a customer with an active account and at least one funding account available for trades.",
+        "Customer has sufficient buying power to purchase the requested quantity of the selected fund.",
+        "A valid fund symbol exists and is selectable from the Fund Symbol search."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Trade Funds form",
-        "3. Select Action = Buy",
-        "4. Enter Fund_Symbol that exists",
-        "5. Select Funding_Or_Destination_Account that has buying power exactly equal to the cost of <maximum purchasable quantity>",
-        "6. Enter Quantity = <maximum purchasable given selected funding account>",
-        "7. Click Execute Trade"
+        "1. Navigate to the Investments page.",
+        "2. In the Trade Funds form, select Action = Buy.",
+        "3. In Fund Symbol, type and select a valid existing fund symbol.",
+        "4. Enter <one unit above 0> in the Quantity field.",
+        "5. Select a Funding_Or_Destination_Account that has sufficient buying power.",
+        "6. Click Execute Trade."
       ],
-      "expected_result": "Form submits successfully; 'Trade executed successfully.' message shown with an Order ID and holdings updated to reflect the executed Quantity (succeeds)",
+      "expected_result": "succeeds \u2014 the page shows a visible confirmation banner 'Trade executed successfully.' and displays a single order ID in the confirmation area.",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Buy \u2014 Quantity one unit above maximum purchasable is blocked",
+      "test_case": "Buy trade with Quantity equal to zero (boundary below allowed)",
       "preconditions": [
-        "Logged in customer session with at least one linked funding/destination account and investment privileges",
-        "Funding_Account selected for the test has buying power exactly equal to the cost of <maximum purchasable quantity> for the chosen Fund_Symbol",
-        "Fund_Symbol exists and is tradable"
+        "Logged in as a customer with an active account and at least one funding account available for trades.",
+        "A valid fund symbol exists and is selectable from the Fund Symbol search."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Trade Funds form",
-        "3. Select Action = Buy",
-        "4. Enter Fund_Symbol that exists",
-        "5. Select Funding_Or_Destination_Account that has buying power exactly equal to the cost of <maximum purchasable quantity>",
-        "6. Enter Quantity = <maximum purchasable given selected funding account + 1 unit>",
-        "7. Click Execute Trade"
+        "1. Navigate to the Investments page.",
+        "2. In the Trade Funds form, select Action = Buy.",
+        "3. In Fund Symbol, type and select a valid existing fund symbol.",
+        "4. Enter 0 in the Quantity field.",
+        "5. Select a Funding_Or_Destination_Account.",
+        "6. Click Execute Trade."
       ],
-      "expected_result": "Submission is blocked; Quantity displays an inline error indicating insufficient buying power (is blocked / error shown)",
+      "expected_result": "is blocked; the Quantity field displays an inline validation error indicating the value must be greater than 0, and no 'Trade executed successfully.' confirmation is shown.",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-002",
       "subcategory": "boundary",
-      "test_case": "Sell \u2014 Quantity equal to current share balance succeeds",
+      "test_case": "Sell trade where Quantity equals the user's entire share balance (exact sufficiency)",
       "preconditions": [
-        "Logged in customer session with at least one linked funding/destination account and investment privileges",
-        "Customer holds exactly <current share balance> of the chosen Fund_Symbol",
-        "Fund_Symbol exists and is tradable"
+        "Logged in as a customer with an active account and at least one destination account available for trades.",
+        "Customer currently holds shares of the selected fund.",
+        "Customer's share balance for the selected fund equals <one unit above 0> (i.e., balance exactly matches the quantity to sell).",
+        "A valid fund symbol exists and is selectable from the Fund Symbol search."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Trade Funds form",
-        "3. Select Action = Sell",
-        "4. Enter Fund_Symbol that the customer holds",
-        "5. Select Funding_Or_Destination_Account as destination for proceeds",
-        "6. Enter Quantity = <current share balance>",
-        "7. Click Execute Trade"
+        "1. Navigate to the Investments page.",
+        "2. In the Trade Funds form, select Action = Sell.",
+        "3. In Fund Symbol, type and select the fund symbol that the customer currently holds.",
+        "4. Enter <one unit above 0> in the Quantity field (equal to the customer's current share balance).",
+        "5. Select a Funding_Or_Destination_Account as the destination.",
+        "6. Click Execute Trade."
       ],
-      "expected_result": "Form submits successfully; 'Trade executed successfully.' message shown with an Order ID and holdings updated to remove the sold Quantity (succeeds)",
+      "expected_result": "succeeds \u2014 the page shows a visible confirmation banner 'Trade executed successfully.' and displays a single order ID in the confirmation area.",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-002",
       "subcategory": "boundary",
-      "test_case": "Sell \u2014 Quantity one unit above current share balance is blocked",
+      "test_case": "Sell trade where Quantity exceeds share balance by one unit (just over sufficiency)",
       "preconditions": [
-        "Logged in customer session with at least one linked funding/destination account and investment privileges",
-        "Customer holds exactly <current share balance> of the chosen Fund_Symbol",
-        "Fund_Symbol exists and is tradable"
+        "Logged in as a customer with an active account and at least one destination account available for trades.",
+        "Customer currently holds shares of the selected fund, with a balance that is exactly one unit less than the requested Quantity.",
+        "A valid fund symbol exists and is selectable from the Fund Symbol search."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Trade Funds form",
-        "3. Select Action = Sell",
-        "4. Enter Fund_Symbol that the customer holds",
-        "5. Select Funding_Or_Destination_Account as destination for proceeds",
-        "6. Enter Quantity = <current share balance + 1 unit>",
-        "7. Click Execute Trade"
+        "1. Navigate to the Investments page.",
+        "2. In the Trade Funds form, select Action = Sell.",
+        "3. In Fund Symbol, type and select the fund symbol that the customer currently holds.",
+        "4. Enter a Quantity that is one unit greater than the customer's current share balance.",
+        "5. Select a Funding_Or_Destination_Account as the destination.",
+        "6. Click Execute Trade."
       ],
-      "expected_result": "Submission is blocked; Quantity displays an inline error indicating insufficient share balance for the requested Quantity (is blocked / error shown)",
+      "expected_result": "is blocked; the Quantity field displays an inline error indicating insufficient share balance (insufficient holdings), and no 'Trade executed successfully.' confirmation is shown.",
       "priority": "medium"
     },
     {
       "tc_id": "E-005",
       "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Create Plan \u2014 Start_Date set to tomorrow (first valid future day) succeeds",
+      "test_case": "Create recurring plan with Start Date set to the next calendar day (future boundary)",
       "preconditions": [
-        "Logged in customer session with at least one linked funding account and investment privileges",
-        "Fund_Symbol exists",
-        "Funding_Account has adequate balance to cover the initial contribution"
+        "Logged in as a customer with an active account and at least one funding account available for trades.",
+        "Funding account has adequate balance to cover the contribution amount entered.",
+        "Contribution amount entered meets or exceeds the minimum contribution requirement.",
+        "A valid fund symbol exists and is selectable from the Fund Symbol search."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Recurring Investment Plan form",
-        "3. Enter Fund_Symbol that exists",
-        "4. Enter Contribution_Amount that meets the minimum contribution",
-        "5. Select Frequency = Monthly (or Weekly)",
-        "6. Enter Start_Date = <tomorrow>",
-        "7. Select Funding_Account with adequate balance",
-        "8. Click Create Plan"
+        "1. Navigate to the Investments page.",
+        "2. In the Recurring Investment Plan form, in Fund Symbol enter and select a valid existing fund symbol.",
+        "3. Enter <minimum contribution> in Contribution Amount.",
+        "4. Select Frequency = Monthly (or Weekly).",
+        "5. Set Start Date = <one day in the future>.",
+        "6. Select a Funding_Account that has adequate balance.",
+        "7. Click Create Plan."
       ],
-      "expected_result": "Form submits successfully; 'Plan created successfully.' message shown and schedule stored (succeeds)",
+      "expected_result": "succeeds \u2014 the page displays a visible confirmation 'Plan created successfully.' and the created plan appears in the list/schedule area.",
       "priority": "medium"
     },
     {
       "tc_id": "E-006",
       "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Create Plan \u2014 Start_Date set to today is blocked with explicit inline error",
+      "test_case": "Create recurring plan with Start Date set to today (boundary violation)",
       "preconditions": [
-        "Logged in customer session with at least one linked funding account and investment privileges",
-        "Fund_Symbol exists",
-        "Funding_Account has adequate balance to cover the initial contribution"
+        "Logged in as a customer with an active account and at least one funding account available for trades.",
+        "Funding account has adequate balance to cover the contribution amount entered.",
+        "Contribution amount entered meets or exceeds the minimum contribution requirement.",
+        "A valid fund symbol exists and is selectable from the Fund Symbol search."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Recurring Investment Plan form",
-        "3. Enter Fund_Symbol that exists",
-        "4. Enter Contribution_Amount that meets the minimum contribution",
-        "5. Select Frequency = Monthly (or Weekly)",
-        "6. Enter Start_Date = <today>",
-        "7. Select Funding_Account with adequate balance",
-        "8. Click Create Plan"
+        "1. Navigate to the Investments page.",
+        "2. In the Recurring Investment Plan form, in Fund Symbol enter and select a valid existing fund symbol.",
+        "3. Enter <minimum contribution> in Contribution Amount.",
+        "4. Select Frequency = Monthly (or Weekly).",
+        "5. Set Start Date = today.",
+        "6. Select a Funding_Account that has adequate balance.",
+        "7. Click Create Plan."
       ],
-      "expected_result": "Submission is blocked; Start_Date field displays the inline error 'Start date must be in the future' (is blocked / error shown)",
+      "expected_result": "is blocked; the Start Date field displays the inline error \"Start date must be in the future\" and no 'Plan created successfully.' confirmation is shown.",
       "priority": "medium"
     },
     {
       "tc_id": "E-007",
       "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Create Plan \u2014 Contribution_Amount exactly equals the minimum contribution succeeds",
+      "test_case": "Create recurring plan with Contribution Amount equal to the minimum contribution",
       "preconditions": [
-        "Logged in customer session with at least one linked funding account and investment privileges",
-        "Funding_Account has adequate balance to cover the minimum contribution",
-        "Fund_Symbol exists"
+        "Logged in as a customer with an active account and at least one funding account available for trades.",
+        "Funding account has an available balance equal to or greater than <minimum contribution> (adequate balance).",
+        "A valid fund symbol exists and is selectable from the Fund Symbol search.",
+        "Start Date is set to a date in the future."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Recurring Investment Plan form",
-        "3. Enter Fund_Symbol that exists",
-        "4. Enter Contribution_Amount = <minimum contribution>",
-        "5. Select Frequency = Monthly (or Weekly)",
-        "6. Enter Start_Date = <tomorrow>",
-        "7. Select Funding_Account with adequate balance",
-        "8. Click Create Plan"
+        "1. Navigate to the Investments page.",
+        "2. In the Recurring Investment Plan form, in Fund Symbol enter and select a valid existing fund symbol.",
+        "3. Enter <minimum contribution> in Contribution Amount.",
+        "4. Select Frequency = Monthly (or Weekly).",
+        "5. Set Start Date = <one day in the future>.",
+        "6. Select the Funding_Account that has an available balance equal to or greater than <minimum contribution>.",
+        "7. Click Create Plan."
       ],
-      "expected_result": "Form submits successfully; 'Plan created successfully.' message shown and schedule stored (succeeds)",
+      "expected_result": "succeeds \u2014 the page displays a visible confirmation 'Plan created successfully.' and the created plan appears in the list/schedule area.",
       "priority": "medium"
     },
     {
       "tc_id": "E-008",
       "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Create Plan \u2014 Contribution_Amount one unit below the minimum is blocked",
+      "test_case": "Create recurring plan with Contribution Amount one unit below the minimum contribution",
       "preconditions": [
-        "Logged in customer session with at least one linked funding account and investment privileges",
-        "Funding_Account has adequate balance excluding the missing unit",
-        "Fund_Symbol exists"
+        "Logged in as a customer with an active account and at least one funding account available for trades.",
+        "A valid fund symbol exists and is selectable from the Fund Symbol search.",
+        "Start Date is set to a date in the future."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Recurring Investment Plan form",
-        "3. Enter Fund_Symbol that exists",
-        "4. Enter Contribution_Amount = <minimum contribution - 1 unit>",
-        "5. Select Frequency = Monthly (or Weekly)",
-        "6. Enter Start_Date = <tomorrow>",
-        "7. Select Funding_Account",
-        "8. Click Create Plan"
+        "1. Navigate to the Investments page.",
+        "2. In the Recurring Investment Plan form, in Fund Symbol enter and select a valid existing fund symbol.",
+        "3. Enter <one unit below minimum contribution> in Contribution Amount.",
+        "4. Select Frequency = Monthly (or Weekly).",
+        "5. Set Start Date = <one day in the future>.",
+        "6. Select a Funding_Account.",
+        "7. Click Create Plan."
       ],
-      "expected_result": "Submission is blocked; Contribution_Amount displays an inline error indicating the amount is below the minimum allowed (is blocked / error shown)",
+      "expected_result": "is blocked; the Contribution Amount field displays an inline validation error indicating the value does not meet the minimum contribution requirement, and no 'Plan created successfully.' confirmation is shown.",
       "priority": "medium"
     },
     {
       "tc_id": "E-009",
       "wf_ref": null,
-      "subcategory": "boundary",
-      "test_case": "Trade \u2014 Quantity = 0 is blocked with explicit inline validation",
+      "subcategory": "input_edge",
+      "test_case": "Fund Symbol search with an extremely long string (200+ characters)",
       "preconditions": [
-        "Logged in customer session with at least one linked funding/destination account and investment privileges",
-        "Fund_Symbol exists"
+        "Logged in as a customer with an active account and at least one funding account available for trades."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Trade Funds form",
-        "3. Select Action = Buy",
-        "4. Enter Fund_Symbol that exists",
-        "5. Select Funding_Or_Destination_Account",
-        "6. Enter Quantity = 0",
-        "7. Click Execute Trade"
+        "1. Navigate to the Investments page.",
+        "2. In the Trade Funds form, focus the Fund Symbol search input.",
+        "3. Type a very long string (200+ characters) into the Fund Symbol search input."
       ],
-      "expected_result": "Submission is blocked; Quantity displays an inline error 'Quantity must be greater than zero' (is blocked / error shown)",
-      "priority": "medium"
+      "expected_result": "is blocked; the Fund Symbol field displays an inline error or \u2018no results\u2019 state indicating the symbol does not exist (symbol validation fails visibly), and autocomplete shows no selectable results.",
+      "priority": "low"
     },
     {
       "tc_id": "E-010",
       "wf_ref": null,
-      "subcategory": "input_edge",
-      "test_case": "Fund_Symbol entry with leading/trailing whitespace is trimmed and validated",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click of Execute Trade immediately after a successful submit",
       "preconditions": [
-        "Logged in customer session with at least one linked funding/destination account and investment privileges",
-        "There is a known Fund_Symbol that exists for validation"
+        "Logged in as a customer with an active account and at least one funding account available for trades.",
+        "Customer has sufficient buying power or share balance as appropriate for the trade.",
+        "A valid fund symbol exists and is selectable from the Fund Symbol search."
       ],
       "steps": [
-        "1. Click Investments in left navigation",
-        "2. Open the Trade Funds form",
-        "3. In Fund_Symbol input, type ' <existing symbol> ' including leading and trailing spaces",
-        "4. Wait for autocomplete validation to run",
-        "5. Select the trimmed symbol suggestion if presented",
-        "6. Complete other required fields and click Execute Trade"
+        "1. Navigate to the Investments page.",
+        "2. In the Trade Funds form, select Action and Fund Symbol, enter a valid Quantity, and select a Funding_Or_Destination_Account.",
+        "3. Click Execute Trade once.",
+        "4. Immediately (without changing form fields) click Execute Trade again."
       ],
-      "expected_result": "Whitespace is trimmed before validation; the symbol is recognized and the trade attempt proceeds (succeeds) \u2014 the saved/used symbol shown in any confirmation or detail view contains no leading or trailing spaces",
+      "expected_result": "is blocked; the second Execute Trade click does not create a second trade \u2014 the UI shows only one 'Trade executed successfully.' confirmation with a single order ID, and no duplicate confirmation appears.",
       "priority": "low"
     }
   ],
   "summary": {
     "total": 10,
-    "boundary": 9,
+    "boundary": 8,
     "input_edge": 1,
-    "interaction_edge": 0,
+    "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 9,
-    "low_priority": 1
+    "medium_priority": 8,
+    "low_priority": 2
   }
 }

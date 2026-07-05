@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:34.386263
+DEBUG SESSION STARTED: 2026-07-04T22:41:48.073777
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Negative - SYSTEM PROMPT
+[22:41:48] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Negative - USER PROMPT
+[22:41:48] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 6,
   "module_title": "Grades",
-  "summary": "Displays the student's personal grade report for the current course, showing grade items, calculated weights, earned values, percentages, feedback, and the course total aggregation.",
-  "where_it_fits": "Accessible from the course-level horizontal tab bar (Course > Grades) when viewing a course; it is a course-scoped view tied to the user's enrollment and complements other course tabs like Participants and Activities. The Grades page is reached while navigated to a specific course from the top navigation (Home/Dashboard/My Courses) or the Course Index sidebar.",
-  "assumed_state_on_entry": "Logged in as a student and viewing a specific course where the student is enrolled"
+  "summary": "Displays the student's own course grades in a user report table listing grade items, calculated weights, earned values, ranges, percentages, feedback, and each item's contribution to the course total.",
+  "where_it_fits": "Available from within a course via the horizontal tab bar (Home/Dashboard/My Courses \u2192 select course \u2192 Grades), it is the student-facing view alongside Course, Participants, Activities, and Competencies for reviewing personal grade information rather than the full gradebook. It is part of the course-level navigation and appears when viewing a specific course.",
+  "assumed_state_on_entry": "Logged in as a student and currently viewing a specific course that contains graded activities (permission to view own grades)."
 }
 </module_context>
 
@@ -263,16 +273,18 @@ If a `<workflows>` block is present in the input:
     "Grades_User_Report": {
       "type": "data_table",
       "preconditions": [
-        "Logged in as a student and viewing a specific course where the student is enrolled",
-        "User may only view their own grades; cannot access the full gradebook or other students' grades"
+        "Logged in as a student and currently viewing a specific course that contains graded activities (permission to view own grades)."
       ],
-      "collapsible_groups": {
-        "group_by": "Course_Name",
-        "group_header": {
-          "collapsible": true,
-          "description": "Course name appears as a collapsible header; graded activities are listed indented beneath the header"
-        }
-      }
+      "grouping": {
+        "group_by": "Course",
+        "collapsible": true,
+        "group_shows_indented_items": true
+      },
+      "row_expansion": {
+        "expands_to_show": "graded activities indented beneath course header",
+        "collapsible_header_label_field": "Grade item"
+      },
+      "row_actions": []
     }
   }
 }
@@ -288,13 +300,13 @@ The Grades page displays the student's own grades for the course via a User repo
 </description>
 
 <workflows>
-WF-001 | View personal grades report (Grades_User_Report) | actor: student | branch: none | terminal: Grades_User_Report | on_success: Grades user report displayed showing grade items, calculated weights, earned values (or “–” if not yet graded), ranges, percentages, feedback, and the AGGREGATION course total row
+WF-001 | View Grades report (student) | actor: student | branch: none | terminal: View Grades | on_success: User report table displayed showing the student's own course grades (columns: Grade item, Calculated weight, Grade, Range, Percentage, Feedback, Contribution to course total) with an AGGREGATION Course total row at the bottom.
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:13:34] Test-Negative - LLM RESPONSE
+[22:42:54] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Grades",
@@ -303,33 +315,30 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Unauthenticated user attempts to open course Grades page",
+      "test_case": "Unauthenticated user attempts to open the course Grades page",
       "preconditions": [
-        "User is not authenticated",
-        "Course <course_id> exists"
+        "User is not authenticated (signed out)"
       ],
       "steps": [
-        "1. In a new browser session where no user is logged in, navigate to the course Grades URL for <course_id> (Course > Grades or direct Grades URL).",
-        "2. Observe the page that loads."
+        "1. In a browser session where you are signed out, navigate to the specific course page (or directly to the course Grades URL).",
+        "2. Click the 'Grades' tab for the course (or load the Grades URL if navigated directly)."
       ],
-      "expected_result": "Access is blocked: the user is redirected to the Login page; the Grades user report is not displayed. The Login form is visible and an authentication-required notice is shown (e.g., a message indicating the user must sign in).",
+      "expected_result": "Access is blocked: the user is redirected to the login page or a login prompt is shown; the Grades user report table is not displayed.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Logged-in student attempts to view another student's grades or the full gradebook",
+      "test_case": "Logged-in student attempts to access the full gradebook or another student's grades",
       "preconditions": [
-        "Logged in as Student A who is enrolled in course <course_id>",
-        "Another student account Student B is enrolled in the same course (<other_student_id>)"
+        "Logged in as a student who is enrolled in the course"
       ],
       "steps": [
-        "1. Log in as Student A.",
-        "2. Navigate to the course Grades page for <course_id> (Course > Grades).",
-        "3. Attempt to access Student B's grade report or the full gradebook by navigating to the URL for Student B's grades or the gradebook view (e.g., change the user id parameter to <other_student_id> or click a link that would show other students' grades).",
-        "4. Observe the response."
+        "1. Log in as <a student account enrolled in the course>.",
+        "2. Navigate to the specific course page.",
+        "3. Attempt to open the course's full gradebook or directly attempt to view another student's grade report (for example by clicking a 'Full gradebook' link or visiting a grade report URL for a different user)."
       ],
-      "expected_result": "Access is blocked: the Grades report for Student B (or the full gradebook) is not displayed. The UI shows an authorization/permission error (e.g., an on-page 'You do not have permission to view other students' grades' or a 'Permission denied' page), and Student A remains unable to view any other student's grade details.",
+      "expected_result": "Access is blocked: an authorization/access-denied message or equivalent is displayed and the full gradebook or the other student's grade report is not shown; the logged-in student cannot view other students' grades.",
       "priority": "high"
     }
   ],
@@ -342,7 +351,7 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
 }
 
 ------------------------------------------------------------
-[21:13:34] Test-Negative - PARSED JSON
+[22:42:54] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Grades",
@@ -351,33 +360,30 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Unauthenticated user attempts to open course Grades page",
+      "test_case": "Unauthenticated user attempts to open the course Grades page",
       "preconditions": [
-        "User is not authenticated",
-        "Course <course_id> exists"
+        "User is not authenticated (signed out)"
       ],
       "steps": [
-        "1. In a new browser session where no user is logged in, navigate to the course Grades URL for <course_id> (Course > Grades or direct Grades URL).",
-        "2. Observe the page that loads."
+        "1. In a browser session where you are signed out, navigate to the specific course page (or directly to the course Grades URL).",
+        "2. Click the 'Grades' tab for the course (or load the Grades URL if navigated directly)."
       ],
-      "expected_result": "Access is blocked: the user is redirected to the Login page; the Grades user report is not displayed. The Login form is visible and an authentication-required notice is shown (e.g., a message indicating the user must sign in).",
+      "expected_result": "Access is blocked: the user is redirected to the login page or a login prompt is shown; the Grades user report table is not displayed.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Logged-in student attempts to view another student's grades or the full gradebook",
+      "test_case": "Logged-in student attempts to access the full gradebook or another student's grades",
       "preconditions": [
-        "Logged in as Student A who is enrolled in course <course_id>",
-        "Another student account Student B is enrolled in the same course (<other_student_id>)"
+        "Logged in as a student who is enrolled in the course"
       ],
       "steps": [
-        "1. Log in as Student A.",
-        "2. Navigate to the course Grades page for <course_id> (Course > Grades).",
-        "3. Attempt to access Student B's grade report or the full gradebook by navigating to the URL for Student B's grades or the gradebook view (e.g., change the user id parameter to <other_student_id> or click a link that would show other students' grades).",
-        "4. Observe the response."
+        "1. Log in as <a student account enrolled in the course>.",
+        "2. Navigate to the specific course page.",
+        "3. Attempt to open the course's full gradebook or directly attempt to view another student's grade report (for example by clicking a 'Full gradebook' link or visiting a grade report URL for a different user)."
       ],
-      "expected_result": "Access is blocked: the Grades report for Student B (or the full gradebook) is not displayed. The UI shows an authorization/permission error (e.g., an on-page 'You do not have permission to view other students' grades' or a 'Permission denied' page), and Student A remains unable to view any other student's grade details.",
+      "expected_result": "Access is blocked: an authorization/access-denied message or equivalent is displayed and the full gradebook or the other student's grade report is not shown; the logged-in student cannot view other students' grades.",
       "priority": "high"
     }
   ],

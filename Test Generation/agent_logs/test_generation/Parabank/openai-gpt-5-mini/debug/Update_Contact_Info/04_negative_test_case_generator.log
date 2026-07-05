@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:02:39.095534
+DEBUG SESSION STARTED: 2026-07-04T22:22:17.269076
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Negative - SYSTEM PROMPT
+[22:22:17] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Negative - USER PROMPT
+[22:22:17] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 8,
   "module_title": "Update Contact Info",
-  "summary": "Editable customer profile form for viewing and updating personal contact details with validation and success/error feedback.",
-  "where_it_fits": "Accessible from the left-hand navigation as 'Update Contact Info' (item \u2465) after successful login and landing on the account dashboard; it is part of the post-authentication account management flow for maintaining personal information.",
-  "assumed_state_on_entry": "User is logged in and on the account dashboard with an existing customer profile whose contact fields are available to be loaded and edited."
+  "summary": "Provides an editable customer profile form pre-filled with name, address, and phone fields that validates input and displays success or inline error feedback upon submission.",
+  "where_it_fits": "This module is reachable from the left-hand navigation as \"Update Contact Info\" on the account dashboard that users see after a successful sign-in; it is part of account maintenance workflows alongside items like Manage Cards and Security Settings.",
+  "assumed_state_on_entry": "User is logged in as an authenticated customer and is on the account dashboard with an existing customer profile."
 }
 </module_context>
 
@@ -262,53 +272,60 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Update_Contact_Info_Form": {
       "type": "form",
+      "validation": {
+        "trigger": "on_submit"
+      },
       "fields": {
         "First_Name": {
           "type": "unspecified",
           "required": true,
           "constraints": [
-            "must match valid name format"
+            "must not be empty",
+            "must match expected name format"
           ]
         },
         "Last_Name": {
           "type": "unspecified",
           "required": true,
           "constraints": [
-            "must match valid name format"
+            "must not be empty",
+            "must match expected name format"
           ]
         },
         "Street_Address": {
           "type": "unspecified",
           "required": true,
           "constraints": [
-            "must match valid street address format"
+            "must not be empty"
           ]
         },
         "City": {
           "type": "unspecified",
           "required": true,
           "constraints": [
-            "must match valid city name format"
+            "must not be empty"
           ]
         },
         "State": {
           "type": "unspecified",
           "required": true,
           "constraints": [
-            "must match valid state/province format"
+            "must not be empty"
           ]
         },
         "ZIP_Code": {
           "type": "unspecified",
           "required": true,
           "constraints": [
-            "must match valid postal code format"
+            "must not be empty",
+            "must match valid ZIP/postal code format"
           ]
         },
         "Phone_Number": {
           "type": "unspecified",
           "required": true,
           "constraints": [
+            "must not be empty",
             "must match valid phone number format"
           ]
         }
@@ -317,10 +334,10 @@ If a `<workflows>` block is present in the input:
         {
           "action_name": "Update Profile",
           "preconditions": [
-            "User is logged in and on the account dashboard with an existing customer profile whose contact fields are available to be loaded and edited."
+            "User is logged in as an authenticated customer and is on the account dashboard with an existing customer profile."
           ],
-          "on_success": "Profile updated successfully and refreshes profile data.",
-          "on_failure": "Highlights invalid fields and displays an inline error banner."
+          "on_success": "Profile updated successfully and refreshes the data",
+          "on_failure": "Highlights invalid fields and displays an inline error banner"
         }
       ]
     }
@@ -335,13 +352,13 @@ The customer profile page offers an editable form pre-filled with First Name, La
 </description>
 
 <workflows>
-WF-001 | Update existing customer contact details | actor: Customer | branch: none | terminal: Update Profile | on_success: Profile updated successfully and refreshes profile data.
+WF-001 | Submit valid profile update | actor: Authenticated customer | branch: none | terminal: Update Profile | on_success: Profile updated successfully and refreshes the data
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:04:25] Test-Negative - LLM RESPONSE
+[22:23:55] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Update Contact Info",
@@ -349,154 +366,109 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access Update Contact Info page",
+      "wf_ref": "WF-001",
+      "test_case": "Submit with all required fields empty",
       "preconditions": [
-        "User is NOT logged in"
+        "User is logged in as an authenticated customer and is on the account dashboard with an existing customer profile."
       ],
       "steps": [
-        "1. Open the application and navigate to the 'Update Contact Info' page URL directly"
+        "1. Navigate to the Update Contact Info page from the account dashboard",
+        "2. Clear the First Name field",
+        "3. Clear the Last Name field",
+        "4. Clear the Street Address field",
+        "5. Clear the City field",
+        "6. Clear the State field",
+        "7. Clear the ZIP Code field",
+        "8. Clear the Phone Number field",
+        "9. Click the Update Profile button"
       ],
-      "expected_result": "User is redirected to the login page; the Update Contact Info form is not accessible and no profile data is shown",
+      "expected_result": "Form does not submit; each required field (First Name, Last Name, Street Address, City, State, ZIP Code, Phone Number) shows an inline validation error indicating it is required; invalid fields are highlighted and an inline error banner is displayed; profile is not updated and the user remains on the Update Contact Info page.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": null,
-      "test_case": "Leave a required text field (representative) blank and submit",
+      "test_case": "Leave a representative required text field blank (First Name) and submit",
       "preconditions": [
-        "User is logged in and on the account dashboard with an existing customer profile loaded"
+        "User is logged in as an authenticated customer and is on the account dashboard with an existing customer profile."
       ],
       "steps": [
         "1. Navigate to the Update Contact Info page",
-        "2. Clear the <First Name> field so it is blank",
+        "2. Clear the First Name field (leave it blank)",
         "3. Click the Update Profile button"
       ],
-      "expected_result": "First Name field displays an inline validation error indicating it is required; inline error banner is displayed; form does not submit and profile is not updated",
+      "expected_result": "Form does not submit; First Name field displays an inline validation error indicating it is required; invalid field is highlighted and an inline error banner is displayed; profile is not updated and the user stays on the Update Contact Info page.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-001",
-      "test_case": "Submit with ALL required contact fields empty",
+      "wf_ref": null,
+      "test_case": "Enter a name that violates the expected name format (Last Name) and submit",
       "preconditions": [
-        "User is logged in and on the account dashboard with an existing customer profile loaded"
+        "User is logged in as an authenticated customer and is on the account dashboard with an existing customer profile."
       ],
       "steps": [
         "1. Navigate to the Update Contact Info page",
-        "2. Clear the <First Name> field",
-        "3. Clear the <Last Name> field",
-        "4. Clear the <Street Address> field",
-        "5. Clear the <City> field",
-        "6. Clear the <State> field",
-        "7. Clear the <ZIP Code> field",
-        "8. Clear the <Phone Number> field",
-        "9. Click the Update Profile button"
+        "2. Enter <invalid name format> into the Last Name field",
+        "3. Click the Update Profile button"
       ],
-      "expected_result": "Each required field displays an inline validation error indicating it is required; an inline error banner is displayed; form does not submit; profile is not updated and page remains on the Update Contact Info form",
+      "expected_result": "Form does not submit; Last Name field shows an inline validation error indicating the value does not match the expected name format; the Last Name field is highlighted and an inline error banner is displayed; profile is not updated.",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": null,
-      "test_case": "Invalid name format in First Name field",
+      "test_case": "Enter an invalid ZIP/postal code format and submit",
       "preconditions": [
-        "User is logged in and on the account dashboard with an existing customer profile loaded"
+        "User is logged in as an authenticated customer and is on the account dashboard with an existing customer profile."
       ],
       "steps": [
         "1. Navigate to the Update Contact Info page",
-        "2. Enter <invalid name format> into the First Name field",
+        "2. Enter <invalid ZIP/postal code format> into the ZIP Code field",
         "3. Click the Update Profile button"
       ],
-      "expected_result": "First Name field displays an inline validation error indicating it must match a valid name format; an inline error banner is displayed; form does not submit and profile is not updated",
-      "priority": "medium"
+      "expected_result": "Form does not submit; ZIP Code field displays an inline validation error indicating the ZIP/postal code format is invalid; the ZIP Code field is highlighted and an inline error banner is displayed; profile is not updated.",
+      "priority": "high"
     },
     {
       "tc_id": "N-005",
       "wf_ref": null,
-      "test_case": "Invalid street address format",
+      "test_case": "Enter an invalid phone number format and submit",
       "preconditions": [
-        "User is logged in and on the account dashboard with an existing customer profile loaded"
-      ],
-      "steps": [
-        "1. Navigate to the Update Contact Info page",
-        "2. Enter <invalid street address format> into the Street Address field",
-        "3. Click the Update Profile button"
-      ],
-      "expected_result": "Street Address field displays an inline validation error indicating it must match a valid street address format; an inline error banner is displayed; form does not submit and profile is not updated",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-006",
-      "wf_ref": null,
-      "test_case": "Invalid city name format",
-      "preconditions": [
-        "User is logged in and on the account dashboard with an existing customer profile loaded"
-      ],
-      "steps": [
-        "1. Navigate to the Update Contact Info page",
-        "2. Enter <invalid city name format> into the City field",
-        "3. Click the Update Profile button"
-      ],
-      "expected_result": "City field displays an inline validation error indicating it must match a valid city name format; an inline error banner is displayed; form does not submit and profile is not updated",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": null,
-      "test_case": "Invalid state/province format",
-      "preconditions": [
-        "User is logged in and on the account dashboard with an existing customer profile loaded"
-      ],
-      "steps": [
-        "1. Navigate to the Update Contact Info page",
-        "2. Enter <invalid state/province format> into the State field",
-        "3. Click the Update Profile button"
-      ],
-      "expected_result": "State field displays an inline validation error indicating it must match a valid state/province format; an inline error banner is displayed; form does not submit and profile is not updated",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-008",
-      "wf_ref": null,
-      "test_case": "Invalid postal code (ZIP Code) format",
-      "preconditions": [
-        "User is logged in and on the account dashboard with an existing customer profile loaded"
-      ],
-      "steps": [
-        "1. Navigate to the Update Contact Info page",
-        "2. Enter <invalid postal code format> into the ZIP Code field",
-        "3. Click the Update Profile button"
-      ],
-      "expected_result": "ZIP Code field displays an inline validation error indicating it must match a valid postal code format; an inline error banner is displayed; form does not submit and profile is not updated",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-009",
-      "wf_ref": null,
-      "test_case": "Invalid phone number format",
-      "preconditions": [
-        "User is logged in and on the account dashboard with an existing customer profile loaded"
+        "User is logged in as an authenticated customer and is on the account dashboard with an existing customer profile."
       ],
       "steps": [
         "1. Navigate to the Update Contact Info page",
         "2. Enter <invalid phone number format> into the Phone Number field",
         "3. Click the Update Profile button"
       ],
-      "expected_result": "Phone Number field displays an inline validation error indicating it must match a valid phone number format; an inline error banner is displayed; form does not submit and profile is not updated",
+      "expected_result": "Form does not submit; Phone Number field displays an inline validation error indicating the phone number format is invalid; the Phone Number field is highlighted and an inline error banner is displayed; profile is not updated.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": null,
+      "test_case": "Access blocked when user is not authenticated",
+      "preconditions": [
+        "User is NOT logged in"
+      ],
+      "steps": [
+        "1. Navigate directly to the Update Contact Info page URL (while not logged in)"
+      ],
+      "expected_result": "Access to the Update Contact Info page is blocked; user is redirected to the login page or shown a sign-in requirement; the Update Profile form and button are not accessible and no profile changes can be made.",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 9,
-    "high_priority": 5,
-    "medium_priority": 4,
+    "total": 6,
+    "high_priority": 6,
+    "medium_priority": 0,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:04:25] Test-Negative - PARSED JSON
+[22:23:55] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Update Contact Info",
@@ -504,148 +476,103 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access Update Contact Info page",
+      "wf_ref": "WF-001",
+      "test_case": "Submit with all required fields empty",
       "preconditions": [
-        "User is NOT logged in"
+        "User is logged in as an authenticated customer and is on the account dashboard with an existing customer profile."
       ],
       "steps": [
-        "1. Open the application and navigate to the 'Update Contact Info' page URL directly"
+        "1. Navigate to the Update Contact Info page from the account dashboard",
+        "2. Clear the First Name field",
+        "3. Clear the Last Name field",
+        "4. Clear the Street Address field",
+        "5. Clear the City field",
+        "6. Clear the State field",
+        "7. Clear the ZIP Code field",
+        "8. Clear the Phone Number field",
+        "9. Click the Update Profile button"
       ],
-      "expected_result": "User is redirected to the login page; the Update Contact Info form is not accessible and no profile data is shown",
+      "expected_result": "Form does not submit; each required field (First Name, Last Name, Street Address, City, State, ZIP Code, Phone Number) shows an inline validation error indicating it is required; invalid fields are highlighted and an inline error banner is displayed; profile is not updated and the user remains on the Update Contact Info page.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": null,
-      "test_case": "Leave a required text field (representative) blank and submit",
+      "test_case": "Leave a representative required text field blank (First Name) and submit",
       "preconditions": [
-        "User is logged in and on the account dashboard with an existing customer profile loaded"
+        "User is logged in as an authenticated customer and is on the account dashboard with an existing customer profile."
       ],
       "steps": [
         "1. Navigate to the Update Contact Info page",
-        "2. Clear the <First Name> field so it is blank",
+        "2. Clear the First Name field (leave it blank)",
         "3. Click the Update Profile button"
       ],
-      "expected_result": "First Name field displays an inline validation error indicating it is required; inline error banner is displayed; form does not submit and profile is not updated",
+      "expected_result": "Form does not submit; First Name field displays an inline validation error indicating it is required; invalid field is highlighted and an inline error banner is displayed; profile is not updated and the user stays on the Update Contact Info page.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-001",
-      "test_case": "Submit with ALL required contact fields empty",
+      "wf_ref": null,
+      "test_case": "Enter a name that violates the expected name format (Last Name) and submit",
       "preconditions": [
-        "User is logged in and on the account dashboard with an existing customer profile loaded"
+        "User is logged in as an authenticated customer and is on the account dashboard with an existing customer profile."
       ],
       "steps": [
         "1. Navigate to the Update Contact Info page",
-        "2. Clear the <First Name> field",
-        "3. Clear the <Last Name> field",
-        "4. Clear the <Street Address> field",
-        "5. Clear the <City> field",
-        "6. Clear the <State> field",
-        "7. Clear the <ZIP Code> field",
-        "8. Clear the <Phone Number> field",
-        "9. Click the Update Profile button"
+        "2. Enter <invalid name format> into the Last Name field",
+        "3. Click the Update Profile button"
       ],
-      "expected_result": "Each required field displays an inline validation error indicating it is required; an inline error banner is displayed; form does not submit; profile is not updated and page remains on the Update Contact Info form",
+      "expected_result": "Form does not submit; Last Name field shows an inline validation error indicating the value does not match the expected name format; the Last Name field is highlighted and an inline error banner is displayed; profile is not updated.",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": null,
-      "test_case": "Invalid name format in First Name field",
+      "test_case": "Enter an invalid ZIP/postal code format and submit",
       "preconditions": [
-        "User is logged in and on the account dashboard with an existing customer profile loaded"
+        "User is logged in as an authenticated customer and is on the account dashboard with an existing customer profile."
       ],
       "steps": [
         "1. Navigate to the Update Contact Info page",
-        "2. Enter <invalid name format> into the First Name field",
+        "2. Enter <invalid ZIP/postal code format> into the ZIP Code field",
         "3. Click the Update Profile button"
       ],
-      "expected_result": "First Name field displays an inline validation error indicating it must match a valid name format; an inline error banner is displayed; form does not submit and profile is not updated",
-      "priority": "medium"
+      "expected_result": "Form does not submit; ZIP Code field displays an inline validation error indicating the ZIP/postal code format is invalid; the ZIP Code field is highlighted and an inline error banner is displayed; profile is not updated.",
+      "priority": "high"
     },
     {
       "tc_id": "N-005",
       "wf_ref": null,
-      "test_case": "Invalid street address format",
+      "test_case": "Enter an invalid phone number format and submit",
       "preconditions": [
-        "User is logged in and on the account dashboard with an existing customer profile loaded"
-      ],
-      "steps": [
-        "1. Navigate to the Update Contact Info page",
-        "2. Enter <invalid street address format> into the Street Address field",
-        "3. Click the Update Profile button"
-      ],
-      "expected_result": "Street Address field displays an inline validation error indicating it must match a valid street address format; an inline error banner is displayed; form does not submit and profile is not updated",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-006",
-      "wf_ref": null,
-      "test_case": "Invalid city name format",
-      "preconditions": [
-        "User is logged in and on the account dashboard with an existing customer profile loaded"
-      ],
-      "steps": [
-        "1. Navigate to the Update Contact Info page",
-        "2. Enter <invalid city name format> into the City field",
-        "3. Click the Update Profile button"
-      ],
-      "expected_result": "City field displays an inline validation error indicating it must match a valid city name format; an inline error banner is displayed; form does not submit and profile is not updated",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": null,
-      "test_case": "Invalid state/province format",
-      "preconditions": [
-        "User is logged in and on the account dashboard with an existing customer profile loaded"
-      ],
-      "steps": [
-        "1. Navigate to the Update Contact Info page",
-        "2. Enter <invalid state/province format> into the State field",
-        "3. Click the Update Profile button"
-      ],
-      "expected_result": "State field displays an inline validation error indicating it must match a valid state/province format; an inline error banner is displayed; form does not submit and profile is not updated",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-008",
-      "wf_ref": null,
-      "test_case": "Invalid postal code (ZIP Code) format",
-      "preconditions": [
-        "User is logged in and on the account dashboard with an existing customer profile loaded"
-      ],
-      "steps": [
-        "1. Navigate to the Update Contact Info page",
-        "2. Enter <invalid postal code format> into the ZIP Code field",
-        "3. Click the Update Profile button"
-      ],
-      "expected_result": "ZIP Code field displays an inline validation error indicating it must match a valid postal code format; an inline error banner is displayed; form does not submit and profile is not updated",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-009",
-      "wf_ref": null,
-      "test_case": "Invalid phone number format",
-      "preconditions": [
-        "User is logged in and on the account dashboard with an existing customer profile loaded"
+        "User is logged in as an authenticated customer and is on the account dashboard with an existing customer profile."
       ],
       "steps": [
         "1. Navigate to the Update Contact Info page",
         "2. Enter <invalid phone number format> into the Phone Number field",
         "3. Click the Update Profile button"
       ],
-      "expected_result": "Phone Number field displays an inline validation error indicating it must match a valid phone number format; an inline error banner is displayed; form does not submit and profile is not updated",
+      "expected_result": "Form does not submit; Phone Number field displays an inline validation error indicating the phone number format is invalid; the Phone Number field is highlighted and an inline error banner is displayed; profile is not updated.",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": null,
+      "test_case": "Access blocked when user is not authenticated",
+      "preconditions": [
+        "User is NOT logged in"
+      ],
+      "steps": [
+        "1. Navigate directly to the Update Contact Info page URL (while not logged in)"
+      ],
+      "expected_result": "Access to the Update Contact Info page is blocked; user is redirected to the login page or shown a sign-in requirement; the Update Profile form and button are not accessible and no profile changes can be made.",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 9,
-    "high_priority": 5,
-    "medium_priority": 4,
+    "total": 6,
+    "high_priority": 6,
+    "medium_priority": 0,
     "low_priority": 0
   }
 }

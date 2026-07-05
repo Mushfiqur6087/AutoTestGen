@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:14.032418
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.364943
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:14] Test-Edge - SYSTEM PROMPT
+[22:33:07] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:14] Test-Edge - USER PROMPT
+[22:33:07] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 20,
   "module_title": "Offers & Deals",
-  "summary": "Displays promotional banners and featured deal cards with discount details, validity, terms, filtering by service/destination/dates, and actions that apply promo codes or redirect to pre-filled booking searches.",
-  "where_it_fits": "Accessible from the top navigation under Offers and via homepage promotions/search widget, this section surfaces time-limited, seasonal and last-minute promotions across services (Hotels, Flights, Tours, Cars) and integrates with the booking flows by applying discounts or pre-filling searches. It complements the main search/listing modules and influences subsequent Payment Processing and Booking Management steps.",
-  "assumed_state_on_entry": "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions."
+  "summary": "Displays promotional banners and featured deal cards across Hotels, Flights, and Packages with filtering, validity details, and Book Now actions that apply discounts or pre-fill searches.",
+  "where_it_fits": "Accessible from the top navigation (Offers) and reachable from the home page or promotional links, this module sits alongside core search/listing sections (Hotels, Flights, Tours, Cars) to surface time-limited promotions and drive bookings. It connects into the booking flow and payment processing by applying promo codes or redirecting to pre-filled searches with discounted rates.",
+  "assumed_state_on_entry": "Application loaded with main navigation available and the user has selected the Offers section (visitor or authenticated user); booking and payment subsystems are available for applying discounts."
 }
 </module_context>
 
@@ -243,7 +257,7 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Offers & Deals",
   "components": {
-    "Filters_Form": {
+    "Offers_Filters_Form": {
       "type": "form",
       "fields": {
         "Service_Type": {
@@ -257,51 +271,38 @@ If a `<workflows>` block is present in the input:
         "Destination": {
           "type": "unspecified"
         },
-        "Travel_Dates": {
+        "Travel_Start_Date": {
+          "type": "date"
+        },
+        "Travel_End_Date": {
           "type": "date"
         }
       },
       "submit_actions": [
         {
           "action_name": "Apply Filters",
-          "preconditions": [
-            "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions."
-          ],
-          "on_success": "filters offers list"
+          "on_success": "filters the offers list"
+        },
+        {
+          "action_name": "Reset Filters",
+          "on_success": "clears filter values"
         }
       ]
     },
     "Offers_List": {
-      "type": "card_list",
-      "item_actions": [
+      "type": "data_table",
+      "row_actions": [
         {
           "action_name": "Book Now",
-          "type": "button",
+          "on_success": "applies promo code or redirects to a pre-filled search with discounted rates",
           "preconditions": [
-            "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions."
-          ],
-          "on_success": "applies promotional code to booking flow or redirects to a pre-filled search with discounted rates applied"
+            "Application loaded with main navigation available and the user has selected the Offers section (visitor or authenticated user); booking and payment subsystems are available for applying discounts."
+          ]
         },
         {
           "action_name": "Terms and Conditions",
-          "type": "link"
-        }
-      ]
-    },
-    "Promotional_Banners": {
-      "type": "card_list",
-      "item_actions": [
-        {
-          "action_name": "Book Now",
-          "type": "button",
-          "preconditions": [
-            "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions."
-          ],
-          "on_success": "applies promotional code to booking flow or redirects to a pre-filled search with discounted rates applied"
-        },
-        {
-          "action_name": "Terms and Conditions",
-          "type": "link"
+          "type": "link",
+          "on_success": "opens the offer's terms and conditions"
         }
       ]
     },
@@ -309,20 +310,13 @@ If a `<workflows>` block is present in the input:
       "type": "form",
       "fields": {
         "Email": {
-          "type": "email",
-          "required": true,
-          "constraints": [
-            "must be a valid email address"
-          ]
+          "type": "email"
         }
       },
       "submit_actions": [
         {
           "action_name": "Subscribe",
-          "preconditions": [
-            "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions."
-          ],
-          "on_success": "subscribes email to receive future exclusive deals"
+          "on_success": "adds the email to the newsletter subscription list"
         }
       ]
     }
@@ -340,20 +334,17 @@ The Offers page displays promotional banners and featured deal cards, each showi
 </description>
 
 <workflows>
-WF-001 | Apply Filters | actor: User (guest or authenticated) | branch: none | terminal: Apply Filters | on_success: filters offers list
-WF-002 | Book Now (Offers List) | actor: User (guest or authenticated) | branch: none | terminal: Book Now | on_success: applies promotional code to booking flow or redirects to a pre-filled search with discounted rates applied
-WF-003 | Terms and Conditions (Offers List) | actor: User (guest or authenticated) | branch: none | terminal: Terms and Conditions | on_success: opens the terms and conditions for the selected offer
-WF-004 | Book Now (Promotional Banners) | actor: User (guest or authenticated) | branch: none | terminal: Book Now | on_success: applies promotional code to booking flow or redirects to a pre-filled search with discounted rates applied
-WF-005 | Terms and Conditions (Promotional Banners) | actor: User (guest or authenticated) | branch: none | terminal: Terms and Conditions | on_success: opens the terms and conditions for the selected offer
-WF-006 | Subscribe to Newsletter | actor: User (guest or authenticated) | branch: none | terminal: Subscribe | on_success: subscribes email to receive future exclusive deals
-WF-007 | Book Now (Offers List) — no filters selected | actor: User (guest or authenticated) | branch: Service_Type == null AND Destination == null AND Travel_Dates == null | terminal: Book Now | on_success: applies promotional code to booking flow or redirects to a pre-filled search with discounted rates applied
-WF-008 | Terms and Conditions (Offers List) — no filters selected | actor: User (guest or authenticated) | branch: Service_Type == null AND Destination == null AND Travel_Dates == null | terminal: Terms and Conditions | on_success: opens the terms and conditions for the selected offer
+WF-001 | Apply filters to offers list | actor: visitor or authenticated user | branch: none | terminal: Apply Filters | on_success: filters the offers list
+WF-002 | Reset filters on offers list | actor: visitor or authenticated user | branch: none | terminal: Reset Filters | on_success: clears filter values
+WF-003 | Book Now from an offer row (apply promo or redirect to pre-filled search) | actor: visitor or authenticated user | branch: none | terminal: Book Now | on_success: applies promo code or redirects to a pre-filled search with discounted rates
+WF-004 | Open offer Terms and Conditions | actor: visitor or authenticated user | branch: none | terminal: Terms and Conditions | on_success: opens the offer's terms and conditions
+WF-005 | Subscribe to newsletter with email | actor: visitor or authenticated user | branch: none | terminal: Subscribe | on_success: adds the email to the newsletter subscription list
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:28:50] Test-Edge - LLM RESPONSE
+[22:37:25] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Offers & Deals",
@@ -361,136 +352,120 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-006",
+      "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Newsletter subscribe with leading/trailing whitespace in Email",
+      "test_case": "Destination field accepts very long free-text input (200+ chars)",
       "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions.",
-        "Newsletter subscription form is visible"
+        "Application loaded and Offers section is selected",
+        "Offers Filters form is visible"
       ],
       "steps": [
-        "1. Click into the Email field of the Newsletter_Subscription_Form",
-        "2. Enter an otherwise-valid email address with leading and trailing whitespace around it",
-        "3. Click the Subscribe button"
+        "1. Focus the Destination field in the Offers Filters form",
+        "2. Enter a very long string (200+ characters) into the Destination field",
+        "3. Click the Apply Filters button"
       ],
-      "expected_result": "Subscription succeeds; inline success confirmation is shown and the displayed saved email in the confirmation UI is the email with leading/trailing whitespace trimmed",
-      "priority": "low"
+      "expected_result": "Apply Filters succeeds; offers list refreshes and the Destination filter input retains the full entered string (no truncation visible in the input)",
+      "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-006",
+      "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Newsletter subscribe with emoji / unsupported unicode inside Email",
+      "test_case": "Destination field accepts emoji and special/unicode characters",
       "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions.",
-        "Newsletter subscription form is visible"
+        "Application loaded and Offers section is selected",
+        "Offers Filters form is visible"
       ],
       "steps": [
-        "1. Click into the Email field of the Newsletter_Subscription_Form",
-        "2. Enter an email-like string that includes emoji or non-standard Unicode characters in the local-part",
-        "3. Click the Subscribe button"
+        "1. Focus the Destination field in the Offers Filters form",
+        "2. Enter a destination containing emoji and a mix of special/unicode characters",
+        "3. Click the Apply Filters button"
       ],
-      "expected_result": "Subscription is blocked / error shown; the Email field shows the inline validation error \"must be a valid email address\"",
-      "priority": "low"
+      "expected_result": "Apply Filters succeeds; no inline validation error shown and the Destination input displays the entered special/unicode characters",
+      "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
-      "subcategory": "data_edge",
-      "test_case": "Apply Filters with Travel_Dates set to today's date",
+      "subcategory": "input_edge",
+      "test_case": "Leading and trailing whitespace in Destination is normalized when filters applied",
       "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions.",
-        "Service_Type and Destination may be empty or filled"
+        "Application loaded and Offers section is selected",
+        "Offers Filters form is visible"
       ],
       "steps": [
-        "1. Click the Travel_Dates field in the Filters_Form",
-        "2. Select today's date",
+        "1. Focus the Destination field in the Offers Filters form",
+        "2. Enter a valid destination value with leading and trailing spaces",
         "3. Click the Apply Filters button"
       ],
-      "expected_result": "Apply Filters succeeds; Offers_List refreshes and displays offers valid for the selected (today) date (offers list updates visibly)",
-      "priority": "medium"
+      "expected_result": "Apply Filters succeeds; the UI trims leading/trailing whitespace and the Destination input displays the trimmed value (no visible leading/trailing spaces)",
+      "priority": "low"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-001",
-      "subcategory": "data_edge",
-      "test_case": "Apply Filters with Travel_Dates set far in the future",
+      "wf_ref": "WF-005",
+      "subcategory": "input_edge",
+      "test_case": "Newsletter subscription rejects an excessively long email address",
       "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions.",
-        "Service_Type and Destination may be empty or filled"
+        "Application loaded and Offers section is selected",
+        "Newsletter Subscription form is visible"
       ],
       "steps": [
-        "1. Click the Travel_Dates field in the Filters_Form",
-        "2. Select a travel date far in the future (several years ahead)",
-        "3. Click the Apply Filters button"
+        "1. Focus the Email field in the Newsletter Subscription form",
+        "2. Enter an excessively long email address that exceeds typical length limits",
+        "3. Click the Subscribe button"
       ],
-      "expected_result": "Apply Filters succeeds; the offers list refreshes and the UI explicitly displays a no-results message for the selected dates (e.g., 'no offers available for selected dates'), indicating the filter applied but returned no matches",
+      "expected_result": "Subscribe is blocked; an inline validation error is shown on the Email field indicating the value is invalid/too long",
       "priority": "medium"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": "WF-007",
-      "subcategory": "interaction_edge",
-      "test_case": "Click Book Now on an offer when no filters are selected",
+      "wf_ref": "WF-005",
+      "subcategory": "input_edge",
+      "test_case": "Newsletter email with leading/trailing whitespace is trimmed and accepted",
       "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions.",
-        "Service_Type == null AND Destination == null AND Travel_Dates == null (no filters selected)"
+        "Application loaded and Offers section is selected",
+        "Newsletter Subscription form is visible"
       ],
       "steps": [
-        "1. Identify an offer card in Offers_List",
-        "2. Click the Book Now button on that offer card"
+        "1. Focus the Email field in the Newsletter Subscription form",
+        "2. Enter a syntactically valid email address with leading and trailing spaces",
+        "3. Click the Subscribe button"
       ],
-      "expected_result": "Book Now action succeeds; user is redirected to the booking/search flow and a visible indicator shows the promotional code was applied (e.g., a 'Promo code applied' banner or discounted rate shown on the redirected page)",
+      "expected_result": "Subscribe succeeds; a visible subscription confirmation message is shown and the Email field (or confirmation UI) displays the trimmed email address (no leading/trailing spaces)",
       "priority": "medium"
     },
     {
       "tc_id": "E-006",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-003",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click of Book Now on an offer card",
+      "test_case": "Rapid double-click of Book Now only triggers a single navigation / promo application",
       "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions.",
-        "An offer card is visible in Offers_List"
+        "Application loaded and Offers section is selected",
+        "Offers list is visible with at least one offer row containing a Book Now action"
       ],
       "steps": [
-        "1. Focus on a single offer card's Book Now button",
+        "1. Locate an offer row and identify its Book Now button",
         "2. Click the Book Now button twice in rapid succession"
       ],
-      "expected_result": "First Book Now click succeeds and initiates a single redirect to the booking/search flow; the second rapid click is ignored and no duplicate redirect or duplicate promo application occurs (UI shows one redirected page and one applied promo indicator)",
+      "expected_result": "Second rapid click is blocked; only one navigation to the pre-filled search or promo-application occurs and the Book Now control shows a disabled or in-progress state to indicate the second click was ignored",
       "priority": "medium"
-    },
-    {
-      "tc_id": "E-007",
-      "wf_ref": "WF-001",
-      "subcategory": "input_edge",
-      "test_case": "Apply Filters with an excessively long and unicode-heavy Destination value",
-      "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions.",
-        "Filters_Form is visible"
-      ],
-      "steps": [
-        "1. Click into the Destination field in the Filters_Form",
-        "2. Enter a very long destination string (200+ characters) containing special/unicode characters",
-        "3. Click the Apply Filters button"
-      ],
-      "expected_result": "Apply Filters succeeds; the UI trims/truncates the displayed Destination in the filters UI to the allowed display length (the filter chip or field shows the truncated/escaped value) and the offers list refreshes using the trimmed value (visible results or a no-results message appear accordingly)",
-      "priority": "low"
     }
   ],
   "summary": {
-    "total": 7,
+    "total": 6,
     "boundary": 0,
-    "input_edge": 4,
-    "interaction_edge": 2,
+    "input_edge": 5,
+    "interaction_edge": 1,
     "state_edge": 0,
-    "data_edge": 2,
-    "medium_priority": 4,
-    "low_priority": 3
+    "data_edge": 0,
+    "medium_priority": 5,
+    "low_priority": 1
   }
 }
 
 ------------------------------------------------------------
-[21:28:50] Test-Edge - PARSED JSON
+[22:37:25] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Offers & Deals",
@@ -498,130 +473,114 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-006",
+      "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Newsletter subscribe with leading/trailing whitespace in Email",
+      "test_case": "Destination field accepts very long free-text input (200+ chars)",
       "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions.",
-        "Newsletter subscription form is visible"
+        "Application loaded and Offers section is selected",
+        "Offers Filters form is visible"
       ],
       "steps": [
-        "1. Click into the Email field of the Newsletter_Subscription_Form",
-        "2. Enter an otherwise-valid email address with leading and trailing whitespace around it",
-        "3. Click the Subscribe button"
+        "1. Focus the Destination field in the Offers Filters form",
+        "2. Enter a very long string (200+ characters) into the Destination field",
+        "3. Click the Apply Filters button"
       ],
-      "expected_result": "Subscription succeeds; inline success confirmation is shown and the displayed saved email in the confirmation UI is the email with leading/trailing whitespace trimmed",
-      "priority": "low"
+      "expected_result": "Apply Filters succeeds; offers list refreshes and the Destination filter input retains the full entered string (no truncation visible in the input)",
+      "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-006",
+      "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Newsletter subscribe with emoji / unsupported unicode inside Email",
+      "test_case": "Destination field accepts emoji and special/unicode characters",
       "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions.",
-        "Newsletter subscription form is visible"
+        "Application loaded and Offers section is selected",
+        "Offers Filters form is visible"
       ],
       "steps": [
-        "1. Click into the Email field of the Newsletter_Subscription_Form",
-        "2. Enter an email-like string that includes emoji or non-standard Unicode characters in the local-part",
-        "3. Click the Subscribe button"
+        "1. Focus the Destination field in the Offers Filters form",
+        "2. Enter a destination containing emoji and a mix of special/unicode characters",
+        "3. Click the Apply Filters button"
       ],
-      "expected_result": "Subscription is blocked / error shown; the Email field shows the inline validation error \"must be a valid email address\"",
-      "priority": "low"
+      "expected_result": "Apply Filters succeeds; no inline validation error shown and the Destination input displays the entered special/unicode characters",
+      "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
-      "subcategory": "data_edge",
-      "test_case": "Apply Filters with Travel_Dates set to today's date",
+      "subcategory": "input_edge",
+      "test_case": "Leading and trailing whitespace in Destination is normalized when filters applied",
       "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions.",
-        "Service_Type and Destination may be empty or filled"
+        "Application loaded and Offers section is selected",
+        "Offers Filters form is visible"
       ],
       "steps": [
-        "1. Click the Travel_Dates field in the Filters_Form",
-        "2. Select today's date",
+        "1. Focus the Destination field in the Offers Filters form",
+        "2. Enter a valid destination value with leading and trailing spaces",
         "3. Click the Apply Filters button"
       ],
-      "expected_result": "Apply Filters succeeds; Offers_List refreshes and displays offers valid for the selected (today) date (offers list updates visibly)",
-      "priority": "medium"
+      "expected_result": "Apply Filters succeeds; the UI trims leading/trailing whitespace and the Destination input displays the trimmed value (no visible leading/trailing spaces)",
+      "priority": "low"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-001",
-      "subcategory": "data_edge",
-      "test_case": "Apply Filters with Travel_Dates set far in the future",
+      "wf_ref": "WF-005",
+      "subcategory": "input_edge",
+      "test_case": "Newsletter subscription rejects an excessively long email address",
       "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions.",
-        "Service_Type and Destination may be empty or filled"
+        "Application loaded and Offers section is selected",
+        "Newsletter Subscription form is visible"
       ],
       "steps": [
-        "1. Click the Travel_Dates field in the Filters_Form",
-        "2. Select a travel date far in the future (several years ahead)",
-        "3. Click the Apply Filters button"
+        "1. Focus the Email field in the Newsletter Subscription form",
+        "2. Enter an excessively long email address that exceeds typical length limits",
+        "3. Click the Subscribe button"
       ],
-      "expected_result": "Apply Filters succeeds; the offers list refreshes and the UI explicitly displays a no-results message for the selected dates (e.g., 'no offers available for selected dates'), indicating the filter applied but returned no matches",
+      "expected_result": "Subscribe is blocked; an inline validation error is shown on the Email field indicating the value is invalid/too long",
       "priority": "medium"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": "WF-007",
-      "subcategory": "interaction_edge",
-      "test_case": "Click Book Now on an offer when no filters are selected",
+      "wf_ref": "WF-005",
+      "subcategory": "input_edge",
+      "test_case": "Newsletter email with leading/trailing whitespace is trimmed and accepted",
       "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions.",
-        "Service_Type == null AND Destination == null AND Travel_Dates == null (no filters selected)"
+        "Application loaded and Offers section is selected",
+        "Newsletter Subscription form is visible"
       ],
       "steps": [
-        "1. Identify an offer card in Offers_List",
-        "2. Click the Book Now button on that offer card"
+        "1. Focus the Email field in the Newsletter Subscription form",
+        "2. Enter a syntactically valid email address with leading and trailing spaces",
+        "3. Click the Subscribe button"
       ],
-      "expected_result": "Book Now action succeeds; user is redirected to the booking/search flow and a visible indicator shows the promotional code was applied (e.g., a 'Promo code applied' banner or discounted rate shown on the redirected page)",
+      "expected_result": "Subscribe succeeds; a visible subscription confirmation message is shown and the Email field (or confirmation UI) displays the trimmed email address (no leading/trailing spaces)",
       "priority": "medium"
     },
     {
       "tc_id": "E-006",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-003",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click of Book Now on an offer card",
+      "test_case": "Rapid double-click of Book Now only triggers a single navigation / promo application",
       "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions.",
-        "An offer card is visible in Offers_List"
+        "Application loaded and Offers section is selected",
+        "Offers list is visible with at least one offer row containing a Book Now action"
       ],
       "steps": [
-        "1. Focus on a single offer card's Book Now button",
+        "1. Locate an offer row and identify its Book Now button",
         "2. Click the Book Now button twice in rapid succession"
       ],
-      "expected_result": "First Book Now click succeeds and initiates a single redirect to the booking/search flow; the second rapid click is ignored and no duplicate redirect or duplicate promo application occurs (UI shows one redirected page and one applied promo indicator)",
+      "expected_result": "Second rapid click is blocked; only one navigation to the pre-filled search or promo-application occurs and the Book Now control shows a disabled or in-progress state to indicate the second click was ignored",
       "priority": "medium"
-    },
-    {
-      "tc_id": "E-007",
-      "wf_ref": "WF-001",
-      "subcategory": "input_edge",
-      "test_case": "Apply Filters with an excessively long and unicode-heavy Destination value",
-      "preconditions": [
-        "User (guest or authenticated) is on the Offers page with offer data and filters loaded and booking/search services available to apply promotions.",
-        "Filters_Form is visible"
-      ],
-      "steps": [
-        "1. Click into the Destination field in the Filters_Form",
-        "2. Enter a very long destination string (200+ characters) containing special/unicode characters",
-        "3. Click the Apply Filters button"
-      ],
-      "expected_result": "Apply Filters succeeds; the UI trims/truncates the displayed Destination in the filters UI to the allowed display length (the filter chip or field shows the truncated/escaped value) and the offers list refreshes using the trimmed value (visible results or a no-results message appear accordingly)",
-      "priority": "low"
     }
   ],
   "summary": {
-    "total": 7,
+    "total": 6,
     "boundary": 0,
-    "input_edge": 4,
-    "interaction_edge": 2,
+    "input_edge": 5,
+    "interaction_edge": 1,
     "state_edge": 0,
-    "data_edge": 2,
-    "medium_priority": 4,
-    "low_priority": 3
+    "data_edge": 0,
+    "medium_priority": 5,
+    "low_priority": 1
   }
 }

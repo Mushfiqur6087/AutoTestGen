@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.220291
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.920078
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Edge - SYSTEM PROMPT
+[22:49:29] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Edge - USER PROMPT
+[22:49:29] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 11,
   "module_title": "Assignment Submissions",
-  "summary": "Displays a searchable and filterable table of all student submission records for an assignment, including submission and grading statuses, timestamps, previews, feedback, and quick-grading inline controls.",
-  "where_it_fits": "Accessible from an assignment's activity page within a course (reachable via the Course tab and course breadcrumbs or the Course Index sidebar), this view is part of the teacher/grader workflow for reviewing and grading student work after submissions have been made. It sits downstream of Assignment Creation and is used prior to or during updating the Gradebook.",
-  "assumed_state_on_entry": "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
+  "summary": "Displays a table of all student submission records for an assignment with search/filter controls, per-student actions to grade, and optional quick inline grading.",
+  "where_it_fits": "Accessible from within a course's activity view for an Assignment (breadcrumbs show the path from the course), and reachable via the Course tab and Course Index sidebar when an Assignment activity is selected. It is part of the grading workflow that teachers use after students submit work and complements the Gradebook and Assignment \u2014 Teacher View modules.",
+  "assumed_state_on_entry": "User is viewing a course that contains the specific Assignment activity and is logged in with a role that has grading/teacher permissions; the assignment has at least one student submission (or is ready to receive submissions)."
 }
 </module_context>
 
@@ -243,10 +257,10 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Assignment Submissions",
   "components": {
-    "Submissions_Search_Filters": {
+    "Submission_Filters": {
       "type": "form",
       "fields": {
-        "Student_Search": {
+        "Student_Name_Search": {
           "type": "search"
         },
         "Submission_Status_Filter": {
@@ -266,61 +280,62 @@ If a `<workflows>` block is present in the input:
         },
         "Quick_Grading_Mode": {
           "type": "checkbox",
-          "description": "Enables inline grade entry directly in the table"
+          "preconditions": [
+            "User is viewing a course that contains the specific Assignment activity and is logged in with a role that has grading/teacher permissions; the assignment has at least one student submission (or is ready to receive submissions)."
+          ]
         }
-      },
-      "preconditions": [
-        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
-      ]
+      }
     },
     "Submissions_Table": {
       "type": "data_table",
       "searchable": true,
       "filterable_columns": [
-        "Submission_Status",
-        "Grading_Status"
+        "Submission Status",
+        "Grading Status"
       ],
-      "row_fields": {
-        "Student_Identity": {
-          "type": "link",
-          "description": "Student name and initials icon; link opens student profile"
-        },
-        "Online_Text_Preview": {
-          "type": "link",
-          "description": "Opens an inline preview of online text submission"
-        },
-        "File_Submissions": {
-          "type": "link",
-          "description": "Links to submitted files for download/view"
-        },
-        "Submission_Comments": {
-          "type": "link",
-          "description": "Opens submission comments thread or modal"
-        },
-        "Feedback_Comments": {
-          "type": "link",
-          "description": "Opens or adds feedback comments"
-        },
-        "Feedback_Files": {
-          "type": "link",
-          "description": "Links to feedback files (download or view)"
-        },
-        "Final_Grade": {
-          "type": "unspecified",
-          "editable": true,
-          "enabled_when": "Quick_Grading_Mode == true",
-          "description": "Inline editable final grade when Quick Grading Mode is enabled"
-        }
+      "filter_controls": {
+        "ref": "Submission_Filters"
       },
       "row_actions": [
         {
+          "action_name": "View Profile",
+          "type": "link"
+        },
+        {
+          "action_name": "Preview Online Text",
+          "type": "button"
+        },
+        {
+          "action_name": "View Submission Files",
+          "type": "button"
+        },
+        {
+          "action_name": "View Submission Comments",
+          "type": "button"
+        },
+        {
+          "action_name": "View Feedback Comments",
+          "type": "button"
+        },
+        {
+          "action_name": "Download Feedback Files",
+          "type": "button"
+        },
+        {
           "action_name": "Open Grading Workflow",
-          "on_click": "opens the grading workflow for the selected student"
+          "type": "button",
+          "preconditions": [
+            "User is viewing a course that contains the specific Assignment activity and is logged in with a role that has grading/teacher permissions; the assignment has at least one student submission (or is ready to receive submissions)."
+          ]
         }
       ],
-      "preconditions": [
-        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
-      ]
+      "row_inline_fields": {
+        "Final_Grade": {
+          "type": "unspecified",
+          "visible_when": "Quick_Grading_Mode == true",
+          "enabled_when": "Quick_Grading_Mode == true"
+        }
+      }
     }
   }
 }
@@ -337,24 +352,20 @@ The Submissions view presents a table of all student submission records. Search 
 </description>
 
 <workflows>
-WF-001 | Search by student name | actor: teacher or grader | branch: none | terminal: Student_Search | on_success: Table is filtered to match the student search query, narrowing visible submissions.
-WF-002 | Filter by submission status | actor: teacher or grader | branch: none | terminal: Submission_Status_Filter | on_success: Table is filtered by the selected Submission Status (e.g., Submitted for grading, No submission, Draft — not submitted).
-WF-003 | Filter by grading status | actor: teacher or grader | branch: none | terminal: Grading_Status_Filter | on_success: Table is filtered by the selected Grading Status (Graded or Not graded).
-WF-004 | Enable Quick Grading mode | actor: teacher or grader | branch: none | terminal: Quick_Grading_Mode | on_success: Quick Grading Mode enabled; inline grade entry (Final_Grade) becomes editable directly in the table.
-WF-005 | Open student profile from row | actor: teacher or grader | branch: none | terminal: Student_Identity | on_success: Link opens the student's profile.
-WF-006 | Open online text preview | actor: teacher or grader | branch: none | terminal: Online_Text_Preview | on_success: Opens an inline preview of the student's online text submission.
-WF-007 | Open submitted files | actor: teacher or grader | branch: none | terminal: File_Submissions | on_success: Links to submitted files are opened for download or viewing.
-WF-008 | Open submission comments | actor: teacher or grader | branch: none | terminal: Submission_Comments | on_success: Opens the submission comments thread or modal.
-WF-009 | Open or add feedback comments | actor: teacher or grader | branch: none | terminal: Feedback_Comments | on_success: Opens or allows adding feedback comments for the submission.
-WF-010 | Open feedback files | actor: teacher or grader | branch: none | terminal: Feedback_Files | on_success: Links to feedback files are opened for download or viewing.
-WF-011 | Open grading workflow for a student | actor: teacher or grader | branch: none | terminal: Open Grading Workflow | on_success: Opens the grading workflow for the selected student.
-WF-012 | Edit final grade inline (Quick Grading enabled) | actor: teacher or grader | branch: Quick_Grading_Mode == true | terminal: Final_Grade | on_success: Final grade is edited inline in the table when Quick Grading Mode is enabled.
+WF-001 | Open student profile from a submission row | actor: Teacher | branch: none | terminal: View Profile | on_success: Student profile opened (navigates to the student's profile page)
+WF-002 | Preview online text for a submission | actor: Teacher | branch: none | terminal: Preview Online Text | on_success: Online text preview displayed for the selected submission
+WF-003 | View submission files for a student | actor: Teacher | branch: none | terminal: View Submission Files | on_success: Submission files view opened for the selected student
+WF-004 | View submission comments for a student | actor: Teacher | branch: none | terminal: View Submission Comments | on_success: Submission comments displayed for the selected submission
+WF-005 | View feedback comments for a student | actor: Teacher | branch: none | terminal: View Feedback Comments | on_success: Feedback comments displayed for the selected submission
+WF-006 | Download feedback files for a student | actor: Teacher | branch: none | terminal: Download Feedback Files | on_success: Download of feedback files initiated for the selected submission
+WF-007 | Open full grading workflow for a student | actor: Teacher | branch: none | terminal: Open Grading Workflow | on_success: Grading workflow opened for the selected student (navigates to grading interface)
+WF-008 | Enable Quick grading to reveal inline Final grade fields | actor: Teacher | branch: Quick_Grading_Mode == true | terminal: Quick_Grading_Mode | on_success: Quick grading mode enabled; Final grade inline fields become visible and editable in the table
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:15:09] Test-Edge - LLM RESPONSE
+[22:51:43] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Assignment Submissions",
@@ -362,102 +373,88 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-004",
-      "subcategory": "interaction_edge",
-      "test_case": "Final_Grade remains non-editable when Quick Grading is disabled",
+      "wf_ref": "WF-008",
+      "subcategory": "input_edge",
+      "test_case": "Enable Quick grading then enter a very long string into the inline Final grade cell",
       "preconditions": [
-        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available).",
-        "Quick_Grading_Mode is currently unchecked/disabled."
+        "User is logged in with grading/teacher permissions and is viewing the Assignment Submissions page for the assignment",
+        "There is at least one student submission visible in the submissions table"
       ],
       "steps": [
-        "1. Locate a row in the Submissions_Table with a visible Final_Grade cell.",
-        "2. Click the Final_Grade cell for that student row."
+        "1. Click the Quick Grading checkbox to enable Quick grading mode",
+        "2. Locate a specific student's row in the submissions table",
+        "3. Click the Final grade inline cell for that row to edit it",
+        "4. Enter a very long text string (200+ characters) into the Final grade cell",
+        "5. Press Enter to commit the inline edit"
       ],
-      "expected_result": "Clicking the Final_Grade cell is blocked; the cell does not become editable and no inline edit controls appear (Final_Grade remains read-only).",
+      "expected_result": "Quick grading mode remains enabled and the Final grade inline cell displays the entered long string in the table row (the long text is shown in the cell after commit); no UI validation error is shown",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-012",
-      "subcategory": "state_edge",
-      "test_case": "Enabling Quick Grading makes Final_Grade editable and inline edit succeeds",
+      "wf_ref": null,
+      "subcategory": "input_edge",
+      "test_case": "Search with an extremely long student name string (200+ characters)",
       "preconditions": [
-        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available).",
-        "Quick_Grading_Mode is currently unchecked/disabled."
+        "User is logged in with grading/teacher permissions and is viewing the Assignment Submissions page for the assignment",
+        "Submissions table is populated (may include multiple rows)"
       ],
       "steps": [
-        "1. Check the Quick_Grading_Mode checkbox to enable Quick Grading.",
-        "2. Locate a row in the Submissions_Table and click into the Final_Grade cell for that student.",
-        "3. Type a new grade value into the inline edit control.",
-        "4. Commit the change (press Enter or click the Save/commit control in the inline editor if present)."
+        "1. Focus the Student Name search field above the submissions table",
+        "2. Enter an extremely long string (200+ characters) into the Student Name search field",
+        "3. Press Enter or click the search control to execute the search"
       ],
-      "expected_result": "Enabling Quick Grading succeeds; the Final_Grade cell becomes editable. The inline edit succeeds and the updated grade value is saved and displayed in the table row.",
-      "priority": "medium"
+      "expected_result": "Search executes without a UI crash; the submissions table updates and shows the empty-state (no rows) when there are no matches — a visible empty-table state is shown and no validation error is displayed",
+      "priority": "low"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-004",
-      "subcategory": "interaction_edge",
-      "test_case": "Disable Quick Grading while an inline edit is active — unsaved edit cancellation",
+      "wf_ref": null,
+      "subcategory": "input_edge",
+      "test_case": "Search using a student name with leading and trailing whitespace",
       "preconditions": [
-        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available).",
-        "Quick_Grading_Mode is currently unchecked/disabled."
+        "User is logged in with grading/teacher permissions and is viewing the Assignment Submissions page for the assignment",
+        "A student exists whose name exactly matches the trimmed value to be searched"
       ],
       "steps": [
-        "1. Check the Quick_Grading_Mode checkbox to enable Quick Grading.",
-        "2. Click into the Final_Grade cell for a student row and begin typing a new value, but do not commit/save.",
-        "3. While the inline edit control is still active (before saving), uncheck the Quick_Grading_Mode checkbox to disable Quick Grading.",
-        "4. Observe the Final_Grade cell for that row."
+        "1. Focus the Student Name search field above the submissions table",
+        "2. Enter the student's exact name with leading and trailing spaces (e.g., '  <exact student name>  ')",
+        "3. Press Enter or click the search control to execute the search"
       ],
-      "expected_result": "Disabling Quick Grading while an inline edit is active is blocked from leaving the inline edit in an ambiguous state: the active inline edit is cancelled and no change is saved; the Final_Grade cell returns to non-editable/read-only state and shows the previously saved value (change not saved).",
-      "priority": "medium"
+      "expected_result": "The search is applied using the trimmed value; the submissions table displays the matching student's row (Final visible result: the matching row is present and visible in the table), and no inline validation error is shown in the search field",
+      "priority": "low"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-001",
-      "subcategory": "input_edge",
-      "test_case": "Student search with leading and trailing whitespace is handled (trimmed)",
+      "wf_ref": "WF-007",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click on Open Grading Workflow for a submission row",
       "preconditions": [
-        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available).",
-        "There is at least one known student submission whose student name is available to search."
+        "User is logged in with grading/teacher permissions and is viewing the Assignment Submissions page for the assignment",
+        "There is at least one student submission visible in the submissions table"
       ],
       "steps": [
-        "1. In the Student_Search field, enter a known student's exact name surrounded by leading and trailing whitespace.",
-        "2. Press Enter or activate the search control to perform the search."
+        "1. Locate a student's row in the submissions table",
+        "2. Quickly click the row action Open Grading Workflow button twice in rapid succession"
       ],
-      "expected_result": "Search succeeds; the table is filtered to show matching submission(s) as if leading and trailing whitespace were trimmed (matching rows for the student are visible).",
+      "expected_result": "Only a single navigation to the grading workflow occurs: the grading interface opens for the selected student (visible grading interface screen), and the UI does not create duplicate grading pages or display an error as a result of the second rapid click",
       "priority": "medium"
-    },
-    {
-      "tc_id": "E-005",
-      "wf_ref": "WF-001",
-      "subcategory": "input_edge",
-      "test_case": "Student search with special characters and emoji does not crash the UI",
-      "preconditions": [
-        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
-      ],
-      "steps": [
-        "1. In the Student_Search field, enter a query containing special characters and emoji (e.g., punctuation, symbols, emoji).",
-        "2. Press Enter or activate the search control to perform the search."
-      ],
-      "expected_result": "Search succeeds (UI remains responsive); the application does not display an error page or crash. The table either shows matching submission rows if matches exist, or displays the 'no matching submissions' / empty-results state — no runtime error is shown.",
-      "priority": "low"
     }
   ],
   "summary": {
-    "total": 5,
+    "total": 4,
     "boundary": 0,
-    "input_edge": 2,
-    "interaction_edge": 2,
-    "state_edge": 1,
+    "input_edge": 3,
+    "interaction_edge": 1,
+    "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 4,
-    "low_priority": 1
+    "medium_priority": 2,
+    "low_priority": 2
   }
 }
 
 ------------------------------------------------------------
-[21:15:09] Test-Edge - PARSED JSON
+[22:51:43] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Assignment Submissions",
@@ -465,96 +462,82 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-004",
-      "subcategory": "interaction_edge",
-      "test_case": "Final_Grade remains non-editable when Quick Grading is disabled",
+      "wf_ref": "WF-008",
+      "subcategory": "input_edge",
+      "test_case": "Enable Quick grading then enter a very long string into the inline Final grade cell",
       "preconditions": [
-        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available).",
-        "Quick_Grading_Mode is currently unchecked/disabled."
+        "User is logged in with grading/teacher permissions and is viewing the Assignment Submissions page for the assignment",
+        "There is at least one student submission visible in the submissions table"
       ],
       "steps": [
-        "1. Locate a row in the Submissions_Table with a visible Final_Grade cell.",
-        "2. Click the Final_Grade cell for that student row."
+        "1. Click the Quick Grading checkbox to enable Quick grading mode",
+        "2. Locate a specific student's row in the submissions table",
+        "3. Click the Final grade inline cell for that row to edit it",
+        "4. Enter a very long text string (200+ characters) into the Final grade cell",
+        "5. Press Enter to commit the inline edit"
       ],
-      "expected_result": "Clicking the Final_Grade cell is blocked; the cell does not become editable and no inline edit controls appear (Final_Grade remains read-only).",
+      "expected_result": "Quick grading mode remains enabled and the Final grade inline cell displays the entered long string in the table row (the long text is shown in the cell after commit); no UI validation error is shown",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-012",
-      "subcategory": "state_edge",
-      "test_case": "Enabling Quick Grading makes Final_Grade editable and inline edit succeeds",
+      "wf_ref": null,
+      "subcategory": "input_edge",
+      "test_case": "Search with an extremely long student name string (200+ characters)",
       "preconditions": [
-        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available).",
-        "Quick_Grading_Mode is currently unchecked/disabled."
+        "User is logged in with grading/teacher permissions and is viewing the Assignment Submissions page for the assignment",
+        "Submissions table is populated (may include multiple rows)"
       ],
       "steps": [
-        "1. Check the Quick_Grading_Mode checkbox to enable Quick Grading.",
-        "2. Locate a row in the Submissions_Table and click into the Final_Grade cell for that student.",
-        "3. Type a new grade value into the inline edit control.",
-        "4. Commit the change (press Enter or click the Save/commit control in the inline editor if present)."
+        "1. Focus the Student Name search field above the submissions table",
+        "2. Enter an extremely long string (200+ characters) into the Student Name search field",
+        "3. Press Enter or click the search control to execute the search"
       ],
-      "expected_result": "Enabling Quick Grading succeeds; the Final_Grade cell becomes editable. The inline edit succeeds and the updated grade value is saved and displayed in the table row.",
-      "priority": "medium"
+      "expected_result": "Search executes without a UI crash; the submissions table updates and shows the empty-state (no rows) when there are no matches \u2014 a visible empty-table state is shown and no validation error is displayed",
+      "priority": "low"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-004",
-      "subcategory": "interaction_edge",
-      "test_case": "Disable Quick Grading while an inline edit is active \u2014 unsaved edit cancellation",
+      "wf_ref": null,
+      "subcategory": "input_edge",
+      "test_case": "Search using a student name with leading and trailing whitespace",
       "preconditions": [
-        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available).",
-        "Quick_Grading_Mode is currently unchecked/disabled."
+        "User is logged in with grading/teacher permissions and is viewing the Assignment Submissions page for the assignment",
+        "A student exists whose name exactly matches the trimmed value to be searched"
       ],
       "steps": [
-        "1. Check the Quick_Grading_Mode checkbox to enable Quick Grading.",
-        "2. Click into the Final_Grade cell for a student row and begin typing a new value, but do not commit/save.",
-        "3. While the inline edit control is still active (before saving), uncheck the Quick_Grading_Mode checkbox to disable Quick Grading.",
-        "4. Observe the Final_Grade cell for that row."
+        "1. Focus the Student Name search field above the submissions table",
+        "2. Enter the student's exact name with leading and trailing spaces (e.g., '  <exact student name>  ')",
+        "3. Press Enter or click the search control to execute the search"
       ],
-      "expected_result": "Disabling Quick Grading while an inline edit is active is blocked from leaving the inline edit in an ambiguous state: the active inline edit is cancelled and no change is saved; the Final_Grade cell returns to non-editable/read-only state and shows the previously saved value (change not saved).",
-      "priority": "medium"
+      "expected_result": "The search is applied using the trimmed value; the submissions table displays the matching student's row (Final visible result: the matching row is present and visible in the table), and no inline validation error is shown in the search field",
+      "priority": "low"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-001",
-      "subcategory": "input_edge",
-      "test_case": "Student search with leading and trailing whitespace is handled (trimmed)",
+      "wf_ref": "WF-007",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click on Open Grading Workflow for a submission row",
       "preconditions": [
-        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available).",
-        "There is at least one known student submission whose student name is available to search."
+        "User is logged in with grading/teacher permissions and is viewing the Assignment Submissions page for the assignment",
+        "There is at least one student submission visible in the submissions table"
       ],
       "steps": [
-        "1. In the Student_Search field, enter a known student's exact name surrounded by leading and trailing whitespace.",
-        "2. Press Enter or activate the search control to perform the search."
+        "1. Locate a student's row in the submissions table",
+        "2. Quickly click the row action Open Grading Workflow button twice in rapid succession"
       ],
-      "expected_result": "Search succeeds; the table is filtered to show matching submission(s) as if leading and trailing whitespace were trimmed (matching rows for the student are visible).",
+      "expected_result": "Only a single navigation to the grading workflow occurs: the grading interface opens for the selected student (visible grading interface screen), and the UI does not create duplicate grading pages or display an error as a result of the second rapid click",
       "priority": "medium"
-    },
-    {
-      "tc_id": "E-005",
-      "wf_ref": "WF-001",
-      "subcategory": "input_edge",
-      "test_case": "Student search with special characters and emoji does not crash the UI",
-      "preconditions": [
-        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
-      ],
-      "steps": [
-        "1. In the Student_Search field, enter a query containing special characters and emoji (e.g., punctuation, symbols, emoji).",
-        "2. Press Enter or activate the search control to perform the search."
-      ],
-      "expected_result": "Search succeeds (UI remains responsive); the application does not display an error page or crash. The table either shows matching submission rows if matches exist, or displays the 'no matching submissions' / empty-results state \u2014 no runtime error is shown.",
-      "priority": "low"
     }
   ],
   "summary": {
-    "total": 5,
+    "total": 4,
     "boundary": 0,
-    "input_edge": 2,
-    "interaction_edge": 2,
-    "state_edge": 1,
+    "input_edge": 3,
+    "interaction_edge": 1,
+    "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 4,
-    "low_priority": 1
+    "medium_priority": 2,
+    "low_priority": 2
   }
 }

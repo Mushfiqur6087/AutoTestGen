@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:34.428175
+DEBUG SESSION STARTED: 2026-07-04T22:41:48.119030
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Edge - SYSTEM PROMPT
+[22:41:48] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Edge - USER PROMPT
+[22:41:48] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 10,
   "module_title": "Logout",
-  "summary": "Terminates the current authenticated session and returns the user to the login page.",
-  "where_it_fits": "Located in the user menu on the right side of the persistent top navigation bar (accessible from Home, Dashboard, My Courses and course pages), this module is available globally and is used at the end of a user session to end access to protected areas and redirect to the login page.",
-  "assumed_state_on_entry": "User is currently authenticated (active session) and has access to the top navigation user menu."
+  "summary": "Ends the current authenticated session and returns the user to the login page, requiring re-authentication for protected pages.",
+  "where_it_fits": "Located in the user menu dropdown accessed from the initials icon in the top navigation bar (right side); it is available from anywhere in the app and acts as the final action in a user's session lifecycle by redirecting to the login page.",
+  "assumed_state_on_entry": "An active authenticated user session (user is logged in and has access to protected pages)."
 }
 </module_context>
 
@@ -243,13 +257,19 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Logout",
   "components": {
-    "Logout_Menu_Item": {
-      "type": "link",
-      "action_name": "Log out",
-      "preconditions": [
-        "User is currently authenticated (active session) and has access to the top navigation user menu."
-      ],
-      "on_success": "terminates the current authenticated session and redirects to the login page"
+    "User_Menu_Dropdown": {
+      "type": "dropdown",
+      "description": "Accessed from the initials icon in the top navigation bar (right side); available from anywhere in the app.",
+      "fields": {
+        "Log_Out": {
+          "type": "button",
+          "action_name": "Log out",
+          "on_success": "terminates the current authenticated session and redirects to the login page",
+          "preconditions": [
+            "An active authenticated user session (user is logged in and has access to protected pages)."
+          ]
+        }
+      }
     }
   }
 }
@@ -262,13 +282,13 @@ Selecting Log out terminates the current authenticated session and redirects to 
 </description>
 
 <workflows>
-WF-001 | Select Log out from user menu | actor: Authenticated user | branch: none | terminal: Log out | on_success: terminates the current authenticated session and redirects to the login page
+WF-001 | Log out from user menu | actor: Authenticated user | branch: none | terminal: Log out | on_success: terminates the current authenticated session and redirects to the login page
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:14:25] Test-Edge - LLM RESPONSE
+[22:43:47] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Logout",
@@ -278,71 +298,64 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click of Log out link",
+      "test_case": "Rapid double-click of Log out button",
       "preconditions": [
-        "User is authenticated and on any protected page",
-        "User menu is accessible in the top navigation"
+        "User is logged in and currently viewing a protected page"
       ],
       "steps": [
-        "1. Click the user menu in the top navigation",
-        "2. Click the 'Log out' link (first click)",
-        "3. Immediately click the 'Log out' link again (second click) before the redirect completes"
+        "1. Click the initials icon in the top navigation bar to open the user menu dropdown",
+        "2. Click the Log out button",
+        "3. Immediately click the Log out button again (second click occurs before the UI redirect completes)"
       ],
-      "expected_result": "Logout succeeds: the application processes a single logout and the user is redirected to the login page once; no error message is shown and no duplicate redirects or visible side-effects occur.",
+      "expected_result": "The first click terminates the session and redirects to the login page; the second rapid click does not produce an error and is ignored. Logout succeeds and the login page is visible.",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-001",
-      "subcategory": "state_edge",
-      "test_case": "Close tab immediately after clicking Log out (server-side logout completion validation)",
+      "subcategory": "interaction_edge",
+      "test_case": "Click Log out then immediately navigate to a protected page via top navigation",
       "preconditions": [
-        "User is authenticated and on any protected page",
-        "User menu is accessible in the top navigation"
+        "User is logged in and currently viewing a protected page"
       ],
       "steps": [
-        "1. Click the user menu in the top navigation",
-        "2. Click the 'Log out' link",
-        "3. Immediately close the browser tab before the login page loads",
-        "4. Open a new browser tab and navigate to a known protected page URL"
+        "1. Click the initials icon in the top navigation bar to open the user menu dropdown",
+        "2. Click the Log out button",
+        "3. Immediately (before the login page finishes rendering) click a top-navigation link that points to another protected page"
       ],
-      "expected_result": "Logout succeeds server-side: access to the protected page is blocked and the new tab is redirected to the login page (no authenticated content is shown).",
+      "expected_result": "The attempt to view the protected page after logout is blocked; the login page is shown. Access is blocked and a re-authentication prompt (login page) is visible.",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Use browser Back after successful logout to attempt returning to protected page",
+      "test_case": "Use browser Back button immediately after logout",
       "preconditions": [
-        "User is authenticated and on a protected page",
-        "User menu is accessible in the top navigation"
+        "User is logged in and currently viewing a protected page"
       ],
       "steps": [
-        "1. Click the user menu in the top navigation",
-        "2. Click the 'Log out' link",
-        "3. Wait for redirect to the login page to complete",
-        "4. Press the browser Back button once"
+        "1. Click the initials icon in the top navigation bar to open the user menu dropdown",
+        "2. Click the Log out button",
+        "3. After the app redirects to the login page, press the browser Back button once"
       ],
-      "expected_result": "Navigation back to protected content is blocked: the browser should display the login page (or re-redirect to it) and no protected content is visible — logout succeeds and protected pages are not accessible from back navigation.",
+      "expected_result": "Using the browser Back button does not reveal protected content; navigation is blocked and the login page remains visible (protected pages are not displayed). Access is blocked.",
       "priority": "low"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-001",
-      "subcategory": "state_edge",
-      "test_case": "Log out in one tab then perform an authenticated action in another tab that was left open",
+      "subcategory": "data_edge",
+      "test_case": "Manually enter a protected page URL after logout",
       "preconditions": [
-        "User is authenticated and has two browser tabs open showing protected pages",
-        "User menu is accessible in the top navigation on both tabs"
+        "User is logged in and currently viewing a protected page"
       ],
       "steps": [
-        "1. In Tab A, click the user menu in the top navigation",
-        "2. In Tab A, click the 'Log out' link and wait for redirect to the login page",
-        "3. Switch to Tab B (left open, showing a protected page) and click a link or button that requires authentication (for example, navigate to a protected section)",
-        "4. Observe the behavior in Tab B"
+        "1. Click the initials icon in the top navigation bar to open the user menu dropdown",
+        "2. Click the Log out button",
+        "3. After being redirected to the login page, type a known protected page URL into the browser address bar and press Enter"
       ],
-      "expected_result": "Authenticated actions in Tab B are blocked after logout: the attempted action is redirected to the login page or otherwise prevented from showing protected content — logout succeeds server-side and other open tabs lose authenticated access.",
+      "expected_result": "Direct navigation to the protected URL is blocked; the login page is shown and the protected page content is not displayed. Access is blocked.",
       "priority": "medium"
     }
   ],
@@ -350,16 +363,16 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     "total": 4,
     "boundary": 0,
     "input_edge": 0,
-    "interaction_edge": 2,
-    "state_edge": 2,
-    "data_edge": 0,
+    "interaction_edge": 3,
+    "state_edge": 0,
+    "data_edge": 1,
     "medium_priority": 3,
     "low_priority": 1
   }
 }
 
 ------------------------------------------------------------
-[21:14:25] Test-Edge - PARSED JSON
+[22:43:47] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Logout",
@@ -369,71 +382,64 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click of Log out link",
+      "test_case": "Rapid double-click of Log out button",
       "preconditions": [
-        "User is authenticated and on any protected page",
-        "User menu is accessible in the top navigation"
+        "User is logged in and currently viewing a protected page"
       ],
       "steps": [
-        "1. Click the user menu in the top navigation",
-        "2. Click the 'Log out' link (first click)",
-        "3. Immediately click the 'Log out' link again (second click) before the redirect completes"
+        "1. Click the initials icon in the top navigation bar to open the user menu dropdown",
+        "2. Click the Log out button",
+        "3. Immediately click the Log out button again (second click occurs before the UI redirect completes)"
       ],
-      "expected_result": "Logout succeeds: the application processes a single logout and the user is redirected to the login page once; no error message is shown and no duplicate redirects or visible side-effects occur.",
+      "expected_result": "The first click terminates the session and redirects to the login page; the second rapid click does not produce an error and is ignored. Logout succeeds and the login page is visible.",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-001",
-      "subcategory": "state_edge",
-      "test_case": "Close tab immediately after clicking Log out (server-side logout completion validation)",
+      "subcategory": "interaction_edge",
+      "test_case": "Click Log out then immediately navigate to a protected page via top navigation",
       "preconditions": [
-        "User is authenticated and on any protected page",
-        "User menu is accessible in the top navigation"
+        "User is logged in and currently viewing a protected page"
       ],
       "steps": [
-        "1. Click the user menu in the top navigation",
-        "2. Click the 'Log out' link",
-        "3. Immediately close the browser tab before the login page loads",
-        "4. Open a new browser tab and navigate to a known protected page URL"
+        "1. Click the initials icon in the top navigation bar to open the user menu dropdown",
+        "2. Click the Log out button",
+        "3. Immediately (before the login page finishes rendering) click a top-navigation link that points to another protected page"
       ],
-      "expected_result": "Logout succeeds server-side: access to the protected page is blocked and the new tab is redirected to the login page (no authenticated content is shown).",
+      "expected_result": "The attempt to view the protected page after logout is blocked; the login page is shown. Access is blocked and a re-authentication prompt (login page) is visible.",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Use browser Back after successful logout to attempt returning to protected page",
+      "test_case": "Use browser Back button immediately after logout",
       "preconditions": [
-        "User is authenticated and on a protected page",
-        "User menu is accessible in the top navigation"
+        "User is logged in and currently viewing a protected page"
       ],
       "steps": [
-        "1. Click the user menu in the top navigation",
-        "2. Click the 'Log out' link",
-        "3. Wait for redirect to the login page to complete",
-        "4. Press the browser Back button once"
+        "1. Click the initials icon in the top navigation bar to open the user menu dropdown",
+        "2. Click the Log out button",
+        "3. After the app redirects to the login page, press the browser Back button once"
       ],
-      "expected_result": "Navigation back to protected content is blocked: the browser should display the login page (or re-redirect to it) and no protected content is visible \u2014 logout succeeds and protected pages are not accessible from back navigation.",
+      "expected_result": "Using the browser Back button does not reveal protected content; navigation is blocked and the login page remains visible (protected pages are not displayed). Access is blocked.",
       "priority": "low"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-001",
-      "subcategory": "state_edge",
-      "test_case": "Log out in one tab then perform an authenticated action in another tab that was left open",
+      "subcategory": "data_edge",
+      "test_case": "Manually enter a protected page URL after logout",
       "preconditions": [
-        "User is authenticated and has two browser tabs open showing protected pages",
-        "User menu is accessible in the top navigation on both tabs"
+        "User is logged in and currently viewing a protected page"
       ],
       "steps": [
-        "1. In Tab A, click the user menu in the top navigation",
-        "2. In Tab A, click the 'Log out' link and wait for redirect to the login page",
-        "3. Switch to Tab B (left open, showing a protected page) and click a link or button that requires authentication (for example, navigate to a protected section)",
-        "4. Observe the behavior in Tab B"
+        "1. Click the initials icon in the top navigation bar to open the user menu dropdown",
+        "2. Click the Log out button",
+        "3. After being redirected to the login page, type a known protected page URL into the browser address bar and press Enter"
       ],
-      "expected_result": "Authenticated actions in Tab B are blocked after logout: the attempted action is redirected to the login page or otherwise prevented from showing protected content \u2014 logout succeeds server-side and other open tabs lose authenticated access.",
+      "expected_result": "Direct navigation to the protected URL is blocked; the login page is shown and the protected page content is not displayed. Access is blocked.",
       "priority": "medium"
     }
   ],
@@ -441,9 +447,9 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     "total": 4,
     "boundary": 0,
     "input_edge": 0,
-    "interaction_edge": 2,
-    "state_edge": 2,
-    "data_edge": 0,
+    "interaction_edge": 3,
+    "state_edge": 0,
+    "data_edge": 1,
     "medium_priority": 3,
     "low_priority": 1
   }

@@ -1,13 +1,26 @@
 # Workflow Critique — Phptravels
 
-Generated: 2026-07-04T15:28:55.428010Z
+Generated: 2026-07-04T16:37:37.168766Z
 
 ## Home Page & Search
+
+**Verdict:** yes  
+**Forced ship:** no  
+
+All four Search submit_actions (one per tab) are covered by matching workflows with correct conditional branches and concrete on_success handlers; no missing or phantom workflows or structural errors detected.
+
+**Missing workflows:** none
+
+**Phantom workflows:** none
+
+---
+
+## User Registration
 
 **Verdict:** retry (forced ship)  
 **Forced ship:** yes  
 
-Workflows cover the four tab-specific Search submit paths but include conditional_branch expressions that reference a field not present in the AST (structural error), so regeneration/fix is required.
+One structural error: a workflow (WF-003) has a null on_success while the AST defines concrete on_success behaviour for the Register action; fix required.
 
 **Missing workflows:** none
 
@@ -15,21 +28,8 @@ Workflows cover the four tab-specific Search submit paths but include conditiona
 
 **Fixes applied:**
 
-- Add a field to the AST at components.Search_Widget.named 'selected_tab' (or 'active_tab') with possible values ["Hotels","Flights","Tours","Cars"] so the existing conditional_branch expressions are valid (path: components.Search_Widget.selected_tab).
-- OR, if the AST intentionally models tabs without a selected_tab field, remove or update each workflow's conditional_branch to reference an actual AST-visible condition (for example replace conditional_branch with a visible_when/required_when entry in the AST for each tab form and then reference that condition), e.g. define visible_when conditions under each tab and change workflows to conditional_branch matching those visible_when expressions.
-
----
-
-## User Registration
-
-**Verdict:** yes  
-**Forced ship:** no  
-
-The workflow list correctly covers the form's single submit action 'Register' and matches the AST's success/failure outcomes; no missing or phantom workflows detected.
-
-**Missing workflows:** none
-
-**Phantom workflows:** none
+- Update WF-003 to remove the null on_success or replace it with an explicit statement describing the non-success outcome, e.g. on_success: 'registration failed — stay on registration form (no redirect)'; keep on_failure: 'display inline field errors'.
+- Alternatively, if WF-003 is intended to represent only the failure branch, explicitly document that by omitting on_success entirely and clearly marking the workflow as an on_failure-only path (so it no longer contains a null/empty on_success).
 
 ---
 
@@ -38,7 +38,7 @@ The workflow list correctly covers the form's single submit action 'Register' an
 **Verdict:** yes  
 **Forced ship:** no  
 
-The workflow list correctly covers the form submit paths (with and without CAPTCHA), social logins, and the forgot-password link; no required or phantom workflows found.
+The workflow list correctly covers the Login submit action across visible/required CAPTCHA conditions, the Forgot Password link, and the social login buttons; no critical or structural issues found.
 
 **Missing workflows:** none
 
@@ -51,7 +51,7 @@ The workflow list correctly covers the form submit paths (with and without CAPTC
 **Verdict:** yes  
 **Forced ship:** no  
 
-All form submit actions in the AST have matching workflows, no state/data-table actions are present or missing, and there are no structural errors.
+Workflows cover both form submit actions ('Reset Password' and 'Change Password'); no missing or phantom workflows and no structural errors detected.
 
 **Missing workflows:** none
 
@@ -61,41 +61,33 @@ All form submit actions in the AST have matching workflows, no state/data-table 
 
 ## Hotels Search & Listing
 
-**Verdict:** retry (forced ship)  
-**Forced ship:** yes  
+**Verdict:** yes  
+**Forced ship:** no  
 
-Several workflows use terminal_action names (filter field names and the sort field) that cannot be traced to the AST's canonical action lists, producing multiple minor phantom workflows — regenerate with terminal_action values that match AST action entries or add corresponding action entries to the AST.
+The workflow list covers all submit/terminal actions defined in the AST (Search, Remove, Reset all, Book Now); no missing or phantom workflows and no structural errors were found.
 
 **Missing workflows:** none
 
-**Phantom workflows:**
-
-- {'path': 'WF-002 terminal_action=Min_Price', 'severity': 'minor', 'reason': "Min_Price is a field name under Left_Sidebar_Filters.item_fields, but it is not present in the AST's submit_actions[], available_actions[], row_actions[], or bulk_actions[] arrays or in the description as an explicit action verb."}
-- {'path': 'WF-003 terminal_action=Max_Price', 'severity': 'minor', 'reason': "Max_Price is a field name under Left_Sidebar_Filters.item_fields, but it is not present in the AST's canonical action arrays or described as an explicit action verb."}
-- {'path': 'WF-004 terminal_action=Star_Rating', 'severity': 'minor', 'reason': "Star_Rating is a filter key in the AST but not listed in submit_actions[], available_actions[], row_actions[], or bulk_actions[], so the workflow's terminal_action cannot be traced to a canonical AST action entry."}
-- {'path': 'WF-005 terminal_action=Facilities_Amenities', 'severity': 'minor', 'reason': "Facilities_Amenities is a filter key (on_change present) but not an action entry in the AST's submit/available/row/bulk action lists, so the workflow is not anchored to an AST action."}
-- {'path': 'WF-006 terminal_action=Hotel_Type', 'severity': 'minor', 'reason': "Hotel_Type is a filter key in the AST but not present in the AST's canonical action lists, making this terminal_action untraceable per the phantom definition."}
-- {'path': 'WF-007 terminal_action=Board_Basis', 'severity': 'minor', 'reason': 'Board_Basis is a filter key with on_change in the AST but is not present in submit_actions[], available_actions[], row_actions[], or bulk_actions[], so the workflow is a minor phantom.'}
-- {'path': 'WF-010 terminal_action=Sort_By', 'severity': 'minor', 'reason': "Sort_By is the Sort_Control.field_name in the AST (with on_change), but it is not listed in the AST's submit/available/row/bulk action arrays nor explicitly named as an action verb in the description; the workflow's terminal_action is therefore unanchored."}
-
-**Fixes applied:**
-
-- Replace terminal_action values that refer to filter field names or control field names (Min_Price, Max_Price, Star_Rating, Facilities_Amenities, Hotel_Type, Board_Basis, Sort_By) with action names that appear in the AST action lists (e.g., add corresponding action entries to the AST such as submit_actions/available_actions/row_actions where appropriate) OR update the AST to include these field-change events in a recognized action array (e.g., add an actions/on_change list for Left_Sidebar_Filters and Sort_Control).
-- Ensure terminal_action strings exactly match the AST action entries after the AST is updated (for example, change WF-002 terminal_action from 'Min_Price' to an AST action_name like 'Change Price Range (Min)' or add 'Min_Price' to an actions array in the AST).
-- If field-level on_change events are intended to be valid terminal actions, add them to the AST under a canonical actions array (submit_actions, available_actions, row_actions, or bulk_actions) or make them explicit in the description so workflows can be unambiguously anchored.
+**Phantom workflows:** none
 
 ---
 
 ## Hotel Details & Booking
 
-**Verdict:** yes  
-**Forced ship:** no  
+**Verdict:** retry (forced ship)  
+**Forced ship:** yes  
 
-The workflow list covers the room selection and the Book Now submit paths, matches AST actions and conditional visibility, and has no missing or phantom critical workflows.
+Workflows reference a conditional 'user_logged_in' that is not defined in the AST (structural error); update AST or workflows to make that condition valid.
 
 **Missing workflows:** none
 
 **Phantom workflows:** none
+
+**Fixes applied:**
+
+- Add a defined authentication state/field named 'user_logged_in' to the AST (e.g., as a module-level boolean state or as a component-visible flag) so conditional_branch expressions like 'user_logged_in == true/false' reference a real AST field.
+- OR remove 'user_logged_in' from the workflows' conditional_branch and treat authentication as a submit precondition: keep conditional_branch = 'Room_Selected == true' for WF-002/WF-003, and represent login-required behavior using the Booking_Form.submit_actions precondition (user must be logged in) with an explicit workflow for the unauthenticated submit that has on_success 'redirects to Login'.
+- Update WF-002 and WF-003 to reference the exact AST field name after making the above change (e.g., change conditional_branch to 'Room_Selected == true AND user_logged_in == true' only if 'user_logged_in' is added to the AST).
 
 ---
 
@@ -104,7 +96,7 @@ The workflow list covers the room selection and the Book Now submit paths, match
 **Verdict:** yes  
 **Forced ship:** no  
 
-All required workflows for the form submit and data-table row actions are present; no missing or phantom workflows or structural errors were detected.
+All required workflows for the form submit action and data table row actions are present; no phantoms or structural errors detected.
 
 **Missing workflows:** none
 
@@ -117,7 +109,7 @@ All required workflows for the form submit and data-table row actions are presen
 **Verdict:** yes  
 **Forced ship:** no  
 
-The single workflow covers the form's sole submit_action (Continue) with matching on_success and there are no missing, phantom, or structural issues.
+The provided workflow covers the form's sole submit action 'Continue' with the correct on_success and there are no state-bound or table actions requiring additional workflows.
 
 **Missing workflows:** none
 
@@ -130,7 +122,7 @@ The single workflow covers the form's sole submit_action (Continue) with matchin
 **Verdict:** yes  
 **Forced ship:** no  
 
-The provided workflow covers the only submit_action declared in the AST (Search) and there are no other form submit_actions, state-bound actions, or table actions requiring workflows.
+The provided workflows cover the form submit, listing sort, sidebar filters, and both card actions (View Details, Book) required by the AST and description; no missing or phantom workflows or structural errors were found.
 
 **Missing workflows:** none
 
@@ -143,7 +135,7 @@ The provided workflow covers the only submit_action declared in the AST (Search)
 **Verdict:** yes  
 **Forced ship:** no  
 
-The workflow list covers each form submit action in the AST (Book Now and Confirm Booking), with matching on_success behaviors; no missing or phantom workflows or structural errors were found.
+The workflows cover the form submit action and the Book Now button for both authenticated and unauthenticated cases; no missing or phantom workflows or structural errors detected.
 
 **Missing workflows:** none
 
@@ -156,7 +148,7 @@ The workflow list covers each form submit action in the AST (Book Now and Confir
 **Verdict:** yes  
 **Forced ship:** no  
 
-The workflow list correctly covers the form submit, all filter on_change actions, and each group's Book Now item_action with matching on_success handlers; no critical or structural issues found.
+Workflows cover the form submit (Search) and the listing item action (Book Now); no missing or phantom workflows or structural errors detected.
 
 **Missing workflows:** none
 
@@ -169,7 +161,7 @@ The workflow list correctly covers the form submit, all filter on_change actions
 **Verdict:** yes  
 **Forced ship:** no  
 
-The provided workflow covers the form's submit action (Confirm Booking) with the required condition Accept_Terms == true and matches the AST's on_success behavior; no missing or phantom workflows or structural errors were found.
+The workflow list covers the form's submit action 'Confirm Booking' with the required on_success and matches the AST; no required or state/table workflows are missing and there are no phantom or structural errors.
 
 **Missing workflows:** none
 
@@ -182,7 +174,7 @@ The provided workflow covers the form's submit action (Confirm Booking) with the
 **Verdict:** yes  
 **Forced ship:** no  
 
-The workflow list covers the form submit action for the Visa Application and the search/view action for visa requirements; no critical or structural issues found.
+The workflow list covers all form submit actions in the AST and contains no phantoms or structural errors.
 
 **Missing workflows:** none
 
@@ -195,7 +187,7 @@ The workflow list covers the form submit action for the Visa Application and the
 **Verdict:** yes  
 **Forced ship:** no  
 
-The provided workflows cover all actions defined in the AST (data_table row_actions and panel/form actions), with no missing or phantom workflows and no structural errors.
+The workflow list covers all form submit_actions, data_table row actions, and the logout action defined in the AST; no missing or phantom workflows or structural errors were found.
 
 **Missing workflows:** none
 
@@ -208,7 +200,7 @@ The provided workflows cover all actions defined in the AST (data_table row_acti
 **Verdict:** yes  
 **Forced ship:** no  
 
-All submit actions in the AST have matching workflows and conditional branches align with defined fields; no missing or phantom workflows detected.
+The workflow list correctly covers all submit and dialog actions defined in the AST with no missing or phantom workflows and no structural errors.
 
 **Missing workflows:** none
 
@@ -221,7 +213,7 @@ All submit actions in the AST have matching workflows and conditional branches a
 **Verdict:** yes  
 **Forced ship:** no  
 
-The provided workflows cover every form submit_action (with one workflow per Payment_Method visibility variant), include the Retry Payment path and both confirmation-page download actions, and contain no phantom or structural errors.
+The provided workflows cover all form submit_actions and confirmation action_bar submit_actions, and conditional branches reference AST-visible conditions correctly.
 
 **Missing workflows:** none
 
@@ -234,7 +226,7 @@ The provided workflows cover every form submit_action (with one workflow per Pay
 **Verdict:** yes  
 **Forced ship:** no  
 
-Workflows cover each on_change action in the AST (currency persistence for authenticated/unauthenticated; language apply and persistence for both user states) with matching conditional branches and concrete on_success outcomes.
+The two workflows cover the Currency_Selector and Language_Selector on_change behaviors including immediate application and persistence; no missing or phantom workflows or structural errors were found.
 
 **Missing workflows:** none
 
@@ -247,7 +239,7 @@ Workflows cover each on_change action in the AST (currency persistence for authe
 **Verdict:** yes  
 **Forced ship:** no  
 
-The workflow list correctly and completely covers all interactive fields and actions defined in the AST (no missing or phantom workflows and no structural errors).
+The workflow list covers every interactive field and button in the AST (filters, sorting controls, remove/reset actions) with appropriate on_success handlers and no structural errors.
 
 **Missing workflows:** none
 
@@ -257,38 +249,27 @@ The workflow list correctly and completely covers all interactive fields and act
 
 ## Reviews & Ratings
 
-**Verdict:** retry (forced ship)  
-**Forced ship:** yes  
+**Verdict:** yes  
+**Forced ship:** no  
 
-Three workflows use conditional_branch expressions that reference a non-existent conditional field ('source_component') in the AST, which is a structural error and requires correction.
+The provided workflows cover all form submit actions in the AST and there are no state-bound, data-table, or phantom workflow issues.
 
 **Missing workflows:** none
 
 **Phantom workflows:** none
-
-**Fixes applied:**
-
-- For WF-003: either remove the conditional_branch (set to null) so the workflow is unconditional, OR add a visible_when entry to the Review_Submission_Form component in the AST that defines source_component (e.g., add visible_when: { "source_component": "Review_Submission_Form" }) so the condition references a declared field.
-- For WF-004: either remove the conditional_branch (set to null) OR add a visible_when entry to the Review_Submission_Form component (or to the Dashboard_Submit_Review component if appropriate) so 'source_component' is a declared conditional field; e.g., add visible_when: { "source_component": "Dashboard_Submit_Review" }.
-- For WF-005: either remove the conditional_branch (set to null) OR add a visible_when entry to the Review_Submission_Form component (or to the Email_Submit_Link component if appropriate) so 'source_component' is a declared conditional field; e.g., add visible_when: { "source_component": "Email_Submit_Link" }.
 
 ---
 
 ## Offers & Deals
 
-**Verdict:** retry (forced ship)  
-**Forced ship:** yes  
+**Verdict:** yes  
+**Forced ship:** no  
 
-Two workflows contain conditional_branch expressions that reference form fields which are not declared under visible_when/required_when or as state keys in the AST, a structural error requiring regeneration or AST/workflow fixes.
+The workflow list covers all form submit_actions and data_table row_actions in the AST, with no phantom or structural issues detected.
 
 **Missing workflows:** none
 
 **Phantom workflows:** none
-
-**Fixes applied:**
-
-- For WF-007 (Book Now — no filters selected): either remove the conditional_branch or update the AST to declare these fields under visible_when/required_when (e.g., add visible_when/required_when entries that expose 'Service_Type', 'Destination', and 'Travel_Dates') so the condition references valid AST field names.
-- For WF-008 (Terms and Conditions (Offers List) — no filters selected): either remove the conditional_branch or update the AST to declare these fields under visible_when/required_when (e.g., add visible_when/required_when entries that expose 'Service_Type', 'Destination', and 'Travel_Dates') so the condition references valid AST field names.
 
 ---
 
@@ -297,7 +278,7 @@ Two workflows contain conditional_branch expressions that reference form fields 
 **Verdict:** yes  
 **Forced ship:** no  
 
-The workflow list correctly covers the Logout button action and its on_success behavior; no missing or phantom workflows detected.
+The single workflow matches the AST button action and on_success behavior; no required workflows are missing and there are no structural errors.
 
 **Missing workflows:** none
 

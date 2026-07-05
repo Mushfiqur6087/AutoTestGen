@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:02:39.104412
+DEBUG SESSION STARTED: 2026-07-04T22:22:17.304511
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Edge - SYSTEM PROMPT
+[22:22:17] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Edge - USER PROMPT
+[22:22:17] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 11,
   "module_title": "Account Statements",
-  "summary": "Provides generation of account statements for a selected account and period and management of e-statement (paperless) preferences including email validation.",
-  "where_it_fits": "Accessible from the left-hand navigation as the Account Statements option (menu item \u2468) after successful sign-in; it is part of the post-login account management features alongside Accounts Overview, Transfer Funds, and other account services. This module is used when users need transaction histories or to update paperless delivery settings within their account lifecycle.",
-  "assumed_state_on_entry": "User is signed in and has at least one active account associated with their profile"
+  "summary": "Provides generation of account statements for a selected period and account, and management of e-statement (paperless) preferences including email validation and success/failure messaging.",
+  "where_it_fits": "Accessible from the left-hand navigation under 'Account Statements' after successful sign-in (the dashboard/Accounts Overview is the default view); it is part of the post-login account management tools alongside items like Accounts Overview, Open New Account, and Security Settings. This module is used when a logged-in customer needs historical transaction records or to change e-statement delivery preferences.",
+  "assumed_state_on_entry": "User is authenticated (logged in) and has at least one active account available to select from; user is on the post-login dashboard with left-hand navigation visible."
 }
 </module_context>
 
@@ -242,63 +256,57 @@ If a `<workflows>` block is present in the input:
 <ast>
 {
   "module_name": "Account Statements",
-  "module_id": 11,
   "components": {
     "Generate_Statement_Form": {
       "type": "form",
-      "preconditions": [
-        "user is signed in",
-        "user has at least one active account"
-      ],
       "fields": {
-        "Statement_Period_Type": {
+        "Statement_Period": {
           "type": "dropdown",
           "options": [
             "Month and Year",
             "Custom Date Range"
           ]
         },
-        "Month_Year": {
-          "type": "month_year",
-          "visible_when": "Statement_Period_Type == Month and Year"
+        "Month_And_Year": {
+          "type": "unspecified",
+          "visible_when": "when Statement_Period is set to \"Month and Year\", show Month and Year selector"
         },
         "Start_Date": {
           "type": "date",
-          "visible_when": "Statement_Period_Type == Custom Date Range"
+          "visible_when": "when Statement_Period is set to \"Custom Date Range\", show Start Date and End Date"
         },
         "End_Date": {
           "type": "date",
-          "visible_when": "Statement_Period_Type == Custom Date Range"
+          "visible_when": "when Statement_Period is set to \"Custom Date Range\", show Start Date and End Date"
         },
         "Account": {
           "type": "dropdown"
         }
       },
       "constraints": [
-        "if Statement_Period_Type == Custom Date Range then Start_Date <= End_Date",
-        "dates must be valid and within the account's transaction history range"
+        "End_Date must be the same as or after Start_Date"
       ],
       "submit_actions": [
         {
           "action_name": "Generate Statement",
-          "on_success": "Statement generated successfully.",
+          "preconditions": [
+            "user is authenticated",
+            "user has at least one active account available to select from"
+          ],
+          "on_success": "Statement generated successfully and initiates retrieval of relevant transactions.",
           "on_failure": "Unable to generate statement \u2014 please try again later."
         }
       ]
     },
-    "EStatement_Preference_Form": {
+    "E_Statement_Preference_Form": {
       "type": "form",
-      "preconditions": [
-        "user is signed in",
-        "user has at least one active account"
-      ],
       "fields": {
         "Paperless_Opt_In": {
           "type": "checkbox"
         },
         "Email_Address": {
           "type": "email",
-          "visible_when": "Paperless_Opt_In == true",
+          "required_when": "Paperless_Opt_In == true (Email Address is required when paperless is selected)",
           "constraints": [
             "must be a valid email address"
           ]
@@ -307,8 +315,12 @@ If a `<workflows>` block is present in the input:
       "submit_actions": [
         {
           "action_name": "Save Preference",
+          "preconditions": [
+            "user is authenticated",
+            "user has at least one active account available to select from"
+          ],
           "on_success": "e-Statement preference updated.",
-          "on_failure": "Validation failed \u2014 highlights Email_Address with guidance"
+          "on_failure": "Failed to save preference \u2014 highlights Email Address field with validation guidance."
         }
       ]
     }
@@ -323,16 +335,17 @@ The Statements page provides two coordinated forms displayed side by side.The ge
 </description>
 
 <workflows>
-WF-001 | Generate statement — Month and Year | actor: Account holder | branch: Statement_Period_Type == Month and Year | terminal: Generate Statement | on_success: Statement generated successfully.
-WF-002 | Generate statement — Custom Date Range | actor: Account holder | branch: Statement_Period_Type == Custom Date Range | terminal: Generate Statement | on_success: Statement generated successfully.
-WF-003 | Save e-statement preference — Opt In (email visible) | actor: Account holder | branch: Paperless_Opt_In == true | terminal: Save Preference | on_success: e-Statement preference updated.
-WF-004 | Save e-statement preference — Opt Out (email hidden) | actor: Account holder | branch: Paperless_Opt_In == false | terminal: Save Preference | on_success: e-Statement preference updated.
+WF-001 | Generate statement (base) | actor: Authenticated User | branch: none | terminal: Generate Statement | on_success: Statement generated successfully and initiates retrieval of relevant transactions.
+WF-002 | Generate statement for Month and Year | actor: Authenticated User | branch: Statement_Period == Month and Year | terminal: Generate Statement | on_success: Statement generated successfully and initiates retrieval of relevant transactions.
+WF-003 | Generate statement for Custom Date Range | actor: Authenticated User | branch: Statement_Period == Custom Date Range | terminal: Generate Statement | on_success: Statement generated successfully and initiates retrieval of relevant transactions.
+WF-004 | Save e-statement preference (base — paperless not selected) | actor: Authenticated User | branch: none | terminal: Save Preference | on_success: e-Statement preference updated.
+WF-005 | Save e-statement preference with Paperless opted in (Email required) | actor: Authenticated User | branch: Paperless_Opt_In == true | terminal: Save Preference | on_success: e-Statement preference updated.
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:05:05] Test-Edge - LLM RESPONSE
+[22:25:15] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Account Statements",
@@ -340,180 +353,142 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Custom date range where Start_Date equals End_Date (single-day statement) succeeds",
+      "test_case": "Custom Date Range: Start and End dates equal (single-day statement) succeeds",
       "preconditions": [
-        "User is signed in",
-        "User has at least one active account"
+        "User is authenticated and on the Account Statements page",
+        "At least one active account is available"
       ],
       "steps": [
-        "1. Navigate to Account Statements page",
-        "2. In Generate Statement form select Statement_Period_Type = Custom Date Range",
-        "3. Enter <Start_Date> = <End_Date> (same calendar day) into Start_Date",
-        "4. Enter the same <End_Date> into End_Date",
-        "5. Select an Account from Account dropdown",
-        "6. Click Generate Statement"
+        "1. Select Statement_Period = \"Custom Date Range\"",
+        "2. Enter <Start_Date> as a specific date",
+        "3. Enter <End_Date> equal to <Start_Date>",
+        "4. Select an Account from the Account dropdown",
+        "5. Click the Generate Statement button"
       ],
-      "expected_result": "Statement generated successfully. message displayed; generation succeeds (single-day range accepted) and the UI displays the generated statement or success confirmation",
+      "expected_result": "Generation succeeds: 'Statement generated successfully.' message is displayed.",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Custom date range where Start_Date is one day after End_Date is blocked",
+      "test_case": "Custom Date Range: End Date one day before Start Date is blocked",
       "preconditions": [
-        "User is signed in",
-        "User has at least one active account"
+        "User is authenticated and on the Account Statements page",
+        "At least one active account is available"
       ],
       "steps": [
-        "1. Navigate to Account Statements page",
-        "2. In Generate Statement form select Statement_Period_Type = Custom Date Range",
-        "3. Enter <End_Date> into End_Date",
-        "4. Enter <Start_Date> = <End_Date> + 1 day into Start_Date",
-        "5. Select an Account from Account dropdown",
-        "6. Click Generate Statement"
+        "1. Select Statement_Period = \"Custom Date Range\"",
+        "2. Enter <Start_Date> as a specific date",
+        "3. Enter <End_Date> one day before <Start_Date>",
+        "4. Select an Account from the Account dropdown",
+        "5. Click the Generate Statement button"
       ],
-      "expected_result": "Start_Date displays an inline error indicating Start date must be on or before End date; Generate Statement is blocked / error shown",
+      "expected_result": "Generation is blocked: End Date field displays an inline validation error indicating it must be the same as or after Start Date; no 'Statement generated successfully.' message appears.",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-005",
       "subcategory": "boundary",
-      "test_case": "Custom date range with Start_Date at the earliest available transaction date succeeds",
+      "test_case": "Paperless opt-in checked but Email Address left empty is blocked",
       "preconditions": [
-        "User is signed in",
-        "User has at least one active account",
-        "Account has a known <earliest available transaction date>"
+        "User is authenticated and on the Account Statements page",
+        "At least one active account is available"
       ],
       "steps": [
-        "1. Navigate to Account Statements page",
-        "2. In Generate Statement form select Statement_Period_Type = Custom Date Range",
-        "3. Enter <Start_Date> = <earliest available transaction date> into Start_Date",
-        "4. Enter <End_Date> >= <earliest available transaction date> (a date within history) into End_Date",
-        "5. Select the Account that has the transaction history referenced",
-        "6. Click Generate Statement"
+        "1. Check the Paperless_Opt_In checkbox",
+        "2. Leave the Email_Address field empty",
+        "3. Click the Save Preference button"
       ],
-      "expected_result": "Statement generated successfully. message displayed; generation succeeds and the system returns results including transactions from <earliest available transaction date>",
+      "expected_result": "Save Preference is blocked: 'Failed to save preference \u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000'",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-002",
-      "subcategory": "boundary",
-      "test_case": "Custom date range with Start_Date one day before earliest transaction date is blocked",
-      "preconditions": [
-        "User is signed in",
-        "User has at least one active account",
-        "Account has a known <earliest available transaction date>"
-      ],
-      "steps": [
-        "1. Navigate to Account Statements page",
-        "2. In Generate Statement form select Statement_Period_Type = Custom Date Range",
-        "3. Enter <Start_Date> = <one day before earliest available transaction date> into Start_Date",
-        "4. Enter <End_Date> >= <earliest available transaction date> into End_Date",
-        "5. Select the Account that has the transaction history referenced",
-        "6. Click Generate Statement"
-      ],
-      "expected_result": "Start_Date (or form-level validation) displays an error indicating the selected dates are outside the account's transaction history range; Generate Statement is blocked / error shown",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-005",
-      "wf_ref": "WF-002",
-      "subcategory": "boundary",
-      "test_case": "Custom date range with End_Date in the future (one day after today) is blocked as outside history",
-      "preconditions": [
-        "User is signed in",
-        "User has at least one active account"
-      ],
-      "steps": [
-        "1. Navigate to Account Statements page",
-        "2. In Generate Statement form select Statement_Period_Type = Custom Date Range",
-        "3. Enter a valid <Start_Date> within the account's history into Start_Date",
-        "4. Enter <End_Date> = <today + 1 day> into End_Date",
-        "5. Select an Account from Account dropdown",
-        "6. Click Generate Statement"
-      ],
-      "expected_result": "End_Date displays an error indicating the selected date is outside the account's transaction history range; Generate Statement is blocked / error shown",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-006",
-      "wf_ref": "WF-003",
+      "wf_ref": "WF-005",
       "subcategory": "input_edge",
-      "test_case": "Email address containing emoji/unicode characters is rejected and highlighted",
+      "test_case": "Paperless opt-in with Email Address containing leading/trailing whitespace is trimmed and accepted",
       "preconditions": [
-        "User is signed in",
-        "User has at least one active account",
-        "Paperless_Opt_In checkbox is unchecked"
+        "User is authenticated and on the Account Statements page",
+        "At least one active account is available"
       ],
       "steps": [
-        "1. Navigate to Account Statements page",
-        "2. In E-Statement Preference form check Paperless_Opt_In = true",
-        "3. Enter an Email_Address that includes emoji or non-ASCII characters into Email_Address",
-        "4. Click Save Preference"
+        "1. Check the Paperless_Opt_In checkbox",
+        "2. Enter an Email_Address that is a valid email wrapped with leading and trailing whitespace",
+        "3. Click the Save Preference button"
       ],
-      "expected_result": "\"Validation failed \u00002\u00002\u00002— highlights Email_Address with guidance\" is shown; Save Preference is blocked and Email_Address field is highlighted with validation guidance (validation fails / error shown)",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-007",
-      "wf_ref": "WF-003",
-      "subcategory": "input_edge",
-      "test_case": "Email address entered with leading and trailing whitespace is trimmed and saved",
-      "preconditions": [
-        "User is signed in",
-        "User has at least one active account",
-        "Paperless_Opt_In checkbox is unchecked"
-      ],
-      "steps": [
-        "1. Navigate to Account Statements page",
-        "2. In E-Statement Preference form check Paperless_Opt_In = true",
-        "3. Enter an Email_Address with leading and trailing whitespace into Email_Address",
-        "4. Click Save Preference",
-        "5. Open the saved preference detail or revisit the E-Statement Preference form"
-      ],
-      "expected_result": "e-Statement preference updated. message displayed; Save Preference succeeds and the stored/displayed Email_Address is shown without the leading/trailing whitespace (whitespace was trimmed)",
+      "expected_result": "Save Preference succeeds: 'e-Statement preference updated.' message is displayed and the saved Email Address shown in the UI has no leading or trailing whitespace.",
       "priority": "low"
     },
     {
-      "tc_id": "E-008",
-      "wf_ref": null,
-      "subcategory": "interaction_edge",
-      "test_case": "Quick toggle: enter email, immediately uncheck Paperless_Opt_In, then save — preference updates to opt-out and email is not retained/displayed",
+      "tc_id": "E-005",
+      "wf_ref": "WF-005",
+      "subcategory": "input_edge",
+      "test_case": "Paperless opt-in with Email Address containing emoji or unsupported unicode characters is blocked",
       "preconditions": [
-        "User is signed in",
-        "User has at least one active account"
+        "User is authenticated and on the Account Statements page",
+        "At least one active account is available"
       ],
       "steps": [
-        "1. Navigate to Account Statements page",
-        "2. In E-Statement Preference form check Paperless_Opt_In = true",
-        "3. Enter a valid Email_Address into Email_Address",
-        "4. Immediately uncheck Paperless_Opt_In = false (hides Email_Address)",
-        "5. Click Save Preference",
-        "6. Reopen the E-Statement Preference form or view preference detail"
+        "1. Check the Paperless_Opt_In checkbox",
+        "2. Enter an Email_Address that contains emoji or unsupported unicode characters",
+        "3. Click the Save Preference button"
       ],
-      "expected_result": "e-Statement preference updated. message displayed; Save Preference succeeds and the preference is set to opt-out. Email_Address is not displayed in the preference detail (email is not required/stored when opt-out) — user-visible confirmation that opt-out is applied",
+      "expected_result": "Save Preference is blocked: Email Address field is highlighted with validation guidance (Failed to save preference \u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000)",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-006",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click on Generate Statement: second submission attempt is blocked",
+      "preconditions": [
+        "User is authenticated and on the Account Statements page",
+        "At least one active account is available"
+      ],
+      "steps": [
+        "1. Select Statement_Period and required fields (e.g., Custom Date Range with valid Start_Date and End_Date or Month and Year)",
+        "2. Select an Account from the Account dropdown",
+        "3. Rapidly click the Generate Statement button twice in quick succession"
+      ],
+      "expected_result": "Second submission is blocked: Generate Statement button becomes disabled after the first click and only a single 'Statement generated successfully.' message is displayed.",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-007",
+      "wf_ref": "WF-005",
+      "subcategory": "input_edge",
+      "test_case": "Paperless opt-in with an extremely long Email Address is blocked by validation",
+      "preconditions": [
+        "User is authenticated and on the Account Statements page",
+        "At least one active account is available"
+      ],
+      "steps": [
+        "1. Check the Paperless_Opt_In checkbox",
+        "2. Enter an Email_Address value that is a very long string (well over typical email field lengths)",
+        "3. Click the Save Preference button"
+      ],
+      "expected_result": "Save Preference is blocked: Email Address field is highlighted with validation guidance (Failed to save preference \u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000)",
       "priority": "low"
     }
   ],
   "summary": {
-    "total": 8,
-    "boundary": 5,
-    "input_edge": 2,
+    "total": 7,
+    "boundary": 3,
+    "input_edge": 3,
     "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 6,
-    "low_priority": 2
+    "medium_priority": 3,
+    "low_priority": 4
   }
 }
 
 ------------------------------------------------------------
-[21:05:05] Test-Edge - PARSED JSON
+[22:25:15] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Account Statements",
@@ -521,174 +496,136 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Custom date range where Start_Date equals End_Date (single-day statement) succeeds",
+      "test_case": "Custom Date Range: Start and End dates equal (single-day statement) succeeds",
       "preconditions": [
-        "User is signed in",
-        "User has at least one active account"
+        "User is authenticated and on the Account Statements page",
+        "At least one active account is available"
       ],
       "steps": [
-        "1. Navigate to Account Statements page",
-        "2. In Generate Statement form select Statement_Period_Type = Custom Date Range",
-        "3. Enter <Start_Date> = <End_Date> (same calendar day) into Start_Date",
-        "4. Enter the same <End_Date> into End_Date",
-        "5. Select an Account from Account dropdown",
-        "6. Click Generate Statement"
+        "1. Select Statement_Period = \"Custom Date Range\"",
+        "2. Enter <Start_Date> as a specific date",
+        "3. Enter <End_Date> equal to <Start_Date>",
+        "4. Select an Account from the Account dropdown",
+        "5. Click the Generate Statement button"
       ],
-      "expected_result": "Statement generated successfully. message displayed; generation succeeds (single-day range accepted) and the UI displays the generated statement or success confirmation",
+      "expected_result": "Generation succeeds: 'Statement generated successfully.' message is displayed.",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Custom date range where Start_Date is one day after End_Date is blocked",
+      "test_case": "Custom Date Range: End Date one day before Start Date is blocked",
       "preconditions": [
-        "User is signed in",
-        "User has at least one active account"
+        "User is authenticated and on the Account Statements page",
+        "At least one active account is available"
       ],
       "steps": [
-        "1. Navigate to Account Statements page",
-        "2. In Generate Statement form select Statement_Period_Type = Custom Date Range",
-        "3. Enter <End_Date> into End_Date",
-        "4. Enter <Start_Date> = <End_Date> + 1 day into Start_Date",
-        "5. Select an Account from Account dropdown",
-        "6. Click Generate Statement"
+        "1. Select Statement_Period = \"Custom Date Range\"",
+        "2. Enter <Start_Date> as a specific date",
+        "3. Enter <End_Date> one day before <Start_Date>",
+        "4. Select an Account from the Account dropdown",
+        "5. Click the Generate Statement button"
       ],
-      "expected_result": "Start_Date displays an inline error indicating Start date must be on or before End date; Generate Statement is blocked / error shown",
+      "expected_result": "Generation is blocked: End Date field displays an inline validation error indicating it must be the same as or after Start Date; no 'Statement generated successfully.' message appears.",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-005",
       "subcategory": "boundary",
-      "test_case": "Custom date range with Start_Date at the earliest available transaction date succeeds",
+      "test_case": "Paperless opt-in checked but Email Address left empty is blocked",
       "preconditions": [
-        "User is signed in",
-        "User has at least one active account",
-        "Account has a known <earliest available transaction date>"
+        "User is authenticated and on the Account Statements page",
+        "At least one active account is available"
       ],
       "steps": [
-        "1. Navigate to Account Statements page",
-        "2. In Generate Statement form select Statement_Period_Type = Custom Date Range",
-        "3. Enter <Start_Date> = <earliest available transaction date> into Start_Date",
-        "4. Enter <End_Date> >= <earliest available transaction date> (a date within history) into End_Date",
-        "5. Select the Account that has the transaction history referenced",
-        "6. Click Generate Statement"
+        "1. Check the Paperless_Opt_In checkbox",
+        "2. Leave the Email_Address field empty",
+        "3. Click the Save Preference button"
       ],
-      "expected_result": "Statement generated successfully. message displayed; generation succeeds and the system returns results including transactions from <earliest available transaction date>",
+      "expected_result": "Save Preference is blocked: 'Failed to save preference \u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000'",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-002",
-      "subcategory": "boundary",
-      "test_case": "Custom date range with Start_Date one day before earliest transaction date is blocked",
-      "preconditions": [
-        "User is signed in",
-        "User has at least one active account",
-        "Account has a known <earliest available transaction date>"
-      ],
-      "steps": [
-        "1. Navigate to Account Statements page",
-        "2. In Generate Statement form select Statement_Period_Type = Custom Date Range",
-        "3. Enter <Start_Date> = <one day before earliest available transaction date> into Start_Date",
-        "4. Enter <End_Date> >= <earliest available transaction date> into End_Date",
-        "5. Select the Account that has the transaction history referenced",
-        "6. Click Generate Statement"
-      ],
-      "expected_result": "Start_Date (or form-level validation) displays an error indicating the selected dates are outside the account's transaction history range; Generate Statement is blocked / error shown",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-005",
-      "wf_ref": "WF-002",
-      "subcategory": "boundary",
-      "test_case": "Custom date range with End_Date in the future (one day after today) is blocked as outside history",
-      "preconditions": [
-        "User is signed in",
-        "User has at least one active account"
-      ],
-      "steps": [
-        "1. Navigate to Account Statements page",
-        "2. In Generate Statement form select Statement_Period_Type = Custom Date Range",
-        "3. Enter a valid <Start_Date> within the account's history into Start_Date",
-        "4. Enter <End_Date> = <today + 1 day> into End_Date",
-        "5. Select an Account from Account dropdown",
-        "6. Click Generate Statement"
-      ],
-      "expected_result": "End_Date displays an error indicating the selected date is outside the account's transaction history range; Generate Statement is blocked / error shown",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-006",
-      "wf_ref": "WF-003",
+      "wf_ref": "WF-005",
       "subcategory": "input_edge",
-      "test_case": "Email address containing emoji/unicode characters is rejected and highlighted",
+      "test_case": "Paperless opt-in with Email Address containing leading/trailing whitespace is trimmed and accepted",
       "preconditions": [
-        "User is signed in",
-        "User has at least one active account",
-        "Paperless_Opt_In checkbox is unchecked"
+        "User is authenticated and on the Account Statements page",
+        "At least one active account is available"
       ],
       "steps": [
-        "1. Navigate to Account Statements page",
-        "2. In E-Statement Preference form check Paperless_Opt_In = true",
-        "3. Enter an Email_Address that includes emoji or non-ASCII characters into Email_Address",
-        "4. Click Save Preference"
+        "1. Check the Paperless_Opt_In checkbox",
+        "2. Enter an Email_Address that is a valid email wrapped with leading and trailing whitespace",
+        "3. Click the Save Preference button"
       ],
-      "expected_result": "\"Validation failed \u00002\u00002\u00002\u2014 highlights Email_Address with guidance\" is shown; Save Preference is blocked and Email_Address field is highlighted with validation guidance (validation fails / error shown)",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-007",
-      "wf_ref": "WF-003",
-      "subcategory": "input_edge",
-      "test_case": "Email address entered with leading and trailing whitespace is trimmed and saved",
-      "preconditions": [
-        "User is signed in",
-        "User has at least one active account",
-        "Paperless_Opt_In checkbox is unchecked"
-      ],
-      "steps": [
-        "1. Navigate to Account Statements page",
-        "2. In E-Statement Preference form check Paperless_Opt_In = true",
-        "3. Enter an Email_Address with leading and trailing whitespace into Email_Address",
-        "4. Click Save Preference",
-        "5. Open the saved preference detail or revisit the E-Statement Preference form"
-      ],
-      "expected_result": "e-Statement preference updated. message displayed; Save Preference succeeds and the stored/displayed Email_Address is shown without the leading/trailing whitespace (whitespace was trimmed)",
+      "expected_result": "Save Preference succeeds: 'e-Statement preference updated.' message is displayed and the saved Email Address shown in the UI has no leading or trailing whitespace.",
       "priority": "low"
     },
     {
-      "tc_id": "E-008",
-      "wf_ref": null,
-      "subcategory": "interaction_edge",
-      "test_case": "Quick toggle: enter email, immediately uncheck Paperless_Opt_In, then save \u2014 preference updates to opt-out and email is not retained/displayed",
+      "tc_id": "E-005",
+      "wf_ref": "WF-005",
+      "subcategory": "input_edge",
+      "test_case": "Paperless opt-in with Email Address containing emoji or unsupported unicode characters is blocked",
       "preconditions": [
-        "User is signed in",
-        "User has at least one active account"
+        "User is authenticated and on the Account Statements page",
+        "At least one active account is available"
       ],
       "steps": [
-        "1. Navigate to Account Statements page",
-        "2. In E-Statement Preference form check Paperless_Opt_In = true",
-        "3. Enter a valid Email_Address into Email_Address",
-        "4. Immediately uncheck Paperless_Opt_In = false (hides Email_Address)",
-        "5. Click Save Preference",
-        "6. Reopen the E-Statement Preference form or view preference detail"
+        "1. Check the Paperless_Opt_In checkbox",
+        "2. Enter an Email_Address that contains emoji or unsupported unicode characters",
+        "3. Click the Save Preference button"
       ],
-      "expected_result": "e-Statement preference updated. message displayed; Save Preference succeeds and the preference is set to opt-out. Email_Address is not displayed in the preference detail (email is not required/stored when opt-out) \u2014 user-visible confirmation that opt-out is applied",
+      "expected_result": "Save Preference is blocked: Email Address field is highlighted with validation guidance (Failed to save preference \u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000)",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-006",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click on Generate Statement: second submission attempt is blocked",
+      "preconditions": [
+        "User is authenticated and on the Account Statements page",
+        "At least one active account is available"
+      ],
+      "steps": [
+        "1. Select Statement_Period and required fields (e.g., Custom Date Range with valid Start_Date and End_Date or Month and Year)",
+        "2. Select an Account from the Account dropdown",
+        "3. Rapidly click the Generate Statement button twice in quick succession"
+      ],
+      "expected_result": "Second submission is blocked: Generate Statement button becomes disabled after the first click and only a single 'Statement generated successfully.' message is displayed.",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-007",
+      "wf_ref": "WF-005",
+      "subcategory": "input_edge",
+      "test_case": "Paperless opt-in with an extremely long Email Address is blocked by validation",
+      "preconditions": [
+        "User is authenticated and on the Account Statements page",
+        "At least one active account is available"
+      ],
+      "steps": [
+        "1. Check the Paperless_Opt_In checkbox",
+        "2. Enter an Email_Address value that is a very long string (well over typical email field lengths)",
+        "3. Click the Save Preference button"
+      ],
+      "expected_result": "Save Preference is blocked: Email Address field is highlighted with validation guidance (Failed to save preference \u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000)",
       "priority": "low"
     }
   ],
   "summary": {
-    "total": 8,
-    "boundary": 5,
-    "input_edge": 2,
+    "total": 7,
+    "boundary": 3,
+    "input_edge": 3,
     "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 6,
-    "low_priority": 2
+    "medium_priority": 3,
+    "low_priority": 4
   }
 }

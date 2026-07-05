@@ -1,0 +1,1330 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:08:29.800242
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:08:29] Test-Positive - SYSTEM PROMPT
+------------------------------------------------------------
+You are an Expert UI Test Case Generator. You receive (1) a Structural Model JSON for one specific module and (2) the original functional description for that module.
+
+Your job is to produce ONLY positive/functional UI test cases — tests where valid input is provided and the specific module behaves correctly in isolation.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST Input:**
+
+The AST JSON you receive is a structured representation of every **interactive** element in the module. Each top-level key under `"components"` is a named UI component. Learn these node types before generating tests:
+
+| AST `type` | What it represents | What to test |
+|---|---|---|
+| `form` | A flat input form with a submit action | One happy-path TC per distinct `on_success` outcome; one extra TC per `visible_when` conditional field |
+| `wizard` | A multi-step form; `steps[]` = ordered panels | Navigate all steps in sequence; assert the final `on_success` from `submit_actions` |
+| `data_table` | A listing/grid of rows | One TC per entry in `row_actions`; one TC per `bulk_actions` entry; one TC for search/filter |
+| `tab_container` | Tabbed layout; `tabs[]` may nest sub-tabs | One navigation TC across all tabs; if different tabs have different submission forms, one TC per tab |
+| `state_bound_action_bar` | Action buttons that change by entity status; `states{}` map keys are the statuses | One TC per `available_actions` entry per state; precondition = that state |
+| `repeating_group` | "Add Row" pattern for dynamic lists of items | Step: "Click Add Row", then fill `item_fields` for the new row |
+
+Key fields to pay attention to inside any node:
+- **`on_success`** — use its value verbatim as (or as the basis for) your `expected_result`
+- **`visible_when` / `required_when`** — each unique condition = a separate TC
+- **`preconditions`** — translate directly into your TC's `preconditions` array
+- **`constraints`** — use in expected_result or steps when they describe observable UI behavior (e.g., inline validation)
+- **`submit_actions[]`** — if a form has multiple submit buttons, generate one TC per distinct `on_success`
+
+> If the AST is missing an action that the functional description explicitly describes (e.g., an action verb in a state-machine paragraph), trust the description and generate the TC anyway (see Coverage Completeness Gate).
+
+---
+
+**STRICT MODULE BOUNDARY RULE (CRITICAL):**
+You are writing "unit tests" for the UI. You must test ONLY the module provided in the input.
+- DO NOT write End-to-End (E2E) journeys across multiple pages.
+- DO NOT add steps to navigate to other modules to verify backend results.
+- **Cross-Module Redirects:** If clicking a submit button navigates the user to an entirely different module (e.g., from Booking to Payment, or Assignment Creation back to Course Page), the test ENDS with the assertion that the redirect occurred. Do not interact with the next page.
+- **Multi-Actor Flows:** If a downstream action requires a different user (e.g., a Checker approving a Maker's entry), do not include it.
+
+---
+
+**ASSERTION STYLE (CRITICAL — read every rule before writing any expected_result):**
+
+**Rule A — Assert the visible UI change, never the action itself.**
+The `expected_result` must describe exactly what a tester can *see or read on the screen* after the last step. It must NOT restate the action just performed.
+
+Banned patterns — if your expected_result matches any of these, rewrite it:
+- ❌ `"creates [entity]"` → name the row, badge, or notification that appears
+- ❌ `"updates [entity]"` → name the field or value that visibly changed
+- ❌ `"deletes [entity]"` → state that the row is no longer present in the table
+- ❌ `"[system] adjusts automatically"` → that is a backend side effect; assert only what is visible on the current screen immediately after the last step
+- ❌ `"a confirmation email is sent"`, `"a refund is initiated"`, `"the preference is saved to the profile"`, `"the balance is updated"` → these are non-visible backend side effects. Do NOT assert them unless a **visible on-screen confirmation** is named (e.g. `"A 'Booking confirmed' banner with reference number is shown"`). Assert only what appears on the current screen.
+- ❌ `"[field] contains <value>"` after a filter action → assert that the *list/table* is filtered, not that the input field holds a value
+
+Good pattern examples:
+- ✅ `"New row appears in the [Table] with the entered [Field A] and [Field B]"`
+- ✅ `"Status badge updates to '[Status]' ([color]) on the [Entity] Detail page"`
+- ✅ `"[Table] displays only rows matching <filter term>; unrelated rows are no longer visible"`
+- ✅ `"A success notification is displayed; the [Field] on the detail page shows the updated value"`
+- ✅ `"File download is triggered in the browser"` (for export actions)
+
+**Rule B — One TC = one specific outcome. Never combine conditional branches.**
+If a feature has two distinct output paths (e.g., on-screen result vs. file export), generate TWO separate test cases, each with its own expected_result describing only that one path. Never write `"when X, result A; when Y, result B"` inside a single expected_result.
+
+**Rule C — When the description quotes exact success text, use it verbatim.**
+Use the `on_success` value from the AST **only when it is an actual UI string the app displays** (a quoted message like `"Account opened successfully!"`). Otherwise `on_success` is an internal behavior **token** ("navigates to activity page", "persists configuration and returns to course page", "updates results and result count", "opens the Enrol users dialog") — do NOT paste the token as your `expected_result`. Rewrite it into a describable visible screen state: name the page/heading/row/badge/dialog the tester now sees.
+- ❌ `expected_result: "navigates to activity page"` → ✅ `"The <activity name> activity page opens, showing its title and content"`
+- ❌ `expected_result: "persists configuration and returns to course page"` → ✅ `"The Course page is shown; the course heading displays the saved <full name>"`
+- ❌ `expected_result: "updates results and result count"` → ✅ `"The listing shows only items matching <filter>; the result count decreases accordingly"`
+
+**Rule D — If the module performs calculations or updates a status badge, explicitly assert that visual update** (badge color, calculated value, running balance change).
+Additionally: if the spec describes a **running total, summary row, price breakdown, or auto-calculated field** that derives its value from other inputs, the expected_result must assert that the calculated field *updates visibly* after the dependent inputs are filled — e.g., `"The Total field updates to reflect Base Price + Taxes + Fees"` or `"The Course Total row displays the aggregated grade across all weighted items"`.
+
+**Rule E — Quote exact success messages verbatim. Never paraphrase.**
+If the spec provides a quoted success string (e.g., `"Account opened successfully!"`), copy it character-for-character into the expected_result — including punctuation and capitalisation.
+- ❌ `"a success message is shown"` when spec says `"Transfer completed successfully."`
+- ❌ `"a confirmation is displayed"` when spec says `"Payment submitted successfully."`
+- ✅ `"Page shows 'Transfer completed successfully.' with a transaction ID"`
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+Never invent specific data values in steps or preconditions unless the spec mandates a hardcoded system value (e.g., `"Select 'Card' layout"`).
+Always use generic role-based placeholders enclosed in angle brackets.
+
+Examples of CORRECT step wording:
+  - "Enter <valid email> in the Email field"
+  - "Select <account type> from the Account Type dropdown"
+  - "Check the <target participant> checkbox"
+  - "Select 'Cash-based' from the Accounting radio options" (Only if mandated by spec)
+
+Examples of WRONG step wording (never do this):
+  - "Enter 'John' in the First Name field"
+  - "Enter '500.00' in the Amount field"
+
+---
+
+**PRECONDITIONS vs STEPS — BOUNDARY RULE (CRITICAL):**
+
+A **precondition** is a state the tester sets up *before* touching the module under test. A **step** is an action the tester performs *inside* the module.
+
+Apply this checklist to every TC before outputting:
+1. If a step says `"Ensure <X> is open"` or `"Verify <X> shows <Y>"` — it is a precondition, not a step. Move it.
+2. If a precondition says a form, dialog, or page is already open, there **must** be a step that opens it — unless the module's entry point is that page by definition. If the step is missing, add it as step 1.
+3. A TC with only one step that is an observation (`"Observe the page"`) is missing real user actions. Either add the navigation step that brings the user to this state, or fold the observation into the precondition.
+
+When dealing with complex AST components, format steps like this:
+- **Modals/Dialogs:** "1. Click <Button> to open modal", "2. Enter <value> inside modal"
+- **Confirmation Dialogs:** If the spec describes a confirmation dialog appearing after a state-change or destructive action, always add the step `"Click Confirm on the <Action> dialog"`. Never omit it, even if the spec only implies it.
+- **Inline Editing:** "1. Click the edit icon next to <item>", "2. Enter <new value>", "3. Click Save"
+- **Search-and-add (Autocomplete):** "1. Enter <search term> in the autocomplete", "2. Select <matching result> from the dropdown"
+- **Dynamic Rows (`repeating_group`):** "1. Click 'Add Row'", "2. Enter <value> in the new row"
+- **File Uploads:** "1. Click 'Upload'", "2. Select a <valid file type> from the OS dialog"
+- **Dynamic Filters:** Include separate tests to remove individual active filter chips or click "Reset All".
+
+---
+
+**PRECONDITIONS FOR ISOLATED MODULES:**
+Because you are testing a module in isolation, establish the required entry state:
+- **Global Context:** Use the `<module_context>` block's `assumed_state_on_entry` as your primary source for preconditions. If the context states "Requires an active Client profile" or "Loan must be in Approved state", include that verbatim as a precondition.
+- **Roles:** "User logged in as <Teacher / Student / Admin>" (derive from context or description).
+- **State:** "[Entity] is in [Status]" (derive from context or description).
+- **Toggles/Modes:** "Edit mode is enabled" or "Requires active internet connection".
+- **Role-Specific Views:** If the spec explicitly states that a UI element (tab, button, control) is visible to one role but not another, generate a test that asserts the element's presence for the role that should see it. The expected_result must name the specific element — e.g., `"The Settings tab is visible in the course navigation bar"` or `"No Edit mode toggle is present on the Course page"`.
+
+---
+
+**WHAT TO GENERATE (COVERAGE MAPPING TO AST):**
+
+**1. Forms & Wizards (`form`, `wizard`):**
+- Generate ONE happy path per distinct success outcome.
+- *Conditional UI Check:* If a toggle/dropdown reveals new mandatory fields (`visible_when`), generate a separate test for that conditional branch.
+- **Wizard step coverage (CRITICAL):** If a wizard has multiple steps and any step beyond Step 1 contains its own named field group (e.g., "Address Details", "Family Members", "Identifiers"), generate ONE dedicated positive TC per such step. The TC must:
+  - Navigate to that specific step (include the preceding steps as preconditions or brief navigation steps)
+  - Fill the fields described for that step (not just pass through)
+  - Assert the step's content is visible/saved on the detail page after final submission
+  - **Do NOT collapse all wizard steps into one happy-path TC** — if Steps 2, 3, and 4 each have their own named section in the spec, they each need their own TC.
+- **Wizard in-step identifiers/duplicates:** If a wizard step allows adding identifiers, documents, or similar entries that have a uniqueness constraint, include a TC for that wizard step that also verifies the constraint (e.g., attempting to add a duplicate Document Type+Key pair inside the wizard). This is a different code path from adding the same post-creation on the detail page.
+- **Action dialogs:** If a `state_bound_action_bar` action opens a dialog with its own `fields{}` (e.g., Activate requires Activation Date, Reject requires Reason), generate ONE positive TC per such action-dialog — distinct from the state-transition TC. The TC fills the dialog field and completes the action.
+
+**2. State Machines (`state_bound_action_bar`):**
+- For each unique action available in a specific state, generate ONE test performing that action.
+- Do not split bidirectional transitions; test A→B.
+
+**3. Tabs (`tab_container`):**
+- If tabs switch between entirely different forms (e.g., Hotels vs. Flights tabs), generate ONE submission test for EACH tab.
+- Otherwise, generate one test verifying navigation between the tabs.
+
+**4. Data Tables (`data_table`):**
+- Generate ONE test per `row_actions` (e.g., clicking a three-dot menu).
+- Generate ONE test per `bulk_actions` (e.g., selecting multiple checkboxes).
+- Generate ONE test applying a search/filter. The expected_result must describe the **filtered content** (e.g., `"Only results matching <filter criterion> are shown; unrelated items are no longer visible"`) — never just the filter UI state (❌ `"filter is applied"`).
+- If the spec describes **active filter chips/tags with individual remove buttons**, generate ONE test removing a single chip and asserting the results expand back.
+- If the spec describes a **"Reset All" or "Clear Filters" control**, generate ONE test clicking it and asserting all filters are cleared and full unfiltered results are restored.
+
+**5. Empty / Zero-Result States:**
+If the spec explicitly describes an empty state, zero-results display, or "No Data" message (e.g., a filtered list with no matches, a timeline with no upcoming items, a dashboard with no financial data), generate ONE test that reaches that state through a valid user action and asserts the described empty-state message or UI element is visible. This is a valid positive test — the system correctly handles the absence of data.
+
+**6. COVERAGE COMPLETENESS GATE (run before outputting):**
+Enumerate every **action verb** listed in the description for each entity state (e.g., "Approve, Reject, Withdraw, Disburse, Waive Interest, Write Off, Reschedule, Block Debit, Reactivate…"). For each action verb:
+- If a TC already covers it → keep it.
+- If NO TC covers it → add a TC for it. Do not skip spec-described actions just because they lack a clear AST node.
+
+---
+
+**CALIBRATION & LIMITS:**
+Do not drop functionally unique code paths (like a specific state transition) just to hit a limit, but follow these general sizes:
+  - Simple module (login, simple filter): 2–4 tests
+  - Medium module (standard CRUD form, data table): 4–8 tests
+  - Complex module (Massive multi-panel forms, Tabbed Search Engines): 8–15 tests
+
+**Hard step cap — 15 steps per TC:**
+If a TC exceeds **15 steps**, split it at the first sub-feature boundary (e.g., basic form submission vs. adding optional repeating-group items). Each split becomes a separate TC with its own precondition establishing the required starting state. Never merge two distinct sub-features into one TC just to reduce TC count.
+
+---
+
+**ANTI-HALLUCINATION & DEDUPLICATION GATE (run before outputting):**
+1. Does this test trace back to a specific node in the AST or a specific action/state in the description? If no → delete it.
+2. For each pair of tests: Do they reach a DIFFERENT success state, OR take a DIFFERENT conditional branch/form layout to reach the same state?
+   - If two tests share the same code path (e.g., same form, just different optional fields filled) → merge them. Keep the more complete version.
+   - **Filter / sort / layout dedup:** do NOT generate one positive test per filter field or per sort/layout option. A set of filter controls, or a First/Last A–Z alphabetical matrix, or a Card/List/Summary layout switch, is **one representative** filter test (or one navigation test) — not one-per-field/one-per-permutation. Keep separate only where a filter targets a genuinely different result path or form.
+3. Read each `expected_result`. Does it match any **banned pattern** from the ASSERTION STYLE rules?
+   - ❌ `"creates/updates/deletes [entity]"` → rewrite to name the visible row, badge, or notification
+   - ❌ `"[system] adjusts/recalculates automatically"` → rewrite to describe the immediate visible screen state
+   - ❌ **`on_success` token pasted verbatim** (e.g. `"navigates to activity page"`, `"opens the dialog"`, `"updates results and result count"`) → rewrite to name the visible screen state (see Rule C)
+   - ❌ **Hedged / dual outcome** — `"Either X or Y"`, `"when X, result A; when Y, result B"`, `"succeeds … otherwise blocked"`, `"if credentials exist … if not …"` → pick the single most-likely outcome per the spec and assert it definitively; if two genuinely distinct outcomes exist, split into two TCs
+   - ❌ **Fabricated verbatim message string** — a quoted error/success string the spec never provides (e.g. inventing `'Attribute is required.'`) → either describe it generically (`"an inline error indicating the field is required"`) or, if the spec quotes it, copy the spec's exact text. Quotation marks are reserved for spec-sourced text.
+   - ❌ **Backend side effect** — `"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"` → assert only a visible on-screen confirmation, or drop it
+   - ❌ `"[field] contains <value>"` after a filter/search → rewrite to assert the filtered list/table state
+   - ❌ `"a success message is displayed"` when spec quotes exact text → replace with the verbatim quoted string
+   - ❌ `"filter is applied"` → rewrite to describe the filtered content visible in the results
+4. Check every TC: does its step count exceed 15? If yes → split it.
+5. Check every TC: does step 1 say "Ensure…" or "Verify…"? If yes → move it to preconditions and add a real action as step 1.
+6. Does the spec describe any empty/zero-result state? If yes, confirm a TC exists for it.
+
+---
+
+**WORKFLOW COVERAGE OBLIGATION (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- Your test cases must **collectively cover every workflow** listed.
+- For each `wf_id`, at least one TC must:
+  - Activate the `conditional_branch` (if not null) — i.e. the test must set up the condition described.
+  - Assert the `on_success` as its `expected_result` (verbatim or as the primary basis for the expected result).
+- Add `"wf_ref": "WF-NNN"` to each TC to identify which workflow it covers.
+- If one TC naturally covers multiple workflows (e.g., the base path overlaps), pick the most specific `wf_ref`.
+- If a TC does not map to any workflow (e.g., a navigation-only test), set `"wf_ref": null`.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "positive",
+  "test_cases": [
+    {
+      "tc_id": "P-001",
+      "wf_ref": "WF-001",
+      "test_case": "Short descriptive name",
+      "preconditions": ["User logged in as <Role>", "<Prerequisite state>"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "Exact visible outcome on the current screen or redirect confirmation",
+      "priority": "high | medium | low"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "high_priority": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+------------------------------------------------------------
+[23:08:29] Test-Positive - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 5,
+  "module_title": "Client Management",
+  "summary": "Displays and manages the application\u2019s clients via a searchable/filterable list, multi-step create wizard, bulk import, and detailed client lifecycle and account actions.",
+  "where_it_fits": "Located under Institution > Clients in the top navigation and reachable via the Clients icon in the left sidebar, this module is the primary client administration area within the application where users view client listings, import/create clients, and manage client status and related accounts as part of routine operations.",
+  "assumed_state_on_entry": "Authenticated user with permission to access the Institution > Clients section (or Clients sidebar shortcut)."
+}
+</module_context>
+
+<module_name>Client Management</module_name>
+
+<ast>
+{
+  "module_name": "Client Management",
+  "components": {
+    "Clients_Page": {
+      "type": "data_table",
+      "searchable": true,
+      "filterable_columns": [
+        "Status"
+      ],
+      "fields": {
+        "Search": {
+          "type": "search",
+          "description": "searches by name, account number, external ID, or mobile number"
+        },
+        "Status_Filter": {
+          "type": "dropdown",
+          "options": [
+            "Pending",
+            "Active",
+            "Closed",
+            "Rejected",
+            "Withdrawn"
+          ]
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "View Client",
+          "description": "Navigate to Client Detail by clicking Name link"
+        }
+      ],
+      "page_actions": [
+        {
+          "action_name": "Import Client",
+          "navigates_to": "Bulk_Import_Page",
+          "preconditions": [
+            "Authenticated user with permission to access the Institution > Clients section (or Clients sidebar shortcut)."
+          ]
+        },
+        {
+          "action_name": "Create Client",
+          "navigates_to": "Create_Client_Wizard",
+          "preconditions": [
+            "Authenticated user with permission to access the Institution > Clients section (or Clients sidebar shortcut)."
+          ]
+        }
+      ]
+    },
+    "Bulk_Import_Page": {
+      "type": "form",
+      "fields": {
+        "Download_Client_Template": {
+          "type": "button",
+          "action_name": "Download Template",
+          "preconditions": [
+            "Authenticated user with permission to access the Institution > Clients section (or Clients sidebar shortcut)."
+          ]
+        },
+        "Upload_File": {
+          "type": "file_upload"
+        }
+      },
+      "components": {
+        "Import_History_Table": {
+          "type": "data_table",
+          "description": "Shows import history with Name, Import Time, End Time, Completed, Total Records, Success Count, Failure Count and Download"
+        }
+      }
+    },
+    "Create_Client_Wizard": {
+      "type": "wizard",
+      "submit_actions": [
+        {
+          "action_name": "Submit",
+          "on_success": "creates client in Pending status",
+          "preconditions": [
+            "Authenticated user with permission to access the Institution > Clients section (or Clients sidebar shortcut)."
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "step_index": 1,
+          "step_name": "General Details",
+          "fields": {
+            "Office": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Legal_Form": {
+              "type": "unspecified"
+            },
+            "First_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Middle_Name": {
+              "type": "unspecified"
+            },
+            "Last_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Date_Of_Birth": {
+              "type": "date"
+            },
+            "Gender": {
+              "type": "unspecified"
+            },
+            "Staff": {
+              "type": "unspecified"
+            },
+            "Mobile_Number": {
+              "type": "unspecified"
+            },
+            "Email_Address": {
+              "type": "email"
+            },
+            "Client_Type": {
+              "type": "unspecified"
+            },
+            "Client_Classification": {
+              "type": "unspecified"
+            },
+            "External_ID": {
+              "type": "unspecified",
+              "constraints": [
+                "must be unique"
+              ]
+            },
+            "Submitted_On": {
+              "type": "date",
+              "required": true
+            },
+            "Is_Staff": {
+              "type": "checkbox"
+            },
+            "Active": {
+              "type": "checkbox"
+            },
+            "Open_Savings_Account": {
+              "type": "checkbox"
+            }
+          }
+        },
+        {
+          "step_index": 2,
+          "step_name": "Address Details",
+          "fields": {}
+        },
+        {
+          "step_index": 3,
+          "step_name": "Family Members",
+          "fields": {}
+        },
+        {
+          "step_index": 4,
+          "step_name": "Identifiers",
+          "fields": {
+            "Document_Type": {
+              "type": "unspecified"
+            },
+            "Document_Key": {
+              "type": "unspecified"
+            }
+          }
+        }
+      ]
+    },
+    "Client_Detail_Tabs": {
+      "type": "tab_container",
+      "tabs": [
+        {
+          "tab_name": "General",
+          "fields": {}
+        },
+        {
+          "tab_name": "Accounts",
+          "tabs": [
+            {
+              "tab_name": "Loans",
+              "fields": {}
+            },
+            {
+              "tab_name": "Savings",
+              "fields": {}
+            },
+            {
+              "tab_name": "Shares",
+              "fields": {}
+            },
+            {
+              "tab_name": "Fixed Deposits",
+              "fields": {}
+            },
+            {
+              "tab_name": "Recurring Deposits",
+              "fields": {}
+            }
+          ]
+        },
+        {
+          "tab_name": "Identifiers",
+          "fields": {
+            "Identifiers": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Document_Type": {
+                  "type": "unspecified"
+                },
+                "Document_Key": {
+                  "type": "unspecified"
+                }
+              },
+              "constraints": [
+                "duplicates not allowed"
+              ]
+            }
+          }
+        },
+        {
+          "tab_name": "Family Members",
+          "fields": {}
+        },
+        {
+          "tab_name": "Notes",
+          "fields": {}
+        },
+        {
+          "tab_name": "Documents",
+          "fields": {}
+        }
+      ]
+    },
+    "Client_Detail_Actions": {
+      "type": "state_bound_action_bar",
+      "states": {
+        "Pending": {
+          "available_actions": [
+            {
+              "action_name": "Activate",
+              "fields": {
+                "Activation_Date": {
+                  "type": "date",
+                  "required": true,
+                  "constraints": [
+                    "must not be before Submitted_On"
+                  ]
+                }
+              }
+            },
+            {
+              "action_name": "Edit"
+            },
+            {
+              "action_name": "Reject",
+              "fields": {
+                "Reason": {
+                  "type": "unspecified",
+                  "required": true
+                }
+              }
+            },
+            {
+              "action_name": "Withdraw",
+              "fields": {
+                "Reason": {
+                  "type": "unspecified",
+                  "required": true
+                }
+              }
+            }
+          ]
+        },
+        "Active": {
+          "available_actions": [
+            {
+              "action_name": "Edit"
+            },
+            {
+              "action_name": "Transfer Client",
+              "fields": {
+                "Destination_Office": {
+                  "type": "unspecified",
+                  "required": true,
+                  "constraints": [
+                    "cannot transfer to same office"
+                  ]
+                }
+              }
+            },
+            {
+              "action_name": "Close",
+              "fields": {
+                "Closure_Reason": {
+                  "type": "unspecified",
+                  "required": true
+                }
+              },
+              "constraints": [
+                "cannot close client with active accounts"
+              ]
+            },
+            {
+              "action_name": "Add Charge"
+            },
+            {
+              "action_name": "New Loan"
+            },
+            {
+              "action_name": "New Savings"
+            },
+            {
+              "action_name": "New Share Account"
+            }
+          ]
+        },
+        "Closed": {
+          "available_actions": [
+            {
+              "action_name": "Reactivate"
+            }
+          ]
+        },
+        "Rejected": {
+          "available_actions": []
+        },
+        "Withdrawn": {
+          "available_actions": []
+        }
+      },
+      "preconditions": [
+        "Authenticated user with permission to access the Institution > Clients section (or Clients sidebar shortcut)."
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Clients page displays a data table of all clients with columns for Name (clickable link), Account No., External ID, Status (Pending as yellow chip, Active as green chip, Closed as gray chip, Rejected as red chip, Withdrawn as orange chip), Office, and Staff. A search field allows searching by name, account number, external ID, or mobile number, and a filter bar supports filtering by status. Two buttons at the top-right provide "Import Client" (opens the Bulk Import page) and "Create Client." The Bulk Import page allows downloading a client Excel template, uploading a completed file, and displays an import history table with columns for Name, Import Time, End Time, Completed, Total Records, Success Count, Failure Count, and Download.
+
+The Create Client form is a multi-step wizard. Step 1 (General Details) contains Office (required), Legal Form, First Name (required), Middle Name, Last Name (required), Date of Birth, Gender, Staff, Mobile Number, Email Address, Client Type, Client Classification, External ID (must be unique), Submitted On (required), Is Staff checkbox, Active checkbox, and Open Savings Account option. Step 2 covers Address Details. Step 3 covers Family Members. Step 4 covers Identifiers (Document Type and Document Key). Clicking "Submit" creates the client in Pending status.
+
+The Client Detail page displays the client name, account number, status badge, activation date, and office. Action buttons change based on status: Pending offers Activate (requires Activation Date, which must not be before submission date), Edit, Reject (with reason), and Withdraw (with reason); Active offers Edit, Transfer Client (destination office required — same office is blocked), Close (closure reason required — cannot close with active accounts), Add Charge, New Loan, New Savings, and New Share Account; Closed offers Reactivate; Rejected and Withdrawn have no actions. Tabs on the detail page show General, Accounts (sub-tabs for Loans, Savings, Shares, Fixed Deposits, Recurring Deposits), Identifiers (Document Type and Key with add/remove — duplicates are prevented), Family Members, Notes, and Documents.
+
+---
+
+
+</description>
+
+<workflows>
+WF-001 | View Client from Clients list | actor: Authenticated user | branch: none | terminal: View Client | on_success: navigates to Client Detail page
+WF-002 | Open Bulk Import from Clients page | actor: Authenticated user | branch: none | terminal: Import Client | on_success: navigates to Bulk_Import_Page
+WF-003 | Start Create Client wizard from Clients page | actor: Authenticated user | branch: none | terminal: Create Client | on_success: navigates to Create_Client_Wizard
+WF-004 | Download client import template | actor: Authenticated user | branch: none | terminal: Download Template | on_success: client Excel template downloaded
+WF-005 | Create client via wizard - Submit | actor: Authenticated user | branch: none | terminal: Submit | on_success: creates client in Pending status
+WF-006 | Activate Pending client | actor: Authenticated user | branch: entity_state == Pending | terminal: Activate | on_success: client activated; status becomes Active
+WF-007 | Edit Pending client | actor: Authenticated user | branch: entity_state == Pending | terminal: Edit | on_success: client details updated
+WF-008 | Reject Pending client | actor: Authenticated user | branch: entity_state == Pending | terminal: Reject | on_success: client status set to Rejected
+WF-009 | Withdraw Pending client | actor: Authenticated user | branch: entity_state == Pending | terminal: Withdraw | on_success: client status set to Withdrawn
+WF-010 | Edit Active client | actor: Authenticated user | branch: entity_state == Active | terminal: Edit | on_success: client details updated
+WF-011 | Transfer Active client to another office | actor: Authenticated user | branch: entity_state == Active | terminal: Transfer Client | on_success: client transferred to Destination_Office
+WF-012 | Close Active client | actor: Authenticated user | branch: entity_state == Active | terminal: Close | on_success: client status set to Closed
+WF-013 | Add charge to Active client | actor: Authenticated user | branch: entity_state == Active | terminal: Add Charge | on_success: charge added to client
+WF-014 | Start New Loan for Active client | actor: Authenticated user | branch: entity_state == Active | terminal: New Loan | on_success: navigates to New Loan creation flow
+WF-015 | Start New Savings for Active client | actor: Authenticated user | branch: entity_state == Active | terminal: New Savings | on_success: navigates to New Savings creation flow
+WF-016 | Start New Share Account for Active client | actor: Authenticated user | branch: entity_state == Active | terminal: New Share Account | on_success: navigates to New Share Account creation flow
+WF-017 | Reactivate Closed client | actor: Authenticated user | branch: entity_state == Closed | terminal: Reactivate | on_success: client reactivated; status becomes Active
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:10:03] Test-Positive - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Client Management",
+  "category": "positive",
+  "test_cases": [
+    {
+      "tc_id": "P-001",
+      "wf_ref": "WF-001",
+      "test_case": "Open Client Detail from Clients list",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in the Clients list with Name = <existing client>"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients (or click Clients in the sidebar)",
+        "2. Enter <existing client> in the Search field",
+        "3. Click the client's Name link in the results"
+      ],
+      "expected_result": "Client Detail page opens showing the client's name and a Status badge (e.g., 'Pending' (yellow) or 'Active' (green)) along with the account number and office",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-002",
+      "wf_ref": "WF-002",
+      "test_case": "Open Bulk Import page from Clients page",
+      "preconditions": [
+        "User logged in as <User with Clients permission>"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients (or click Clients in the sidebar)",
+        "2. Click the 'Import Client' button at the top-right"
+      ],
+      "expected_result": "Bulk Import page is shown with a 'Download Template' button and an Import History table visible",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-003",
+      "wf_ref": "WF-004",
+      "test_case": "Download client import template from Bulk Import page",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "Bulk Import page is accessible"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and click 'Import Client' to open the Bulk Import page",
+        "2. Click the 'Download Template' button"
+      ],
+      "expected_result": "Client Excel template download is triggered in the browser",
+      "priority": "low"
+    },
+    {
+      "tc_id": "P-004",
+      "wf_ref": "WF-003",
+      "test_case": "Open Create Client wizard from Clients page",
+      "preconditions": [
+        "User logged in as <User with Clients permission>"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients",
+        "2. Click the 'Create Client' button"
+      ],
+      "expected_result": "Create Client wizard opens and displays Step 1: 'General Details'",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-005",
+      "wf_ref": "WF-005",
+      "test_case": "Create client via wizard filling required General Details and submit (client becomes Pending)",
+      "preconditions": [
+        "User logged in as <User with Clients permission>"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and click 'Create Client' to open the wizard",
+        "2. In Step 1 'General Details', select <Office>, enter <First Name>, enter <Last Name>, and enter <Submitted On>",
+        "3. Click Next until the final step",
+        "4. Click Submit"
+      ],
+      "expected_result": "Client Detail page opens showing the entered client name and a Status badge 'Pending' (yellow); Submitted On is displayed on the page",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-006",
+      "wf_ref": "WF-005",
+      "test_case": "Create client via wizard including Address Details (Step 2) and verify address appears on Client Detail",
+      "preconditions": [
+        "User logged in as <User with Clients permission>"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and click 'Create Client' to open the wizard",
+        "2. In Step 1 'General Details', fill required fields: select <Office>, enter <First Name>, enter <Last Name>, enter <Submitted On>",
+        "3. Click Next to go to Step 2 'Address Details'",
+        "4. Enter <address details> in the Address Details section",
+        "5. Click Next to proceed through remaining steps and click Submit"
+      ],
+      "expected_result": "Client Detail page opens and the Address section displays the entered <address details>",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-007",
+      "wf_ref": "WF-005",
+      "test_case": "Create client via wizard including Family Members (Step 3) and verify family member appears on Client Detail",
+      "preconditions": [
+        "User logged in as <User with Clients permission>"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and click 'Create Client' to open the wizard",
+        "2. In Step 1 'General Details', fill required fields: select <Office>, enter <First Name>, enter <Last Name>, enter <Submitted On>",
+        "3. Click Next twice to reach Step 3 'Family Members'",
+        "4. Enter <family member details> in the Family Members section",
+        "5. Click Next to the final step and click Submit"
+      ],
+      "expected_result": "Client Detail page opens and the Family Members tab contains the added <family member details>",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-008",
+      "wf_ref": "WF-005",
+      "test_case": "Create client via wizard including Identifiers (Step 4) and verify identifier listed in Identifiers tab",
+      "preconditions": [
+        "User logged in as <User with Clients permission>"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and click 'Create Client' to open the wizard",
+        "2. In Step 1 'General Details', fill required fields: select <Office>, enter <First Name>, enter <Last Name>, enter <Submitted On>",
+        "3. Click Next until Step 4 'Identifiers'",
+        "4. Enter <Document Type> and <Document Key> in the Identifiers section",
+        "5. Click Submit"
+      ],
+      "expected_result": "Client Detail page opens and the Identifiers tab lists a row with the entered <Document Type> and <Document Key>",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-009",
+      "wf_ref": "WF-006",
+      "test_case": "Activate a Pending client by entering a valid Activation Date",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Pending state with Submitted_On = <submitted date>"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Pending client's Detail page",
+        "2. Click the 'Activate' action",
+        "3. Enter <activation date on or after submitted date> in Activation Date",
+        "4. Click Confirm (or Save) on the Activate dialog"
+      ],
+      "expected_result": "Client Detail page shows the Status badge 'Active' (green) and the Activation Date field displays <activation date on or after submitted date>",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-010",
+      "wf_ref": "WF-007",
+      "test_case": "Edit a Pending client and verify updated detail is shown",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Pending state"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Pending client's Detail page",
+        "2. Click the 'Edit' action",
+        "3. Update <Mobile Number> to <updated mobile number>",
+        "4. Click Save"
+      ],
+      "expected_result": "Client Detail page displays the updated <Mobile Number> value",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-011",
+      "wf_ref": "WF-008",
+      "test_case": "Reject a Pending client by providing a reason",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Pending state"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Pending client's Detail page",
+        "2. Click the 'Reject' action",
+        "3. Enter <reason for rejection> in the Reason field",
+        "4. Click Confirm on the Reject dialog"
+      ],
+      "expected_result": "Client Detail page shows the Status badge 'Rejected' (red)",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-012",
+      "wf_ref": "WF-009",
+      "test_case": "Withdraw a Pending client by providing a reason",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Pending state"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Pending client's Detail page",
+        "2. Click the 'Withdraw' action",
+        "3. Enter <reason for withdrawal> in the Reason field",
+        "4. Click Confirm on the Withdraw dialog"
+      ],
+      "expected_result": "Client Detail page shows the Status badge 'Withdrawn' (orange)",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-013",
+      "wf_ref": "WF-010",
+      "test_case": "Edit an Active client and verify updated detail is shown",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Active state"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Active client's Detail page",
+        "2. Click the 'Edit' action",
+        "3. Update <Email Address> to <updated email>",
+        "4. Click Save"
+      ],
+      "expected_result": "Client Detail page displays the updated <Email Address>",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-014",
+      "wf_ref": "WF-011",
+      "test_case": "Transfer an Active client to a different office",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Active state assigned to <current office>"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Active client's Detail page",
+        "2. Click the 'Transfer Client' action",
+        "3. Select <different destination office> in Destination Office",
+        "4. Click Confirm on the Transfer dialog"
+      ],
+      "expected_result": "Client Detail page displays Office set to <different destination office>",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-015",
+      "wf_ref": "WF-012",
+      "test_case": "Close an Active client (no active accounts) by providing a closure reason",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Active state with no active accounts"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Active client's Detail page",
+        "2. Click the 'Close' action",
+        "3. Enter <closure reason> in Closure Reason",
+        "4. Click Confirm on the Close dialog"
+      ],
+      "expected_result": "Client Detail page shows the Status badge 'Closed' (gray)",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-016",
+      "wf_ref": "WF-013",
+      "test_case": "Add a charge to an Active client and verify it appears on the Client Detail",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Active state"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Active client's Detail page",
+        "2. Click the 'Add Charge' action",
+        "3. Enter <charge details> in the Add Charge dialog",
+        "4. Click Confirm (or Save) on the Add Charge dialog"
+      ],
+      "expected_result": "A success notification is displayed and the Charges list on the Client Detail shows a new entry with the entered <charge details>",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-017",
+      "wf_ref": "WF-014",
+      "test_case": "Start New Loan flow for an Active client (redirect to Loan creation)",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Active state"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Active client's Detail page",
+        "2. Click the 'New Loan' action"
+      ],
+      "expected_result": "The browser navigates to the New Loan creation page for the client; the New Loan page header is visible",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-018",
+      "wf_ref": "WF-015",
+      "test_case": "Start New Savings flow for an Active client (redirect to Savings creation)",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Active state"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Active client's Detail page",
+        "2. Click the 'New Savings' action"
+      ],
+      "expected_result": "The browser navigates to the New Savings creation page for the client; the New Savings page header is visible",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-019",
+      "wf_ref": "WF-016",
+      "test_case": "Start New Share Account flow for an Active client (redirect to Share Account creation)",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Active state"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Active client's Detail page",
+        "2. Click the 'New Share Account' action"
+      ],
+      "expected_result": "The browser navigates to the New Share Account creation page for the client; the New Share Account page header is visible",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-020",
+      "wf_ref": "WF-017",
+      "test_case": "Reactivate a Closed client",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Closed state"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Closed client's Detail page",
+        "2. Click the 'Reactivate' action",
+        "3. Confirm the Reactivate dialog"
+      ],
+      "expected_result": "Client Detail page shows the Status badge 'Active' (green)",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 20,
+    "high_priority": 9,
+    "medium_priority": 9,
+    "low_priority": 2
+  }
+}
+
+------------------------------------------------------------
+[23:10:03] Test-Positive - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Client Management",
+  "category": "positive",
+  "test_cases": [
+    {
+      "tc_id": "P-001",
+      "wf_ref": "WF-001",
+      "test_case": "Open Client Detail from Clients list",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in the Clients list with Name = <existing client>"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients (or click Clients in the sidebar)",
+        "2. Enter <existing client> in the Search field",
+        "3. Click the client's Name link in the results"
+      ],
+      "expected_result": "Client Detail page opens showing the client's name and a Status badge (e.g., 'Pending' (yellow) or 'Active' (green)) along with the account number and office",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-002",
+      "wf_ref": "WF-002",
+      "test_case": "Open Bulk Import page from Clients page",
+      "preconditions": [
+        "User logged in as <User with Clients permission>"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients (or click Clients in the sidebar)",
+        "2. Click the 'Import Client' button at the top-right"
+      ],
+      "expected_result": "Bulk Import page is shown with a 'Download Template' button and an Import History table visible",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-003",
+      "wf_ref": "WF-004",
+      "test_case": "Download client import template from Bulk Import page",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "Bulk Import page is accessible"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and click 'Import Client' to open the Bulk Import page",
+        "2. Click the 'Download Template' button"
+      ],
+      "expected_result": "Client Excel template download is triggered in the browser",
+      "priority": "low"
+    },
+    {
+      "tc_id": "P-004",
+      "wf_ref": "WF-003",
+      "test_case": "Open Create Client wizard from Clients page",
+      "preconditions": [
+        "User logged in as <User with Clients permission>"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients",
+        "2. Click the 'Create Client' button"
+      ],
+      "expected_result": "Create Client wizard opens and displays Step 1: 'General Details'",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-005",
+      "wf_ref": "WF-005",
+      "test_case": "Create client via wizard filling required General Details and submit (client becomes Pending)",
+      "preconditions": [
+        "User logged in as <User with Clients permission>"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and click 'Create Client' to open the wizard",
+        "2. In Step 1 'General Details', select <Office>, enter <First Name>, enter <Last Name>, and enter <Submitted On>",
+        "3. Click Next until the final step",
+        "4. Click Submit"
+      ],
+      "expected_result": "Client Detail page opens showing the entered client name and a Status badge 'Pending' (yellow); Submitted On is displayed on the page",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-006",
+      "wf_ref": "WF-005",
+      "test_case": "Create client via wizard including Address Details (Step 2) and verify address appears on Client Detail",
+      "preconditions": [
+        "User logged in as <User with Clients permission>"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and click 'Create Client' to open the wizard",
+        "2. In Step 1 'General Details', fill required fields: select <Office>, enter <First Name>, enter <Last Name>, enter <Submitted On>",
+        "3. Click Next to go to Step 2 'Address Details'",
+        "4. Enter <address details> in the Address Details section",
+        "5. Click Next to proceed through remaining steps and click Submit"
+      ],
+      "expected_result": "Client Detail page opens and the Address section displays the entered <address details>",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-007",
+      "wf_ref": "WF-005",
+      "test_case": "Create client via wizard including Family Members (Step 3) and verify family member appears on Client Detail",
+      "preconditions": [
+        "User logged in as <User with Clients permission>"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and click 'Create Client' to open the wizard",
+        "2. In Step 1 'General Details', fill required fields: select <Office>, enter <First Name>, enter <Last Name>, enter <Submitted On>",
+        "3. Click Next twice to reach Step 3 'Family Members'",
+        "4. Enter <family member details> in the Family Members section",
+        "5. Click Next to the final step and click Submit"
+      ],
+      "expected_result": "Client Detail page opens and the Family Members tab contains the added <family member details>",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-008",
+      "wf_ref": "WF-005",
+      "test_case": "Create client via wizard including Identifiers (Step 4) and verify identifier listed in Identifiers tab",
+      "preconditions": [
+        "User logged in as <User with Clients permission>"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and click 'Create Client' to open the wizard",
+        "2. In Step 1 'General Details', fill required fields: select <Office>, enter <First Name>, enter <Last Name>, enter <Submitted On>",
+        "3. Click Next until Step 4 'Identifiers'",
+        "4. Enter <Document Type> and <Document Key> in the Identifiers section",
+        "5. Click Submit"
+      ],
+      "expected_result": "Client Detail page opens and the Identifiers tab lists a row with the entered <Document Type> and <Document Key>",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-009",
+      "wf_ref": "WF-006",
+      "test_case": "Activate a Pending client by entering a valid Activation Date",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Pending state with Submitted_On = <submitted date>"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Pending client's Detail page",
+        "2. Click the 'Activate' action",
+        "3. Enter <activation date on or after submitted date> in Activation Date",
+        "4. Click Confirm (or Save) on the Activate dialog"
+      ],
+      "expected_result": "Client Detail page shows the Status badge 'Active' (green) and the Activation Date field displays <activation date on or after submitted date>",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-010",
+      "wf_ref": "WF-007",
+      "test_case": "Edit a Pending client and verify updated detail is shown",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Pending state"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Pending client's Detail page",
+        "2. Click the 'Edit' action",
+        "3. Update <Mobile Number> to <updated mobile number>",
+        "4. Click Save"
+      ],
+      "expected_result": "Client Detail page displays the updated <Mobile Number> value",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-011",
+      "wf_ref": "WF-008",
+      "test_case": "Reject a Pending client by providing a reason",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Pending state"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Pending client's Detail page",
+        "2. Click the 'Reject' action",
+        "3. Enter <reason for rejection> in the Reason field",
+        "4. Click Confirm on the Reject dialog"
+      ],
+      "expected_result": "Client Detail page shows the Status badge 'Rejected' (red)",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-012",
+      "wf_ref": "WF-009",
+      "test_case": "Withdraw a Pending client by providing a reason",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Pending state"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Pending client's Detail page",
+        "2. Click the 'Withdraw' action",
+        "3. Enter <reason for withdrawal> in the Reason field",
+        "4. Click Confirm on the Withdraw dialog"
+      ],
+      "expected_result": "Client Detail page shows the Status badge 'Withdrawn' (orange)",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-013",
+      "wf_ref": "WF-010",
+      "test_case": "Edit an Active client and verify updated detail is shown",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Active state"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Active client's Detail page",
+        "2. Click the 'Edit' action",
+        "3. Update <Email Address> to <updated email>",
+        "4. Click Save"
+      ],
+      "expected_result": "Client Detail page displays the updated <Email Address>",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-014",
+      "wf_ref": "WF-011",
+      "test_case": "Transfer an Active client to a different office",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Active state assigned to <current office>"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Active client's Detail page",
+        "2. Click the 'Transfer Client' action",
+        "3. Select <different destination office> in Destination Office",
+        "4. Click Confirm on the Transfer dialog"
+      ],
+      "expected_result": "Client Detail page displays Office set to <different destination office>",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-015",
+      "wf_ref": "WF-012",
+      "test_case": "Close an Active client (no active accounts) by providing a closure reason",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Active state with no active accounts"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Active client's Detail page",
+        "2. Click the 'Close' action",
+        "3. Enter <closure reason> in Closure Reason",
+        "4. Click Confirm on the Close dialog"
+      ],
+      "expected_result": "Client Detail page shows the Status badge 'Closed' (gray)",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-016",
+      "wf_ref": "WF-013",
+      "test_case": "Add a charge to an Active client and verify it appears on the Client Detail",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Active state"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Active client's Detail page",
+        "2. Click the 'Add Charge' action",
+        "3. Enter <charge details> in the Add Charge dialog",
+        "4. Click Confirm (or Save) on the Add Charge dialog"
+      ],
+      "expected_result": "A success notification is displayed and the Charges list on the Client Detail shows a new entry with the entered <charge details>",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-017",
+      "wf_ref": "WF-014",
+      "test_case": "Start New Loan flow for an Active client (redirect to Loan creation)",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Active state"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Active client's Detail page",
+        "2. Click the 'New Loan' action"
+      ],
+      "expected_result": "The browser navigates to the New Loan creation page for the client; the New Loan page header is visible",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-018",
+      "wf_ref": "WF-015",
+      "test_case": "Start New Savings flow for an Active client (redirect to Savings creation)",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Active state"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Active client's Detail page",
+        "2. Click the 'New Savings' action"
+      ],
+      "expected_result": "The browser navigates to the New Savings creation page for the client; the New Savings page header is visible",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-019",
+      "wf_ref": "WF-016",
+      "test_case": "Start New Share Account flow for an Active client (redirect to Share Account creation)",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Active state"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Active client's Detail page",
+        "2. Click the 'New Share Account' action"
+      ],
+      "expected_result": "The browser navigates to the New Share Account creation page for the client; the New Share Account page header is visible",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-020",
+      "wf_ref": "WF-017",
+      "test_case": "Reactivate a Closed client",
+      "preconditions": [
+        "User logged in as <User with Clients permission>",
+        "A client exists in Closed state"
+      ],
+      "steps": [
+        "1. Navigate to Institution > Clients and open the Closed client's Detail page",
+        "2. Click the 'Reactivate' action",
+        "3. Confirm the Reactivate dialog"
+      ],
+      "expected_result": "Client Detail page shows the Status badge 'Active' (green)",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 20,
+    "high_priority": 9,
+    "medium_priority": 9,
+    "low_priority": 2
+  }
+}

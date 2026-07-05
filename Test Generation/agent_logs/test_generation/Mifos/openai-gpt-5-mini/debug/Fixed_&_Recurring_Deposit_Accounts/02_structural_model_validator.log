@@ -1,0 +1,1027 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T22:57:38.834110
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[22:58:56] Structural Model Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Structural Model Validator. You receive (1) a raw functional description and
+(2) a generated Structural Model JSON.
+
+Your single job: decide whether this AST is good enough to use, or whether it should
+be regenerated.
+
+You DO NOT modify the JSON.
+You DO NOT generate a new JSON.
+You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CANONICAL SCOPE — IDENTICAL TO THE GENERATOR'S SCOPE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+IN SCOPE — an element qualifies if a user can:
+  (a) Input or edit a value: form fields, checkboxes, file uploads, search inputs, toggles
+  (b) Trigger an action: buttons, links, row actions, bulk actions, submit actions
+  (c) Navigate: tabs, sub-tabs, wizard steps
+  (d) Action metadata on interactive elements: on_success, preconditions, state
+      transitions, validation constraints
+
+OUT OF SCOPE — do NOT expect these in the AST:
+  - Passive display labels: "the page shows client name, account number, status badge"
+    → 0 expected items. The AST is correct to omit them.
+  - Chip colors, badge styles, decorative icons, visual styling
+  - Read-only info panels with no interactive element
+  - Display-formatting or rendering rules applied to a passive (non-interactive) value —
+    e.g. masking ("showing only last 4 digits"), truncation, currency/number formatting,
+    default sort order of a read-only column → 0 expected items. These are NOT validation
+    constraints. Do not expect a field/column AST node, a "constraints" entry, or a
+    "columns" block created solely to house one of these rules.
+
+STATE (Pending / Active / Closed) is a routing key in state_bound_action_bar.states{},
+NOT a display field. Do not expect it anywhere else.
+
+"Constraint" (as used everywhere below) means a rule that governs INPUT or ACTION
+behavior — required-ness, format, bounds, uniqueness, cross-field ordering, state
+preconditions. A rule that only describes how an already-displayed, non-interactive
+value is rendered (masked, truncated, formatted, sorted) is a display-formatting rule,
+not a constraint, even if the description uses words like "must" or states a concrete
+detail (e.g. "must show only last 4 digits"). Do not upgrade a display-formatting rule
+to CRITICAL missing just because it is stated precisely.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MINOR missing
+  An optional field (no "required": true, no required_when) with no business logic,
+  state transition, or action consequence attached. Losing it doesn't break any flow.
+  Example: an unlabeled optional "Notes" textarea on a secondary form.
+
+MINOR phantom
+  An element not named in the description but so universally implied by the component
+  type that its presence is unsurprising — e.g., a "Cancel" button on a modal the
+  description never explicitly names. Flag it; don't auto-retry for it alone.
+
+CRITICAL missing
+  Any of: a required field, any state key in a state_bound_action_bar, any submit
+  action, any named tab or wizard step, any element with a stated precondition or
+  on_success consequence, any INTERACTIVE field with a stated constraint (see the
+  constraint definition above — a display-formatting rule on a passive field does
+  NOT qualify and must never be flagged as critical missing).
+
+CRITICAL phantom
+  Any of: a field invented inside a generic-name tab (Add_Note in a Notes tab,
+  Upload_Document in a Documents tab) when the description only names the tab;
+  a passive display field appearing as an AST node — including a "columns" block,
+  or any field/column entry, added only to carry a masking/truncation/formatting rule
+  for a non-interactive value; a constraint with no textual anchor; a display_fields
+  block anywhere in the output; "required": false anywhere.
+
+WORKED EXAMPLE — display-formatting rule, NOT a critical missing:
+
+Description: "Each row shows Account Number (clickable but not implemented yet),
+Account Type, Current Balance, Account Status, and Open Date. Account numbers are
+masked for security (showing only last 4 digits as ****5001)."
+
+AST under review:
+{
+  "Accounts_Table": {
+    "type": "data_table",
+    "row_actions": [
+      { "action_name": "Account Number", "constraints": ["clickable but not implemented yet"] }
+    ]
+  }
+}
+
+CORRECT verdict: the masking rule and the other four listed fields (Account Type,
+Current Balance, Account Status, Open Date) are passive display labels — 0 expected
+AST items for them, per the OUT OF SCOPE rule above. The only interactive element is
+the Account Number click, and it is already present. Do NOT flag
+"components.Accounts_Table.columns.Account_Number" (or any columns block) as a
+CRITICAL missing item. Do NOT instruct the generator to add a "columns" block with
+typed entries (e.g. "Open_Date": {"type": "date"}) — that fabricates interactive
+field types for read-only data and will cause downstream test generators to invent
+boundary/date tests against a page that has none.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Step 1 — Walk the description. List every expected interactive element.
+Apply the canonical scope above. A sentence that only displays data produces 0 expected
+items. For each tab or step named with no described fields, expected output is
+"fields": {} — do NOT expect fields there.
+
+Step 2 — Walk the AST. Check for MISSING elements.
+For each expected element from Step 1, confirm it exists at the correct path.
+Classify each missing item as critical or minor using the definitions above.
+
+Step 3 — Walk the AST. Check for PHANTOMS.
+Flag any AST element with no textual anchor in the description.
+Classify each phantom as critical or minor using the definitions above.
+
+Step 4 — Check conditional logic.
+Count a conditional as EXPECTED only if the description contains an explicit trigger
+phrase. Both affirmative and negative phrasings qualify:
+
+  Affirmative: "when X is selected/checked/chosen", "if X then Y", "Y appears when X",
+               "selecting X reveals Y", "required if X", "enabled when X", "only if X",
+               "Y is shown for X"
+  Negative:    "unless X", "except when X", "disabled if X", "not shown when X",
+               "hidden when X", "required for non-X", "only for X users"
+  Abbreviated: "required for minors", "admin only", "international trips only"
+               → treat as conditional even without explicit trigger syntax
+
+If a visible_when / required_when / enabled_when appears in the AST but no trigger
+phrase (affirmative or negative) exists in the description: flag as critical phantom.
+If a trigger phrase exists in the description but no conditional appears in the AST:
+flag as critical missing.
+
+Step 5 — Check structural integrity. Flag any of these as STRUCTURAL ERRORS:
+  - A constraint floating at form/component level when the description attached it to
+    a specific field or action
+  - Sub-tabs or sub-steps described as nested but flattened in the AST
+  - State keys in state_bound_action_bar that don't match exact status names in the
+    description
+  - A display_fields block anywhere in the AST
+  - "required": false appearing anywhere in the AST
+  - Component or field names not in Pascal_Snake_Case
+
+Step 6 — Decide the verdict.
+
+Precondition note: If a `<module_context>` block is present, cross-check any
+`preconditions[]` in the AST against the `assumed_state_on_entry` value. A precondition
+that directly contradicts or wildly exceeds the described entry state is a CRITICAL phantom.
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Step 5)
+                       → fixes must be []
+
+  retry                Any CRITICAL missing element
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any Step 5 structural error
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       element is interactive — not a close call, but truly unresolvable
+                       from the text alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "Component.path.to.element",
+      "severity": "critical | minor",
+      "reason": "<why this element is expected from the description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "Component.path.to.element",
+      "severity": "critical | minor",
+      "reason": "<why this element has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Step 5 violation and its AST path>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact JSON path and required change>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+------------------------------------------------------------
+[22:58:56] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 17,
+  "module_title": "Fixed & Recurring Deposit Accounts",
+  "summary": "Manages creation, lifecycle actions, and detailed views for Fixed Deposit (FD) and Recurring Deposit (RD) accounts including schedules, balances, interest calculations, and maturity operations.",
+  "where_it_fits": "Accessed from a Client Detail page within the Institution \u2192 Clients flow (and reachable via product/account shortcuts in the left sidebar), this module is part of the Products/Accounts area showing FD and RD accounts for individual clients. It integrates with product configuration (deposit products and interest rate charts) and appears alongside other account detail pages with tabs for Summary, Transactions, and Charges.",
+  "assumed_state_on_entry": "An active client is selected on the Client Detail page and relevant FD/RD products and interest rate charts are configured in the system."
+}
+</module_context>
+
+<description>
+
+Fixed Deposit and Recurring Deposit accounts are created from the Client Detail page. The FD Account creation form contains Fixed Deposit Product dropdown, Deposit Amount, Deposit Period (numeric and unit — Days, Months, Years), and Maturity Instructions (Transfer to Savings, Re-Invest, or Re-Invest Principal and Transfer Interest). The FD Account Detail page shows deposit amount, maturity date, maturity amount, interest rate, and status with action buttons for Approve, Activate, Premature Close, and Close on Maturity. The RD Account creation form contains Recurring Deposit Product dropdown, Mandatory Deposit Amount per installment, Deposit Period, Deposit Frequency (Daily, Weekly, Monthly, Quarterly, Yearly), and Expected First Deposit On date. The RD Account Detail page shows the deposit schedule, total deposits made, maturity details, interest rate, and status with action buttons for Approve, Activate, Deposit, Premature Close, and Close on Maturity. Both FD and RD detail pages include tabs for Summary, Transactions, and Charges. Interest rates are determined by the Interest Rate Chart configured on the product, with tiered rates based on deposit amount and term length.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Fixed & Recurring Deposit Accounts",
+  "components": {
+    "Fixed_Deposit_Create_Form": {
+      "type": "form",
+      "preconditions": [
+        "An active client is selected on the Client Detail page and relevant FD/RD products and interest rate charts are configured in the system."
+      ],
+      "fields": {
+        "Fixed_Deposit_Product": {
+          "type": "dropdown"
+        },
+        "Deposit_Amount": {
+          "type": "number"
+        },
+        "Deposit_Period": {
+          "type": "number"
+        },
+        "Deposit_Period_Unit": {
+          "type": "dropdown",
+          "options": [
+            "Days",
+            "Months",
+            "Years"
+          ]
+        },
+        "Maturity_Instructions": {
+          "type": "dropdown",
+          "options": [
+            "Transfer to Savings",
+            "Re-Invest",
+            "Re-Invest Principal and Transfer Interest"
+          ]
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create FD Account",
+          "on_success": "creates FD account"
+        }
+      ]
+    },
+    "Recurring_Deposit_Create_Form": {
+      "type": "form",
+      "preconditions": [
+        "An active client is selected on the Client Detail page and relevant FD/RD products and interest rate charts are configured in the system."
+      ],
+      "fields": {
+        "Recurring_Deposit_Product": {
+          "type": "dropdown"
+        },
+        "Mandatory_Deposit_Amount": {
+          "type": "number"
+        },
+        "Deposit_Period": {
+          "type": "number"
+        },
+        "Deposit_Period_Unit": {
+          "type": "dropdown",
+          "options": [
+            "Days",
+            "Months",
+            "Years"
+          ]
+        },
+        "Deposit_Frequency": {
+          "type": "dropdown",
+          "options": [
+            "Daily",
+            "Weekly",
+            "Monthly",
+            "Quarterly",
+            "Yearly"
+          ]
+        },
+        "Expected_First_Deposit_On": {
+          "type": "date"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create RD Account",
+          "on_success": "creates RD account"
+        }
+      ]
+    },
+    "Fixed_Deposit_Detail_Tabs": {
+      "type": "tab_container",
+      "tabs": [
+        {
+          "tab_name": "Summary",
+          "fields": {}
+        },
+        {
+          "tab_name": "Transactions",
+          "fields": {}
+        },
+        {
+          "tab_name": "Charges",
+          "fields": {}
+        }
+      ]
+    },
+    "Recurring_Deposit_Detail_Tabs": {
+      "type": "tab_container",
+      "tabs": [
+        {
+          "tab_name": "Summary",
+          "fields": {}
+        },
+        {
+          "tab_name": "Transactions",
+          "fields": {}
+        },
+        {
+          "tab_name": "Charges",
+          "fields": {}
+        }
+      ]
+    },
+    "Fixed_Deposit_Detail_Actions": {
+      "type": "action_bar",
+      "available_actions": [
+        {
+          "action_name": "Approve"
+        },
+        {
+          "action_name": "Activate"
+        },
+        {
+          "action_name": "Premature Close"
+        },
+        {
+          "action_name": "Close on Maturity"
+        }
+      ]
+    },
+    "Recurring_Deposit_Detail_Actions": {
+      "type": "action_bar",
+      "available_actions": [
+        {
+          "action_name": "Approve"
+        },
+        {
+          "action_name": "Activate"
+        },
+        {
+          "action_name": "Deposit"
+        },
+        {
+          "action_name": "Premature Close"
+        },
+        {
+          "action_name": "Close on Maturity"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:00:30] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "The AST omits the conditional/computed representation of interest rate determination (tiered by product, deposit amount, and term) for both FD and RD forms; add computed interest-rate fields or conditionals to reflect that business rule.",
+  "missing": [
+    {
+      "path": "components.Fixed_Deposit_Create_Form.fields.Interest_Rate",
+      "severity": "critical",
+      "reason": "Description states 'Interest rates are determined by the Interest Rate Chart ... with tiered rates based on deposit amount and term length' — a trigger phrase requiring a conditional/computed field or constraint linking Fixed Deposit Product, Deposit_Amount, and Deposit_Period/Deposit_Period_Unit to an Interest_Rate value."
+    },
+    {
+      "path": "components.Recurring_Deposit_Create_Form.fields.Interest_Rate",
+      "severity": "critical",
+      "reason": "Description states 'Interest rates are determined by the Interest Rate Chart ... with tiered rates based on deposit amount and term length' — a trigger phrase requiring a conditional/computed field or constraint linking Recurring Deposit Product, Mandatory_Deposit_Amount, and Deposit_Period/Deposit_Period_Unit (and/or Deposit_Frequency if applicable) to an Interest_Rate value."
+    }
+  ],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [
+    "Add a computed field at components.Fixed_Deposit_Create_Form.fields.Interest_Rate with metadata indicating it is computed (not user-editable) and a conditional/computation rule: computed_from = [\"Fixed_Deposit_Product\",\"Deposit_Amount\",\"Deposit_Period\",\"Deposit_Period_Unit\"] and note that rates are determined by the configured Interest Rate Chart (tiered by amount and term).",
+    "Add a computed field at components.Recurring_Deposit_Create_Form.fields.Interest_Rate with metadata indicating it is computed (not user-editable) and a conditional/computation rule: computed_from = [\"Recurring_Deposit_Product\",\"Mandatory_Deposit_Amount\",\"Deposit_Period\",\"Deposit_Period_Unit\",\"Deposit_Frequency\"] and note that rates are determined by the configured Interest Rate Chart (tiered by amount and term)."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:00:30] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "The AST omits the conditional/computed representation of interest rate determination (tiered by product, deposit amount, and term) for both FD and RD forms; add computed interest-rate fields or conditionals to reflect that business rule.",
+  "missing": [
+    {
+      "path": "components.Fixed_Deposit_Create_Form.fields.Interest_Rate",
+      "severity": "critical",
+      "reason": "Description states 'Interest rates are determined by the Interest Rate Chart ... with tiered rates based on deposit amount and term length' \u2014 a trigger phrase requiring a conditional/computed field or constraint linking Fixed Deposit Product, Deposit_Amount, and Deposit_Period/Deposit_Period_Unit to an Interest_Rate value."
+    },
+    {
+      "path": "components.Recurring_Deposit_Create_Form.fields.Interest_Rate",
+      "severity": "critical",
+      "reason": "Description states 'Interest rates are determined by the Interest Rate Chart ... with tiered rates based on deposit amount and term length' \u2014 a trigger phrase requiring a conditional/computed field or constraint linking Recurring Deposit Product, Mandatory_Deposit_Amount, and Deposit_Period/Deposit_Period_Unit (and/or Deposit_Frequency if applicable) to an Interest_Rate value."
+    }
+  ],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [
+    "Add a computed field at components.Fixed_Deposit_Create_Form.fields.Interest_Rate with metadata indicating it is computed (not user-editable) and a conditional/computation rule: computed_from = [\"Fixed_Deposit_Product\",\"Deposit_Amount\",\"Deposit_Period\",\"Deposit_Period_Unit\"] and note that rates are determined by the configured Interest Rate Chart (tiered by amount and term).",
+    "Add a computed field at components.Recurring_Deposit_Create_Form.fields.Interest_Rate with metadata indicating it is computed (not user-editable) and a conditional/computation rule: computed_from = [\"Recurring_Deposit_Product\",\"Mandatory_Deposit_Amount\",\"Deposit_Period\",\"Deposit_Period_Unit\",\"Deposit_Frequency\"] and note that rates are determined by the configured Interest Rate Chart (tiered by amount and term)."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:01:32] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 17,
+  "module_title": "Fixed & Recurring Deposit Accounts",
+  "summary": "Manages creation, lifecycle actions, and detailed views for Fixed Deposit (FD) and Recurring Deposit (RD) accounts including schedules, balances, interest calculations, and maturity operations.",
+  "where_it_fits": "Accessed from a Client Detail page within the Institution \u2192 Clients flow (and reachable via product/account shortcuts in the left sidebar), this module is part of the Products/Accounts area showing FD and RD accounts for individual clients. It integrates with product configuration (deposit products and interest rate charts) and appears alongside other account detail pages with tabs for Summary, Transactions, and Charges.",
+  "assumed_state_on_entry": "An active client is selected on the Client Detail page and relevant FD/RD products and interest rate charts are configured in the system."
+}
+</module_context>
+
+<description>
+
+Fixed Deposit and Recurring Deposit accounts are created from the Client Detail page. The FD Account creation form contains Fixed Deposit Product dropdown, Deposit Amount, Deposit Period (numeric and unit — Days, Months, Years), and Maturity Instructions (Transfer to Savings, Re-Invest, or Re-Invest Principal and Transfer Interest). The FD Account Detail page shows deposit amount, maturity date, maturity amount, interest rate, and status with action buttons for Approve, Activate, Premature Close, and Close on Maturity. The RD Account creation form contains Recurring Deposit Product dropdown, Mandatory Deposit Amount per installment, Deposit Period, Deposit Frequency (Daily, Weekly, Monthly, Quarterly, Yearly), and Expected First Deposit On date. The RD Account Detail page shows the deposit schedule, total deposits made, maturity details, interest rate, and status with action buttons for Approve, Activate, Deposit, Premature Close, and Close on Maturity. Both FD and RD detail pages include tabs for Summary, Transactions, and Charges. Interest rates are determined by the Interest Rate Chart configured on the product, with tiered rates based on deposit amount and term length.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Fixed & Recurring Deposit Accounts",
+  "components": {
+    "Fixed_Deposit_Create_Form": {
+      "type": "form",
+      "preconditions": [
+        "An active client is selected on the Client Detail page and relevant FD/RD products and interest rate charts are configured in the system."
+      ],
+      "fields": {
+        "Fixed_Deposit_Product": {
+          "type": "dropdown"
+        },
+        "Deposit_Amount": {
+          "type": "number"
+        },
+        "Deposit_Period": {
+          "type": "number"
+        },
+        "Deposit_Period_Unit": {
+          "type": "dropdown",
+          "options": [
+            "Days",
+            "Months",
+            "Years"
+          ]
+        },
+        "Maturity_Instructions": {
+          "type": "dropdown",
+          "options": [
+            "Transfer to Savings",
+            "Re-Invest",
+            "Re-Invest Principal and Transfer Interest"
+          ]
+        },
+        "Interest_Rate": {
+          "type": "unspecified",
+          "metadata": {
+            "computed": true,
+            "editable": false,
+            "computed_from": [
+              "Fixed_Deposit_Product",
+              "Deposit_Amount",
+              "Deposit_Period",
+              "Deposit_Period_Unit"
+            ],
+            "note": "Rates are determined by the configured Interest Rate Chart (tiered by amount and term)."
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create",
+          "on_success": "creates fixed deposit account",
+          "preconditions": [
+            "An active client is selected on the Client Detail page and relevant FD/RD products and interest rate charts are configured in the system."
+          ]
+        }
+      ]
+    },
+    "Recurring_Deposit_Create_Form": {
+      "type": "form",
+      "preconditions": [
+        "An active client is selected on the Client Detail page and relevant FD/RD products and interest rate charts are configured in the system."
+      ],
+      "fields": {
+        "Recurring_Deposit_Product": {
+          "type": "dropdown"
+        },
+        "Mandatory_Deposit_Amount": {
+          "type": "number"
+        },
+        "Deposit_Period": {
+          "type": "number"
+        },
+        "Deposit_Period_Unit": {
+          "type": "dropdown",
+          "options": [
+            "Days",
+            "Months",
+            "Years"
+          ]
+        },
+        "Deposit_Frequency": {
+          "type": "dropdown",
+          "options": [
+            "Daily",
+            "Weekly",
+            "Monthly",
+            "Quarterly",
+            "Yearly"
+          ]
+        },
+        "Expected_First_Deposit_On": {
+          "type": "date"
+        },
+        "Interest_Rate": {
+          "type": "unspecified",
+          "metadata": {
+            "computed": true,
+            "editable": false,
+            "computed_from": [
+              "Recurring_Deposit_Product",
+              "Mandatory_Deposit_Amount",
+              "Deposit_Period",
+              "Deposit_Period_Unit",
+              "Deposit_Frequency"
+            ],
+            "note": "Rates are determined by the configured Interest Rate Chart (tiered by amount and term)."
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create",
+          "on_success": "creates recurring deposit account",
+          "preconditions": [
+            "An active client is selected on the Client Detail page and relevant FD/RD products and interest rate charts are configured in the system."
+          ]
+        }
+      ]
+    },
+    "Fixed_Deposit_Detail_Tabs": {
+      "type": "tab_container",
+      "tabs": [
+        {
+          "tab_name": "Summary",
+          "fields": {}
+        },
+        {
+          "tab_name": "Transactions",
+          "fields": {}
+        },
+        {
+          "tab_name": "Charges",
+          "fields": {}
+        }
+      ]
+    },
+    "Fixed_Deposit_Detail_Actions": {
+      "type": "action_bar",
+      "available_actions": [
+        {
+          "action_name": "Approve"
+        },
+        {
+          "action_name": "Activate"
+        },
+        {
+          "action_name": "Premature Close"
+        },
+        {
+          "action_name": "Close on Maturity"
+        }
+      ]
+    },
+    "Recurring_Deposit_Detail_Tabs": {
+      "type": "tab_container",
+      "tabs": [
+        {
+          "tab_name": "Summary",
+          "fields": {}
+        },
+        {
+          "tab_name": "Transactions",
+          "fields": {}
+        },
+        {
+          "tab_name": "Charges",
+          "fields": {}
+        }
+      ]
+    },
+    "Recurring_Deposit_Detail_Actions": {
+      "type": "action_bar",
+      "available_actions": [
+        {
+          "action_name": "Approve"
+        },
+        {
+          "action_name": "Activate"
+        },
+        {
+          "action_name": "Deposit"
+        },
+        {
+          "action_name": "Premature Close"
+        },
+        {
+          "action_name": "Close on Maturity"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:02:02] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 2,
+  "summary": "AST largely matches the description but includes three unanchored minor elements (two computed Interest_Rate fields on the create forms and a Deposit_Period_Unit on the RD create form) that need confirmation or removal.",
+  "missing": [],
+  "phantoms": [
+    {
+      "path": "components.Fixed_Deposit_Create_Form.fields.Interest_Rate",
+      "severity": "minor",
+      "reason": "The description states interest rates are determined by the product's Interest Rate Chart, but does not explicitly say an Interest Rate field is shown on the Fixed Deposit creation form; adding a computed Interest_Rate field in the create form has no direct textual anchor."
+    },
+    {
+      "path": "components.Recurring_Deposit_Create_Form.fields.Interest_Rate",
+      "severity": "minor",
+      "reason": "The description explains interest rates are determined by the Interest Rate Chart but does not explicitly state an Interest Rate field is displayed on the Recurring Deposit creation form; this computed field is not explicitly anchored in the text."
+    },
+    {
+      "path": "components.Recurring_Deposit_Create_Form.fields.Deposit_Period_Unit",
+      "severity": "minor",
+      "reason": "The RD creation form in the description lists 'Deposit Period' but does not mention a 'unit' (Days/Months/Years) for the period; adding Deposit_Period_Unit to the RD form is not explicitly supported by the description."
+    }
+  ],
+  "structural_errors": [],
+  "fixes": [
+    "Either remove components.Fixed_Deposit_Create_Form.fields.Interest_Rate or add explicit description text indicating the Fixed Deposit creation form displays a computed Interest Rate (e.g., 'Show computed Interest Rate on create form derived from product/amount/term').",
+    "Either remove components.Recurring_Deposit_Create_Form.fields.Interest_Rate or add explicit description text indicating the Recurring Deposit creation form displays a computed Interest Rate (e.g., 'Show computed Interest Rate on create form derived from product/amount/term/frequency').",
+    "Either remove components.Recurring_Deposit_Create_Form.fields.Deposit_Period_Unit or update the description to explicitly state that Recurring Deposit's Deposit Period includes a unit (Days, Months, Years) so this field is required on the RD creation form."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:02:02] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 2,
+  "summary": "AST largely matches the description but includes three unanchored minor elements (two computed Interest_Rate fields on the create forms and a Deposit_Period_Unit on the RD create form) that need confirmation or removal.",
+  "missing": [],
+  "phantoms": [
+    {
+      "path": "components.Fixed_Deposit_Create_Form.fields.Interest_Rate",
+      "severity": "minor",
+      "reason": "The description states interest rates are determined by the product's Interest Rate Chart, but does not explicitly say an Interest Rate field is shown on the Fixed Deposit creation form; adding a computed Interest_Rate field in the create form has no direct textual anchor."
+    },
+    {
+      "path": "components.Recurring_Deposit_Create_Form.fields.Interest_Rate",
+      "severity": "minor",
+      "reason": "The description explains interest rates are determined by the Interest Rate Chart but does not explicitly state an Interest Rate field is displayed on the Recurring Deposit creation form; this computed field is not explicitly anchored in the text."
+    },
+    {
+      "path": "components.Recurring_Deposit_Create_Form.fields.Deposit_Period_Unit",
+      "severity": "minor",
+      "reason": "The RD creation form in the description lists 'Deposit Period' but does not mention a 'unit' (Days/Months/Years) for the period; adding Deposit_Period_Unit to the RD form is not explicitly supported by the description."
+    }
+  ],
+  "structural_errors": [],
+  "fixes": [
+    "Either remove components.Fixed_Deposit_Create_Form.fields.Interest_Rate or add explicit description text indicating the Fixed Deposit creation form displays a computed Interest Rate (e.g., 'Show computed Interest Rate on create form derived from product/amount/term').",
+    "Either remove components.Recurring_Deposit_Create_Form.fields.Interest_Rate or add explicit description text indicating the Recurring Deposit creation form displays a computed Interest Rate (e.g., 'Show computed Interest Rate on create form derived from product/amount/term/frequency').",
+    "Either remove components.Recurring_Deposit_Create_Form.fields.Deposit_Period_Unit or update the description to explicitly state that Recurring Deposit's Deposit Period includes a unit (Days, Months, Years) so this field is required on the RD creation form."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:02:48] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 17,
+  "module_title": "Fixed & Recurring Deposit Accounts",
+  "summary": "Manages creation, lifecycle actions, and detailed views for Fixed Deposit (FD) and Recurring Deposit (RD) accounts including schedules, balances, interest calculations, and maturity operations.",
+  "where_it_fits": "Accessed from a Client Detail page within the Institution \u2192 Clients flow (and reachable via product/account shortcuts in the left sidebar), this module is part of the Products/Accounts area showing FD and RD accounts for individual clients. It integrates with product configuration (deposit products and interest rate charts) and appears alongside other account detail pages with tabs for Summary, Transactions, and Charges.",
+  "assumed_state_on_entry": "An active client is selected on the Client Detail page and relevant FD/RD products and interest rate charts are configured in the system."
+}
+</module_context>
+
+<description>
+
+Fixed Deposit and Recurring Deposit accounts are created from the Client Detail page. The FD Account creation form contains Fixed Deposit Product dropdown, Deposit Amount, Deposit Period (numeric and unit — Days, Months, Years), and Maturity Instructions (Transfer to Savings, Re-Invest, or Re-Invest Principal and Transfer Interest). The FD Account Detail page shows deposit amount, maturity date, maturity amount, interest rate, and status with action buttons for Approve, Activate, Premature Close, and Close on Maturity. The RD Account creation form contains Recurring Deposit Product dropdown, Mandatory Deposit Amount per installment, Deposit Period, Deposit Frequency (Daily, Weekly, Monthly, Quarterly, Yearly), and Expected First Deposit On date. The RD Account Detail page shows the deposit schedule, total deposits made, maturity details, interest rate, and status with action buttons for Approve, Activate, Deposit, Premature Close, and Close on Maturity. Both FD and RD detail pages include tabs for Summary, Transactions, and Charges. Interest rates are determined by the Interest Rate Chart configured on the product, with tiered rates based on deposit amount and term length.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Fixed & Recurring Deposit Accounts",
+  "components": {
+    "Fixed_Deposit_Create_Form": {
+      "type": "form",
+      "preconditions": [
+        "An active client is selected on the Client Detail page and relevant FD/RD products and interest rate charts are configured in the system."
+      ],
+      "fields": {
+        "Fixed_Deposit_Product": {
+          "type": "dropdown"
+        },
+        "Deposit_Amount": {
+          "type": "unspecified"
+        },
+        "Deposit_Period_Value": {
+          "type": "number",
+          "description": "Numeric portion of the deposit period (paired with Deposit_Period_Unit)."
+        },
+        "Deposit_Period_Unit": {
+          "type": "dropdown",
+          "options": [
+            "Days",
+            "Months",
+            "Years"
+          ]
+        },
+        "Maturity_Instructions": {
+          "type": "dropdown",
+          "options": [
+            "Transfer to Savings",
+            "Re-Invest",
+            "Re-Invest Principal and Transfer Interest"
+          ]
+        },
+        "Interest_Rate": {
+          "type": "unspecified",
+          "description": "Show computed Interest Rate on create form derived from product/amount/term."
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create Fixed Deposit",
+          "preconditions": [
+            "An active client is selected on the Client Detail page and relevant FD/RD products and interest rate charts are configured in the system."
+          ]
+        }
+      ]
+    },
+    "Recurring_Deposit_Create_Form": {
+      "type": "form",
+      "preconditions": [
+        "An active client is selected on the Client Detail page and relevant FD/RD products and interest rate charts are configured in the system."
+      ],
+      "fields": {
+        "Recurring_Deposit_Product": {
+          "type": "dropdown"
+        },
+        "Mandatory_Deposit_Amount": {
+          "type": "unspecified"
+        },
+        "Deposit_Period_Value": {
+          "type": "unspecified",
+          "description": "Numeric length of the deposit period (paired with Deposit_Period_Unit)."
+        },
+        "Deposit_Period_Unit": {
+          "type": "dropdown",
+          "options": [
+            "Days",
+            "Months",
+            "Years"
+          ],
+          "description": "Recurring Deposit's Deposit Period includes a unit (Days, Months, Years); this field is required on the RD creation form.",
+          "required": true
+        },
+        "Deposit_Frequency": {
+          "type": "dropdown",
+          "options": [
+            "Daily",
+            "Weekly",
+            "Monthly",
+            "Quarterly",
+            "Yearly"
+          ]
+        },
+        "Expected_First_Deposit_On": {
+          "type": "date"
+        },
+        "Interest_Rate": {
+          "type": "unspecified",
+          "description": "Show computed Interest Rate on create form derived from product/amount/term/frequency."
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create Recurring Deposit",
+          "preconditions": [
+            "An active client is selected on the Client Detail page and relevant FD/RD products and interest rate charts are configured in the system."
+          ]
+        }
+      ]
+    },
+    "Fixed_Deposit_Detail_Tabs": {
+      "type": "tab_container",
+      "tabs": [
+        {
+          "tab_name": "Summary",
+          "fields": {}
+        },
+        {
+          "tab_name": "Transactions",
+          "fields": {}
+        },
+        {
+          "tab_name": "Charges",
+          "fields": {}
+        }
+      ]
+    },
+    "Recurring_Deposit_Detail_Tabs": {
+      "type": "tab_container",
+      "tabs": [
+        {
+          "tab_name": "Summary",
+          "fields": {}
+        },
+        {
+          "tab_name": "Transactions",
+          "fields": {}
+        },
+        {
+          "tab_name": "Charges",
+          "fields": {}
+        }
+      ]
+    },
+    "Fixed_Deposit_Detail_Actions": {
+      "type": "action_bar",
+      "available_actions": [
+        {
+          "action_name": "Approve"
+        },
+        {
+          "action_name": "Activate"
+        },
+        {
+          "action_name": "Premature Close"
+        },
+        {
+          "action_name": "Close on Maturity"
+        }
+      ]
+    },
+    "Recurring_Deposit_Detail_Actions": {
+      "type": "action_bar",
+      "available_actions": [
+        {
+          "action_name": "Approve"
+        },
+        {
+          "action_name": "Activate"
+        },
+        {
+          "action_name": "Deposit"
+        },
+        {
+          "action_name": "Premature Close"
+        },
+        {
+          "action_name": "Close on Maturity"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:03:11] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 3,
+  "summary": "The AST invents passive/display-only Interest_Rate fields on the create forms that are not anchored in the description and must be removed or re-anchored; otherwise the structure matches the described interactive elements.",
+  "missing": [],
+  "phantoms": [
+    {
+      "path": "components.Fixed_Deposit_Create_Form.fields.Interest_Rate",
+      "severity": "critical",
+      "reason": "The description does not state that an Interest Rate field is shown on the FD creation form; this is a passive/display value derived from product/config and thus should not be modeled as an interactive field in the AST."
+    },
+    {
+      "path": "components.Recurring_Deposit_Create_Form.fields.Interest_Rate",
+      "severity": "critical",
+      "reason": "The description does not state that an Interest Rate field is shown on the RD creation form; this is a passive/display value derived from product/config and thus should not be modeled as an interactive field in the AST."
+    }
+  ],
+  "structural_errors": [],
+  "fixes": [
+    "Remove components.Fixed_Deposit_Create_Form.fields.Interest_Rate from the AST (or convert it to an explicitly-described interactive element with a textual anchor if the spec intends it to be an input/action).",
+    "Remove components.Recurring_Deposit_Create_Form.fields.Interest_Rate from the AST (or convert it to an explicitly-described interactive element with a textual anchor if the spec intends it to be an input/action)."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:03:11] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 3,
+  "summary": "The AST invents passive/display-only Interest_Rate fields on the create forms that are not anchored in the description and must be removed or re-anchored; otherwise the structure matches the described interactive elements.",
+  "missing": [],
+  "phantoms": [
+    {
+      "path": "components.Fixed_Deposit_Create_Form.fields.Interest_Rate",
+      "severity": "critical",
+      "reason": "The description does not state that an Interest Rate field is shown on the FD creation form; this is a passive/display value derived from product/config and thus should not be modeled as an interactive field in the AST."
+    },
+    {
+      "path": "components.Recurring_Deposit_Create_Form.fields.Interest_Rate",
+      "severity": "critical",
+      "reason": "The description does not state that an Interest Rate field is shown on the RD creation form; this is a passive/display value derived from product/config and thus should not be modeled as an interactive field in the AST."
+    }
+  ],
+  "structural_errors": [],
+  "fixes": [
+    "Remove components.Fixed_Deposit_Create_Form.fields.Interest_Rate from the AST (or convert it to an explicitly-described interactive element with a textual anchor if the spec intends it to be an input/action).",
+    "Remove components.Recurring_Deposit_Create_Form.fields.Interest_Rate from the AST (or convert it to an explicitly-described interactive element with a textual anchor if the spec intends it to be an input/action)."
+  ],
+  "clarifications": []
+}

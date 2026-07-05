@@ -1,0 +1,646 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:04:00.738963
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:04:00] Workflow-Extractor - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Extractor. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to enumerate every distinct, executable interaction path through this module — one entry per workflow.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ATTEMPT CONTEXT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Attempt: 1 of 3
+
+
+
+---
+
+**INPUT:**
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+---
+
+## What is a Workflow?
+
+A **workflow** is one complete, executable interaction path — from the user entering the module to completing **one terminal action** within it.
+
+Two workflows are **distinct** if they require different user actions to reach the terminal — i.e. they activate a different conditional branch, follow a different wizard step set, target a different state, or end on a different terminal action.
+
+### Strict Rules
+
+1. **Strictly intra-module.** A workflow step is an action within this module only. If submitting redirects to another page, the redirect is the **exit** — not a step.
+2. **No invented paths.** Only enumerate paths that are traceable to AST nodes or explicit description text. No UX intuition, no assumed flows.
+3. **Minimal fields.** A workflow carries only what downstream agents actually need: who does it, what makes it distinct, what it ends with, what success looks like.
+4. **No step-by-step instructions.** Workflows do NOT spell out the full step sequence — the agents already have the AST for that. A workflow names the path, not the actions.
+
+---
+
+## What Paths to Enumerate
+
+Enumerate **distinct-outcome** paths — not one-per-type, and **not** the cartesian product of every toggle. The rule: two paths are separate workflows only if the user does something different that leads to a **different terminal outcome** (different `on_success`) **or** exercises a **different revealed required-field group** that needs its own coverage.
+
+| AST node type | What to enumerate |
+|---|---|
+| `form` with no conditionals | One workflow per `submit_actions[]` entry |
+| `form` with `visible_when` / toggle fields | One base workflow per `submit_actions[]` entry, PLUS one workflow for **each conditional branch that reveals a distinct required-field group** (e.g. enabling File submissions reveals max-files/size/types). Do **NOT** multiply independent toggles together. |
+| `wizard` | One workflow per distinct step sequence (if all steps are linear, one workflow per `submit_actions[]`; if any step is conditional, enumerate each branch) |
+| `state_bound_action_bar` | One workflow per `available_actions[]` entry per state (state × action = one workflow) |
+| `data_table` | One workflow per `row_actions[]` entry + one per `bulk_actions[]` entry (include View, Edit, Delete, and all others) |
+| `tab_container` | One workflow per tab that contains a form with a submit action |
+| `repeating_group` | Not a standalone workflow source — it is part of a form workflow that activates it |
+
+**Include all data table row actions** — View, Edit, Delete, and any others. Even read-only row actions (e.g., "View") must be included because they still require a positive test case.
+
+### DO NOT enumerate the cartesian product of toggles (CRITICAL)
+
+A form with independent toggles A, B, C and submit buttons {Save, Save+display, Cancel} must **not** produce 2×2×2×3 = 24 workflows. Independent toggles that do **not** change the terminal outcome are covered **once each**, not in combination:
+- If toggle A (e.g. `File_Submissions`) and toggle B (e.g. `Group_Submissions`) both still reach the same `on_success` ("assignment created"), they are **not** two dimensions to multiply. Emit one workflow that activates A's revealed fields, and one that activates B's revealed fields — not A×B.
+- An `+ Add restriction` / optional-picker step that does not change `on_success` is **not** a separate workflow dimension. Fold it into an existing workflow or add at most one workflow for it.
+
+### Discard / Cancel collapse rule (CRITICAL)
+
+A `Cancel` / `discard` / `abandon` terminal action discards **all** field state, so field/toggle combinations are irrelevant to it. Emit **exactly ONE** Cancel workflow for the module, regardless of how many toggles or revealed-field groups exist. Never produce a Cancel workflow per toggle combination.
+
+**Worked example — Assignment Creation** (toggles: File submissions, Group submissions, Add restriction; buttons: Save and return, Save and display, Cancel):
+- ✅ Correct (~6–8): base Save-and-return, base Save-and-display, one Save covering File-submission revealed fields, one Save covering Group-submission revealed fields, one Save covering an added restriction, one Cancel.
+- ❌ Wrong (24): every `{File}×{Group}×{Restriction}×{Save/Display/Cancel}` combination.
+
+---
+
+## Field Definitions
+
+| Field | Type | Rule |
+|---|---|---|
+| `wf_id` | `"WF-NNN"` | Sequential within this module, starting at WF-001 |
+| `name` | string | Short human name for the path — what makes it distinct |
+| `actor` | string | Role who performs this path — use `<role>` placeholder if spec doesn't specify |
+| `conditional_branch` | string or `null` | The condition(s) that activate this path's unique branch. `null` if no conditionals apply |
+| `terminal_action` | string | Exact name of the button/action that ends this workflow (matches AST `action_name` or `element_name`) |
+| `on_success` | string | Verbatim from AST `on_success` field if available; otherwise derived from description |
+
+**`conditional_branch` format:**
+- Single condition: `"Submission_Type == File_Upload"`
+- Multiple: `"Submission_Type == File_Upload AND Grade_Type == Points"`
+- State condition: `"entity_state == Draft"`
+- `null` if this is the base path with no conditionals
+
+---
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SELF-CHECK — VERIFY EVERY ITEM BEFORE OUTPUTTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Go through these one by one. If any check fails, fix it before outputting.
+
+□ 1. Every `submit_actions[]` entry in every form/wizard has at least one workflow.
+□ 2. Every state × action pair in every `state_bound_action_bar` has exactly one workflow.
+□ 3. Every `row_actions[]` and `bulk_actions[]` entry in every `data_table` has one workflow.
+□ 4. Every tab with a form submission in a `tab_container` has one workflow.
+□ 5. `wf_id` numbering is sequential (WF-001, WF-002, ...) with no gaps.
+□ 6. Every `terminal_action` matches an exact `action_name` or `element_name` from the AST.
+□ 7. No two workflows reach the **same `on_success` via the same code path** — even if their `conditional_branch` strings differ. If they do, merge them (keep the one that activates a distinct revealed required-field group; drop pure toggle-combination duplicates).
+□ 8. There is **at most ONE** `Cancel`/`discard` workflow for the whole module.
+□ 9. No independent toggles are multiplied together — the workflow count is roughly (base submits) + (revealed required-field groups) + 1 Cancel, NOT the product of all toggles × all buttons.
+□ 10. No workflow crosses module boundaries (steps in another module).
+□ 11. Every `on_success` reflects the AST or description — no generic "success" strings.
+
+---
+
+## Anti-Hallucination Gate (run after self-check)
+
+1. Does each workflow trace back to a specific AST node (`submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`) or an explicit action described in the description text? If no → delete it.
+2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
+3. Do two workflows reach the same `on_success` via the same code path (e.g. differing only by an independent toggle that does not change the outcome, or being repeated Cancel variants)? If yes → merge them into one. Keep a separate workflow only when its branch reveals a **distinct required-field group** that needs its own coverage.
+4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
+5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
+
+---
+
+## Calibration
+
+- Simple form module (no conditionals, one submit): 1–3 workflows
+- Form with conditionals/toggles: **(base submit outcomes) + (one per revealed required-field group) + 1 Cancel** — typically 4–8, NOT the product of all toggles × all buttons. A multi-toggle form like Assignment Creation should land near 6–8, never 20+.
+- Module with state machine: add 1 per (state × action) combination
+- Module with data table: add 1 per row_action + 1 per bulk_action
+
+---
+
+## OUTPUT — JSON only, no prose, no markdown fencing:
+
+{
+  "module": "Module Name",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Short human name — what makes this path distinct",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Submit",
+      "on_success": "Verbatim on_success from AST or derived from description"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Submit with File Upload submission type",
+      "actor": "<role>",
+      "conditional_branch": "Submission_Type == File_Upload",
+      "terminal_action": "Submit",
+      "on_success": "Assignment created; success message shown"
+    }
+  ],
+  "total": 2
+}
+
+
+------------------------------------------------------------
+[23:04:00] Workflow-Extractor - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 15,
+  "module_title": "Savings Account",
+  "summary": "Manages creation, lifecycle and transaction handling for client savings accounts, including balances, status transitions, charges, and interest operations.",
+  "where_it_fits": "Reached from a Client's Detail page (accessible via Institution \u2192 Clients in the top nav or the Clients shortcut in the left sidebar) and displayed in the main content area beneath breadcrumbs; it links account operations (deposits, withdrawals, interest posting, status changes) into the broader accounting and reporting areas of the application.",
+  "assumed_state_on_entry": "Logged in user with permissions to manage accounts, viewing a specific Client Detail page, and at least one Savings Product configured/available for selection."
+}
+</module_context>
+
+<module_name>Savings Account</module_name>
+
+<ast>
+{
+  "module_name": "Savings Account",
+  "components": {
+    "Savings_Account_Creation_Form": {
+      "type": "form",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "at least one Savings Product configured/available for selection"
+      ],
+      "fields": {
+        "Product_Name": {
+          "type": "dropdown",
+          "on_change": "auto_populate_defaults_from_product"
+        },
+        "Field_Officer": {
+          "type": "unspecified"
+        },
+        "Submitted_On": {
+          "type": "date"
+        },
+        "Nominal_Annual_Interest_Rate": {
+          "type": "dropdown"
+        },
+        "Interest_Compounding_Period": {
+          "type": "dropdown"
+        },
+        "Interest_Posting_Period": {
+          "type": "dropdown"
+        },
+        "Interest_Calculated_Using": {
+          "type": "dropdown"
+        },
+        "Days_In_Year": {
+          "type": "dropdown"
+        },
+        "Minimum_Opening_Balance": {
+          "type": "number"
+        },
+        "Lock_In_Period": {
+          "type": "unspecified"
+        },
+        "Allow_Overdraft": {
+          "type": "checkbox"
+        },
+        "Charges": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Charge": {
+              "type": "unspecified"
+            },
+            "Amount": {
+              "type": "number"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Submit",
+          "on_success": "creates account in Submitted and Pending Approval",
+          "preconditions": [
+            "Logged in user with permissions to manage accounts",
+            "at least one Savings Product configured/available for selection"
+          ]
+        }
+      ]
+    },
+    "Savings_Account_Detail_Tabs": {
+      "type": "tab_container",
+      "tabs": [
+        {
+          "tab_name": "Summary",
+          "fields": {}
+        },
+        {
+          "tab_name": "Transactions",
+          "fields": {
+            "Transactions_Table": {
+              "type": "data_table"
+            }
+          }
+        },
+        {
+          "tab_name": "Charges",
+          "fields": {}
+        },
+        {
+          "tab_name": "Documents",
+          "fields": {}
+        }
+      ]
+    },
+    "Savings_Account_Detail_Actions": {
+      "type": "state_bound_action_bar",
+      "states": {
+        "Submitted and Pending Approval": {
+          "available_actions": [
+            {
+              "action_name": "Approve"
+            },
+            {
+              "action_name": "Reject"
+            },
+            {
+              "action_name": "Withdraw Application"
+            }
+          ]
+        },
+        "Approved": {
+          "available_actions": [
+            {
+              "action_name": "Activate"
+            },
+            {
+              "action_name": "Undo Approval"
+            }
+          ]
+        },
+        "Active": {
+          "available_actions": [
+            {
+              "action_name": "Deposit",
+              "fields": {
+                "Transaction_Date": {
+                  "type": "date"
+                },
+                "Transaction_Amount": {
+                  "type": "number"
+                },
+                "Payment_Type": {
+                  "type": "dropdown",
+                  "options": [
+                    "Cash",
+                    "Check",
+                    "Mobile Money"
+                  ]
+                },
+                "Payment_Details": {
+                  "type": "unspecified"
+                }
+              },
+              "on_success": "credits the account"
+            },
+            {
+              "action_name": "Withdraw",
+              "fields": {
+                "Transaction_Date": {
+                  "type": "date"
+                },
+                "Transaction_Amount": {
+                  "type": "number"
+                },
+                "Payment_Type": {
+                  "type": "dropdown",
+                  "options": [
+                    "Cash",
+                    "Check",
+                    "Mobile Money"
+                  ]
+                },
+                "Payment_Details": {
+                  "type": "unspecified"
+                }
+              },
+              "constraints": [
+                "validate withdrawal does not exceed available balance unless overdraft is enabled",
+                "if minimum balance is enforced and withdrawal would breach it, show an error and prevent transaction"
+              ]
+            },
+            {
+              "action_name": "Post Interest"
+            },
+            {
+              "action_name": "Calculate Interest"
+            },
+            {
+              "action_name": "Close"
+            },
+            {
+              "action_name": "Block Account"
+            },
+            {
+              "action_name": "Block Debit"
+            },
+            {
+              "action_name": "Block Credit"
+            }
+          ]
+        },
+        "Dormant": {
+          "available_actions": []
+        },
+        "Closed": {
+          "available_actions": []
+        },
+        "Blocked": {
+          "available_actions": []
+        }
+      }
+    }
+  }
+}
+</ast>
+
+<description>
+
+A new savings account is created from the Client Detail page. The creation form contains Product Name dropdown (selecting a product auto-populates default values), Field Officer, Submitted On date, Nominal Annual Interest Rate, Interest Compounding Period, Interest Posting Period, Interest Calculated Using, Days in Year (all dropdowns, pre-filled from product), Minimum Opening Balance, Lock-in Period, Allow Overdraft checkbox, and a Charges section listing product charges with an option to add more. Clicking "Submit" creates the account in "Submitted and Pending Approval" status.
+
+The Savings Account Detail page displays the account number, product name, client name, status badge, account balance, and available balance. Status badges include Submitted and Pending Approval, Approved, Active, Dormant, Closed, and Blocked. Action buttons change based on status: Pending offers Approve, Reject, and Withdraw Application; Approved offers Activate and Undo Approval; Active offers Deposit (form with Transaction Date, Transaction Amount, Payment Type — Cash, Check, Mobile Money — and payment detail fields; submitting credits the account), Withdraw (same form as Deposit — the system validates the withdrawal does not exceed available balance unless overdraft is enabled; if minimum balance is enforced and the withdrawal would breach it, an error is shown), Post Interest, Calculate Interest, Close, Block Account, Block Debit, and Block Credit. Tabs show Summary, Transactions (table of all deposits, withdrawals, and interest postings with Date, Type, Amount, and Running Balance), Charges, and Documents.
+
+---
+
+
+</description>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:05:05] Workflow-Extractor - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Savings Account",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Create savings account (Submit form)",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Submit",
+      "on_success": "creates account in Submitted and Pending Approval"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Approve a submitted account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Submitted and Pending Approval",
+      "terminal_action": "Approve",
+      "on_success": "changes status to Approved"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Reject a submitted account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Submitted and Pending Approval",
+      "terminal_action": "Reject",
+      "on_success": "changes status to Rejected"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Withdraw application for submitted account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Submitted and Pending Approval",
+      "terminal_action": "Withdraw Application",
+      "on_success": "withdraws the application"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Activate an approved account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Approved",
+      "terminal_action": "Activate",
+      "on_success": "changes status to Active"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Undo approval of an approved account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Approved",
+      "terminal_action": "Undo Approval",
+      "on_success": "reverts approval; changes status to Submitted and Pending Approval"
+    },
+    {
+      "wf_id": "WF-007",
+      "name": "Make a deposit to an active account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Deposit",
+      "on_success": "credits the account"
+    },
+    {
+      "wf_id": "WF-008",
+      "name": "Make a withdrawal from an active account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Withdraw",
+      "on_success": "creates withdrawal transaction and debits the account"
+    },
+    {
+      "wf_id": "WF-009",
+      "name": "Post interest to an active account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Post Interest",
+      "on_success": "posts interest to the account"
+    },
+    {
+      "wf_id": "WF-010",
+      "name": "Calculate interest for an active account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Calculate Interest",
+      "on_success": "calculates interest according to product settings"
+    },
+    {
+      "wf_id": "WF-011",
+      "name": "Close an active account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Close",
+      "on_success": "changes status to Closed"
+    },
+    {
+      "wf_id": "WF-012",
+      "name": "Block an active account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Block Account",
+      "on_success": "changes status to Blocked"
+    },
+    {
+      "wf_id": "WF-013",
+      "name": "Block debit on an active account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Block Debit",
+      "on_success": "blocks debit transactions on the account"
+    },
+    {
+      "wf_id": "WF-014",
+      "name": "Block credit on an active account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Block Credit",
+      "on_success": "blocks credit transactions on the account"
+    }
+  ],
+  "total": 14
+}
+
+------------------------------------------------------------
+[23:05:05] Workflow-Extractor - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Savings Account",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Create savings account (Submit form)",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Submit",
+      "on_success": "creates account in Submitted and Pending Approval"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Approve a submitted account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Submitted and Pending Approval",
+      "terminal_action": "Approve",
+      "on_success": "changes status to Approved"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Reject a submitted account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Submitted and Pending Approval",
+      "terminal_action": "Reject",
+      "on_success": "changes status to Rejected"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Withdraw application for submitted account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Submitted and Pending Approval",
+      "terminal_action": "Withdraw Application",
+      "on_success": "withdraws the application"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Activate an approved account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Approved",
+      "terminal_action": "Activate",
+      "on_success": "changes status to Active"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Undo approval of an approved account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Approved",
+      "terminal_action": "Undo Approval",
+      "on_success": "reverts approval; changes status to Submitted and Pending Approval"
+    },
+    {
+      "wf_id": "WF-007",
+      "name": "Make a deposit to an active account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Deposit",
+      "on_success": "credits the account"
+    },
+    {
+      "wf_id": "WF-008",
+      "name": "Make a withdrawal from an active account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Withdraw",
+      "on_success": "creates withdrawal transaction and debits the account"
+    },
+    {
+      "wf_id": "WF-009",
+      "name": "Post interest to an active account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Post Interest",
+      "on_success": "posts interest to the account"
+    },
+    {
+      "wf_id": "WF-010",
+      "name": "Calculate interest for an active account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Calculate Interest",
+      "on_success": "calculates interest according to product settings"
+    },
+    {
+      "wf_id": "WF-011",
+      "name": "Close an active account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Close",
+      "on_success": "changes status to Closed"
+    },
+    {
+      "wf_id": "WF-012",
+      "name": "Block an active account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Block Account",
+      "on_success": "changes status to Blocked"
+    },
+    {
+      "wf_id": "WF-013",
+      "name": "Block debit on an active account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Block Debit",
+      "on_success": "blocks debit transactions on the account"
+    },
+    {
+      "wf_id": "WF-014",
+      "name": "Block credit on an active account",
+      "actor": "<role>",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Block Credit",
+      "on_success": "blocks credit transactions on the account"
+    }
+  ],
+  "total": 14
+}

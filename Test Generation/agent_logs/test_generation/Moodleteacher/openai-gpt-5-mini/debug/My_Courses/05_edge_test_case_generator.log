@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.103895
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.850114
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Edge - SYSTEM PROMPT
+[22:49:29] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Edge - USER PROMPT
+[22:49:29] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 4,
   "module_title": "My Courses",
-  "summary": "Displays all courses the user (typically a teacher) has access to as configurable visual cards with filtering, searching, sorting, and per-card actions.",
-  "where_it_fits": "Accessible from the top navigation bar via the My Courses link (alongside Home and Dashboard), this page serves as the course-selection hub prior to entering a specific Course Page; selecting a course card navigates to that course's main page where the course tab bar and Course Index appear.",
-  "assumed_state_on_entry": "Logged in user with access to one or more courses (e.g., a teacher)"
+  "summary": "Displays all courses a teacher has access to as visual cards with filtering, searching, sorting, layout options, and per-course actions (star or remove from view).",
+  "where_it_fits": "Accessible from the top navigation via My Courses (alongside Home and Dashboard), this page provides an index of the user's courses and serves as the entry point before navigating into a specific Course Page via the course name link.",
+  "assumed_state_on_entry": "Authenticated user (teacher) with access to one or more courses."
 }
 </module_context>
 
@@ -243,10 +257,10 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "My Courses",
   "components": {
-    "Courses_Filter_Bar": {
-      "type": "form",
+    "My_Courses_Page": {
+      "type": "view",
       "preconditions": [
-        "user must be logged in with access to one or more courses"
+        "Authenticated user (teacher) with access to one or more courses."
       ],
       "fields": {
         "Status_Filter": {
@@ -260,49 +274,46 @@ If a `<workflows>` block is present in the input:
             "Hidden"
           ]
         },
-        "Search_Field": {
+        "Search": {
           "type": "search"
         },
-        "Sort_Dropdown": {
+        "Sort": {
           "type": "dropdown"
         },
-        "Layout_Dropdown": {
+        "Layout": {
           "type": "dropdown",
           "options": [
             "Card",
             "List",
             "Summary"
           ]
-        }
-      }
-    },
-    "Courses_Grid": {
-      "type": "card_grid",
-      "preconditions": [
-        "user must be logged in with access to one or more courses"
-      ],
-      "item_fields": {
-        "Course_Name": {
-          "type": "link",
-          "on_click": {
-            "type": "navigation",
-            "navigates_to": "Course Main Page"
-          }
-        }
-      },
-      "item_actions": [
-        {
-          "action_name": "Star this course",
-          "on_success": "pins the course to the top of the list"
         },
-        {
-          "action_name": "Remove from view",
-          "on_success": "hides the course from the user's view without affecting enrollment"
+        "Course_Cards_Grid": {
+          "type": "card_grid",
+          "item_fields": {
+            "Course_Name": {
+              "type": "link",
+              "action_name": "Open Course",
+              "on_success": "navigates to course main page"
+            }
+          },
+          "row_actions": [
+            {
+              "action_name": "Star this course",
+              "on_success": "pins the course to the top",
+              "preconditions": [
+                "Authenticated user (teacher) with access to one or more courses."
+              ]
+            },
+            {
+              "action_name": "Remove from view",
+              "on_success": "hides the course without affecting enrollment",
+              "preconditions": [
+                "Authenticated user (teacher) with access to one or more courses."
+              ]
+            }
+          ]
         }
-      ],
-      "item_on_click": {
-        "type": "navigation",
-        "navigates_to": "Course Main Page"
       }
     }
   }
@@ -319,16 +330,15 @@ The My Courses page displays all courses the teacher has access to as visual car
 </description>
 
 <workflows>
-WF-001 | Open course via Course Name link | actor: teacher | branch: none | terminal: Course_Name | on_success: Navigates to Course Main Page
-WF-002 | Open course via card click | actor: teacher | branch: none | terminal: item_on_click | on_success: Navigates to Course Main Page
-WF-003 | Star a course from card actions | actor: teacher | branch: none | terminal: Star this course | on_success: pins the course to the top of the list
-WF-004 | Remove a course from view from card actions | actor: teacher | branch: none | terminal: Remove from view | on_success: hides the course from the user's view without affecting enrollment
+WF-001 | Open course from course name link | actor: Teacher | branch: none | terminal: Open Course | on_success: navigates to course main page
+WF-002 | Star a course from the card menu | actor: Teacher | branch: none | terminal: Star this course | on_success: pins the course to the top
+WF-003 | Remove a course from view from the card menu | actor: Teacher | branch: none | terminal: Remove from view | on_success: hides the course without affecting enrollment
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:13:24] Test-Edge - LLM RESPONSE
+[22:50:21] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "My Courses",
@@ -338,71 +348,85 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Search field accepts a very long query (>200 chars)",
+      "test_case": "Very long search string (200+ chars) is entered",
       "preconditions": [
-        "User is logged in with access to one or more courses",
-        "My Courses page is open"
+        "Authenticated user (teacher) with access to one or more courses",
+        "My Courses page is open and the Search field is visible"
       ],
       "steps": [
-        "1. Click the Search_Field",
-        "2. Type a very long string (greater than 200 characters) into the Search_Field",
-        "3. Press Enter or click the search icon"
+        "1. Focus the Search field",
+        "2. Type a very long string of 200+ characters into the Search field",
+        "3. Press Enter (or click the Search icon) to run the search"
       ],
-      "expected_result": "Search accepts the very long string and the search executes successfully; Courses_Grid updates (displays matching courses if any; otherwise shows the 'no results' / empty state). No UI error or crash is shown — operation succeeds.",
+      "expected_result": "Search executes successfully; the Course_Cards_Grid updates and displays matching cards or a visible 'no results' message. The Search field retains the entered string (no truncation message is shown).",
       "priority": "low"
     },
     {
       "tc_id": "E-002",
       "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Search with emoji, non-Latin unicode, and punctuation characters",
+      "test_case": "Search with special characters and emoji",
       "preconditions": [
-        "User is logged in with access to one or more courses",
-        "My Courses page is open"
+        "Authenticated user (teacher) with access to one or more courses",
+        "My Courses page is open and the Search field is visible"
       ],
       "steps": [
-        "1. Click the Search_Field",
-        "2. Type a string containing emoji, non-Latin unicode characters, and punctuation (e.g., quotes, percent signs) into the Search_Field",
-        "3. Press Enter or click the search icon"
+        "1. Focus the Search field",
+        "2. Type a string containing special characters and emoji into the Search field",
+        "3. Press Enter (or click the Search icon) to run the search"
       ],
-      "expected_result": "Search accepts the special/unicode characters and executes successfully; Courses_Grid updates accordingly (shows matches or the 'no results' state). No input-related error is shown and the Search_Field preserves the entered characters — operation succeeds.",
+      "expected_result": "Search executes successfully; the Course_Cards_Grid updates and displays matching cards or a visible 'no results' message. No inline error about invalid characters is shown.",
       "priority": "low"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": null,
+      "wf_ref": "WF-002",
       "subcategory": "interaction_edge",
-      "test_case": "Remove from view then verify course appears under Status = Hidden",
+      "test_case": "Rapid double-click of 'Star this course' on a course card",
       "preconditions": [
-        "User is logged in with access to one or more courses",
-        "At least one course is visible in the default Courses_Grid (Status = All)"
+        "Authenticated user (teacher) with access to one or more courses",
+        "My Courses page is open and the target course card is visible in Course_Cards_Grid"
       ],
       "steps": [
-        "1. Locate a visible course card in the Courses_Grid",
-        "2. Click the card's three-dot menu",
-        "3. Click the 'Remove from view' action",
-        "4. Observe the Courses_Grid immediately after the action",
-        "5. Open the Status_Filter dropdown",
-        "6. Select the 'Hidden' option in the Status_Filter"
+        "1. Open the three-dot menu on the target course card",
+        "2. Double-click the 'Star this course' action rapidly (two clicks in quick succession)"
       ],
-      "expected_result": "'Remove from view' action succeeds: the course card is removed from the current (All) grid view (no longer visible). When Status_Filter is set to 'Hidden', the previously removed course appears in the Courses_Grid. The hide action does not affect enrollment and no error is shown — operation succeeds.",
+      "expected_result": "The star action succeeds once: the target course appears pinned at the top of the Course_Cards_Grid and the card shows the pinned/starred indicator. The second click is ignored; no duplicate card is created and no error message is shown.",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-004",
+      "wf_ref": "WF-003",
+      "subcategory": "interaction_edge",
+      "test_case": "Star a course, then immediately 'Remove from view' that same course",
+      "preconditions": [
+        "Authenticated user (teacher) with access to one or more courses",
+        "My Courses page is open and the target course card is visible in Course_Cards_Grid"
+      ],
+      "steps": [
+        "1. Open the three-dot menu on the target course card",
+        "2. Click 'Star this course' and observe it pinned to the top",
+        "3. Open the three-dot menu on the same course card (now at the top)",
+        "4. Click 'Remove from view'"
+      ],
+      "expected_result": "The remove action succeeds: the target course is no longer shown in the Course_Cards_Grid (no card for that course is visible). The UI no longer shows the course at the top or as starred in the current view (hidden from view).",
       "priority": "medium"
     }
   ],
   "summary": {
-    "total": 3,
+    "total": 4,
     "boundary": 0,
     "input_edge": 2,
-    "interaction_edge": 1,
+    "interaction_edge": 2,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 1,
+    "medium_priority": 2,
     "low_priority": 2
   }
 }
 
 ------------------------------------------------------------
-[21:13:24] Test-Edge - PARSED JSON
+[22:50:21] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "My Courses",
@@ -412,65 +436,79 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Search field accepts a very long query (>200 chars)",
+      "test_case": "Very long search string (200+ chars) is entered",
       "preconditions": [
-        "User is logged in with access to one or more courses",
-        "My Courses page is open"
+        "Authenticated user (teacher) with access to one or more courses",
+        "My Courses page is open and the Search field is visible"
       ],
       "steps": [
-        "1. Click the Search_Field",
-        "2. Type a very long string (greater than 200 characters) into the Search_Field",
-        "3. Press Enter or click the search icon"
+        "1. Focus the Search field",
+        "2. Type a very long string of 200+ characters into the Search field",
+        "3. Press Enter (or click the Search icon) to run the search"
       ],
-      "expected_result": "Search accepts the very long string and the search executes successfully; Courses_Grid updates (displays matching courses if any; otherwise shows the 'no results' / empty state). No UI error or crash is shown \u2014 operation succeeds.",
+      "expected_result": "Search executes successfully; the Course_Cards_Grid updates and displays matching cards or a visible 'no results' message. The Search field retains the entered string (no truncation message is shown).",
       "priority": "low"
     },
     {
       "tc_id": "E-002",
       "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Search with emoji, non-Latin unicode, and punctuation characters",
+      "test_case": "Search with special characters and emoji",
       "preconditions": [
-        "User is logged in with access to one or more courses",
-        "My Courses page is open"
+        "Authenticated user (teacher) with access to one or more courses",
+        "My Courses page is open and the Search field is visible"
       ],
       "steps": [
-        "1. Click the Search_Field",
-        "2. Type a string containing emoji, non-Latin unicode characters, and punctuation (e.g., quotes, percent signs) into the Search_Field",
-        "3. Press Enter or click the search icon"
+        "1. Focus the Search field",
+        "2. Type a string containing special characters and emoji into the Search field",
+        "3. Press Enter (or click the Search icon) to run the search"
       ],
-      "expected_result": "Search accepts the special/unicode characters and executes successfully; Courses_Grid updates accordingly (shows matches or the 'no results' state). No input-related error is shown and the Search_Field preserves the entered characters \u2014 operation succeeds.",
+      "expected_result": "Search executes successfully; the Course_Cards_Grid updates and displays matching cards or a visible 'no results' message. No inline error about invalid characters is shown.",
       "priority": "low"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": null,
+      "wf_ref": "WF-002",
       "subcategory": "interaction_edge",
-      "test_case": "Remove from view then verify course appears under Status = Hidden",
+      "test_case": "Rapid double-click of 'Star this course' on a course card",
       "preconditions": [
-        "User is logged in with access to one or more courses",
-        "At least one course is visible in the default Courses_Grid (Status = All)"
+        "Authenticated user (teacher) with access to one or more courses",
+        "My Courses page is open and the target course card is visible in Course_Cards_Grid"
       ],
       "steps": [
-        "1. Locate a visible course card in the Courses_Grid",
-        "2. Click the card's three-dot menu",
-        "3. Click the 'Remove from view' action",
-        "4. Observe the Courses_Grid immediately after the action",
-        "5. Open the Status_Filter dropdown",
-        "6. Select the 'Hidden' option in the Status_Filter"
+        "1. Open the three-dot menu on the target course card",
+        "2. Double-click the 'Star this course' action rapidly (two clicks in quick succession)"
       ],
-      "expected_result": "'Remove from view' action succeeds: the course card is removed from the current (All) grid view (no longer visible). When Status_Filter is set to 'Hidden', the previously removed course appears in the Courses_Grid. The hide action does not affect enrollment and no error is shown \u2014 operation succeeds.",
+      "expected_result": "The star action succeeds once: the target course appears pinned at the top of the Course_Cards_Grid and the card shows the pinned/starred indicator. The second click is ignored; no duplicate card is created and no error message is shown.",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-004",
+      "wf_ref": "WF-003",
+      "subcategory": "interaction_edge",
+      "test_case": "Star a course, then immediately 'Remove from view' that same course",
+      "preconditions": [
+        "Authenticated user (teacher) with access to one or more courses",
+        "My Courses page is open and the target course card is visible in Course_Cards_Grid"
+      ],
+      "steps": [
+        "1. Open the three-dot menu on the target course card",
+        "2. Click 'Star this course' and observe it pinned to the top",
+        "3. Open the three-dot menu on the same course card (now at the top)",
+        "4. Click 'Remove from view'"
+      ],
+      "expected_result": "The remove action succeeds: the target course is no longer shown in the Course_Cards_Grid (no card for that course is visible). The UI no longer shows the course at the top or as starred in the current view (hidden from view).",
       "priority": "medium"
     }
   ],
   "summary": {
-    "total": 3,
+    "total": 4,
     "boundary": 0,
     "input_edge": 2,
-    "interaction_edge": 1,
+    "interaction_edge": 2,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 1,
+    "medium_priority": 2,
     "low_priority": 2
   }
 }

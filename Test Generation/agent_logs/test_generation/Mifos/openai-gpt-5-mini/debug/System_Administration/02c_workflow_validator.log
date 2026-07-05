@@ -1,0 +1,1304 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:04:00.824735
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:06:00] Workflow-Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Validator. You receive (1) a raw functional description, (2) a Structural Model JSON, and (3) a generated workflow list for one module.
+
+Your single job: decide whether this workflow list is complete and correct, or whether it must be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the workflow list. You DO NOT generate new workflows. You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+<workflows>
+{workflows}
+</workflows>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**WHAT A WORKFLOW IS:**
+
+A workflow is one complete, executable interaction path through the module — from entry to one terminal action. Two workflows are distinct if they require different user actions to reach the terminal (different conditional branch, different state, different terminal button).
+
+MINOR missing
+  A non-critical row action (e.g., "View" on a data table) where omission does not
+  break any downstream state transition or form submission. Flag it; don't auto-retry
+  for it alone.
+
+CRITICAL missing
+  Any of: a form submit_action with no matching workflow, a state × action pair with
+  no workflow, a bulk_action with no workflow, any submit path through a conditional
+  branch with no workflow.
+
+MINOR phantom
+  A workflow whose terminal_action is not literally named in the AST but is so
+  universally implied by the component type that its presence is unsurprising
+  (e.g., a "Search" workflow when the table has `searchable: true`). Flag it;
+  don't auto-retry for it alone.
+
+CRITICAL phantom
+  A workflow whose terminal_action cannot be traced to any AST node's
+  submit_actions[], available_actions[], row_actions[], or bulk_actions[] —
+  and is not an explicit action verb in the description text.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD — Seven Checks
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Check 1 — Missing form workflows.**
+Walk every `form` node in the AST. For each entry in `submit_actions[]`, there must be at least one workflow with a matching `terminal_action`. If the form has `visible_when` or `required_when` fields, there must be one workflow per unique condition combination × submit action. Flag any missing combinations. Classify each as critical or minor.
+
+**Check 2 — Missing state-machine workflows.**
+Walk every `state_bound_action_bar` node. For each state key in `states{}`, for each entry in `available_actions[]`, there must be one workflow with `terminal_action` matching that action and `conditional_branch` containing `entity_state == <state>`. Flag any missing state × action pairs. Classify each as critical.
+If a `<module_context>` block is present, use its `assumed_state_on_entry` to confirm that the entry state named in the context is represented as a workflow's starting condition where applicable.
+
+**Check 3 — Missing data table workflows.**
+Walk every `data_table` node. For each entry in `row_actions[]` and `bulk_actions[]`, there must be one workflow with `terminal_action` matching that action. Flag any missing entries. This includes read-only actions like View/Details. Classify bulk_actions as critical; row_actions as minor if read-only, critical otherwise.
+
+**Check 4 — Phantom workflows.**
+A workflow is a phantom if its `terminal_action` cannot be found in any AST node's `submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`, or as an explicit action verb in the description text. Classify each as critical or minor per the definitions above.
+
+**Check 5 — Wrong conditional branch.**
+If a workflow has a non-null `conditional_branch`, verify the condition references a real field name that appears in the AST under `visible_when`, `required_when`, or a real state key in `state_bound_action_bar`. Flag any condition that references a field or state that does not exist. Classify as structural error.
+
+**Check 6 — Empty or generic on_success.**
+If a workflow's `on_success` is empty, null, "success", "done", or any single-word generic string, and the AST has a concrete `on_success` value for that action, flag it. The `on_success` must reflect what the AST or description says actually happens. Classify as structural error.
+
+**Check 7 — Zero workflows when module clearly has actions.**
+If the workflow list is empty (total = 0) but the AST contains any `form`, `wizard`, `state_bound_action_bar`, or `data_table` component, that is a critical failure — flag it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERDICT RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Check 5, 6)
+                       AND Check 7 passes
+                       → fixes must be []
+
+  retry                Any CRITICAL missing workflow
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any structural error (wrong conditional, generic on_success)
+                       OR Check 7 failure
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       interaction path exists — not a close call, but truly unresolvable
+                       from the text and AST alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "AST path or state×action pair",
+      "severity": "critical | minor",
+      "reason": "<why this workflow is expected from the AST/description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "WF-NNN terminal_action=X",
+      "severity": "critical | minor",
+      "reason": "<why this workflow has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Check 5/6 violation and the affected workflow>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact missing path or phantom to remove>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+
+------------------------------------------------------------
+[23:06:00] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 30,
+  "module_title": "System Administration",
+  "summary": "System Administration provides centralized management of scheduled jobs, global feature flags, code lists, custom data tables, and audit trails for the application.",
+  "where_it_fits": "This module is an administrative area exposed via the top navigation (Admin) and appears in the content area with breadcrumbs and icon-based sidebar context; it is used for system-wide configuration and background job lifecycle management across the application. It sits at the platform-level configuration layer, affecting Clients, Accounts, Products and reporting behaviors referenced elsewhere in the app.",
+  "assumed_state_on_entry": "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+}
+</module_context>
+
+<description>
+
+The Manage Scheduler Jobs page displays a table of all batch jobs with columns for Job Name, Is Active (toggle), CRON Expression, Previous Run Status (Success/Failed with start/end times), Next Run Time, Currently Running indicator, and action buttons. Jobs include Apply Annual Fee, Add Accrual Transactions, Apply Penalty to Overdue Loans, Update Loan Summary, Post Interest for Savings, Transfer Fees, and Generate Loan Loss Provisioning. Each job can be toggled active/inactive and its CRON expression edited. A global Start/Stop scheduler toggle controls whether all scheduled jobs execute.
+
+The Global Configuration page displays a table of system-wide feature flags with columns for Configuration Name, Enabled (toggle), Value, and Description. Key settings include maker-checker (4-eyes approval), reschedule-future-repayments, allow-transactions-on-non-workingday, reschedule-repayments-on-holidays, savings-interest-posting-current-period-end, financial-year-beginning-month, and meetings-mandatory-for-jlg-loans.
+
+The Manage Codes page lists all code lists (Client Type, Gender, Address Type, Loan Purpose, etc.) with Name and Is System Defined columns. Clicking a code opens its values for adding, editing, reordering, and deactivating entries that populate dropdown options throughout the system.
+
+The Manage Data Tables page lists custom data tables that extend core entities (m_client, m_group, m_loan, m_office, m_saving_account, m_product_loan, m_savings_product) with custom fields. The Create form includes Data Table Name, Application Table Name dropdown, Multi Row checkbox, and column definitions — each with Name, Type (string, number, boolean, decimal, date, datetime, text, dropdown), Length, Is Mandatory, and Is Unique checkboxes.
+
+The Audit Trails page displays all system actions with columns for Action Name, Entity Name, Resource ID, Maker, Made On Date, Checker, Checked On Date, Processing Result (Pending, Approved, Rejected), Office Name, and Client/Loan/Savings details. Filters allow searching by Action Name, Entity Name, Resource ID, Maker ID, Checker ID, Office, and Date Range. When maker-checker is enabled, pending commands appear with Approve and Reject buttons.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "System Administration",
+  "components": {
+    "Manage_Scheduler_Jobs": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Table of batch jobs. Per-row interactive controls provided for toggling active state and editing CRON expression.",
+      "fields": {
+        "Scheduler_Enabled": {
+          "type": "checkbox",
+          "field_label": "Start/Stop Scheduler",
+          "on_change": "enables or disables execution of all scheduled jobs globally",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        "Is_Active": {
+          "type": "checkbox",
+          "field_label": "Is Active",
+          "on_change": "toggles Is_Active for the job",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        "CRON_Expression": {
+          "type": "unspecified",
+          "field_label": "CRON Expression",
+          "on_change": "updates the job's schedule; editable per job (inline or modal)",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "Edit CRON",
+          "fields": {
+            "CRON_Expression": {
+              "type": "unspecified",
+              "field_label": "CRON Expression",
+              "on_change": "persists edited CRON expression for the job"
+            }
+          },
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "Toggle Active",
+          "fields": {
+            "Is_Active": {
+              "type": "checkbox",
+              "field_label": "Is Active",
+              "on_change": "toggles Is_Active for the job"
+            }
+          },
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "Run Now",
+          "on_success": "queues immediate execution of the selected job",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "View Run History",
+          "on_success": "navigates to job run history for the selected job",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "bulk_actions": [],
+      "searchable": false
+    },
+    "Manage_Global_Configuration": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Table of global feature flags and configuration entries (each row interactive).",
+      "fields": {
+        "Enabled": {
+          "type": "checkbox",
+          "field_label": "Enabled",
+          "on_change": "toggles the feature flag or configuration entry for the system",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        "Value": {
+          "type": "unspecified",
+          "field_label": "Value",
+          "on_change": "persists the configuration value for the entry",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "Edit",
+          "fields": {
+            "Enabled": {
+              "type": "checkbox",
+              "field_label": "Enabled"
+            },
+            "Value": {
+              "type": "unspecified",
+              "field_label": "Value"
+            }
+          },
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "bulk_actions": [],
+      "searchable": false,
+      "notes": "Key settings include maker-checker (4-eyes approval), reschedule-future-repayments, allow-transactions-on-non-workingday, reschedule-repayments-on-holidays, savings-interest-posting-current-period-end, financial-year-beginning-month, meetings-mandatory-for-jlg-loans."
+    },
+    "Manage_Codes": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Lists code lists. Clicking a code opens its values for management.",
+      "row_actions": [
+        {
+          "action_name": "Open Code",
+          "on_success": "opens Manage_Code_Values for the selected code list",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "searchable": false,
+      "bulk_actions": []
+    },
+    "Manage_Code_Values": {
+      "type": "form",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Manage values for a single code list. Supports add, edit, reorder, deactivate.",
+      "fields": {
+        "Values": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Value": {
+              "type": "unspecified",
+              "field_label": "Value"
+            },
+            "Code": {
+              "type": "unspecified",
+              "field_label": "Code (optional)"
+            },
+            "Is_Active": {
+              "type": "checkbox",
+              "field_label": "Is Active",
+              "on_change": "toggles active state of this code value"
+            },
+            "Order": {
+              "type": "unspecified",
+              "field_label": "Order (used for dropdown ordering)"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Add Value",
+          "on_success": "adds a new value row to the code list"
+        },
+        {
+          "action_name": "Save Changes",
+          "on_success": "persists edits, order changes, and active state toggles"
+        }
+      ]
+    },
+    "Manage_Data_Tables": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Lists custom data tables that extend core entities. Provides creation form to add new custom tables and their columns.",
+      "row_actions": [
+        {
+          "action_name": "Edit",
+          "on_success": "opens Create_Data_Table_Form in edit mode for the selected custom table",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "bulk_actions": [],
+      "searchable": false,
+      "create_form": {
+        "type": "form",
+        "fields": {
+          "Data_Table_Name": {
+            "type": "unspecified",
+            "field_label": "Data Table Name"
+          },
+          "Application_Table_Name": {
+            "type": "dropdown",
+            "field_label": "Application Table Name",
+            "options": [
+              "m_client",
+              "m_group",
+              "m_loan",
+              "m_office",
+              "m_saving_account",
+              "m_product_loan",
+              "m_savings_product"
+            ]
+          },
+          "Multi_Row": {
+            "type": "checkbox",
+            "field_label": "Multi Row"
+          },
+          "Columns": {
+            "type": "repeating_group",
+            "item_fields": {
+              "Name": {
+                "type": "unspecified",
+                "field_label": "Column Name"
+              },
+              "Type": {
+                "type": "dropdown",
+                "field_label": "Type",
+                "options": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "decimal",
+                  "date",
+                  "datetime",
+                  "text",
+                  "dropdown"
+                ]
+              },
+              "Length": {
+                "type": "unspecified",
+                "field_label": "Length"
+              },
+              "Is_Mandatory": {
+                "type": "checkbox",
+                "field_label": "Is Mandatory"
+              },
+              "Is_Unique": {
+                "type": "checkbox",
+                "field_label": "Is Unique"
+              }
+            }
+          }
+        },
+        "submit_actions": [
+          {
+            "action_name": "Create",
+            "on_success": "creates the custom data table and associated columns",
+            "preconditions": [
+              "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+            ]
+          },
+          {
+            "action_name": "Cancel",
+            "on_success": "cancels creation and returns to Manage Data Tables list"
+          }
+        ]
+      }
+    },
+    "Audit_Trails": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Displays system actions. Filters provided. Pending commands present when maker-checker enabled.",
+      "searchable": true,
+      "filterable_columns": [
+        "Action Name",
+        "Entity Name",
+        "Resource ID",
+        "Maker",
+        "Checker",
+        "Office",
+        "Date Range"
+      ],
+      "filters": {
+        "Action_Name": {
+          "type": "unspecified",
+          "field_label": "Action Name"
+        },
+        "Entity_Name": {
+          "type": "unspecified",
+          "field_label": "Entity Name"
+        },
+        "Resource_ID": {
+          "type": "unspecified",
+          "field_label": "Resource ID"
+        },
+        "Maker_ID": {
+          "type": "unspecified",
+          "field_label": "Maker ID"
+        },
+        "Checker_ID": {
+          "type": "unspecified",
+          "field_label": "Checker ID"
+        },
+        "Office": {
+          "type": "unspecified",
+          "field_label": "Office"
+        },
+        "Date_Range": {
+          "type": "date",
+          "field_label": "Date Range"
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "View Details",
+          "on_success": "opens audit entry details"
+        },
+        {
+          "action_name": "Approve",
+          "on_success": "marks the pending command as Approved and triggers post-approve processing",
+          "preconditions": [
+            "Processing Result == Pending",
+            "maker-checker (4-eyes approval) feature flag enabled",
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "Reject",
+          "fields": {
+            "Reason": {
+              "type": "unspecified",
+              "field_label": "Reason",
+              "required": true
+            }
+          },
+          "on_success": "marks the pending command as Rejected and records the rejection reason",
+          "preconditions": [
+            "Processing Result == Pending",
+            "maker-checker (4-eyes approval) feature flag enabled",
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Toggle global Start/Stop Scheduler",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Scheduler_Enabled",
+    "on_success": "enables or disables execution of all scheduled jobs globally"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Edit a job's CRON expression",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Edit CRON",
+    "on_success": "persists edited CRON expression for the job"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Toggle a job's active state (Is Active)",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Toggle Active",
+    "on_success": "toggles Is_Active for the job"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Run a job immediately (Run Now)",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Run Now",
+    "on_success": "queues immediate execution of the selected job"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "View a job's run history",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "View Run History",
+    "on_success": "navigates to job run history for the selected job"
+  },
+  {
+    "wf_id": "WF-006",
+    "name": "Edit a global configuration entry (row Edit)",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Edit",
+    "on_success": "persists edits to the configuration entry"
+  },
+  {
+    "wf_id": "WF-007",
+    "name": "Toggle a feature flag (Enabled) in Global Configuration",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Enabled",
+    "on_success": "toggles the feature flag or configuration entry for the system"
+  },
+  {
+    "wf_id": "WF-008",
+    "name": "Open a code list to manage its values",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Open Code",
+    "on_success": "opens Manage_Code_Values for the selected code list"
+  },
+  {
+    "wf_id": "WF-009",
+    "name": "Add a new code value (Add Value)",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Add Value",
+    "on_success": "adds a new value row to the code list"
+  },
+  {
+    "wf_id": "WF-010",
+    "name": "Save changes to code values (Save Changes)",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Save Changes",
+    "on_success": "persists edits, order changes, and active state toggles"
+  },
+  {
+    "wf_id": "WF-011",
+    "name": "Edit an existing custom data table (open Create_Data_Table_Form in edit mode)",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Edit",
+    "on_success": "opens Create_Data_Table_Form in edit mode for the selected custom table"
+  },
+  {
+    "wf_id": "WF-012",
+    "name": "Create a new custom data table (Create)",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Create",
+    "on_success": "creates the custom data table and associated columns"
+  },
+  {
+    "wf_id": "WF-013",
+    "name": "Cancel creating a custom data table",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Cancel",
+    "on_success": "cancels creation and returns to Manage Data Tables list"
+  },
+  {
+    "wf_id": "WF-014",
+    "name": "View audit entry details",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "View Details",
+    "on_success": "opens audit entry details"
+  },
+  {
+    "wf_id": "WF-015",
+    "name": "Approve a pending command (Approve) when maker-checker is enabled",
+    "actor": "Administrator",
+    "conditional_branch": "Processing_Result == Pending AND maker-checker == Enabled",
+    "terminal_action": "Approve",
+    "on_success": "marks the pending command as Approved and triggers post-approve processing"
+  },
+  {
+    "wf_id": "WF-016",
+    "name": "Reject a pending command (Reject) and provide reason",
+    "actor": "Administrator",
+    "conditional_branch": "Processing_Result == Pending AND maker-checker == Enabled",
+    "terminal_action": "Reject",
+    "on_success": "marks the pending command as Rejected and records the rejection reason"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:06:52] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "Two workflows use conditional_branch expressions that do not reference fields/states present in the AST (structural errors); regenerate workflows after fixing these condition references.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "WF-015: conditional_branch 'Processing_Result == Pending AND maker-checker == Enabled' references 'Processing_Result' and 'maker-checker' which are not defined as visible_when/required_when fields or as state keys in any state_bound_action_bar in the AST; the AST only lists these as preconditions text (e.g., 'Processing Result == Pending' and 'maker-checker (4-eyes approval) feature flag enabled').",
+    "WF-016: conditional_branch 'Processing_Result == Pending AND maker-checker == Enabled' references 'Processing_Result' and 'maker-checker' which are not defined as visible_when/required_when fields or as state keys in any state_bound_action_bar in the AST; the AST only lists these as preconditions text (e.g., 'Processing Result == Pending' and 'maker-checker (4-eyes approval) feature flag enabled')."
+  ],
+  "fixes": [
+    "Update WF-015 conditional_branch to exactly match the AST preconditions text for the Approve row_action, e.g. 'Processing Result == Pending AND maker-checker (4-eyes approval) feature flag enabled', or alternatively change the AST to expose these conditions as explicit field/state names (visible_when/required_when or a state_bound_action_bar) that the workflow can reference.",
+    "Update WF-016 conditional_branch to exactly match the AST preconditions text for the Reject row_action, e.g. 'Processing Result == Pending AND maker-checker (4-eyes approval) feature flag enabled', or alternatively change the AST to expose these conditions as explicit field/state names (visible_when/required_when or a state_bound_action_bar) that the workflow can reference."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:06:52] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "Two workflows use conditional_branch expressions that do not reference fields/states present in the AST (structural errors); regenerate workflows after fixing these condition references.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "WF-015: conditional_branch 'Processing_Result == Pending AND maker-checker == Enabled' references 'Processing_Result' and 'maker-checker' which are not defined as visible_when/required_when fields or as state keys in any state_bound_action_bar in the AST; the AST only lists these as preconditions text (e.g., 'Processing Result == Pending' and 'maker-checker (4-eyes approval) feature flag enabled').",
+    "WF-016: conditional_branch 'Processing_Result == Pending AND maker-checker == Enabled' references 'Processing_Result' and 'maker-checker' which are not defined as visible_when/required_when fields or as state keys in any state_bound_action_bar in the AST; the AST only lists these as preconditions text (e.g., 'Processing Result == Pending' and 'maker-checker (4-eyes approval) feature flag enabled')."
+  ],
+  "fixes": [
+    "Update WF-015 conditional_branch to exactly match the AST preconditions text for the Approve row_action, e.g. 'Processing Result == Pending AND maker-checker (4-eyes approval) feature flag enabled', or alternatively change the AST to expose these conditions as explicit field/state names (visible_when/required_when or a state_bound_action_bar) that the workflow can reference.",
+    "Update WF-016 conditional_branch to exactly match the AST preconditions text for the Reject row_action, e.g. 'Processing Result == Pending AND maker-checker (4-eyes approval) feature flag enabled', or alternatively change the AST to expose these conditions as explicit field/state names (visible_when/required_when or a state_bound_action_bar) that the workflow can reference."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:07:53] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 30,
+  "module_title": "System Administration",
+  "summary": "System Administration provides centralized management of scheduled jobs, global feature flags, code lists, custom data tables, and audit trails for the application.",
+  "where_it_fits": "This module is an administrative area exposed via the top navigation (Admin) and appears in the content area with breadcrumbs and icon-based sidebar context; it is used for system-wide configuration and background job lifecycle management across the application. It sits at the platform-level configuration layer, affecting Clients, Accounts, Products and reporting behaviors referenced elsewhere in the app.",
+  "assumed_state_on_entry": "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+}
+</module_context>
+
+<description>
+
+The Manage Scheduler Jobs page displays a table of all batch jobs with columns for Job Name, Is Active (toggle), CRON Expression, Previous Run Status (Success/Failed with start/end times), Next Run Time, Currently Running indicator, and action buttons. Jobs include Apply Annual Fee, Add Accrual Transactions, Apply Penalty to Overdue Loans, Update Loan Summary, Post Interest for Savings, Transfer Fees, and Generate Loan Loss Provisioning. Each job can be toggled active/inactive and its CRON expression edited. A global Start/Stop scheduler toggle controls whether all scheduled jobs execute.
+
+The Global Configuration page displays a table of system-wide feature flags with columns for Configuration Name, Enabled (toggle), Value, and Description. Key settings include maker-checker (4-eyes approval), reschedule-future-repayments, allow-transactions-on-non-workingday, reschedule-repayments-on-holidays, savings-interest-posting-current-period-end, financial-year-beginning-month, and meetings-mandatory-for-jlg-loans.
+
+The Manage Codes page lists all code lists (Client Type, Gender, Address Type, Loan Purpose, etc.) with Name and Is System Defined columns. Clicking a code opens its values for adding, editing, reordering, and deactivating entries that populate dropdown options throughout the system.
+
+The Manage Data Tables page lists custom data tables that extend core entities (m_client, m_group, m_loan, m_office, m_saving_account, m_product_loan, m_savings_product) with custom fields. The Create form includes Data Table Name, Application Table Name dropdown, Multi Row checkbox, and column definitions — each with Name, Type (string, number, boolean, decimal, date, datetime, text, dropdown), Length, Is Mandatory, and Is Unique checkboxes.
+
+The Audit Trails page displays all system actions with columns for Action Name, Entity Name, Resource ID, Maker, Made On Date, Checker, Checked On Date, Processing Result (Pending, Approved, Rejected), Office Name, and Client/Loan/Savings details. Filters allow searching by Action Name, Entity Name, Resource ID, Maker ID, Checker ID, Office, and Date Range. When maker-checker is enabled, pending commands appear with Approve and Reject buttons.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "System Administration",
+  "components": {
+    "Manage_Scheduler_Jobs": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Table of batch jobs. Per-row interactive controls provided for toggling active state and editing CRON expression.",
+      "fields": {
+        "Scheduler_Enabled": {
+          "type": "checkbox",
+          "field_label": "Start/Stop Scheduler",
+          "on_change": "enables or disables execution of all scheduled jobs globally",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        "Is_Active": {
+          "type": "checkbox",
+          "field_label": "Is Active",
+          "on_change": "toggles Is_Active for the job",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        "CRON_Expression": {
+          "type": "unspecified",
+          "field_label": "CRON Expression",
+          "on_change": "updates the job's schedule; editable per job (inline or modal)",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "Edit CRON",
+          "fields": {
+            "CRON_Expression": {
+              "type": "unspecified",
+              "field_label": "CRON Expression",
+              "on_change": "persists edited CRON expression for the job"
+            }
+          },
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "Toggle Active",
+          "fields": {
+            "Is_Active": {
+              "type": "checkbox",
+              "field_label": "Is Active",
+              "on_change": "toggles Is_Active for the job"
+            }
+          },
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "Run Now",
+          "on_success": "queues immediate execution of the selected job",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "View Run History",
+          "on_success": "navigates to job run history for the selected job",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "bulk_actions": [],
+      "searchable": false
+    },
+    "Manage_Global_Configuration": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Table of global feature flags and configuration entries (each row interactive).",
+      "fields": {
+        "Enabled": {
+          "type": "checkbox",
+          "field_label": "Enabled",
+          "on_change": "toggles the feature flag or configuration entry for the system",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        "Value": {
+          "type": "unspecified",
+          "field_label": "Value",
+          "on_change": "persists the configuration value for the entry",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "Edit",
+          "fields": {
+            "Enabled": {
+              "type": "checkbox",
+              "field_label": "Enabled"
+            },
+            "Value": {
+              "type": "unspecified",
+              "field_label": "Value"
+            }
+          },
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "bulk_actions": [],
+      "searchable": false,
+      "notes": "Key settings include maker-checker (4-eyes approval), reschedule-future-repayments, allow-transactions-on-non-workingday, reschedule-repayments-on-holidays, savings-interest-posting-current-period-end, financial-year-beginning-month, meetings-mandatory-for-jlg-loans."
+    },
+    "Manage_Codes": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Lists code lists. Clicking a code opens its values for management.",
+      "row_actions": [
+        {
+          "action_name": "Open Code",
+          "on_success": "opens Manage_Code_Values for the selected code list",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "searchable": false,
+      "bulk_actions": []
+    },
+    "Manage_Code_Values": {
+      "type": "form",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Manage values for a single code list. Supports add, edit, reorder, deactivate.",
+      "fields": {
+        "Values": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Value": {
+              "type": "unspecified",
+              "field_label": "Value"
+            },
+            "Code": {
+              "type": "unspecified",
+              "field_label": "Code (optional)"
+            },
+            "Is_Active": {
+              "type": "checkbox",
+              "field_label": "Is Active",
+              "on_change": "toggles active state of this code value"
+            },
+            "Order": {
+              "type": "unspecified",
+              "field_label": "Order (used for dropdown ordering)"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Add Value",
+          "on_success": "adds a new value row to the code list"
+        },
+        {
+          "action_name": "Save Changes",
+          "on_success": "persists edits, order changes, and active state toggles"
+        }
+      ]
+    },
+    "Manage_Data_Tables": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Lists custom data tables that extend core entities. Provides creation form to add new custom tables and their columns.",
+      "row_actions": [
+        {
+          "action_name": "Edit",
+          "on_success": "opens Create_Data_Table_Form in edit mode for the selected custom table",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "bulk_actions": [],
+      "searchable": false,
+      "create_form": {
+        "type": "form",
+        "fields": {
+          "Data_Table_Name": {
+            "type": "unspecified",
+            "field_label": "Data Table Name"
+          },
+          "Application_Table_Name": {
+            "type": "dropdown",
+            "field_label": "Application Table Name",
+            "options": [
+              "m_client",
+              "m_group",
+              "m_loan",
+              "m_office",
+              "m_saving_account",
+              "m_product_loan",
+              "m_savings_product"
+            ]
+          },
+          "Multi_Row": {
+            "type": "checkbox",
+            "field_label": "Multi Row"
+          },
+          "Columns": {
+            "type": "repeating_group",
+            "item_fields": {
+              "Name": {
+                "type": "unspecified",
+                "field_label": "Column Name"
+              },
+              "Type": {
+                "type": "dropdown",
+                "field_label": "Type",
+                "options": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "decimal",
+                  "date",
+                  "datetime",
+                  "text",
+                  "dropdown"
+                ]
+              },
+              "Length": {
+                "type": "unspecified",
+                "field_label": "Length"
+              },
+              "Is_Mandatory": {
+                "type": "checkbox",
+                "field_label": "Is Mandatory"
+              },
+              "Is_Unique": {
+                "type": "checkbox",
+                "field_label": "Is Unique"
+              }
+            }
+          }
+        },
+        "submit_actions": [
+          {
+            "action_name": "Create",
+            "on_success": "creates the custom data table and associated columns",
+            "preconditions": [
+              "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+            ]
+          },
+          {
+            "action_name": "Cancel",
+            "on_success": "cancels creation and returns to Manage Data Tables list"
+          }
+        ]
+      }
+    },
+    "Audit_Trails": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Displays system actions. Filters provided. Pending commands present when maker-checker enabled.",
+      "searchable": true,
+      "filterable_columns": [
+        "Action Name",
+        "Entity Name",
+        "Resource ID",
+        "Maker",
+        "Checker",
+        "Office",
+        "Date Range"
+      ],
+      "filters": {
+        "Action_Name": {
+          "type": "unspecified",
+          "field_label": "Action Name"
+        },
+        "Entity_Name": {
+          "type": "unspecified",
+          "field_label": "Entity Name"
+        },
+        "Resource_ID": {
+          "type": "unspecified",
+          "field_label": "Resource ID"
+        },
+        "Maker_ID": {
+          "type": "unspecified",
+          "field_label": "Maker ID"
+        },
+        "Checker_ID": {
+          "type": "unspecified",
+          "field_label": "Checker ID"
+        },
+        "Office": {
+          "type": "unspecified",
+          "field_label": "Office"
+        },
+        "Date_Range": {
+          "type": "date",
+          "field_label": "Date Range"
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "View Details",
+          "on_success": "opens audit entry details"
+        },
+        {
+          "action_name": "Approve",
+          "on_success": "marks the pending command as Approved and triggers post-approve processing",
+          "preconditions": [
+            "Processing Result == Pending",
+            "maker-checker (4-eyes approval) feature flag enabled",
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "Reject",
+          "fields": {
+            "Reason": {
+              "type": "unspecified",
+              "field_label": "Reason",
+              "required": true
+            }
+          },
+          "on_success": "marks the pending command as Rejected and records the rejection reason",
+          "preconditions": [
+            "Processing Result == Pending",
+            "maker-checker (4-eyes approval) feature flag enabled",
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Toggle Scheduler Execution (Start/Stop Scheduler)",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Scheduler_Enabled",
+    "on_success": "enables or disables execution of all scheduled jobs globally"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Edit CRON (row action)",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Edit CRON",
+    "on_success": "persists edited CRON expression for the job"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Toggle Job Active (row action)",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Toggle Active",
+    "on_success": "toggles Is_Active for the job"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Toggle Job Active (inline)",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Is_Active",
+    "on_success": "toggles Is_Active for the job"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Update CRON Expression (inline edit)",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "CRON_Expression",
+    "on_success": "updates the job's schedule; editable per job (inline or modal)"
+  },
+  {
+    "wf_id": "WF-006",
+    "name": "Run Job Now (row action)",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Run Now",
+    "on_success": "queues immediate execution of the selected job"
+  },
+  {
+    "wf_id": "WF-007",
+    "name": "View Job Run History (row action)",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "View Run History",
+    "on_success": "navigates to job run history for the selected job"
+  },
+  {
+    "wf_id": "WF-008",
+    "name": "Toggle Global Configuration Enabled (inline)",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Enabled",
+    "on_success": "toggles the feature flag or configuration entry for the system"
+  },
+  {
+    "wf_id": "WF-009",
+    "name": "Edit Global Configuration (row action)",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Edit",
+    "on_success": "persists the configuration value for the entry"
+  },
+  {
+    "wf_id": "WF-010",
+    "name": "Update Global Configuration Value (inline)",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Value",
+    "on_success": "persists the configuration value for the entry"
+  },
+  {
+    "wf_id": "WF-011",
+    "name": "Open Code List",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Open Code",
+    "on_success": "opens Manage_Code_Values for the selected code list"
+  },
+  {
+    "wf_id": "WF-012",
+    "name": "Add Value to Code List",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Add Value",
+    "on_success": "adds a new value row to the code list"
+  },
+  {
+    "wf_id": "WF-013",
+    "name": "Save Changes to Code List",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Save Changes",
+    "on_success": "persists edits, order changes, and active state toggles"
+  },
+  {
+    "wf_id": "WF-014",
+    "name": "Edit Custom Data Table (row action)",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Edit",
+    "on_success": "opens Create_Data_Table_Form in edit mode for the selected custom table"
+  },
+  {
+    "wf_id": "WF-015",
+    "name": "Create Custom Data Table",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Create",
+    "on_success": "creates the custom data table and associated columns"
+  },
+  {
+    "wf_id": "WF-016",
+    "name": "Cancel Create Custom Data Table",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "Cancel",
+    "on_success": "cancels creation and returns to Manage Data Tables list"
+  },
+  {
+    "wf_id": "WF-017",
+    "name": "View Audit Entry Details",
+    "actor": "Administrator",
+    "conditional_branch": null,
+    "terminal_action": "View Details",
+    "on_success": "opens audit entry details"
+  },
+  {
+    "wf_id": "WF-018",
+    "name": "Approve Pending Command",
+    "actor": "Administrator",
+    "conditional_branch": "Processing Result == Pending AND maker-checker (4-eyes approval) feature flag enabled",
+    "terminal_action": "Approve",
+    "on_success": "marks the pending command as Approved and triggers post-approve processing"
+  },
+  {
+    "wf_id": "WF-019",
+    "name": "Reject Pending Command with Reason",
+    "actor": "Administrator",
+    "conditional_branch": "Processing Result == Pending AND maker-checker (4-eyes approval) feature flag enabled",
+    "terminal_action": "Reject",
+    "on_success": "marks the pending command as Rejected and records the rejection reason"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:08:19] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "Workflows cover all form submit_actions and all data_table row/bulk actions defined in the AST; conditional branches match preconditions and no structural errors were found.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:08:19] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "Workflows cover all form submit_actions and all data_table row/bulk actions defined in the AST; conditional branches match preconditions and no structural errors were found.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}

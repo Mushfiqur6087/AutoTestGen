@@ -1,0 +1,538 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:04:00.740270
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:05:05] Workflow-Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Validator. You receive (1) a raw functional description, (2) a Structural Model JSON, and (3) a generated workflow list for one module.
+
+Your single job: decide whether this workflow list is complete and correct, or whether it must be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the workflow list. You DO NOT generate new workflows. You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+<workflows>
+{workflows}
+</workflows>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**WHAT A WORKFLOW IS:**
+
+A workflow is one complete, executable interaction path through the module — from entry to one terminal action. Two workflows are distinct if they require different user actions to reach the terminal (different conditional branch, different state, different terminal button).
+
+MINOR missing
+  A non-critical row action (e.g., "View" on a data table) where omission does not
+  break any downstream state transition or form submission. Flag it; don't auto-retry
+  for it alone.
+
+CRITICAL missing
+  Any of: a form submit_action with no matching workflow, a state × action pair with
+  no workflow, a bulk_action with no workflow, any submit path through a conditional
+  branch with no workflow.
+
+MINOR phantom
+  A workflow whose terminal_action is not literally named in the AST but is so
+  universally implied by the component type that its presence is unsurprising
+  (e.g., a "Search" workflow when the table has `searchable: true`). Flag it;
+  don't auto-retry for it alone.
+
+CRITICAL phantom
+  A workflow whose terminal_action cannot be traced to any AST node's
+  submit_actions[], available_actions[], row_actions[], or bulk_actions[] —
+  and is not an explicit action verb in the description text.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD — Seven Checks
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Check 1 — Missing form workflows.**
+Walk every `form` node in the AST. For each entry in `submit_actions[]`, there must be at least one workflow with a matching `terminal_action`. If the form has `visible_when` or `required_when` fields, there must be one workflow per unique condition combination × submit action. Flag any missing combinations. Classify each as critical or minor.
+
+**Check 2 — Missing state-machine workflows.**
+Walk every `state_bound_action_bar` node. For each state key in `states{}`, for each entry in `available_actions[]`, there must be one workflow with `terminal_action` matching that action and `conditional_branch` containing `entity_state == <state>`. Flag any missing state × action pairs. Classify each as critical.
+If a `<module_context>` block is present, use its `assumed_state_on_entry` to confirm that the entry state named in the context is represented as a workflow's starting condition where applicable.
+
+**Check 3 — Missing data table workflows.**
+Walk every `data_table` node. For each entry in `row_actions[]` and `bulk_actions[]`, there must be one workflow with `terminal_action` matching that action. Flag any missing entries. This includes read-only actions like View/Details. Classify bulk_actions as critical; row_actions as minor if read-only, critical otherwise.
+
+**Check 4 — Phantom workflows.**
+A workflow is a phantom if its `terminal_action` cannot be found in any AST node's `submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`, or as an explicit action verb in the description text. Classify each as critical or minor per the definitions above.
+
+**Check 5 — Wrong conditional branch.**
+If a workflow has a non-null `conditional_branch`, verify the condition references a real field name that appears in the AST under `visible_when`, `required_when`, or a real state key in `state_bound_action_bar`. Flag any condition that references a field or state that does not exist. Classify as structural error.
+
+**Check 6 — Empty or generic on_success.**
+If a workflow's `on_success` is empty, null, "success", "done", or any single-word generic string, and the AST has a concrete `on_success` value for that action, flag it. The `on_success` must reflect what the AST or description says actually happens. Classify as structural error.
+
+**Check 7 — Zero workflows when module clearly has actions.**
+If the workflow list is empty (total = 0) but the AST contains any `form`, `wizard`, `state_bound_action_bar`, or `data_table` component, that is a critical failure — flag it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERDICT RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Check 5, 6)
+                       AND Check 7 passes
+                       → fixes must be []
+
+  retry                Any CRITICAL missing workflow
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any structural error (wrong conditional, generic on_success)
+                       OR Check 7 failure
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       interaction path exists — not a close call, but truly unresolvable
+                       from the text and AST alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "AST path or state×action pair",
+      "severity": "critical | minor",
+      "reason": "<why this workflow is expected from the AST/description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "WF-NNN terminal_action=X",
+      "severity": "critical | minor",
+      "reason": "<why this workflow has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Check 5/6 violation and the affected workflow>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact missing path or phantom to remove>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+
+------------------------------------------------------------
+[23:05:05] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 15,
+  "module_title": "Savings Account",
+  "summary": "Manages creation, lifecycle and transaction handling for client savings accounts, including balances, status transitions, charges, and interest operations.",
+  "where_it_fits": "Reached from a Client's Detail page (accessible via Institution \u2192 Clients in the top nav or the Clients shortcut in the left sidebar) and displayed in the main content area beneath breadcrumbs; it links account operations (deposits, withdrawals, interest posting, status changes) into the broader accounting and reporting areas of the application.",
+  "assumed_state_on_entry": "Logged in user with permissions to manage accounts, viewing a specific Client Detail page, and at least one Savings Product configured/available for selection."
+}
+</module_context>
+
+<description>
+
+A new savings account is created from the Client Detail page. The creation form contains Product Name dropdown (selecting a product auto-populates default values), Field Officer, Submitted On date, Nominal Annual Interest Rate, Interest Compounding Period, Interest Posting Period, Interest Calculated Using, Days in Year (all dropdowns, pre-filled from product), Minimum Opening Balance, Lock-in Period, Allow Overdraft checkbox, and a Charges section listing product charges with an option to add more. Clicking "Submit" creates the account in "Submitted and Pending Approval" status.
+
+The Savings Account Detail page displays the account number, product name, client name, status badge, account balance, and available balance. Status badges include Submitted and Pending Approval, Approved, Active, Dormant, Closed, and Blocked. Action buttons change based on status: Pending offers Approve, Reject, and Withdraw Application; Approved offers Activate and Undo Approval; Active offers Deposit (form with Transaction Date, Transaction Amount, Payment Type — Cash, Check, Mobile Money — and payment detail fields; submitting credits the account), Withdraw (same form as Deposit — the system validates the withdrawal does not exceed available balance unless overdraft is enabled; if minimum balance is enforced and the withdrawal would breach it, an error is shown), Post Interest, Calculate Interest, Close, Block Account, Block Debit, and Block Credit. Tabs show Summary, Transactions (table of all deposits, withdrawals, and interest postings with Date, Type, Amount, and Running Balance), Charges, and Documents.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Savings Account",
+  "components": {
+    "Savings_Account_Creation_Form": {
+      "type": "form",
+      "preconditions": [
+        "Logged in user with permissions to manage accounts",
+        "at least one Savings Product configured/available for selection"
+      ],
+      "fields": {
+        "Product_Name": {
+          "type": "dropdown",
+          "on_change": "auto_populate_defaults_from_product"
+        },
+        "Field_Officer": {
+          "type": "unspecified"
+        },
+        "Submitted_On": {
+          "type": "date"
+        },
+        "Nominal_Annual_Interest_Rate": {
+          "type": "dropdown"
+        },
+        "Interest_Compounding_Period": {
+          "type": "dropdown"
+        },
+        "Interest_Posting_Period": {
+          "type": "dropdown"
+        },
+        "Interest_Calculated_Using": {
+          "type": "dropdown"
+        },
+        "Days_In_Year": {
+          "type": "dropdown"
+        },
+        "Minimum_Opening_Balance": {
+          "type": "number"
+        },
+        "Lock_In_Period": {
+          "type": "unspecified"
+        },
+        "Allow_Overdraft": {
+          "type": "checkbox"
+        },
+        "Charges": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Charge": {
+              "type": "unspecified"
+            },
+            "Amount": {
+              "type": "number"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Submit",
+          "on_success": "creates account in Submitted and Pending Approval",
+          "preconditions": [
+            "Logged in user with permissions to manage accounts",
+            "at least one Savings Product configured/available for selection"
+          ]
+        }
+      ]
+    },
+    "Savings_Account_Detail_Tabs": {
+      "type": "tab_container",
+      "tabs": [
+        {
+          "tab_name": "Summary",
+          "fields": {}
+        },
+        {
+          "tab_name": "Transactions",
+          "fields": {
+            "Transactions_Table": {
+              "type": "data_table"
+            }
+          }
+        },
+        {
+          "tab_name": "Charges",
+          "fields": {}
+        },
+        {
+          "tab_name": "Documents",
+          "fields": {}
+        }
+      ]
+    },
+    "Savings_Account_Detail_Actions": {
+      "type": "state_bound_action_bar",
+      "states": {
+        "Submitted and Pending Approval": {
+          "available_actions": [
+            {
+              "action_name": "Approve"
+            },
+            {
+              "action_name": "Reject"
+            },
+            {
+              "action_name": "Withdraw Application"
+            }
+          ]
+        },
+        "Approved": {
+          "available_actions": [
+            {
+              "action_name": "Activate"
+            },
+            {
+              "action_name": "Undo Approval"
+            }
+          ]
+        },
+        "Active": {
+          "available_actions": [
+            {
+              "action_name": "Deposit",
+              "fields": {
+                "Transaction_Date": {
+                  "type": "date"
+                },
+                "Transaction_Amount": {
+                  "type": "number"
+                },
+                "Payment_Type": {
+                  "type": "dropdown",
+                  "options": [
+                    "Cash",
+                    "Check",
+                    "Mobile Money"
+                  ]
+                },
+                "Payment_Details": {
+                  "type": "unspecified"
+                }
+              },
+              "on_success": "credits the account"
+            },
+            {
+              "action_name": "Withdraw",
+              "fields": {
+                "Transaction_Date": {
+                  "type": "date"
+                },
+                "Transaction_Amount": {
+                  "type": "number"
+                },
+                "Payment_Type": {
+                  "type": "dropdown",
+                  "options": [
+                    "Cash",
+                    "Check",
+                    "Mobile Money"
+                  ]
+                },
+                "Payment_Details": {
+                  "type": "unspecified"
+                }
+              },
+              "constraints": [
+                "validate withdrawal does not exceed available balance unless overdraft is enabled",
+                "if minimum balance is enforced and withdrawal would breach it, show an error and prevent transaction"
+              ]
+            },
+            {
+              "action_name": "Post Interest"
+            },
+            {
+              "action_name": "Calculate Interest"
+            },
+            {
+              "action_name": "Close"
+            },
+            {
+              "action_name": "Block Account"
+            },
+            {
+              "action_name": "Block Debit"
+            },
+            {
+              "action_name": "Block Credit"
+            }
+          ]
+        },
+        "Dormant": {
+          "available_actions": []
+        },
+        "Closed": {
+          "available_actions": []
+        },
+        "Blocked": {
+          "available_actions": []
+        }
+      }
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Create savings account (Submit form)",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Submit",
+    "on_success": "creates account in Submitted and Pending Approval"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Approve a submitted account",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Submitted and Pending Approval",
+    "terminal_action": "Approve",
+    "on_success": "changes status to Approved"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Reject a submitted account",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Submitted and Pending Approval",
+    "terminal_action": "Reject",
+    "on_success": "changes status to Rejected"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Withdraw application for submitted account",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Submitted and Pending Approval",
+    "terminal_action": "Withdraw Application",
+    "on_success": "withdraws the application"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Activate an approved account",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Approved",
+    "terminal_action": "Activate",
+    "on_success": "changes status to Active"
+  },
+  {
+    "wf_id": "WF-006",
+    "name": "Undo approval of an approved account",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Approved",
+    "terminal_action": "Undo Approval",
+    "on_success": "reverts approval; changes status to Submitted and Pending Approval"
+  },
+  {
+    "wf_id": "WF-007",
+    "name": "Make a deposit to an active account",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Active",
+    "terminal_action": "Deposit",
+    "on_success": "credits the account"
+  },
+  {
+    "wf_id": "WF-008",
+    "name": "Make a withdrawal from an active account",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Active",
+    "terminal_action": "Withdraw",
+    "on_success": "creates withdrawal transaction and debits the account"
+  },
+  {
+    "wf_id": "WF-009",
+    "name": "Post interest to an active account",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Active",
+    "terminal_action": "Post Interest",
+    "on_success": "posts interest to the account"
+  },
+  {
+    "wf_id": "WF-010",
+    "name": "Calculate interest for an active account",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Active",
+    "terminal_action": "Calculate Interest",
+    "on_success": "calculates interest according to product settings"
+  },
+  {
+    "wf_id": "WF-011",
+    "name": "Close an active account",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Active",
+    "terminal_action": "Close",
+    "on_success": "changes status to Closed"
+  },
+  {
+    "wf_id": "WF-012",
+    "name": "Block an active account",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Active",
+    "terminal_action": "Block Account",
+    "on_success": "changes status to Blocked"
+  },
+  {
+    "wf_id": "WF-013",
+    "name": "Block debit on an active account",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Active",
+    "terminal_action": "Block Debit",
+    "on_success": "blocks debit transactions on the account"
+  },
+  {
+    "wf_id": "WF-014",
+    "name": "Block credit on an active account",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Active",
+    "terminal_action": "Block Credit",
+    "on_success": "blocks credit transactions on the account"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:06:11] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 1,
+  "summary": "Workflows cover the form submit and every state-bound action in the AST with correct conditional branches and non-generic on_success values; no critical or structural issues found.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:06:11] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 1,
+  "summary": "Workflows cover the form submit and every state-bound action in the AST with correct conditional branches and non-generic on_success values; no critical or structural issues found.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}

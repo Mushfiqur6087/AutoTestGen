@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.100012
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.843794
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - SYSTEM PROMPT
+[22:49:29] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - USER PROMPT
+[22:49:29] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 4,
   "module_title": "My Courses",
-  "summary": "Displays all courses the user (typically a teacher) has access to as configurable visual cards with filtering, searching, sorting, and per-card actions.",
-  "where_it_fits": "Accessible from the top navigation bar via the My Courses link (alongside Home and Dashboard), this page serves as the course-selection hub prior to entering a specific Course Page; selecting a course card navigates to that course's main page where the course tab bar and Course Index appear.",
-  "assumed_state_on_entry": "Logged in user with access to one or more courses (e.g., a teacher)"
+  "summary": "Displays all courses a teacher has access to as visual cards with filtering, searching, sorting, layout options, and per-course actions (star or remove from view).",
+  "where_it_fits": "Accessible from the top navigation via My Courses (alongside Home and Dashboard), this page provides an index of the user's courses and serves as the entry point before navigating into a specific Course Page via the course name link.",
+  "assumed_state_on_entry": "Authenticated user (teacher) with access to one or more courses."
 }
 </module_context>
 
@@ -260,10 +270,10 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "My Courses",
   "components": {
-    "Courses_Filter_Bar": {
-      "type": "form",
+    "My_Courses_Page": {
+      "type": "view",
       "preconditions": [
-        "user must be logged in with access to one or more courses"
+        "Authenticated user (teacher) with access to one or more courses."
       ],
       "fields": {
         "Status_Filter": {
@@ -277,49 +287,46 @@ If a `<workflows>` block is present in the input:
             "Hidden"
           ]
         },
-        "Search_Field": {
+        "Search": {
           "type": "search"
         },
-        "Sort_Dropdown": {
+        "Sort": {
           "type": "dropdown"
         },
-        "Layout_Dropdown": {
+        "Layout": {
           "type": "dropdown",
           "options": [
             "Card",
             "List",
             "Summary"
           ]
-        }
-      }
-    },
-    "Courses_Grid": {
-      "type": "card_grid",
-      "preconditions": [
-        "user must be logged in with access to one or more courses"
-      ],
-      "item_fields": {
-        "Course_Name": {
-          "type": "link",
-          "on_click": {
-            "type": "navigation",
-            "navigates_to": "Course Main Page"
-          }
-        }
-      },
-      "item_actions": [
-        {
-          "action_name": "Star this course",
-          "on_success": "pins the course to the top of the list"
         },
-        {
-          "action_name": "Remove from view",
-          "on_success": "hides the course from the user's view without affecting enrollment"
+        "Course_Cards_Grid": {
+          "type": "card_grid",
+          "item_fields": {
+            "Course_Name": {
+              "type": "link",
+              "action_name": "Open Course",
+              "on_success": "navigates to course main page"
+            }
+          },
+          "row_actions": [
+            {
+              "action_name": "Star this course",
+              "on_success": "pins the course to the top",
+              "preconditions": [
+                "Authenticated user (teacher) with access to one or more courses."
+              ]
+            },
+            {
+              "action_name": "Remove from view",
+              "on_success": "hides the course without affecting enrollment",
+              "preconditions": [
+                "Authenticated user (teacher) with access to one or more courses."
+              ]
+            }
+          ]
         }
-      ],
-      "item_on_click": {
-        "type": "navigation",
-        "navigates_to": "Course Main Page"
       }
     }
   }
@@ -336,16 +343,15 @@ The My Courses page displays all courses the teacher has access to as visual car
 </description>
 
 <workflows>
-WF-001 | Open course via Course Name link | actor: teacher | branch: none | terminal: Course_Name | on_success: Navigates to Course Main Page
-WF-002 | Open course via card click | actor: teacher | branch: none | terminal: item_on_click | on_success: Navigates to Course Main Page
-WF-003 | Star a course from card actions | actor: teacher | branch: none | terminal: Star this course | on_success: pins the course to the top of the list
-WF-004 | Remove a course from view from card actions | actor: teacher | branch: none | terminal: Remove from view | on_success: hides the course from the user's view without affecting enrollment
+WF-001 | Open course from course name link | actor: Teacher | branch: none | terminal: Open Course | on_success: navigates to course main page
+WF-002 | Star a course from the card menu | actor: Teacher | branch: none | terminal: Star this course | on_success: pins the course to the top
+WF-003 | Remove a course from view from the card menu | actor: Teacher | branch: none | terminal: Remove from view | on_success: hides the course without affecting enrollment
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:13:23] Test-Negative - LLM RESPONSE
+[22:50:26] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "My Courses",
@@ -356,39 +362,70 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "wf_ref": null,
       "test_case": "Unauthenticated user cannot access My Courses page",
       "preconditions": [
-        "User is not logged in"
+        "User is not authenticated"
       ],
       "steps": [
-        "1. As an unauthenticated user (no session), navigate to <My Courses URL>"
+        "1. As an unauthenticated user, navigate to the My Courses page URL"
       ],
-      "expected_result": "Navigation is blocked: user is redirected to the Login page; the Login form is visible and the Courses Grid is not displayed or accessible",
+      "expected_result": "Navigation is blocked: user is redirected to the authentication / login page; the My Courses Course Cards grid is not rendered or accessible on the screen",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": null,
-      "test_case": "Logged-in user without any course access cannot view course cards",
+      "test_case": "Non-teacher role does not see My Courses navigation or course grid",
       "preconditions": [
-        "User is logged in but has access to zero courses (no enrollments)"
+        "Authenticated user with role <non-teacher role> (e.g., Student)"
       ],
       "steps": [
-        "1. Log in as <user account with no course access>",
-        "2. Navigate to <My Courses URL>"
+        "1. Sign in as an authenticated user with role <non-teacher role>",
+        "2. Observe the top navigation bar for the My Courses link",
+        "3. Attempt to navigate to the My Courses page by clicking the top navigation or by entering the My Courses URL directly"
       ],
-      "expected_result": "Access precondition fails: the page shows an empty-state/access message and the Courses Grid is not populated; no course cards are shown and navigation to any Course Main Page is not possible from this view",
+      "expected_result": "Top navigation does not show a My Courses link for this user role; if the URL is opened directly, the Course Cards grid is not rendered and row-actions (Star, Remove from view) are not available — the UI displays an access-restricted / no-access state instead of course content",
       "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-001",
+      "test_case": "Authenticated teacher with no course access is blocked from opening a course",
+      "preconditions": [
+        "Authenticated user with role <teacher> who has zero courses (does not meet 'access to one or more courses' precondition)"
+      ],
+      "steps": [
+        "1. Sign in as an authenticated teacher who has no course enrollments or access",
+        "2. Navigate to the My Courses page"
+      ],
+      "expected_result": "Page does not render any Course Cards (empty-state shown); there is no course name link to open a course and therefore the 'Open Course' action cannot be performed; Star and Remove row-actions are not present",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-002",
+      "test_case": "Row action 'Star this course' is blocked for users who do not meet page precondition",
+      "preconditions": [
+        "Authenticated user with role <non-teacher role> or user that does not meet page precondition"
+      ],
+      "steps": [
+        "1. Sign in as an authenticated user with role <non-teacher role>",
+        "2. Navigate directly to the My Courses page URL",
+        "3. If any course card is visible, open the card's three-dot menu",
+        "4. Click the 'Star this course' row-action"
+      ],
+      "expected_result": "The 'Star this course' action does not complete: no pinning/reordering occurs and the course is not moved to the top; the row-action is either not selectable or an inline access/error indicator is shown next to the action; Course Cards order remains unchanged",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 2,
-    "high_priority": 2,
-    "medium_priority": 0,
+    "total": 4,
+    "high_priority": 3,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:13:23] Test-Negative - PARSED JSON
+[22:50:26] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "My Courses",
@@ -399,33 +436,64 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "wf_ref": null,
       "test_case": "Unauthenticated user cannot access My Courses page",
       "preconditions": [
-        "User is not logged in"
+        "User is not authenticated"
       ],
       "steps": [
-        "1. As an unauthenticated user (no session), navigate to <My Courses URL>"
+        "1. As an unauthenticated user, navigate to the My Courses page URL"
       ],
-      "expected_result": "Navigation is blocked: user is redirected to the Login page; the Login form is visible and the Courses Grid is not displayed or accessible",
+      "expected_result": "Navigation is blocked: user is redirected to the authentication / login page; the My Courses Course Cards grid is not rendered or accessible on the screen",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": null,
-      "test_case": "Logged-in user without any course access cannot view course cards",
+      "test_case": "Non-teacher role does not see My Courses navigation or course grid",
       "preconditions": [
-        "User is logged in but has access to zero courses (no enrollments)"
+        "Authenticated user with role <non-teacher role> (e.g., Student)"
       ],
       "steps": [
-        "1. Log in as <user account with no course access>",
-        "2. Navigate to <My Courses URL>"
+        "1. Sign in as an authenticated user with role <non-teacher role>",
+        "2. Observe the top navigation bar for the My Courses link",
+        "3. Attempt to navigate to the My Courses page by clicking the top navigation or by entering the My Courses URL directly"
       ],
-      "expected_result": "Access precondition fails: the page shows an empty-state/access message and the Courses Grid is not populated; no course cards are shown and navigation to any Course Main Page is not possible from this view",
+      "expected_result": "Top navigation does not show a My Courses link for this user role; if the URL is opened directly, the Course Cards grid is not rendered and row-actions (Star, Remove from view) are not available \u2014 the UI displays an access-restricted / no-access state instead of course content",
       "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-001",
+      "test_case": "Authenticated teacher with no course access is blocked from opening a course",
+      "preconditions": [
+        "Authenticated user with role <teacher> who has zero courses (does not meet 'access to one or more courses' precondition)"
+      ],
+      "steps": [
+        "1. Sign in as an authenticated teacher who has no course enrollments or access",
+        "2. Navigate to the My Courses page"
+      ],
+      "expected_result": "Page does not render any Course Cards (empty-state shown); there is no course name link to open a course and therefore the 'Open Course' action cannot be performed; Star and Remove row-actions are not present",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-002",
+      "test_case": "Row action 'Star this course' is blocked for users who do not meet page precondition",
+      "preconditions": [
+        "Authenticated user with role <non-teacher role> or user that does not meet page precondition"
+      ],
+      "steps": [
+        "1. Sign in as an authenticated user with role <non-teacher role>",
+        "2. Navigate directly to the My Courses page URL",
+        "3. If any course card is visible, open the card's three-dot menu",
+        "4. Click the 'Star this course' row-action"
+      ],
+      "expected_result": "The 'Star this course' action does not complete: no pinning/reordering occurs and the course is not moved to the top; the row-action is either not selectable or an inline access/error indicator is shown next to the action; Course Cards order remains unchanged",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 2,
-    "high_priority": 2,
-    "medium_priority": 0,
+    "total": 4,
+    "high_priority": 3,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }

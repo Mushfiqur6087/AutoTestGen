@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:13.757101
+DEBUG SESSION STARTED: 2026-07-04T22:33:06.986892
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Edge - SYSTEM PROMPT
+[22:33:06] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Edge - USER PROMPT
+[22:33:06] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 2,
   "module_title": "User Registration",
-  "summary": "Collects and validates user personal and contact information to create a new account and either log the user in or initiate email verification.",
-  "where_it_fits": "Accessible from the Home page via the Account/Login option in the top navigation, this module is part of the onboarding flow that leads into the authenticated User Dashboard and booking lifecycle. It precedes features like Booking Management and Payment Processing by provisioning an authenticated user account.",
-  "assumed_state_on_entry": "Visitor is unauthenticated and attempting to create an account (no existing registered account for the provided email) and has access to the registration form via Home -> Account/Login."
+  "summary": "Collects personal and contact information to create a new user account with validation and optional email verification.",
+  "where_it_fits": "Accessible from the Home page top navigation under Account/Login and used before accessing account-restricted areas like the User Dashboard and Booking Management; it is part of the onboarding flow that transitions anonymous visitors into authenticated users. The main navigation remains available while contextual menus update after successful registration and login.",
+  "assumed_state_on_entry": "Visitor is not authenticated and has access to the Home or Account/Login page"
 }
 </module_context>
 
@@ -243,10 +257,20 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "User Registration",
   "components": {
-    "User_Registration_Form": {
+    "Registration_Form": {
       "type": "form",
-      "preconditions": [
-        "Visitor is unauthenticated and attempting to create an account (no existing registered account for the provided email) and has access to the registration form via Home -> Account/Login."
+      "submit_actions": [
+        {
+          "action_name": "Register",
+          "preconditions": [
+            "Visitor is not authenticated and has access to the Home or Account/Login page"
+          ],
+          "on_failure": "display inline field errors",
+          "on_success": {
+            "auto_login_and_redirect": "automatically log in the user and redirect to dashboard",
+            "email_verification_flow": "prompt user to verify their email before granting access"
+          }
+        }
       ],
       "fields": {
         "First_Name": {
@@ -261,8 +285,8 @@ If a `<workflows>` block is present in the input:
           "type": "email",
           "required": true,
           "constraints": [
-            "must be a valid email format",
-            "must be unique (email uniqueness validated on submission)"
+            "must be valid email format",
+            "must be unique"
           ]
         },
         "Password": {
@@ -288,25 +312,14 @@ If a `<workflows>` block is present in the input:
         "Country": {
           "type": "unspecified"
         },
-        "Terms_And_Conditions": {
+        "Terms_and_Conditions": {
           "type": "checkbox",
-          "required": true
+          "required": true,
+          "constraints": [
+            "must be checked to proceed"
+          ]
         }
-      },
-      "error_display": "inline",
-      "submit_actions": [
-        {
-          "action_name": "Register",
-          "preconditions": [
-            "Visitor is unauthenticated and attempting to create an account (no existing registered account for the provided email) and has access to the registration form via Home -> Account/Login."
-          ],
-          "on_success": [
-            "creates account and automatically logs the user in and redirects to the user dashboard",
-            "creates account and requires email verification before granting access (user prompted to verify email)"
-          ],
-          "on_failure": "field-level validation errors returned and displayed inline"
-        }
-      ]
+      }
     }
   }
 }
@@ -322,13 +335,15 @@ The registration form collects First Name, Last Name, Email, Password, Confirm P
 </description>
 
 <workflows>
-WF-001 | Register new account | actor: Visitor | branch: none | terminal: Register | on_success: ['creates account and automatically logs the user in and redirects to the user dashboard', 'creates account and requires email verification before granting access (user prompted to verify email)']
+WF-001 | Successful registration — auto login and redirect | actor: Visitor | branch: none | terminal: Register | on_success: automatically log in the user and redirect to dashboard
+WF-002 | Successful registration — email verification required | actor: Visitor | branch: none | terminal: Register | on_success: prompt user to verify their email before granting access
+WF-003 | Registration failure — validation errors shown inline | actor: Visitor | branch: none | terminal: Register | on_success: None
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:24:53] Test-Edge - LLM RESPONSE
+[22:33:47] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "User Registration",
@@ -336,102 +351,100 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-001",
-      "subcategory": "data_edge",
-      "test_case": "Email uniqueness enforced regardless of case (case-variant re-registration blocked)",
+      "wf_ref": null,
+      "subcategory": "input_edge",
+      "test_case": "Very long First Name accepted (200+ characters)",
       "preconditions": [
-        "An account already exists for <existing registered email>"
+        "Visitor is not authenticated and is on the Registration form"
       ],
       "steps": [
-        "1. Enter <First valid first name> in the First_Name field",
-        "2. Enter <First valid last name> in the Last_Name field",
-        "3. Enter <existing registered email with letter-case changed (case-variant)> in the Email field",
-        "4. Enter <valid password meeting password rules> in the Password field",
-        "5. Enter the same value in the Confirm_Password field",
-        "6. Check the Terms_And_Conditions checkbox",
+        "1. Enter a string of 200+ characters in the First_Name field",
+        "2. Enter a valid Last_Name",
+        "3. Enter a valid Email address",
+        "4. Enter a Password",
+        "5. Enter the same value in Confirm_Password",
+        "6. Check the Terms_and_Conditions checkbox",
         "7. Click the Register button"
       ],
-      "expected_result": "Registration is blocked; Email displays an inline error indicating the email is already in use (uniqueness enforced irrespective of case). No second account is created.",
+      "expected_result": "Form submission succeeds; no inline field errors are displayed for First_Name or other required fields (registration proceeds)",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-001",
+      "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Leading/trailing whitespace in names and email is submitted (verify trimming behavior)",
+      "test_case": "Unicode and emoji characters in name fields are accepted",
       "preconditions": [
-        "Visitor is unauthenticated and on the registration form"
+        "Visitor is not authenticated and is on the Registration form"
       ],
       "steps": [
-        "1. Enter <first name with leading and trailing spaces> in the First_Name field",
-        "2. Enter <last name with leading and trailing spaces> in the Last_Name field",
-        "3. Enter <email with leading and trailing spaces> in the Email field",
-        "4. Enter <valid password> in the Password field",
-        "5. Enter the same value in the Confirm_Password field",
-        "6. Check the Terms_And_Conditions checkbox",
-        "7. Click the Register button",
-        "8. After success redirect, open the user's profile or account details page"
+        "1. Enter Unicode and emoji characters in the First_Name field",
+        "2. Enter Unicode and emoji characters in the Last_Name field",
+        "3. Enter a valid Email address",
+        "4. Enter a Password",
+        "5. Enter the same value in Confirm_Password",
+        "6. Check the Terms_and_Conditions checkbox",
+        "7. Click the Register button"
       ],
-      "expected_result": "Form submits successfully; account creation proceeds (user is either logged in and redirected to the dashboard or prompted to verify email). On the profile/account details page, First_Name, Last_Name and Email are saved without leading or trailing whitespace (trimmed) and displayed with no extra spaces.",
+      "expected_result": "Form submission succeeds; no inline field errors are displayed for name fields (unicode/emoji accepted)",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-001",
+      "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Very long First_Name (200+ characters) submitted",
+      "test_case": "Confirm_Password differs only by a trailing space — mismatch blocks registration",
       "preconditions": [
-        "Visitor is unauthenticated and on the registration form"
+        "Visitor is not authenticated and is on the Registration form"
       ],
       "steps": [
-        "1. Enter <very long string of 200+ characters> in the First_Name field",
-        "2. Enter <valid last name> in the Last_Name field",
-        "3. Enter <valid, unique email> in the Email field",
-        "4. Enter <valid password> in the Password field",
-        "5. Enter the same value in the Confirm_Password field",
-        "6. Check the Terms_And_Conditions checkbox",
+        "1. Enter a valid First_Name",
+        "2. Enter a valid Last_Name",
+        "3. Enter a valid Email address",
+        "4. Enter a Password with no trailing space",
+        "5. Enter the same Password value plus one trailing space into Confirm_Password",
+        "6. Check the Terms_and_Conditions checkbox",
         "7. Click the Register button"
       ],
-      "expected_result": "Registration is blocked; First_Name displays an inline error indicating the value exceeds the maximum allowed length (inline error shown). No account is created.",
+      "expected_result": "Confirm_Password field displays an inline error indicating it does not match Password; registration is blocked (form not submitted)",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-001",
+      "wf_ref": null,
       "subcategory": "interaction_edge",
-      "test_case": "Rapid back-button and re-submit after successful registration (duplicate submission blocked)",
+      "test_case": "Press browser Back immediately after successful Register — form should not be pre-filled",
       "preconditions": [
-        "Visitor is unauthenticated and on the registration form"
+        "Visitor is not authenticated and is on the Registration form"
       ],
       "steps": [
-        "1. Enter <valid first name> in the First_Name field",
-        "2. Enter <valid last name> in the Last_Name field",
-        "3. Enter <new unique email> in the Email field",
-        "4. Enter <valid password> in the Password field",
-        "5. Enter the same value in the Confirm_Password field",
-        "6. Check the Terms_And_Conditions checkbox",
+        "1. Enter a valid First_Name",
+        "2. Enter a valid Last_Name",
+        "3. Enter a valid Email address",
+        "4. Enter a Password",
+        "5. Enter the same value in Confirm_Password",
+        "6. Check the Terms_and_Conditions checkbox",
         "7. Click the Register button",
-        "8. After the success redirect completes, press the browser Back button to return to the registration form",
-        "9. Without changing the Email, click the Register button again"
+        "8. After the registration flow completes, press the browser Back button once"
       ],
-      "expected_result": "Second submission attempt is blocked; Email displays an inline error indicating the email is already in use. Only one account exists for that email (no duplicate account created).",
-      "priority": "medium"
+      "expected_result": "After pressing Back, the Registration form is shown blank (fields are not pre-filled with prior submission values)",
+      "priority": "low"
     }
   ],
   "summary": {
     "total": 4,
     "boundary": 0,
-    "input_edge": 2,
+    "input_edge": 3,
     "interaction_edge": 1,
     "state_edge": 0,
-    "data_edge": 1,
-    "medium_priority": 4,
-    "low_priority": 0
+    "data_edge": 0,
+    "medium_priority": 3,
+    "low_priority": 1
   }
 }
 
 ------------------------------------------------------------
-[21:24:53] Test-Edge - PARSED JSON
+[22:33:47] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "User Registration",
@@ -439,96 +452,94 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-001",
-      "subcategory": "data_edge",
-      "test_case": "Email uniqueness enforced regardless of case (case-variant re-registration blocked)",
+      "wf_ref": null,
+      "subcategory": "input_edge",
+      "test_case": "Very long First Name accepted (200+ characters)",
       "preconditions": [
-        "An account already exists for <existing registered email>"
+        "Visitor is not authenticated and is on the Registration form"
       ],
       "steps": [
-        "1. Enter <First valid first name> in the First_Name field",
-        "2. Enter <First valid last name> in the Last_Name field",
-        "3. Enter <existing registered email with letter-case changed (case-variant)> in the Email field",
-        "4. Enter <valid password meeting password rules> in the Password field",
-        "5. Enter the same value in the Confirm_Password field",
-        "6. Check the Terms_And_Conditions checkbox",
+        "1. Enter a string of 200+ characters in the First_Name field",
+        "2. Enter a valid Last_Name",
+        "3. Enter a valid Email address",
+        "4. Enter a Password",
+        "5. Enter the same value in Confirm_Password",
+        "6. Check the Terms_and_Conditions checkbox",
         "7. Click the Register button"
       ],
-      "expected_result": "Registration is blocked; Email displays an inline error indicating the email is already in use (uniqueness enforced irrespective of case). No second account is created.",
+      "expected_result": "Form submission succeeds; no inline field errors are displayed for First_Name or other required fields (registration proceeds)",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-001",
+      "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Leading/trailing whitespace in names and email is submitted (verify trimming behavior)",
+      "test_case": "Unicode and emoji characters in name fields are accepted",
       "preconditions": [
-        "Visitor is unauthenticated and on the registration form"
+        "Visitor is not authenticated and is on the Registration form"
       ],
       "steps": [
-        "1. Enter <first name with leading and trailing spaces> in the First_Name field",
-        "2. Enter <last name with leading and trailing spaces> in the Last_Name field",
-        "3. Enter <email with leading and trailing spaces> in the Email field",
-        "4. Enter <valid password> in the Password field",
-        "5. Enter the same value in the Confirm_Password field",
-        "6. Check the Terms_And_Conditions checkbox",
-        "7. Click the Register button",
-        "8. After success redirect, open the user's profile or account details page"
+        "1. Enter Unicode and emoji characters in the First_Name field",
+        "2. Enter Unicode and emoji characters in the Last_Name field",
+        "3. Enter a valid Email address",
+        "4. Enter a Password",
+        "5. Enter the same value in Confirm_Password",
+        "6. Check the Terms_and_Conditions checkbox",
+        "7. Click the Register button"
       ],
-      "expected_result": "Form submits successfully; account creation proceeds (user is either logged in and redirected to the dashboard or prompted to verify email). On the profile/account details page, First_Name, Last_Name and Email are saved without leading or trailing whitespace (trimmed) and displayed with no extra spaces.",
+      "expected_result": "Form submission succeeds; no inline field errors are displayed for name fields (unicode/emoji accepted)",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-001",
+      "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Very long First_Name (200+ characters) submitted",
+      "test_case": "Confirm_Password differs only by a trailing space \u2014 mismatch blocks registration",
       "preconditions": [
-        "Visitor is unauthenticated and on the registration form"
+        "Visitor is not authenticated and is on the Registration form"
       ],
       "steps": [
-        "1. Enter <very long string of 200+ characters> in the First_Name field",
-        "2. Enter <valid last name> in the Last_Name field",
-        "3. Enter <valid, unique email> in the Email field",
-        "4. Enter <valid password> in the Password field",
-        "5. Enter the same value in the Confirm_Password field",
-        "6. Check the Terms_And_Conditions checkbox",
+        "1. Enter a valid First_Name",
+        "2. Enter a valid Last_Name",
+        "3. Enter a valid Email address",
+        "4. Enter a Password with no trailing space",
+        "5. Enter the same Password value plus one trailing space into Confirm_Password",
+        "6. Check the Terms_and_Conditions checkbox",
         "7. Click the Register button"
       ],
-      "expected_result": "Registration is blocked; First_Name displays an inline error indicating the value exceeds the maximum allowed length (inline error shown). No account is created.",
+      "expected_result": "Confirm_Password field displays an inline error indicating it does not match Password; registration is blocked (form not submitted)",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-001",
+      "wf_ref": null,
       "subcategory": "interaction_edge",
-      "test_case": "Rapid back-button and re-submit after successful registration (duplicate submission blocked)",
+      "test_case": "Press browser Back immediately after successful Register \u2014 form should not be pre-filled",
       "preconditions": [
-        "Visitor is unauthenticated and on the registration form"
+        "Visitor is not authenticated and is on the Registration form"
       ],
       "steps": [
-        "1. Enter <valid first name> in the First_Name field",
-        "2. Enter <valid last name> in the Last_Name field",
-        "3. Enter <new unique email> in the Email field",
-        "4. Enter <valid password> in the Password field",
-        "5. Enter the same value in the Confirm_Password field",
-        "6. Check the Terms_And_Conditions checkbox",
+        "1. Enter a valid First_Name",
+        "2. Enter a valid Last_Name",
+        "3. Enter a valid Email address",
+        "4. Enter a Password",
+        "5. Enter the same value in Confirm_Password",
+        "6. Check the Terms_and_Conditions checkbox",
         "7. Click the Register button",
-        "8. After the success redirect completes, press the browser Back button to return to the registration form",
-        "9. Without changing the Email, click the Register button again"
+        "8. After the registration flow completes, press the browser Back button once"
       ],
-      "expected_result": "Second submission attempt is blocked; Email displays an inline error indicating the email is already in use. Only one account exists for that email (no duplicate account created).",
-      "priority": "medium"
+      "expected_result": "After pressing Back, the Registration form is shown blank (fields are not pre-filled with prior submission values)",
+      "priority": "low"
     }
   ],
   "summary": {
     "total": 4,
     "boundary": 0,
-    "input_edge": 2,
+    "input_edge": 3,
     "interaction_edge": 1,
     "state_edge": 0,
-    "data_edge": 1,
-    "medium_priority": 4,
-    "low_priority": 0
+    "data_edge": 0,
+    "medium_priority": 3,
+    "low_priority": 1
   }
 }

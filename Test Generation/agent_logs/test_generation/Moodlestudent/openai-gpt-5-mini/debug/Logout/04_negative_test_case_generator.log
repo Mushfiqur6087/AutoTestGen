@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:34.423659
+DEBUG SESSION STARTED: 2026-07-04T22:41:48.114564
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Negative - SYSTEM PROMPT
+[22:41:48] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Negative - USER PROMPT
+[22:41:48] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 10,
   "module_title": "Logout",
-  "summary": "Terminates the current authenticated session and returns the user to the login page.",
-  "where_it_fits": "Located in the user menu on the right side of the persistent top navigation bar (accessible from Home, Dashboard, My Courses and course pages), this module is available globally and is used at the end of a user session to end access to protected areas and redirect to the login page.",
-  "assumed_state_on_entry": "User is currently authenticated (active session) and has access to the top navigation user menu."
+  "summary": "Ends the current authenticated session and returns the user to the login page, requiring re-authentication for protected pages.",
+  "where_it_fits": "Located in the user menu dropdown accessed from the initials icon in the top navigation bar (right side); it is available from anywhere in the app and acts as the final action in a user's session lifecycle by redirecting to the login page.",
+  "assumed_state_on_entry": "An active authenticated user session (user is logged in and has access to protected pages)."
 }
 </module_context>
 
@@ -260,13 +270,19 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Logout",
   "components": {
-    "Logout_Menu_Item": {
-      "type": "link",
-      "action_name": "Log out",
-      "preconditions": [
-        "User is currently authenticated (active session) and has access to the top navigation user menu."
-      ],
-      "on_success": "terminates the current authenticated session and redirects to the login page"
+    "User_Menu_Dropdown": {
+      "type": "dropdown",
+      "description": "Accessed from the initials icon in the top navigation bar (right side); available from anywhere in the app.",
+      "fields": {
+        "Log_Out": {
+          "type": "button",
+          "action_name": "Log out",
+          "on_success": "terminates the current authenticated session and redirects to the login page",
+          "preconditions": [
+            "An active authenticated user session (user is logged in and has access to protected pages)."
+          ]
+        }
+      }
     }
   }
 }
@@ -279,13 +295,13 @@ Selecting Log out terminates the current authenticated session and redirects to 
 </description>
 
 <workflows>
-WF-001 | Select Log out from user menu | actor: Authenticated user | branch: none | terminal: Log out | on_success: terminates the current authenticated session and redirects to the login page
+WF-001 | Log out from user menu | actor: Authenticated user | branch: none | terminal: Log out | on_success: terminates the current authenticated session and redirects to the login page
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:14:22] Test-Negative - LLM RESPONSE
+[22:43:30] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Logout",
@@ -293,31 +309,32 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": "WF-001",
-      "test_case": "Unauthenticated user navigates directly to the logout endpoint",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user cannot see or invoke Log out from User Menu",
       "preconditions": [
         "User is not authenticated (no active session)"
       ],
       "steps": [
-        "1. Ensure there is no active session (log out or open a new private browser session)",
-        "2. In the browser address bar navigate to <logout endpoint URL> (the URL that performs the Log out action)"
+        "1. Open the application main page as a user with no active session",
+        "2. Inspect the top navigation bar (right side) for the initials icon / user menu",
+        "3. Attempt to open the user menu"
       ],
-      "expected_result": "Browser is redirected to the <login page URL>; the Login page with the sign-in form is displayed (e.g. Username/Email and Password fields visible). No 'session terminated' success flow occurs and no authenticated session exists after navigation.",
+      "expected_result": "Initials icon / User menu is not present in the top navigation; the 'Log out' option is not visible or clickable. No logout action can be performed from the UI while unauthenticated.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": null,
-      "test_case": "Unauthenticated visitor does not see 'Log out' in the user menu",
+      "wf_ref": "WF-001",
+      "test_case": "Direct navigation to Logout endpoint while unauthenticated is blocked/redirected",
       "preconditions": [
         "User is not authenticated (no active session)"
       ],
       "steps": [
-        "1. Ensure there is no active session (log out or open a new private browser session)",
-        "2. Navigate to a page that shows the top navigation bar (e.g. Home)",
-        "3. Open the top navigation user menu / user avatar dropdown"
+        "1. Ensure there is no active authenticated session",
+        "2. In the browser address bar navigate directly to the application's Logout endpoint/route (the URL or route that triggers Log out)",
+        "3. Observe the resulting page shown to the user"
       ],
-      "expected_result": "The 'Log out' / 'Log out' menu item is not visible in the user menu. Instead the user menu shows options to sign in or does not display user-specific menu items. No logout action is available to unauthenticated users.",
+      "expected_result": "Navigation to the Logout endpoint does not perform a logout (no active session to terminate) and the user is presented with the login page / is redirected to the login screen; no logout confirmation or protected content is shown.",
       "priority": "high"
     }
   ],
@@ -330,7 +347,7 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
 }
 
 ------------------------------------------------------------
-[21:14:22] Test-Negative - PARSED JSON
+[22:43:30] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Logout",
@@ -338,31 +355,32 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": "WF-001",
-      "test_case": "Unauthenticated user navigates directly to the logout endpoint",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user cannot see or invoke Log out from User Menu",
       "preconditions": [
         "User is not authenticated (no active session)"
       ],
       "steps": [
-        "1. Ensure there is no active session (log out or open a new private browser session)",
-        "2. In the browser address bar navigate to <logout endpoint URL> (the URL that performs the Log out action)"
+        "1. Open the application main page as a user with no active session",
+        "2. Inspect the top navigation bar (right side) for the initials icon / user menu",
+        "3. Attempt to open the user menu"
       ],
-      "expected_result": "Browser is redirected to the <login page URL>; the Login page with the sign-in form is displayed (e.g. Username/Email and Password fields visible). No 'session terminated' success flow occurs and no authenticated session exists after navigation.",
+      "expected_result": "Initials icon / User menu is not present in the top navigation; the 'Log out' option is not visible or clickable. No logout action can be performed from the UI while unauthenticated.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": null,
-      "test_case": "Unauthenticated visitor does not see 'Log out' in the user menu",
+      "wf_ref": "WF-001",
+      "test_case": "Direct navigation to Logout endpoint while unauthenticated is blocked/redirected",
       "preconditions": [
         "User is not authenticated (no active session)"
       ],
       "steps": [
-        "1. Ensure there is no active session (log out or open a new private browser session)",
-        "2. Navigate to a page that shows the top navigation bar (e.g. Home)",
-        "3. Open the top navigation user menu / user avatar dropdown"
+        "1. Ensure there is no active authenticated session",
+        "2. In the browser address bar navigate directly to the application's Logout endpoint/route (the URL or route that triggers Log out)",
+        "3. Observe the resulting page shown to the user"
       ],
-      "expected_result": "The 'Log out' / 'Log out' menu item is not visible in the user menu. Instead the user menu shows options to sign in or does not display user-specific menu items. No logout action is available to unauthenticated users.",
+      "expected_result": "Navigation to the Logout endpoint does not perform a logout (no active session to terminate) and the user is presented with the login page / is redirected to the login screen; no logout confirmation or protected content is shown.",
       "priority": "high"
     }
   ],

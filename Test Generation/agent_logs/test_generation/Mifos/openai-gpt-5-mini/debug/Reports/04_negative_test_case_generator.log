@@ -1,0 +1,733 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:08:29.995400
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:08:29] Test-Negative - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Negative Testing:**
+
+The AST represents every interactive element in the module. Each node type has a corresponding failure category:
+
+| AST node / field | What to test for failure |
+|---|---|
+| `required: true` field | Leave it blank and submit — inline validation error |
+| `constraints: []` on a field or action | One TC per unique constraint: violate it specifically |
+| `preconditions: []` on an action | One TC attempting the action when the precondition is NOT met |
+| `visible_when` / `required_when` conditional field | Trigger the condition, then submit the revealed field blank or invalid |
+| `state_bound_action_bar` states | Attempt an action from the wrong state (e.g., Approve an already-Active entity) |
+| `on_success` with quoted text | The negative expected_result is the *blocking* behavior — the entity stays unchanged |
+| `submit_actions[]` | If any button has `preconditions`, test that button when precondition fails |
+
+> If a module has no `form`, no `wizard`, no `state_bound_action_bar`, and no `constraints` — it is display-only. Generate at most 1–2 tests (unauthenticated access, or a non-implemented link if described). Do not invent validation scenarios.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — Name the field, the violated rule, and the visible error indicator.**
+Never write a vague expected result. Always specify what the tester sees.
+
+- ❌ `"Validation error shown"` — too vague
+- ❌ `"Error is displayed"` — too vague
+- ✅ `"Inline validation error appears on the <Field Name> field indicating it is required"`
+- ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
+- ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
+
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
+- ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
+- ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
+
+**Rule C — Assert the blocking behavior, not just the error.**
+The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
+- ❌ `"Error shown"` (doesn't confirm the action was blocked)
+- ✅ `"Form does not submit; <Entity> is not created; error shown on <Field>"`
+- ✅ `"Status remains <Current State>; no transition occurs"`
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Use generic placeholders in angle brackets.
+
+- ✅ `"Enter <invalid email format> in the Email field"`
+- ✅ `"Enter <amount exceeding available balance> in the Amount field"`
+- ✅ `"Enter <password shorter than minimum length> in the Password field"`
+- ❌ `"Enter 'notanemail' in the Email field"`
+- ❌ `"Enter 'abc123' in the Password field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic user action — one field, one click, one navigation. No grouping.
+
+- ✅ `"1. Leave the <Required Field> blank"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill all fields except <Required Field> and submit"`
+
+---
+
+**SCOPE GATE (run before writing any test):**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact sentence in the description or field/constraint/state in the AST justifies this test? If you cannot point to one → delete it.
+2. **UI-executable:** Can a tester trigger this by clicking, typing, selecting, or navigating in a browser? If verification requires dev tools, DOM inspection, concurrent users, API calls, or server-side error simulation → out of scope.
+3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
+
+Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Required field representatives (deduplicated by field type):**
+
+Group required fields by type: `text/unspecified`, `email`, `password`, `number`, `date`, `dropdown`, `file_upload`. Generate:
+- ONE "leave blank and submit" test per **type group** (not per field) — use the most prominent field as representative
+- ONE "submit with ALL required fields empty" test
+
+Do NOT generate a separate blank-field test for every required field. If 5 text fields are all required, one representative covers them all.
+
+**Action dialog required fields — NOT subject to cross-form deduplication:**
+If a `state_bound_action_bar` action opens a dialog with its own required `fields{}` (e.g., Activate requires Activation Date, Reject requires a Reason, Withdraw requires a Reason, Close requires a Closure Reason), each such dialog is its own testing scope. Generate ONE "leave the required dialog field blank and submit" test per distinct action dialog. These are HIGH priority — they block state transitions and are common defect sites. Do not suppress them because the main wizard already has a blank-field test.
+
+**2. Format violations:**
+
+For fields with type-specific format rules (from AST type or description):
+- `email` → one test with invalid format
+- `number` → one test with non-numeric input
+- `date` → one test with invalid/impossible date
+- `password` → ONE representative test for policy violation (not one per sub-rule — see Deduplication)
+
+Only generate if the spec or AST implies format validation for that field.
+
+**3. Numeric bounds and balance violations:**
+
+If the spec describes minimum/maximum values, amount ranges, or balance checks:
+- One test per distinct bound violation (e.g., amount below minimum, amount above maximum, amount exceeding available balance)
+- Use `<amount below minimum>`, `<amount exceeding available balance>` as placeholders
+
+Examples across the dataset:
+- Transfer amount > available balance → error
+- Loan amount outside product min/max → error
+- Deposit below minimum requirement → error
+
+**4. Constraint violations:**
+
+For each unique `constraints[]` entry in the AST, and for cross-field rules described in the spec:
+- `"must be unique"` → submit with a duplicate value
+- `"must match"` (confirm fields) → enter mismatched values
+- `"must not be same as current"` → select the current value
+- `"cannot perform <action> while <condition>"` → attempt the action when the condition is true
+- `"<date> must be after <other date>"` → enter reversed dates
+
+One test per unique constraint. Do not duplicate the same mechanism.
+
+**Constraint timing tests:** If the spec states an action is blocked by a pre-existing system state (e.g., "cannot close with active accounts", "cannot transfer to the same office"), generate TWO tests:
+1. The standard constraint violation test (user opens the dialog, fills required fields, submits → blocked).
+2. A constraint-timing test: user opens the dialog WITHOUT filling required fields → assert whether the block is shown immediately on dialog open (before the user fills anything) OR only on submit. This distinguishes whether the UI enforces the constraint eagerly or lazily. Steps: open the dialog, observe the state → assert what is visible before any interaction. If the spec is silent on timing, generate only the first test.
+
+**5. Precondition violations (auth, role, and state):**
+
+For each `preconditions[]` entry on any action — and for auth/role/state rules described in the spec or the `<module_context>` block:
+
+- **Global Context constraints:** If the `<module_context>` block's `assumed_state_on_entry` explicitly lists required states (e.g., "Requires an active Client profile"), generate one test attempting the module's core action when that precondition fails (e.g., Client profile is missing or inactive).
+- **Unauthenticated access:** If any page or action requires login, generate one test: an unauthenticated user attempts to access it and is redirected to the login page.
+- **Wrong role:** If the spec explicitly states a feature is restricted to a specific role (e.g., Teacher only, Admin only), generate one test: a user of the wrong role attempts the action and is blocked or the control is not visible.
+- **Precondition not met:** For each AST `preconditions[]` entry, attempt the action when that precondition is not satisfied.
+
+**6. State-machine violations:**
+
+From `state_bound_action_bar` nodes:
+- **Every defined state must have at least one wrong-state test.** For each state, identify at least one action that is NOT in its `available_actions` list and generate a test attempting that action from that state.
+- If a state has an empty `available_actions` array, generate one test verifying no action buttons are visible in that state.
+- **Do not stop after 1–2 representative examples** when the module defines 4+ distinct states. The states Active, Pending, Closed, Rejected, and Withdrawn each have different action sets — each must be independently verified.
+- One test per state is sufficient — pick the most distinct unavailable action for that state. Do not enumerate every action × every state (that would be exponential).
+
+---
+
+**DEDUPLICATION GATE (run before outputting):**
+
+1. **Required field dedup:** Multiple required text fields in the **same form or dialog** → ONE representative test, not one per field.
+2. **Sub-rule dedup:** A field with multiple validation sub-rules (e.g., password: length + uppercase + lowercase + number + special char) → ONE representative violation test, not one per sub-rule.
+3. **Cross-form dedup:** If two **main forms** in the same module share the same validation mechanism → test it on the primary form only. **Exception: action dialogs are never suppressed by cross-form dedup** — each action dialog with a required field gets its own blank-field test regardless.
+4. **Uniqueness check:** Before outputting, ask for each TC: "Does this test catch a bug that NO other test in this module would catch?" If no → remove it.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (standard CRUD form, form with constraints): **4–8 tests**
+- Complex module (state machine, multi-form, wizard with many constraints): **10–16 tests**
+
+For modules with a `state_bound_action_bar` defining 4+ states, the state-machine violation tests alone will produce 4–5 tests. This is expected and correct — do not suppress them to hit a lower target.
+
+If you exceed the upper range, apply the deduplication gate again before outputting.
+
+---
+
+**PRIORITY:**
+
+- **High:** State precondition violations, constraint violations that could corrupt data, unauthenticated access, required field representatives
+- **Medium:** Format violations, cross-field validation, numeric bounds, wrong-role access, wrong-state action attempts
+
+---
+
+**WORKFLOW-AWARE FAILURE INJECTION (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow that contains a form interaction (terminal action is a submit/save/create/approve button):
+  - Identify the most **critical blocking failure** for that workflow's `conditional_branch`.
+  - If that failure mode is NOT already covered by another workflow's negative test, generate one negative TC for it.
+- **Do NOT generate one negative TC per workflow mechanically.** Apply the existing deduplication gate first — only add a TC if it catches a bug that no other test would catch.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a workflow. Set `"wf_ref": null` for generic validation tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "What error/block should occur, naming the field and indicator",
+      "priority": "high | medium"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "high_priority": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[23:08:29] Test-Negative - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 26,
+  "module_title": "Reports",
+  "summary": "Displays a catalog of grouped financial and operational reports and allows generation of report outputs with parameterized filters and export options.",
+  "where_it_fits": "Accessible from the application's top navigation under Reports (and via Institution \u2192 Reports), this module sits in the reporting/analytics area of the platform and is used after transactional data has been recorded to generate tables, charts, and exportable files for monitoring and analysis.",
+  "assumed_state_on_entry": "User is authenticated with permission to view reports and the system contains relevant transactional and master data (offices, products, loan/savings accounts, funds) for report parameters."
+}
+</module_context>
+
+<module_name>Reports</module_name>
+
+<ast>
+{
+  "module_name": "Reports",
+  "components": {
+    "Reports_Catalog_Tabs": {
+      "type": "tab_container",
+      "tabs": [
+        {
+          "tab_name": "All",
+          "fields": {
+            "Reports_List": {
+              "type": "data_table",
+              "row_actions": [
+                {
+                  "action_name": "Open Parameters",
+                  "action_type": "link",
+                  "on_success": "opens Report_Parameters_Form"
+                }
+              ],
+              "bulk_actions": []
+            }
+          }
+        },
+        {
+          "tab_name": "Clients",
+          "fields": {
+            "Reports_List": {
+              "type": "data_table",
+              "row_actions": [
+                {
+                  "action_name": "Open Parameters",
+                  "action_type": "link",
+                  "on_success": "opens Report_Parameters_Form"
+                }
+              ],
+              "bulk_actions": []
+            }
+          }
+        },
+        {
+          "tab_name": "Loans",
+          "fields": {
+            "Reports_List": {
+              "type": "data_table",
+              "row_actions": [
+                {
+                  "action_name": "Open Parameters",
+                  "action_type": "link",
+                  "on_success": "opens Report_Parameters_Form"
+                }
+              ],
+              "bulk_actions": []
+            }
+          }
+        },
+        {
+          "tab_name": "Savings",
+          "fields": {
+            "Reports_List": {
+              "type": "data_table",
+              "row_actions": [
+                {
+                  "action_name": "Open Parameters",
+                  "action_type": "link",
+                  "on_success": "opens Report_Parameters_Form"
+                }
+              ],
+              "bulk_actions": []
+            }
+          }
+        },
+        {
+          "tab_name": "Funds",
+          "fields": {
+            "Reports_List": {
+              "type": "data_table",
+              "row_actions": [
+                {
+                  "action_name": "Open Parameters",
+                  "action_type": "link",
+                  "on_success": "opens Report_Parameters_Form"
+                }
+              ],
+              "bulk_actions": []
+            }
+          }
+        },
+        {
+          "tab_name": "Accounting",
+          "fields": {
+            "Reports_List": {
+              "type": "data_table",
+              "row_actions": [
+                {
+                  "action_name": "Open Parameters",
+                  "action_type": "link",
+                  "on_success": "opens Report_Parameters_Form"
+                }
+              ],
+              "bulk_actions": []
+            }
+          }
+        },
+        {
+          "tab_name": "XBRL",
+          "fields": {
+            "Reports_List": {
+              "type": "data_table",
+              "row_actions": [
+                {
+                  "action_name": "Open Parameters",
+                  "action_type": "link",
+                  "on_success": "opens Report_Parameters_Form"
+                }
+              ],
+              "bulk_actions": []
+            }
+          }
+        }
+      ]
+    },
+    "Report_Parameters_Form": {
+      "type": "form",
+      "fields": {
+        "Office": {
+          "type": "unspecified"
+        },
+        "Branch": {
+          "type": "unspecified"
+        },
+        "Currency": {
+          "type": "unspecified"
+        },
+        "Loan_Product": {
+          "type": "unspecified"
+        },
+        "Date_Range": {
+          "type": "date"
+        },
+        "Loan_Officer": {
+          "type": "unspecified"
+        },
+        "Fund": {
+          "type": "dropdown"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Run Report",
+          "on_success": "generates Report_Output_Table (data table with sorting and pagination)",
+          "preconditions": [
+            "User is authenticated with permission to view reports and the system contains relevant transactional and master data (offices, products, loan/savings accounts, funds)"
+          ]
+        }
+      ]
+    },
+    "Report_Output_Table": {
+      "type": "data_table",
+      "pagination": true,
+      "sorting": true,
+      "export_actions": [
+        {
+          "action_name": "Export to Excel",
+          "preconditions": [
+            "User is authenticated with permission to view reports and the system contains relevant transactional and master data (offices, products, loan/savings accounts, funds)"
+          ]
+        },
+        {
+          "action_name": "Export to CSV",
+          "preconditions": [
+            "User is authenticated with permission to view reports and the system contains relevant transactional and master data (offices, products, loan/savings accounts, funds)"
+          ]
+        },
+        {
+          "action_name": "Export to PDF",
+          "preconditions": [
+            "User is authenticated with permission to view reports and the system contains relevant transactional and master data (offices, products, loan/savings accounts, funds)"
+          ]
+        }
+      ],
+      "output_actions": [
+        {
+          "action_name": "View On Screen"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Reports page lists available reports grouped by category: All, Clients, Loans, Savings, Funds, Accounting, and XBRL. Each row shows Name (clickable link), Type (Table, Pentaho, Chart), and Category. Clicking a report opens a parameters form with fields such as Office, Branch, Currency, Loan Product, Date Range, Loan Officer, and Fund dropdowns. A "Run Report" button generates the report as a data table with sorting and pagination. Output options include viewing on screen, exporting to Excel, CSV, or PDF. Common reports include Loans Awaiting Disbursal, Loans Pending Approval, Active Loans Summary, Active Loans Details, Obligation Met Loans Details, Portfolio at Risk, and Portfolio at Risk by Branch.
+
+---
+
+
+</description>
+
+<workflows>
+WF-001 | Open Parameters from All tab | actor: <role> | branch: none | terminal: Open Parameters | on_success: opens Report_Parameters_Form
+WF-002 | Open Parameters from Clients tab | actor: <role> | branch: none | terminal: Open Parameters | on_success: opens Report_Parameters_Form
+WF-003 | Open Parameters from Loans tab | actor: <role> | branch: none | terminal: Open Parameters | on_success: opens Report_Parameters_Form
+WF-004 | Open Parameters from Savings tab | actor: <role> | branch: none | terminal: Open Parameters | on_success: opens Report_Parameters_Form
+WF-005 | Open Parameters from Funds tab | actor: <role> | branch: none | terminal: Open Parameters | on_success: opens Report_Parameters_Form
+WF-006 | Open Parameters from Accounting tab | actor: <role> | branch: none | terminal: Open Parameters | on_success: opens Report_Parameters_Form
+WF-007 | Open Parameters from XBRL tab | actor: <role> | branch: none | terminal: Open Parameters | on_success: opens Report_Parameters_Form
+WF-008 | Run Report with chosen parameters | actor: <role> | branch: none | terminal: Run Report | on_success: generates Report_Output_Table (data table with sorting and pagination)
+WF-009 | View report on screen (Report Output) | actor: <role> | branch: none | terminal: View On Screen | on_success: displays report on screen
+WF-010 | Export report to Excel | actor: <role> | branch: none | terminal: Export to Excel | on_success: downloads report as Excel file
+WF-011 | Export report to CSV | actor: <role> | branch: none | terminal: Export to CSV | on_success: downloads report as CSV file
+WF-012 | Export report to PDF | actor: <role> | branch: none | terminal: Export to PDF | on_success: downloads report as PDF file
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:12:54] Test-Negative - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Reports",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user attempts to access Reports page",
+      "preconditions": [
+        "User is not authenticated"
+      ],
+      "steps": [
+        "1. Navigate to the Reports page URL or click Reports in top navigation"
+      ],
+      "expected_result": "Access is blocked; the user is redirected to the authentication / login screen (Reports page is not displayed)",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": "WF-001",
+      "test_case": "Authenticated user without report-view permission tries to open a report's Parameters form",
+      "preconditions": [
+        "User is authenticated as <user_without_report_view_permission>"
+      ],
+      "steps": [
+        "1. Log in as <user_without_report_view_permission>",
+        "2. Navigate to Reports > All tab",
+        "3. Click the report row's Name or the 'Open Parameters' link"
+      ],
+      "expected_result": "Action is blocked; no Report_Parameters_Form opens; a visible authorization/error indicator is shown indicating the user lacks permission to view reports and the report row remains unchanged",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-008",
+      "test_case": "Authenticated user without Run Report permission attempts to run a report",
+      "preconditions": [
+        "User is authenticated as <user_without_run_report_permission>",
+        "Relevant report parameters page is open"
+      ],
+      "steps": [
+        "1. Log in as <user_without_run_report_permission>",
+        "2. Open a report's Report_Parameters_Form",
+        "3. Fill parameters with valid values (select Office, Branch, Currency, Loan Product, Fund, and a valid Date Range)",
+        "4. Click the 'Run Report' button"
+      ],
+      "expected_result": "Run is blocked; form does not generate Report_Output_Table; a visible authorization/permission error is shown and the parameters form remains displayed",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-008",
+      "test_case": "Invalid Date_Range format prevents running the report",
+      "preconditions": [
+        "User is authenticated with permission to view and run reports",
+        "Report_Parameters_Form is open"
+      ],
+      "steps": [
+        "1. In the Report_Parameters_Form, enter <invalid date format> into the Date_Range field",
+        "2. Fill other parameters with valid values if required",
+        "3. Click the 'Run Report' button"
+      ],
+      "expected_result": "Form does not submit; an inline validation error appears on the Date_Range field indicating the date is invalid/incorrect format; no Report_Output_Table is generated",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-008",
+      "test_case": "Run Report when system contains no relevant transactional or master data",
+      "preconditions": [
+        "User is authenticated with permission to run reports",
+        "System contains no relevant transactional/master data for the selected parameters"
+      ],
+      "steps": [
+        "1. Open a report's Report_Parameters_Form",
+        "2. Fill parameters with valid values (select Office, Branch, Currency, Loan Product, Fund, and a valid Date Range)",
+        "3. Click the 'Run Report' button"
+      ],
+      "expected_result": "Report generation is blocked/produces no results; no Report_Output_Table with rows is displayed; a visible message or indicator informs the user that no data is available for the selected parameters and the parameters form or an empty result view remains visible",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": "WF-010",
+      "test_case": "Export actions are not available before a report is run (no Report_Output_Table present)",
+      "preconditions": [
+        "User is authenticated with permission to view reports",
+        "No report has been run in the current session (no Report_Output_Table present)"
+      ],
+      "steps": [
+        "1. Navigate to the Reports module and open a report's Report_Parameters_Form",
+        "2. Do not click 'Run Report'; observe the page where output would appear",
+        "3. Attempt to locate or click 'Export to Excel' or other export buttons"
+      ],
+      "expected_result": "'Export to Excel' (and other export actions) are not visible or are disabled when no Report_Output_Table exists; no file download is initiated and no export UI action occurs",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-010",
+      "test_case": "Authenticated user without export permission attempts to export generated report to Excel",
+      "preconditions": [
+        "User is authenticated as <user_without_export_permission>",
+        "A Report_Output_Table with rows is present (a report has been run)"
+      ],
+      "steps": [
+        "1. Log in as <user_without_export_permission>",
+        "2. Run a report to generate a Report_Output_Table with data",
+        "3. Click the 'Export to Excel' action"
+      ],
+      "expected_result": "Export is blocked; no file download is initiated; a visible authorization/permission error is shown and the Report_Output_Table remains displayed",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 7,
+    "high_priority": 4,
+    "medium_priority": 3,
+    "low_priority": 0
+  }
+}
+
+------------------------------------------------------------
+[23:12:54] Test-Negative - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Reports",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user attempts to access Reports page",
+      "preconditions": [
+        "User is not authenticated"
+      ],
+      "steps": [
+        "1. Navigate to the Reports page URL or click Reports in top navigation"
+      ],
+      "expected_result": "Access is blocked; the user is redirected to the authentication / login screen (Reports page is not displayed)",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": "WF-001",
+      "test_case": "Authenticated user without report-view permission tries to open a report's Parameters form",
+      "preconditions": [
+        "User is authenticated as <user_without_report_view_permission>"
+      ],
+      "steps": [
+        "1. Log in as <user_without_report_view_permission>",
+        "2. Navigate to Reports > All tab",
+        "3. Click the report row's Name or the 'Open Parameters' link"
+      ],
+      "expected_result": "Action is blocked; no Report_Parameters_Form opens; a visible authorization/error indicator is shown indicating the user lacks permission to view reports and the report row remains unchanged",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-008",
+      "test_case": "Authenticated user without Run Report permission attempts to run a report",
+      "preconditions": [
+        "User is authenticated as <user_without_run_report_permission>",
+        "Relevant report parameters page is open"
+      ],
+      "steps": [
+        "1. Log in as <user_without_run_report_permission>",
+        "2. Open a report's Report_Parameters_Form",
+        "3. Fill parameters with valid values (select Office, Branch, Currency, Loan Product, Fund, and a valid Date Range)",
+        "4. Click the 'Run Report' button"
+      ],
+      "expected_result": "Run is blocked; form does not generate Report_Output_Table; a visible authorization/permission error is shown and the parameters form remains displayed",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-008",
+      "test_case": "Invalid Date_Range format prevents running the report",
+      "preconditions": [
+        "User is authenticated with permission to view and run reports",
+        "Report_Parameters_Form is open"
+      ],
+      "steps": [
+        "1. In the Report_Parameters_Form, enter <invalid date format> into the Date_Range field",
+        "2. Fill other parameters with valid values if required",
+        "3. Click the 'Run Report' button"
+      ],
+      "expected_result": "Form does not submit; an inline validation error appears on the Date_Range field indicating the date is invalid/incorrect format; no Report_Output_Table is generated",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-008",
+      "test_case": "Run Report when system contains no relevant transactional or master data",
+      "preconditions": [
+        "User is authenticated with permission to run reports",
+        "System contains no relevant transactional/master data for the selected parameters"
+      ],
+      "steps": [
+        "1. Open a report's Report_Parameters_Form",
+        "2. Fill parameters with valid values (select Office, Branch, Currency, Loan Product, Fund, and a valid Date Range)",
+        "3. Click the 'Run Report' button"
+      ],
+      "expected_result": "Report generation is blocked/produces no results; no Report_Output_Table with rows is displayed; a visible message or indicator informs the user that no data is available for the selected parameters and the parameters form or an empty result view remains visible",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": "WF-010",
+      "test_case": "Export actions are not available before a report is run (no Report_Output_Table present)",
+      "preconditions": [
+        "User is authenticated with permission to view reports",
+        "No report has been run in the current session (no Report_Output_Table present)"
+      ],
+      "steps": [
+        "1. Navigate to the Reports module and open a report's Report_Parameters_Form",
+        "2. Do not click 'Run Report'; observe the page where output would appear",
+        "3. Attempt to locate or click 'Export to Excel' or other export buttons"
+      ],
+      "expected_result": "'Export to Excel' (and other export actions) are not visible or are disabled when no Report_Output_Table exists; no file download is initiated and no export UI action occurs",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-010",
+      "test_case": "Authenticated user without export permission attempts to export generated report to Excel",
+      "preconditions": [
+        "User is authenticated as <user_without_export_permission>",
+        "A Report_Output_Table with rows is present (a report has been run)"
+      ],
+      "steps": [
+        "1. Log in as <user_without_export_permission>",
+        "2. Run a report to generate a Report_Output_Table with data",
+        "3. Click the 'Export to Excel' action"
+      ],
+      "expected_result": "Export is blocked; no file download is initiated; a visible authorization/permission error is shown and the Report_Output_Table remains displayed",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 7,
+    "high_priority": 4,
+    "medium_priority": 3,
+    "low_priority": 0
+  }
+}

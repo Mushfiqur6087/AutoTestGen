@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.085305
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.832946
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Edge - SYSTEM PROMPT
+[22:49:29] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Edge - USER PROMPT
+[22:49:29] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 3,
   "module_title": "Dashboard \u2014 Edit Mode",
-  "summary": "Provides an interface for customizing the Dashboard layout by adding, configuring, moving, and removing blocks, with an option to reset the page to the default layout.",
-  "where_it_fits": "Accessible from the top navigation via the Dashboard link, this mode is the Dashboard-specific editing state where block management controls (add block, move, configure, delete) and layout persistence are exposed; it complements the regular Dashboard viewing path and sits alongside other course/activity edit modes in the app's navigation structure.",
-  "assumed_state_on_entry": "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
+  "summary": "A mode for the Dashboard that enables adding, configuring, moving, and deleting page blocks with layout changes persisted per user and an option to reset the page to default.",
+  "where_it_fits": "This module is reached from the top navigation via the Dashboard link and activates while viewing the Dashboard page; it is part of the user-facing customization workflow that lets users personalize their Dashboard layout within the application's main navigation. It complements other course- and activity-level editing areas but specifically controls the Dashboard's block layout and content.",
+  "assumed_state_on_entry": "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
 }
 </module_context>
 
@@ -243,61 +257,40 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Dashboard \u2014 Edit Mode",
   "components": {
-    "Dashboard_Edit_Mode": {
-      "type": "page",
-      "preconditions": [
-        "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
-      ],
+    "Dashboard_Edit_Mode_Control": {
+      "type": "form",
       "fields": {
-        "Reset_Page_To_Default": {
-          "type": "button",
-          "action_name": "Reset page to default",
-          "visible_when": "Edit_Mode == on",
-          "preconditions": [
-            "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
-          ],
-          "on_success": "reverts layout to default for the user"
-        },
-        "Add_A_Block_Button": {
-          "type": "button",
-          "action_name": "+ Add a block",
-          "visible_when": "Edit_Mode == on",
-          "preconditions": [
-            "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
-          ],
-          "opens": "Add_A_Block_Page"
-        },
-        "Blocks": {
-          "type": "repeating_group",
-          "visible_when": "Edit_Mode == on",
-          "item_fields": {
-            "Move_Icon": {
-              "type": "button",
-              "action_name": "Move"
-            },
-            "Options_Menu": {
-              "type": "menu",
-              "row_actions": [
-                {
-                  "action_name": "Configure"
-                },
-                {
-                  "action_name": "Move"
-                },
-                {
-                  "action_name": "Delete"
-                }
-              ]
-            }
-          }
+        "Edit_Mode": {
+          "type": "checkbox"
         }
       }
+    },
+    "Dashboard_Edit_Action_Bar": {
+      "type": "action_bar",
+      "actions": [
+        {
+          "action_name": "Reset page to default",
+          "visible_when": "Edit_Mode == true",
+          "preconditions": [
+            "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
+          ],
+          "on_success": "Reverts user's dashboard layout to the default and persists the change for the user"
+        },
+        {
+          "action_name": "+ Add a block",
+          "visible_when": "Edit_Mode == true",
+          "preconditions": [
+            "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
+          ],
+          "on_success": "Opens the Add a block page"
+        }
+      ]
     },
     "Add_A_Block_Page": {
       "type": "form",
       "fields": {
         "Block_Type": {
-          "type": "unspecified",
+          "type": "dropdown",
           "options": [
             "Comments",
             "Course overview",
@@ -315,11 +308,52 @@ If a `<workflows>` block is present in the input:
             "Text",
             "Upcoming events"
           ]
-        },
-        "Cancel_Link": {
-          "type": "link",
+        }
+      },
+      "submit_actions": [
+        {
           "action_name": "Cancel",
-          "on_success": "returns to the Dashboard without adding a block"
+          "action_type": "link",
+          "preconditions": [
+            "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
+          ],
+          "on_success": "Returns to the Dashboard without adding a block"
+        }
+      ]
+    },
+    "Dashboard_Blocks": {
+      "type": "repeating_group",
+      "item_fields": {
+        "Move_Handle": {
+          "type": "unspecified",
+          "visible_when": "Edit_Mode == true",
+          "description": "Drag handle shown when Edit mode is on to move the block"
+        },
+        "Options_Menu": {
+          "type": "unspecified",
+          "visible_when": "Edit_Mode == true",
+          "row_actions": [
+            {
+              "action_name": "Configure",
+              "preconditions": [
+                "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
+              ]
+            },
+            {
+              "action_name": "Move",
+              "preconditions": [
+                "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
+              ],
+              "on_success": "Updates block position and persists layout changes for the user"
+            },
+            {
+              "action_name": "Delete",
+              "preconditions": [
+                "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
+              ],
+              "on_success": "Removes the block and persists layout changes for the user"
+            }
+          ]
         }
       }
     }
@@ -337,19 +371,18 @@ When Edit mode is toggled on, a "Reset page to default" button appears at the to
 </description>
 
 <workflows>
-WF-001 | Reset page to default (while in Edit mode) | actor: <role> | branch: Edit_Mode == on | terminal: Reset page to default | on_success: reverts layout to default for the user
-WF-002 | Open Add a block page (while in Edit mode) | actor: <role> | branch: Edit_Mode == on | terminal: + Add a block | on_success: opens Add_A_Block_Page
-WF-003 | Cancel from Add a block page | actor: <role> | branch: none | terminal: Cancel | on_success: returns to the Dashboard without adding a block
-WF-004 | Move a block using the move icon (row-level) | actor: <role> | branch: Edit_Mode == on AND Blocks.Move_Icon | terminal: Move | on_success: initiates block repositioning; layout changes persisted for the user
-WF-005 | Configure a block via options menu (row-level) | actor: <role> | branch: Edit_Mode == on AND Blocks.Options_Menu.Configure | terminal: Configure | on_success: opens configuration controls for the selected block
-WF-006 | Move a block via options menu (row-level) | actor: <role> | branch: Edit_Mode == on AND Blocks.Options_Menu.Move | terminal: Move | on_success: initiates block repositioning; layout changes persisted for the user
-WF-007 | Delete a block via options menu (row-level) | actor: <role> | branch: Edit_Mode == on AND Blocks.Options_Menu.Delete | terminal: Delete | on_success: removes the block from the dashboard; layout changes persisted for the user
+WF-001 | Reset page to default (Edit mode on) | actor: Logged in user with permission to edit the Dashboard | branch: Edit_Mode == true | terminal: Reset page to default | on_success: Reverts user's dashboard layout to the default and persists the change for the user
+WF-002 | Open Add a block page (Edit mode on) | actor: Logged in user with permission to edit the Dashboard | branch: Edit_Mode == true | terminal: + Add a block | on_success: Opens the Add a block page
+WF-003 | Cancel from Add a block page | actor: Logged in user with permission to edit the Dashboard | branch: Edit_Mode == true | terminal: Cancel | on_success: Returns to the Dashboard without adding a block
+WF-004 | Configure a block (Edit mode on) | actor: Logged in user with permission to edit the Dashboard | branch: Edit_Mode == true | terminal: Configure | on_success: Opens the block configuration UI
+WF-005 | Move a block (Edit mode on) | actor: Logged in user with permission to edit the Dashboard | branch: Edit_Mode == true | terminal: Move | on_success: Updates block position and persists layout changes for the user
+WF-006 | Delete a block (Edit mode on) | actor: Logged in user with permission to edit the Dashboard | branch: Edit_Mode == true | terminal: Delete | on_success: Removes the block and persists layout changes for the user
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:12:55] Test-Edge - LLM RESPONSE
+[22:50:02] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Dashboard — Edit Mode",
@@ -357,86 +390,88 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-004",
+      "wf_ref": "WF-001",
       "subcategory": "state_edge",
-      "test_case": "Toggle Edit mode off while a block move is in progress (move cancelled)",
+      "test_case": "Click 'Reset page to default' when layout is already default",
       "preconditions": [
-        "User is authenticated and viewing the Dashboard page, with Edit mode toggled on",
-        "At least one block is present on the Dashboard"
+        "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)",
+        "User's dashboard currently matches the system default layout"
       ],
       "steps": [
-        "1. Click the block's Move icon to initiate repositioning",
-        "2. While repositioning UI is active, click the Edit mode toggle to switch Edit mode off"
+        "1. Toggle the Edit Mode checkbox to ON",
+        "2. Click the 'Reset page to default' action in the action bar"
       ],
-      "expected_result": "The in-progress repositioning is cancelled and no layout change is persisted; the Dashboard returns to view mode and the Move controls (Move icon and options menu) are no longer visible — action is blocked (the attempted move does not succeed).",
+      "expected_result": "Reset action succeeds: the Dashboard remains in the default layout (no visible layout change) and no error is shown; Edit Mode remains active and the UI shows no indication of failure",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-004",
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid consecutive Move attempts on the same block (second attempt ignored)",
+      "wf_ref": "WF-001",
+      "subcategory": "state_edge",
+      "test_case": "Invoke Reset immediately after moving a block (persistence-timing edge)",
       "preconditions": [
-        "User is authenticated and viewing the Dashboard page, with Edit mode toggled on",
-        "At least two blocks are present so repositioning target exists"
+        "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)",
+        "Dashboard contains at least one block in a known position"
       ],
       "steps": [
-        "1. Click a block's Move icon to begin repositioning",
-        "2. Immediately (within a fraction of a second) click the Move icon again on the target position or re-click the original block's Move icon a second time"
+        "1. Toggle the Edit Mode checkbox to ON",
+        "2. Use the move handle on a block to drag it to a different position on the page (perform the drag action)",
+        "3. Immediately after completing the drag, click the 'Reset page to default' action (do not wait for any additional UI persistence confirmation)"
       ],
-      "expected_result": "Only the first repositioning action is applied and persisted; the second rapid Move attempt is blocked and the UI shows no additional repositioning (no duplicate or conflicting moves are applied) — second attempt is blocked / error shown (or second click is ignored with a visible disabled state).",
+      "expected_result": "Reset action succeeds: the Dashboard visibly reverts to the default layout (the moved block returns to its original default position) and no error is shown",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-002",
-      "subcategory": "interaction_edge",
-      "test_case": "Use browser Back immediately after opening Add a block page (no block added)",
+      "wf_ref": "WF-006",
+      "subcategory": "state_edge",
+      "test_case": "Delete all blocks until the repeating group is empty",
       "preconditions": [
-        "User is authenticated and viewing the Dashboard page, with Edit mode toggled on"
+        "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)",
+        "Dashboard contains one or more blocks"
       ],
       "steps": [
-        "1. Click the '+ Add a block' button",
-        "2. Immediately press the browser Back button (before selecting any block type or interacting with the Add a block page)"
+        "1. Toggle the Edit Mode checkbox to ON",
+        "2. For the first visible block, open its Options menu (three-dot menu)",
+        "3. Click 'Delete' in the Options menu for that block",
+        "4. Repeat steps 2–3 until no blocks remain in the Dashboard repeating group",
+        "5. Toggle the Edit Mode checkbox to OFF"
       ],
-      "expected_result": "The UI returns to the Dashboard and no new block is added; the Dashboard shows the same blocks it showed before opening the Add a block page — the add action does not succeed (no partial addition persisted).",
-      "priority": "low"
+      "expected_result": "Deletion succeeds: the Dashboard displays no blocks (an empty-dashboard state is visible) and no error is shown; the removal of all blocks is persisted for the user",
+      "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-007",
-      "subcategory": "data_edge",
-      "test_case": "Delete all blocks then click 'Reset page to default' (empty state persisted, then default restored)",
+      "wf_ref": null,
+      "subcategory": "interaction_edge",
+      "test_case": "Open a block's Options menu then toggle Edit Mode off",
       "preconditions": [
-        "User is authenticated and viewing the Dashboard page, with Edit mode toggled on",
+        "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)",
         "At least one block is present on the Dashboard"
       ],
       "steps": [
-        "1. For each block visible in Edit mode, open its Options menu",
-        "2. Click Delete in the Options menu for a block",
-        "3. Repeat steps 1–2 until no blocks remain on the Dashboard",
-        "4. Leave Edit mode (toggle Edit mode off) and observe the Dashboard",
-        "5. Re-enter Edit mode (toggle Edit mode on)",
-        "6. Click the 'Reset page to default' button"
+        "1. Toggle the Edit Mode checkbox to ON",
+        "2. Click the Options menu (three-dot) for any existing block to open it",
+        "3. Toggle the Edit Mode checkbox to OFF while the Options menu is open"
       ],
-      "expected_result": "After step 3, the Dashboard shows no blocks and that empty layout persists when Edit mode is left and re-entered (deletion succeeds). After step 6, the Dashboard is reverted to the default layout and the default blocks reappear for the user — Reset page to default succeeds.",
-      "priority": "medium"
+      "expected_result": "Toggling Edit Mode off succeeds: the Options menu and move handles are no longer visible and the Options menu closes immediately; the Dashboard returns to view mode without an error",
+      "priority": "low"
     }
   ],
   "summary": {
     "total": 4,
     "boundary": 0,
     "input_edge": 0,
-    "interaction_edge": 2,
-    "state_edge": 1,
-    "data_edge": 1,
+    "interaction_edge": 1,
+    "state_edge": 3,
+    "data_edge": 0,
     "medium_priority": 3,
     "low_priority": 1
   }
 }
 
 ------------------------------------------------------------
-[21:12:55] Test-Edge - PARSED JSON
+[22:50:02] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Dashboard \u2014 Edit Mode",
@@ -444,79 +479,81 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-004",
+      "wf_ref": "WF-001",
       "subcategory": "state_edge",
-      "test_case": "Toggle Edit mode off while a block move is in progress (move cancelled)",
+      "test_case": "Click 'Reset page to default' when layout is already default",
       "preconditions": [
-        "User is authenticated and viewing the Dashboard page, with Edit mode toggled on",
-        "At least one block is present on the Dashboard"
+        "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)",
+        "User's dashboard currently matches the system default layout"
       ],
       "steps": [
-        "1. Click the block's Move icon to initiate repositioning",
-        "2. While repositioning UI is active, click the Edit mode toggle to switch Edit mode off"
+        "1. Toggle the Edit Mode checkbox to ON",
+        "2. Click the 'Reset page to default' action in the action bar"
       ],
-      "expected_result": "The in-progress repositioning is cancelled and no layout change is persisted; the Dashboard returns to view mode and the Move controls (Move icon and options menu) are no longer visible \u2014 action is blocked (the attempted move does not succeed).",
+      "expected_result": "Reset action succeeds: the Dashboard remains in the default layout (no visible layout change) and no error is shown; Edit Mode remains active and the UI shows no indication of failure",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-004",
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid consecutive Move attempts on the same block (second attempt ignored)",
+      "wf_ref": "WF-001",
+      "subcategory": "state_edge",
+      "test_case": "Invoke Reset immediately after moving a block (persistence-timing edge)",
       "preconditions": [
-        "User is authenticated and viewing the Dashboard page, with Edit mode toggled on",
-        "At least two blocks are present so repositioning target exists"
+        "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)",
+        "Dashboard contains at least one block in a known position"
       ],
       "steps": [
-        "1. Click a block's Move icon to begin repositioning",
-        "2. Immediately (within a fraction of a second) click the Move icon again on the target position or re-click the original block's Move icon a second time"
+        "1. Toggle the Edit Mode checkbox to ON",
+        "2. Use the move handle on a block to drag it to a different position on the page (perform the drag action)",
+        "3. Immediately after completing the drag, click the 'Reset page to default' action (do not wait for any additional UI persistence confirmation)"
       ],
-      "expected_result": "Only the first repositioning action is applied and persisted; the second rapid Move attempt is blocked and the UI shows no additional repositioning (no duplicate or conflicting moves are applied) \u2014 second attempt is blocked / error shown (or second click is ignored with a visible disabled state).",
+      "expected_result": "Reset action succeeds: the Dashboard visibly reverts to the default layout (the moved block returns to its original default position) and no error is shown",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-002",
-      "subcategory": "interaction_edge",
-      "test_case": "Use browser Back immediately after opening Add a block page (no block added)",
+      "wf_ref": "WF-006",
+      "subcategory": "state_edge",
+      "test_case": "Delete all blocks until the repeating group is empty",
       "preconditions": [
-        "User is authenticated and viewing the Dashboard page, with Edit mode toggled on"
+        "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)",
+        "Dashboard contains one or more blocks"
       ],
       "steps": [
-        "1. Click the '+ Add a block' button",
-        "2. Immediately press the browser Back button (before selecting any block type or interacting with the Add a block page)"
+        "1. Toggle the Edit Mode checkbox to ON",
+        "2. For the first visible block, open its Options menu (three-dot menu)",
+        "3. Click 'Delete' in the Options menu for that block",
+        "4. Repeat steps 2\u20133 until no blocks remain in the Dashboard repeating group",
+        "5. Toggle the Edit Mode checkbox to OFF"
       ],
-      "expected_result": "The UI returns to the Dashboard and no new block is added; the Dashboard shows the same blocks it showed before opening the Add a block page \u2014 the add action does not succeed (no partial addition persisted).",
-      "priority": "low"
+      "expected_result": "Deletion succeeds: the Dashboard displays no blocks (an empty-dashboard state is visible) and no error is shown; the removal of all blocks is persisted for the user",
+      "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-007",
-      "subcategory": "data_edge",
-      "test_case": "Delete all blocks then click 'Reset page to default' (empty state persisted, then default restored)",
+      "wf_ref": null,
+      "subcategory": "interaction_edge",
+      "test_case": "Open a block's Options menu then toggle Edit Mode off",
       "preconditions": [
-        "User is authenticated and viewing the Dashboard page, with Edit mode toggled on",
+        "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)",
         "At least one block is present on the Dashboard"
       ],
       "steps": [
-        "1. For each block visible in Edit mode, open its Options menu",
-        "2. Click Delete in the Options menu for a block",
-        "3. Repeat steps 1\u20132 until no blocks remain on the Dashboard",
-        "4. Leave Edit mode (toggle Edit mode off) and observe the Dashboard",
-        "5. Re-enter Edit mode (toggle Edit mode on)",
-        "6. Click the 'Reset page to default' button"
+        "1. Toggle the Edit Mode checkbox to ON",
+        "2. Click the Options menu (three-dot) for any existing block to open it",
+        "3. Toggle the Edit Mode checkbox to OFF while the Options menu is open"
       ],
-      "expected_result": "After step 3, the Dashboard shows no blocks and that empty layout persists when Edit mode is left and re-entered (deletion succeeds). After step 6, the Dashboard is reverted to the default layout and the default blocks reappear for the user \u2014 Reset page to default succeeds.",
-      "priority": "medium"
+      "expected_result": "Toggling Edit Mode off succeeds: the Options menu and move handles are no longer visible and the Options menu closes immediately; the Dashboard returns to view mode without an error",
+      "priority": "low"
     }
   ],
   "summary": {
     "total": 4,
     "boundary": 0,
     "input_edge": 0,
-    "interaction_edge": 2,
-    "state_edge": 1,
-    "data_edge": 1,
+    "interaction_edge": 1,
+    "state_edge": 3,
+    "data_edge": 0,
     "medium_priority": 3,
     "low_priority": 1
   }

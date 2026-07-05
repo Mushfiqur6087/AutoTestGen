@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:02:39.086272
+DEBUG SESSION STARTED: 2026-07-04T22:22:17.215912
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Negative - SYSTEM PROMPT
+[22:22:17] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Negative - USER PROMPT
+[22:22:17] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 4,
   "module_title": "Open New Account",
-  "summary": "A form-based feature that creates a new Checking or Savings account by selecting an account type, specifying an initial deposit and funding source, and performing real-time validations on inputs and balances.",
-  "where_it_fits": "Accessible from the left-hand navigation under 'Open New Account' after successful sign-in, this module is part of the account onboarding flow in the dashboard and, on success, redirects users back to the Accounts Overview to show the new account.",
-  "assumed_state_on_entry": "User is authenticated and on the dashboard with at least one existing funding account available for the initial deposit"
+  "summary": "Provides a form to open a new Checking or Savings account by selecting an account type, specifying an initial deposit and funding source, and validating requirements before creation.",
+  "where_it_fits": "Accessible from the left-hand navigation under 'Open New Account' after successful sign-in and from the logged-in account dashboard; it is part of the account setup flow and on success redirects the user back to Accounts Overview. It sits alongside other post-login features like Transfer Funds, Bill Pay, and Manage Cards.",
+  "assumed_state_on_entry": "User is logged in and has at least one existing funding account (with sufficient balance) available to fund the new account."
 }
 </module_context>
 
@@ -262,9 +272,14 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Open_New_Account_Form": {
       "type": "form",
+      "preconditions": [
+        "User is logged in",
+        "At least one funding account exists"
+      ],
+      "real_time_validation": true,
       "fields": {
         "Account_Type": {
-          "type": "radio",
+          "type": "unspecified",
           "options": [
             "Checking",
             "Savings"
@@ -274,43 +289,40 @@ If a `<workflows>` block is present in the input:
         "Initial_Deposit_Amount": {
           "type": "number",
           "required": true,
+          "real_time_validation": true,
           "constraints": [
             "must be numeric",
-            "minimum 25 when Account_Type == Checking",
-            "minimum 100 when Account_Type == Savings"
-          ],
-          "validation": {
-            "real_time": true,
-            "triggers": [
-              "input",
-              "change"
-            ]
-          }
+            "must be >= 25 when Account_Type == Checking",
+            "must be >= 100 when Account_Type == Savings"
+          ]
         },
         "Funding_Source_Account": {
           "type": "dropdown",
           "required": true,
+          "real_time_validation": true,
           "constraints": [
-            "selected account must have balance >= Initial_Deposit_Amount"
-          ],
-          "validation": {
-            "real_time": true,
-            "triggers": [
-              "change"
-            ]
-          }
+            "selected funding account must have sufficient balance to cover Initial_Deposit_Amount"
+          ]
         }
       },
+      "constraints": [
+        "Funding_Source_Account balance must be >= Initial_Deposit_Amount"
+      ],
       "submit_actions": [
         {
           "action_name": "Open Account",
           "preconditions": [
-            "User is authenticated and on the dashboard with at least one existing funding account available for the initial deposit"
+            "User is logged in",
+            "At least one funding account exists"
           ],
-          "on_success": "Account opened successfully! Redirect to Accounts Overview",
           "constraints": [
-            "form must pass all field validations before submission"
-          ]
+            "Initial_Deposit_Amount must meet Account_Type minimums",
+            "Funding_Source_Account balance must be >= Initial_Deposit_Amount"
+          ],
+          "on_success": {
+            "message": "Account opened successfully!",
+            "redirect_to": "Accounts Overview"
+          }
         }
       ]
     }
@@ -325,14 +337,13 @@ This page contains an account-opening form with interactive account type selecti
 </description>
 
 <workflows>
-WF-001 | Open Checking account (meets Checking minimum) | actor: Authenticated User | branch: Account_Type == Checking | terminal: Open Account | on_success: Account opened successfully! Redirect to Accounts Overview
-WF-002 | Open Savings account (meets Savings minimum) | actor: Authenticated User | branch: Account_Type == Savings | terminal: Open Account | on_success: Account opened successfully! Redirect to Accounts Overview
+WF-001 | Open Account (valid submission) | actor: <role> | branch: none | terminal: Open Account | on_success: Account opened successfully!; redirect_to: Accounts Overview
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:03:44] Test-Negative - LLM RESPONSE
+[22:23:21] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Open New Account",
@@ -341,55 +352,58 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Submit with Account Type (radio) left blank",
+      "test_case": "Submit with Account Type not selected (required unspecified field)",
       "preconditions": [
-        "User is authenticated and on the dashboard",
-        "At least one funding account exists with sufficient balance"
+        "User is logged in",
+        "At least one funding account exists"
       ],
       "steps": [
-        "1. Navigate to 'Open New Account' from the dashboard left-hand navigation",
-        "2. Leave the Account Type selection blank",
-        "3. Enter <valid initial deposit meeting the minimum for a chosen type> in the Initial Deposit Amount field",
-        "4. Select <a valid funding account with sufficient balance> in the Funding Source Account dropdown",
-        "5. Click the 'Open Account' button"
+        "1. Log in as a user with at least one funding account",
+        "2. Navigate to Open New Account",
+        "3. Leave the Account Type unselected",
+        "4. Enter <valid initial deposit >= 25> in the Initial Deposit Amount field",
+        "5. Select a Funding Source Account with sufficient balance",
+        "6. Click the Open Account button"
       ],
-      "expected_result": "Account Type field displays an inline validation error indicating it is required; the form does not submit; no account is created; Open Account button remains inactive or submission is blocked",
+      "expected_result": "Inline validation error appears on the Account Type field indicating it is required; form does not submit; no redirect to Accounts Overview; no new account is created",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": null,
-      "test_case": "Submit with Initial Deposit Amount (number) left blank",
+      "test_case": "Submit with Initial Deposit Amount left blank (required number field)",
       "preconditions": [
-        "User is authenticated and on the dashboard",
-        "At least one funding account exists with sufficient balance"
+        "User is logged in",
+        "At least one funding account exists"
       ],
       "steps": [
-        "1. Navigate to 'Open New Account'",
-        "2. Select Account Type: Checking",
-        "3. Leave the Initial Deposit Amount field blank",
-        "4. Select <a valid funding account with sufficient balance> in the Funding Source Account dropdown",
-        "5. Click the 'Open Account' button"
+        "1. Log in as a user with at least one funding account",
+        "2. Navigate to Open New Account",
+        "3. Select Account Type = Checking",
+        "4. Leave the Initial Deposit Amount field blank",
+        "5. Select a Funding Source Account with sufficient balance",
+        "6. Click the Open Account button"
       ],
-      "expected_result": "Initial Deposit Amount field displays an inline validation error indicating it is required; the form does not submit; no account is created",
+      "expected_result": "Inline validation error appears on the Initial Deposit Amount field indicating it is required; form does not submit; no redirect to Accounts Overview; no new account is created",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": null,
-      "test_case": "Submit with Funding Source Account (dropdown) left blank",
+      "test_case": "Submit with Funding Source not selected (required dropdown)",
       "preconditions": [
-        "User is authenticated and on the dashboard",
+        "User is logged in",
         "At least one funding account exists"
       ],
       "steps": [
-        "1. Navigate to 'Open New Account'",
-        "2. Select Account Type: Savings",
-        "3. Enter <valid amount meeting Savings minimum> in the Initial Deposit Amount field",
-        "4. Leave the Funding Source Account dropdown unselected",
-        "5. Click the 'Open Account' button"
+        "1. Log in as a user with at least one funding account",
+        "2. Navigate to Open New Account",
+        "3. Select Account Type = Checking",
+        "4. Enter <valid initial deposit >= 25> in the Initial Deposit Amount field",
+        "5. Leave the Funding Source Account dropdown unselected",
+        "6. Click the Open Account button"
       ],
-      "expected_result": "Funding Source Account field displays an inline validation error indicating it is required; the form does not submit; no account is created",
+      "expected_result": "Inline validation error appears on the Funding Source Account field indicating a funding account selection is required; form does not submit; no redirect to Accounts Overview; no new account is created",
       "priority": "high"
     },
     {
@@ -397,119 +411,126 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "wf_ref": null,
       "test_case": "Submit with ALL required fields empty",
       "preconditions": [
-        "User is authenticated and on the dashboard"
+        "User is logged in"
       ],
       "steps": [
-        "1. Navigate to 'Open New Account'",
-        "2. Do not select Account Type",
-        "3. Leave Initial Deposit Amount blank",
-        "4. Do not select a Funding Source Account",
-        "5. Click the 'Open Account' button"
+        "1. Log in as a user",
+        "2. Navigate to Open New Account",
+        "3. Leave Account Type unselected",
+        "4. Leave Initial Deposit Amount blank",
+        "5. Leave Funding Source Account unselected",
+        "6. Click the Open Account button"
       ],
-      "expected_result": "Account Type, Initial Deposit Amount, and Funding Source Account each display inline validation errors indicating they are required; the form does not submit; no account is created",
+      "expected_result": "Inline validation errors appear on Account Type, Initial Deposit Amount, and Funding Source Account indicating each is required; form does not submit; no redirect to Accounts Overview; no new account is created",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
       "wf_ref": null,
-      "test_case": "Enter non-numeric value in Initial Deposit Amount (format violation)",
+      "test_case": "Enter non-numeric value into Initial Deposit Amount (format violation)",
       "preconditions": [
-        "User is authenticated and on the dashboard",
-        "At least one funding account exists with sufficient balance"
+        "User is logged in",
+        "At least one funding account exists"
       ],
       "steps": [
-        "1. Navigate to 'Open New Account'",
-        "2. Select Account Type: Checking",
-        "3. Enter <non-numeric value> in the Initial Deposit Amount field",
-        "4. Select <a valid funding account with sufficient balance> in the Funding Source Account dropdown",
-        "5. Attempt to click the 'Open Account' button"
+        "1. Log in as a user with at least one funding account",
+        "2. Navigate to Open New Account",
+        "3. Select Account Type = Checking",
+        "4. Enter <non-numeric amount> into the Initial Deposit Amount field",
+        "5. Select a Funding Source Account with sufficient balance",
+        "6. Click the Open Account button"
       ],
-      "expected_result": "Initial Deposit Amount field displays an inline validation error indicating the value must be numeric; the form does not submit; no account is created",
+      "expected_result": "Initial Deposit Amount field displays an inline validation error indicating the value must be numeric; form does not submit; no redirect to Accounts Overview; no new account is created",
       "priority": "medium"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Checking: Initial deposit below Checking minimum ($25) is rejected",
+      "test_case": "Initial deposit below minimum for Checking (business rule violation)",
       "preconditions": [
-        "User is authenticated and on the dashboard",
-        "At least one funding account exists with sufficient balance"
+        "User is logged in",
+        "At least one funding account exists"
       ],
       "steps": [
-        "1. Navigate to 'Open New Account'",
-        "2. Select Account Type: Checking",
-        "3. Enter <amount below minimum for Checking> in the Initial Deposit Amount field",
-        "4. Select <a funding account with balance >= the entered amount> in the Funding Source Account dropdown",
-        "5. Click the 'Open Account' button"
+        "1. Log in as a user with at least one funding account",
+        "2. Navigate to Open New Account",
+        "3. Select Account Type = Checking",
+        "4. Enter <amount less than 25> in the Initial Deposit Amount field",
+        "5. Select a Funding Source Account with balance >= the entered amount",
+        "6. Click the Open Account button"
       ],
-      "expected_result": "Initial Deposit Amount field displays an inline validation error indicating the minimum required for Checking is $25; the form does not submit; no account is created; user remains on the Open New Account page",
+      "expected_result": "Inline validation error appears on the Initial Deposit Amount field indicating the amount does not meet the minimum required for Checking; form does not submit; no redirect to Accounts Overview; no new account is created",
       "priority": "high"
     },
     {
       "tc_id": "N-007",
-      "wf_ref": "WF-002",
-      "test_case": "Savings: Initial deposit below Savings minimum ($100) is rejected",
+      "wf_ref": null,
+      "test_case": "Initial deposit below minimum for Savings (business rule violation)",
       "preconditions": [
-        "User is authenticated and on the dashboard",
-        "At least one funding account exists with sufficient balance"
+        "User is logged in",
+        "At least one funding account exists"
       ],
       "steps": [
-        "1. Navigate to 'Open New Account'",
-        "2. Select Account Type: Savings",
-        "3. Enter <amount below minimum for Savings> in the Initial Deposit Amount field",
-        "4. Select <a funding account with balance >= the entered amount> in the Funding Source Account dropdown",
-        "5. Click the 'Open Account' button"
+        "1. Log in as a user with at least one funding account",
+        "2. Navigate to Open New Account",
+        "3. Select Account Type = Savings",
+        "4. Enter <amount less than 100> in the Initial Deposit Amount field",
+        "5. Select a Funding Source Account with balance >= the entered amount",
+        "6. Click the Open Account button"
       ],
-      "expected_result": "Initial Deposit Amount field displays an inline validation error indicating the minimum required for Savings is $100; the form does not submit; no account is created; user remains on the Open New Account page",
-      "priority": "high"
+      "expected_result": "Inline validation error appears on the Initial Deposit Amount field indicating the amount does not meet the minimum required for Savings; form does not submit; no redirect to Accounts Overview; no new account is created",
+        "priority": "high"
     },
     {
       "tc_id": "N-008",
-      "wf_ref": null,
-      "test_case": "Selected Funding Source Account has insufficient balance for requested deposit",
+      "wf_ref": "WF-001",
+      "test_case": "Selected funding account has insufficient balance to cover Initial Deposit (funding constraint violation)",
       "preconditions": [
-        "User is authenticated and on the dashboard",
-        "At least one funding account exists with balance less than the requested deposit"
+        "User is logged in",
+        "At least one funding account exists"
       ],
       "steps": [
-        "1. Navigate to 'Open New Account'",
-        "2. Select Account Type: Checking",
-        "3. Enter <amount within or above minimum but greater than funding account balance> in the Initial Deposit Amount field",
-        "4. Select <a funding account with balance less than the entered amount> in the Funding Source Account dropdown",
-        "5. Click the 'Open Account' button"
+        "1. Log in as a user with at least one funding account whose balance is less than the intended deposit",
+        "2. Navigate to Open New Account",
+        "3. Select Account Type = Checking",
+        "4. Enter <initial deposit amount within account minimums> in the Initial Deposit Amount field",
+        "5. Select the Funding Source Account whose balance is less than the entered amount",
+        "6. Click the Open Account button"
       ],
-      "expected_result": "Funding Source Account field displays an inline validation error indicating the selected funding account does not have sufficient balance to cover the Initial Deposit Amount; the form does not submit; no account is created",
+      "expected_result": "Inline validation error appears on the Funding Source Account field (or a form-level validation) indicating the selected funding account does not have sufficient balance to cover the Initial Deposit Amount; form does not submit; no redirect to Accounts Overview; no new account is created",
       "priority": "high"
     },
     {
       "tc_id": "N-009",
       "wf_ref": null,
-      "test_case": "Unauthenticated user cannot access Open New Account page (precondition failure)",
+      "test_case": "Unauthenticated user attempts to access Open New Account (precondition: User is logged in)",
       "preconditions": [
-        "User is not authenticated"
+        "User is not logged in"
       ],
       "steps": [
-        "1. From the application public entry point, attempt to navigate to the 'Open New Account' route or click the left-hand navigation link for 'Open New Account'"
+        "1. Ensure the user is logged out",
+        "2. Attempt to navigate to the Open New Account page or click Open New Account in the navigation"
       ],
-      "expected_result": "User is redirected to the login page; the Open New Account form is not accessible; no account creation is possible while unauthenticated",
+      "expected_result": "User is redirected to the Login page (Open New Account form is not displayed); access to the Open New Account form is blocked",
       "priority": "high"
     },
     {
       "tc_id": "N-010",
       "wf_ref": null,
-      "test_case": "Authenticated user with no funding accounts available cannot open account (precondition failure)",
+      "test_case": "Attempt to open account when no funding accounts exist (precondition 'At least one funding account exists' not met)",
       "preconditions": [
-        "User is authenticated and on the dashboard",
-        "User has zero funding accounts available"
+        "User is logged in",
+        "User has no funding accounts"
       ],
       "steps": [
-        "1. Navigate to 'Open New Account'",
-        "2. Observe the Funding Source Account dropdown contents",
-        "3. Attempt to select a funding source (none available)",
-        "4. Enter <valid initial deposit meeting chosen account minimum>",
-        "5. Click the 'Open Account' button"
+        "1. Log in as a user who has no funding accounts",
+        "2. Navigate to Open New Account",
+        "3. Select Account Type = Checking",
+        "4. Enter <valid initial deposit >= 25> in the Initial Deposit Amount field",
+        "5. Observe the Funding Source Account dropdown",
+        "6. Click the Open Account button"
       ],
-      "expected_result": "Funding Source Account dropdown displays an empty state such as 'No funding accounts available' and the Open Account button is disabled or submission is blocked; attempting to submit shows a clear inline error indicating no funding account is available; no account is created",
+      "expected_result": "Funding Source Account dropdown shows no available accounts (or is disabled) and an inline validation or page-level message indicates a funding account is required; form does not submit; no redirect to Accounts Overview; no new account is created",
       "priority": "high"
     }
   ],
@@ -522,7 +543,7 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
 }
 
 ------------------------------------------------------------
-[21:03:44] Test-Negative - PARSED JSON
+[22:23:21] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Open New Account",
@@ -531,55 +552,58 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Submit with Account Type (radio) left blank",
+      "test_case": "Submit with Account Type not selected (required unspecified field)",
       "preconditions": [
-        "User is authenticated and on the dashboard",
-        "At least one funding account exists with sufficient balance"
+        "User is logged in",
+        "At least one funding account exists"
       ],
       "steps": [
-        "1. Navigate to 'Open New Account' from the dashboard left-hand navigation",
-        "2. Leave the Account Type selection blank",
-        "3. Enter <valid initial deposit meeting the minimum for a chosen type> in the Initial Deposit Amount field",
-        "4. Select <a valid funding account with sufficient balance> in the Funding Source Account dropdown",
-        "5. Click the 'Open Account' button"
+        "1. Log in as a user with at least one funding account",
+        "2. Navigate to Open New Account",
+        "3. Leave the Account Type unselected",
+        "4. Enter <valid initial deposit >= 25> in the Initial Deposit Amount field",
+        "5. Select a Funding Source Account with sufficient balance",
+        "6. Click the Open Account button"
       ],
-      "expected_result": "Account Type field displays an inline validation error indicating it is required; the form does not submit; no account is created; Open Account button remains inactive or submission is blocked",
+      "expected_result": "Inline validation error appears on the Account Type field indicating it is required; form does not submit; no redirect to Accounts Overview; no new account is created",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": null,
-      "test_case": "Submit with Initial Deposit Amount (number) left blank",
+      "test_case": "Submit with Initial Deposit Amount left blank (required number field)",
       "preconditions": [
-        "User is authenticated and on the dashboard",
-        "At least one funding account exists with sufficient balance"
+        "User is logged in",
+        "At least one funding account exists"
       ],
       "steps": [
-        "1. Navigate to 'Open New Account'",
-        "2. Select Account Type: Checking",
-        "3. Leave the Initial Deposit Amount field blank",
-        "4. Select <a valid funding account with sufficient balance> in the Funding Source Account dropdown",
-        "5. Click the 'Open Account' button"
+        "1. Log in as a user with at least one funding account",
+        "2. Navigate to Open New Account",
+        "3. Select Account Type = Checking",
+        "4. Leave the Initial Deposit Amount field blank",
+        "5. Select a Funding Source Account with sufficient balance",
+        "6. Click the Open Account button"
       ],
-      "expected_result": "Initial Deposit Amount field displays an inline validation error indicating it is required; the form does not submit; no account is created",
+      "expected_result": "Inline validation error appears on the Initial Deposit Amount field indicating it is required; form does not submit; no redirect to Accounts Overview; no new account is created",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": null,
-      "test_case": "Submit with Funding Source Account (dropdown) left blank",
+      "test_case": "Submit with Funding Source not selected (required dropdown)",
       "preconditions": [
-        "User is authenticated and on the dashboard",
+        "User is logged in",
         "At least one funding account exists"
       ],
       "steps": [
-        "1. Navigate to 'Open New Account'",
-        "2. Select Account Type: Savings",
-        "3. Enter <valid amount meeting Savings minimum> in the Initial Deposit Amount field",
-        "4. Leave the Funding Source Account dropdown unselected",
-        "5. Click the 'Open Account' button"
+        "1. Log in as a user with at least one funding account",
+        "2. Navigate to Open New Account",
+        "3. Select Account Type = Checking",
+        "4. Enter <valid initial deposit >= 25> in the Initial Deposit Amount field",
+        "5. Leave the Funding Source Account dropdown unselected",
+        "6. Click the Open Account button"
       ],
-      "expected_result": "Funding Source Account field displays an inline validation error indicating it is required; the form does not submit; no account is created",
+      "expected_result": "Inline validation error appears on the Funding Source Account field indicating a funding account selection is required; form does not submit; no redirect to Accounts Overview; no new account is created",
       "priority": "high"
     },
     {
@@ -587,119 +611,126 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "wf_ref": null,
       "test_case": "Submit with ALL required fields empty",
       "preconditions": [
-        "User is authenticated and on the dashboard"
+        "User is logged in"
       ],
       "steps": [
-        "1. Navigate to 'Open New Account'",
-        "2. Do not select Account Type",
-        "3. Leave Initial Deposit Amount blank",
-        "4. Do not select a Funding Source Account",
-        "5. Click the 'Open Account' button"
+        "1. Log in as a user",
+        "2. Navigate to Open New Account",
+        "3. Leave Account Type unselected",
+        "4. Leave Initial Deposit Amount blank",
+        "5. Leave Funding Source Account unselected",
+        "6. Click the Open Account button"
       ],
-      "expected_result": "Account Type, Initial Deposit Amount, and Funding Source Account each display inline validation errors indicating they are required; the form does not submit; no account is created",
+      "expected_result": "Inline validation errors appear on Account Type, Initial Deposit Amount, and Funding Source Account indicating each is required; form does not submit; no redirect to Accounts Overview; no new account is created",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
       "wf_ref": null,
-      "test_case": "Enter non-numeric value in Initial Deposit Amount (format violation)",
+      "test_case": "Enter non-numeric value into Initial Deposit Amount (format violation)",
       "preconditions": [
-        "User is authenticated and on the dashboard",
-        "At least one funding account exists with sufficient balance"
+        "User is logged in",
+        "At least one funding account exists"
       ],
       "steps": [
-        "1. Navigate to 'Open New Account'",
-        "2. Select Account Type: Checking",
-        "3. Enter <non-numeric value> in the Initial Deposit Amount field",
-        "4. Select <a valid funding account with sufficient balance> in the Funding Source Account dropdown",
-        "5. Attempt to click the 'Open Account' button"
+        "1. Log in as a user with at least one funding account",
+        "2. Navigate to Open New Account",
+        "3. Select Account Type = Checking",
+        "4. Enter <non-numeric amount> into the Initial Deposit Amount field",
+        "5. Select a Funding Source Account with sufficient balance",
+        "6. Click the Open Account button"
       ],
-      "expected_result": "Initial Deposit Amount field displays an inline validation error indicating the value must be numeric; the form does not submit; no account is created",
+      "expected_result": "Initial Deposit Amount field displays an inline validation error indicating the value must be numeric; form does not submit; no redirect to Accounts Overview; no new account is created",
       "priority": "medium"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Checking: Initial deposit below Checking minimum ($25) is rejected",
+      "test_case": "Initial deposit below minimum for Checking (business rule violation)",
       "preconditions": [
-        "User is authenticated and on the dashboard",
-        "At least one funding account exists with sufficient balance"
+        "User is logged in",
+        "At least one funding account exists"
       ],
       "steps": [
-        "1. Navigate to 'Open New Account'",
-        "2. Select Account Type: Checking",
-        "3. Enter <amount below minimum for Checking> in the Initial Deposit Amount field",
-        "4. Select <a funding account with balance >= the entered amount> in the Funding Source Account dropdown",
-        "5. Click the 'Open Account' button"
+        "1. Log in as a user with at least one funding account",
+        "2. Navigate to Open New Account",
+        "3. Select Account Type = Checking",
+        "4. Enter <amount less than 25> in the Initial Deposit Amount field",
+        "5. Select a Funding Source Account with balance >= the entered amount",
+        "6. Click the Open Account button"
       ],
-      "expected_result": "Initial Deposit Amount field displays an inline validation error indicating the minimum required for Checking is $25; the form does not submit; no account is created; user remains on the Open New Account page",
+      "expected_result": "Inline validation error appears on the Initial Deposit Amount field indicating the amount does not meet the minimum required for Checking; form does not submit; no redirect to Accounts Overview; no new account is created",
       "priority": "high"
     },
     {
       "tc_id": "N-007",
-      "wf_ref": "WF-002",
-      "test_case": "Savings: Initial deposit below Savings minimum ($100) is rejected",
+      "wf_ref": null,
+      "test_case": "Initial deposit below minimum for Savings (business rule violation)",
       "preconditions": [
-        "User is authenticated and on the dashboard",
-        "At least one funding account exists with sufficient balance"
+        "User is logged in",
+        "At least one funding account exists"
       ],
       "steps": [
-        "1. Navigate to 'Open New Account'",
-        "2. Select Account Type: Savings",
-        "3. Enter <amount below minimum for Savings> in the Initial Deposit Amount field",
-        "4. Select <a funding account with balance >= the entered amount> in the Funding Source Account dropdown",
-        "5. Click the 'Open Account' button"
+        "1. Log in as a user with at least one funding account",
+        "2. Navigate to Open New Account",
+        "3. Select Account Type = Savings",
+        "4. Enter <amount less than 100> in the Initial Deposit Amount field",
+        "5. Select a Funding Source Account with balance >= the entered amount",
+        "6. Click the Open Account button"
       ],
-      "expected_result": "Initial Deposit Amount field displays an inline validation error indicating the minimum required for Savings is $100; the form does not submit; no account is created; user remains on the Open New Account page",
+      "expected_result": "Inline validation error appears on the Initial Deposit Amount field indicating the amount does not meet the minimum required for Savings; form does not submit; no redirect to Accounts Overview; no new account is created",
       "priority": "high"
     },
     {
       "tc_id": "N-008",
-      "wf_ref": null,
-      "test_case": "Selected Funding Source Account has insufficient balance for requested deposit",
+      "wf_ref": "WF-001",
+      "test_case": "Selected funding account has insufficient balance to cover Initial Deposit (funding constraint violation)",
       "preconditions": [
-        "User is authenticated and on the dashboard",
-        "At least one funding account exists with balance less than the requested deposit"
+        "User is logged in",
+        "At least one funding account exists"
       ],
       "steps": [
-        "1. Navigate to 'Open New Account'",
-        "2. Select Account Type: Checking",
-        "3. Enter <amount within or above minimum but greater than funding account balance> in the Initial Deposit Amount field",
-        "4. Select <a funding account with balance less than the entered amount> in the Funding Source Account dropdown",
-        "5. Click the 'Open Account' button"
+        "1. Log in as a user with at least one funding account whose balance is less than the intended deposit",
+        "2. Navigate to Open New Account",
+        "3. Select Account Type = Checking",
+        "4. Enter <initial deposit amount within account minimums> in the Initial Deposit Amount field",
+        "5. Select the Funding Source Account whose balance is less than the entered amount",
+        "6. Click the Open Account button"
       ],
-      "expected_result": "Funding Source Account field displays an inline validation error indicating the selected funding account does not have sufficient balance to cover the Initial Deposit Amount; the form does not submit; no account is created",
+      "expected_result": "Inline validation error appears on the Funding Source Account field (or a form-level validation) indicating the selected funding account does not have sufficient balance to cover the Initial Deposit Amount; form does not submit; no redirect to Accounts Overview; no new account is created",
       "priority": "high"
     },
     {
       "tc_id": "N-009",
       "wf_ref": null,
-      "test_case": "Unauthenticated user cannot access Open New Account page (precondition failure)",
+      "test_case": "Unauthenticated user attempts to access Open New Account (precondition: User is logged in)",
       "preconditions": [
-        "User is not authenticated"
+        "User is not logged in"
       ],
       "steps": [
-        "1. From the application public entry point, attempt to navigate to the 'Open New Account' route or click the left-hand navigation link for 'Open New Account'"
+        "1. Ensure the user is logged out",
+        "2. Attempt to navigate to the Open New Account page or click Open New Account in the navigation"
       ],
-      "expected_result": "User is redirected to the login page; the Open New Account form is not accessible; no account creation is possible while unauthenticated",
+      "expected_result": "User is redirected to the Login page (Open New Account form is not displayed); access to the Open New Account form is blocked",
       "priority": "high"
     },
     {
       "tc_id": "N-010",
       "wf_ref": null,
-      "test_case": "Authenticated user with no funding accounts available cannot open account (precondition failure)",
+      "test_case": "Attempt to open account when no funding accounts exist (precondition 'At least one funding account exists' not met)",
       "preconditions": [
-        "User is authenticated and on the dashboard",
-        "User has zero funding accounts available"
+        "User is logged in",
+        "User has no funding accounts"
       ],
       "steps": [
-        "1. Navigate to 'Open New Account'",
-        "2. Observe the Funding Source Account dropdown contents",
-        "3. Attempt to select a funding source (none available)",
-        "4. Enter <valid initial deposit meeting chosen account minimum>",
-        "5. Click the 'Open Account' button"
+        "1. Log in as a user who has no funding accounts",
+        "2. Navigate to Open New Account",
+        "3. Select Account Type = Checking",
+        "4. Enter <valid initial deposit >= 25> in the Initial Deposit Amount field",
+        "5. Observe the Funding Source Account dropdown",
+        "6. Click the Open Account button"
       ],
-      "expected_result": "Funding Source Account dropdown displays an empty state such as 'No funding accounts available' and the Open Account button is disabled or submission is blocked; attempting to submit shows a clear inline error indicating no funding account is available; no account is created",
+      "expected_result": "Funding Source Account dropdown shows no available accounts (or is disabled) and an inline validation or page-level message indicates a funding account is required; form does not submit; no redirect to Accounts Overview; no new account is created",
       "priority": "high"
     }
   ],

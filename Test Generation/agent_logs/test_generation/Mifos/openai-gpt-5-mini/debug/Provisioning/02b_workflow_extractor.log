@@ -1,0 +1,715 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:04:00.771759
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:04:00] Workflow-Extractor - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Extractor. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to enumerate every distinct, executable interaction path through this module — one entry per workflow.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ATTEMPT CONTEXT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Attempt: 1 of 3
+
+
+
+---
+
+**INPUT:**
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+---
+
+## What is a Workflow?
+
+A **workflow** is one complete, executable interaction path — from the user entering the module to completing **one terminal action** within it.
+
+Two workflows are **distinct** if they require different user actions to reach the terminal — i.e. they activate a different conditional branch, follow a different wizard step set, target a different state, or end on a different terminal action.
+
+### Strict Rules
+
+1. **Strictly intra-module.** A workflow step is an action within this module only. If submitting redirects to another page, the redirect is the **exit** — not a step.
+2. **No invented paths.** Only enumerate paths that are traceable to AST nodes or explicit description text. No UX intuition, no assumed flows.
+3. **Minimal fields.** A workflow carries only what downstream agents actually need: who does it, what makes it distinct, what it ends with, what success looks like.
+4. **No step-by-step instructions.** Workflows do NOT spell out the full step sequence — the agents already have the AST for that. A workflow names the path, not the actions.
+
+---
+
+## What Paths to Enumerate
+
+Enumerate **distinct-outcome** paths — not one-per-type, and **not** the cartesian product of every toggle. The rule: two paths are separate workflows only if the user does something different that leads to a **different terminal outcome** (different `on_success`) **or** exercises a **different revealed required-field group** that needs its own coverage.
+
+| AST node type | What to enumerate |
+|---|---|
+| `form` with no conditionals | One workflow per `submit_actions[]` entry |
+| `form` with `visible_when` / toggle fields | One base workflow per `submit_actions[]` entry, PLUS one workflow for **each conditional branch that reveals a distinct required-field group** (e.g. enabling File submissions reveals max-files/size/types). Do **NOT** multiply independent toggles together. |
+| `wizard` | One workflow per distinct step sequence (if all steps are linear, one workflow per `submit_actions[]`; if any step is conditional, enumerate each branch) |
+| `state_bound_action_bar` | One workflow per `available_actions[]` entry per state (state × action = one workflow) |
+| `data_table` | One workflow per `row_actions[]` entry + one per `bulk_actions[]` entry (include View, Edit, Delete, and all others) |
+| `tab_container` | One workflow per tab that contains a form with a submit action |
+| `repeating_group` | Not a standalone workflow source — it is part of a form workflow that activates it |
+
+**Include all data table row actions** — View, Edit, Delete, and any others. Even read-only row actions (e.g., "View") must be included because they still require a positive test case.
+
+### DO NOT enumerate the cartesian product of toggles (CRITICAL)
+
+A form with independent toggles A, B, C and submit buttons {Save, Save+display, Cancel} must **not** produce 2×2×2×3 = 24 workflows. Independent toggles that do **not** change the terminal outcome are covered **once each**, not in combination:
+- If toggle A (e.g. `File_Submissions`) and toggle B (e.g. `Group_Submissions`) both still reach the same `on_success` ("assignment created"), they are **not** two dimensions to multiply. Emit one workflow that activates A's revealed fields, and one that activates B's revealed fields — not A×B.
+- An `+ Add restriction` / optional-picker step that does not change `on_success` is **not** a separate workflow dimension. Fold it into an existing workflow or add at most one workflow for it.
+
+### Discard / Cancel collapse rule (CRITICAL)
+
+A `Cancel` / `discard` / `abandon` terminal action discards **all** field state, so field/toggle combinations are irrelevant to it. Emit **exactly ONE** Cancel workflow for the module, regardless of how many toggles or revealed-field groups exist. Never produce a Cancel workflow per toggle combination.
+
+**Worked example — Assignment Creation** (toggles: File submissions, Group submissions, Add restriction; buttons: Save and return, Save and display, Cancel):
+- ✅ Correct (~6–8): base Save-and-return, base Save-and-display, one Save covering File-submission revealed fields, one Save covering Group-submission revealed fields, one Save covering an added restriction, one Cancel.
+- ❌ Wrong (24): every `{File}×{Group}×{Restriction}×{Save/Display/Cancel}` combination.
+
+---
+
+## Field Definitions
+
+| Field | Type | Rule |
+|---|---|---|
+| `wf_id` | `"WF-NNN"` | Sequential within this module, starting at WF-001 |
+| `name` | string | Short human name for the path — what makes it distinct |
+| `actor` | string | Role who performs this path — use `<role>` placeholder if spec doesn't specify |
+| `conditional_branch` | string or `null` | The condition(s) that activate this path's unique branch. `null` if no conditionals apply |
+| `terminal_action` | string | Exact name of the button/action that ends this workflow (matches AST `action_name` or `element_name`) |
+| `on_success` | string | Verbatim from AST `on_success` field if available; otherwise derived from description |
+
+**`conditional_branch` format:**
+- Single condition: `"Submission_Type == File_Upload"`
+- Multiple: `"Submission_Type == File_Upload AND Grade_Type == Points"`
+- State condition: `"entity_state == Draft"`
+- `null` if this is the base path with no conditionals
+
+---
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SELF-CHECK — VERIFY EVERY ITEM BEFORE OUTPUTTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Go through these one by one. If any check fails, fix it before outputting.
+
+□ 1. Every `submit_actions[]` entry in every form/wizard has at least one workflow.
+□ 2. Every state × action pair in every `state_bound_action_bar` has exactly one workflow.
+□ 3. Every `row_actions[]` and `bulk_actions[]` entry in every `data_table` has one workflow.
+□ 4. Every tab with a form submission in a `tab_container` has one workflow.
+□ 5. `wf_id` numbering is sequential (WF-001, WF-002, ...) with no gaps.
+□ 6. Every `terminal_action` matches an exact `action_name` or `element_name` from the AST.
+□ 7. No two workflows reach the **same `on_success` via the same code path** — even if their `conditional_branch` strings differ. If they do, merge them (keep the one that activates a distinct revealed required-field group; drop pure toggle-combination duplicates).
+□ 8. There is **at most ONE** `Cancel`/`discard` workflow for the whole module.
+□ 9. No independent toggles are multiplied together — the workflow count is roughly (base submits) + (revealed required-field groups) + 1 Cancel, NOT the product of all toggles × all buttons.
+□ 10. No workflow crosses module boundaries (steps in another module).
+□ 11. Every `on_success` reflects the AST or description — no generic "success" strings.
+
+---
+
+## Anti-Hallucination Gate (run after self-check)
+
+1. Does each workflow trace back to a specific AST node (`submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`) or an explicit action described in the description text? If no → delete it.
+2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
+3. Do two workflows reach the same `on_success` via the same code path (e.g. differing only by an independent toggle that does not change the outcome, or being repeated Cancel variants)? If yes → merge them into one. Keep a separate workflow only when its branch reveals a **distinct required-field group** that needs its own coverage.
+4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
+5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
+
+---
+
+## Calibration
+
+- Simple form module (no conditionals, one submit): 1–3 workflows
+- Form with conditionals/toggles: **(base submit outcomes) + (one per revealed required-field group) + 1 Cancel** — typically 4–8, NOT the product of all toggles × all buttons. A multi-toggle form like Assignment Creation should land near 6–8, never 20+.
+- Module with state machine: add 1 per (state × action) combination
+- Module with data table: add 1 per row_action + 1 per bulk_action
+
+---
+
+## OUTPUT — JSON only, no prose, no markdown fencing:
+
+{
+  "module": "Module Name",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Short human name — what makes this path distinct",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Submit",
+      "on_success": "Verbatim on_success from AST or derived from description"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Submit with File Upload submission type",
+      "actor": "<role>",
+      "conditional_branch": "Submission_Type == File_Upload",
+      "terminal_action": "Submit",
+      "on_success": "Assignment created; success message shown"
+    }
+  ],
+  "total": 2
+}
+
+
+------------------------------------------------------------
+[23:04:00] Workflow-Extractor - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 21,
+  "module_title": "Provisioning",
+  "summary": "Manages provisioning criteria for categorizing overdue loans and generates provisioning journal entries that record calculated provisions per loan product and category.",
+  "where_it_fits": "Located within the Accounting area of the application (accessible from the top navigation Accounting menu and relevant accounting pages in the left sidebar), this module provides both the configuration of provisioning rules and the operational generation/review of provisioning journal entries as part of month-end or provisioning workflows tied to the loan portfolio lifecycle.",
+  "assumed_state_on_entry": "Logged in with accounting/administrative privileges, a populated Chart of Accounts (GL accounts) exists, and the loan portfolio (including overdue loans) is present in the system."
+}
+</module_context>
+
+<module_name>Provisioning</module_name>
+
+<ast>
+{
+  "module_name": "Provisioning",
+  "components": {
+    "Provisioning_Criteria_Table": {
+      "type": "data_table",
+      "columns": [
+        "Criteria_Name",
+        "Created_Date"
+      ],
+      "actions": [
+        {
+          "action_name": "+ Create",
+          "type": "button",
+          "on_click": "opens Provisioning_Criteria_Form",
+          "on_success": "opens blank Provisioning_Criteria_Form ready for input"
+        }
+      ],
+      "row_actions": [
+        {
+          "action_name": "Edit",
+          "on_click": "opens Provisioning_Criteria_Form for edit",
+          "on_success": "loads selected criteria into Provisioning_Criteria_Form"
+        }
+      ]
+    },
+    "Provisioning_Criteria_Form": {
+      "type": "form",
+      "fields": {
+        "Criteria_Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Definitions": {
+          "type": "repeating_group",
+          "allow_add": true,
+          "actions": [
+            {
+              "action_name": "Add Row",
+              "type": "button",
+              "on_click": "adds a new Definitions row"
+            },
+            {
+              "action_name": "Remove Row",
+              "type": "row_action",
+              "on_click": "removes this Definitions row"
+            }
+          ],
+          "item_fields": {
+            "Loan_Product": {
+              "type": "unspecified"
+            },
+            "Category": {
+              "type": "dropdown",
+              "options": [
+                "STANDARD",
+                "SUB-STANDARD",
+                "DOUBTFUL",
+                "LOSS"
+              ]
+            },
+            "Minimum_Age": {
+              "type": "number"
+            },
+            "Maximum_Age": {
+              "type": "number"
+            },
+            "Provisioning_Percentage": {
+              "type": "number"
+            },
+            "Liability_Account": {
+              "type": "dropdown"
+            },
+            "Expense_Account": {
+              "type": "dropdown"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create",
+          "on_success": "saves criteria and returns to Provisioning Criteria listing",
+          "preconditions": [
+            "user must be logged in with accounting/administrative privileges"
+          ]
+        }
+      ]
+    },
+    "Provisioning_Entries_Table": {
+      "type": "data_table",
+      "columns": [
+        "Entry_Date",
+        "Journal_Entry_Created",
+        "Created_By"
+      ],
+      "actions": [
+        {
+          "action_name": "+ Create Provisioning Entry",
+          "type": "button",
+          "on_click": "generates new provisioning entries based on current loan portfolio and configured criteria",
+          "on_success": "creates provisioning journal entries and refreshes the entries listing",
+          "preconditions": [
+            "user must be logged in with accounting/administrative privileges",
+            "Chart of Accounts must be present"
+          ]
+        }
+      ],
+      "row_actions": [
+        {
+          "action_name": "Review",
+          "on_click": "opens Provisioning_Entry_Detail_View",
+          "on_success": "shows detailed breakdown by loan product and category"
+        },
+        {
+          "action_name": "Recreate",
+          "on_click": "recreates provisioning entry",
+          "on_success": "generates provisioning journal entries for the entry and updates the listing"
+        }
+      ]
+    },
+    "Provisioning_Entry_Detail_View": {
+      "type": "detail_view",
+      "fields": {}
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Provisioning Criteria page displays a data table with columns for Criteria Name (clickable link) and Created Date. A "+ Create" button opens the creation form containing Criteria Name (required) and a Definitions table where each row specifies Loan Product, Category (STANDARD, SUB-STANDARD, DOUBTFUL, LOSS), Minimum Age (overdue days), Maximum Age (overdue days), Provisioning Percentage (percentage of outstanding principal), Liability Account (GL account dropdown), and Expense Account (GL account dropdown). Multiple rows can be added to cover different overdue ranges and product combinations.
+
+The Provisioning Entries page lists all generated provisioning journal entries with columns for Entry Date, Journal Entry Created, Created By, and action buttons. A "+ Create Provisioning Entry" button generates new provisioning entries based on the current loan portfolio status and configured criteria; the system calculates the required provision amount for each loan category and creates the corresponding journal entries. Each entry can be reviewed (showing a detailed breakdown by loan product and category) or recreated.
+
+---
+
+
+</description>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:05:08] Workflow-Extractor - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Provisioning",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Open Provisioning Criteria creation form",
+      "actor": "Accounting/Administrative user",
+      "conditional_branch": null,
+      "terminal_action": "+ Create",
+      "on_success": "opens blank Provisioning_Criteria_Form ready for input"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Edit existing Provisioning Criteria",
+      "actor": "Accounting/Administrative user",
+      "conditional_branch": null,
+      "terminal_action": "Edit",
+      "on_success": "loads selected criteria into Provisioning_Criteria_Form"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Create Provisioning Criteria (save form)",
+      "actor": "Accounting/Administrative user",
+      "conditional_branch": "user_role == Accounting_Admin",
+      "terminal_action": "Create",
+      "on_success": "saves criteria and returns to Provisioning Criteria listing"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Generate new provisioning journal entries",
+      "actor": "Accounting/Administrative user",
+      "conditional_branch": "user_role == Accounting_Admin AND Chart_of_Accounts == Present",
+      "terminal_action": "+ Create Provisioning Entry",
+      "on_success": "creates provisioning journal entries and refreshes the entries listing"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Review a provisioning entry (view detail)",
+      "actor": "Accounting/Administrative user",
+      "conditional_branch": null,
+      "terminal_action": "Review",
+      "on_success": "shows detailed breakdown by loan product and category"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Recreate a provisioning entry",
+      "actor": "Accounting/Administrative user",
+      "conditional_branch": null,
+      "terminal_action": "Recreate",
+      "on_success": "generates provisioning journal entries for the entry and updates the listing"
+    }
+  ],
+  "total": 6
+}
+
+------------------------------------------------------------
+[23:05:08] Workflow-Extractor - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Provisioning",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Open Provisioning Criteria creation form",
+      "actor": "Accounting/Administrative user",
+      "conditional_branch": null,
+      "terminal_action": "+ Create",
+      "on_success": "opens blank Provisioning_Criteria_Form ready for input"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Edit existing Provisioning Criteria",
+      "actor": "Accounting/Administrative user",
+      "conditional_branch": null,
+      "terminal_action": "Edit",
+      "on_success": "loads selected criteria into Provisioning_Criteria_Form"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Create Provisioning Criteria (save form)",
+      "actor": "Accounting/Administrative user",
+      "conditional_branch": "user_role == Accounting_Admin",
+      "terminal_action": "Create",
+      "on_success": "saves criteria and returns to Provisioning Criteria listing"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Generate new provisioning journal entries",
+      "actor": "Accounting/Administrative user",
+      "conditional_branch": "user_role == Accounting_Admin AND Chart_of_Accounts == Present",
+      "terminal_action": "+ Create Provisioning Entry",
+      "on_success": "creates provisioning journal entries and refreshes the entries listing"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Review a provisioning entry (view detail)",
+      "actor": "Accounting/Administrative user",
+      "conditional_branch": null,
+      "terminal_action": "Review",
+      "on_success": "shows detailed breakdown by loan product and category"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Recreate a provisioning entry",
+      "actor": "Accounting/Administrative user",
+      "conditional_branch": null,
+      "terminal_action": "Recreate",
+      "on_success": "generates provisioning journal entries for the entry and updates the listing"
+    }
+  ],
+  "total": 6
+}
+
+------------------------------------------------------------
+[23:06:27] Workflow-Extractor - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 21,
+  "module_title": "Provisioning",
+  "summary": "Manages provisioning criteria for categorizing overdue loans and generates provisioning journal entries that record calculated provisions per loan product and category.",
+  "where_it_fits": "Located within the Accounting area of the application (accessible from the top navigation Accounting menu and relevant accounting pages in the left sidebar), this module provides both the configuration of provisioning rules and the operational generation/review of provisioning journal entries as part of month-end or provisioning workflows tied to the loan portfolio lifecycle.",
+  "assumed_state_on_entry": "Logged in with accounting/administrative privileges, a populated Chart of Accounts (GL accounts) exists, and the loan portfolio (including overdue loans) is present in the system."
+}
+</module_context>
+
+<module_name>Provisioning</module_name>
+
+<ast>
+{
+  "module_name": "Provisioning",
+  "components": {
+    "Provisioning_Criteria_Table": {
+      "type": "data_table",
+      "columns": [
+        "Criteria_Name",
+        "Created_Date"
+      ],
+      "actions": [
+        {
+          "action_name": "+ Create",
+          "type": "button",
+          "on_click": "opens Provisioning_Criteria_Form",
+          "on_success": "opens blank Provisioning_Criteria_Form ready for input"
+        }
+      ],
+      "row_actions": [
+        {
+          "action_name": "Edit",
+          "on_click": "opens Provisioning_Criteria_Form for edit",
+          "on_success": "loads selected criteria into Provisioning_Criteria_Form"
+        }
+      ]
+    },
+    "Provisioning_Criteria_Form": {
+      "type": "form",
+      "fields": {
+        "Criteria_Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Definitions": {
+          "type": "repeating_group",
+          "allow_add": true,
+          "actions": [
+            {
+              "action_name": "Add Row",
+              "type": "button",
+              "on_click": "adds a new Definitions row"
+            },
+            {
+              "action_name": "Remove Row",
+              "type": "row_action",
+              "on_click": "removes this Definitions row"
+            }
+          ],
+          "item_fields": {
+            "Loan_Product": {
+              "type": "unspecified"
+            },
+            "Category": {
+              "type": "dropdown",
+              "options": [
+                "STANDARD",
+                "SUB-STANDARD",
+                "DOUBTFUL",
+                "LOSS"
+              ]
+            },
+            "Minimum_Age": {
+              "type": "number"
+            },
+            "Maximum_Age": {
+              "type": "number"
+            },
+            "Provisioning_Percentage": {
+              "type": "number"
+            },
+            "Liability_Account": {
+              "type": "dropdown"
+            },
+            "Expense_Account": {
+              "type": "dropdown"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create",
+          "on_success": "saves criteria and returns to Provisioning Criteria listing",
+          "preconditions": [
+            "user must be logged in with accounting/administrative privileges"
+          ]
+        }
+      ]
+    },
+    "Provisioning_Entries_Table": {
+      "type": "data_table",
+      "columns": [
+        "Entry_Date",
+        "Journal_Entry_Created",
+        "Created_By"
+      ],
+      "actions": [
+        {
+          "action_name": "+ Create Provisioning Entry",
+          "type": "button",
+          "on_click": "generates new provisioning entries based on current loan portfolio and configured criteria",
+          "on_success": "creates provisioning journal entries and refreshes the entries listing",
+          "preconditions": [
+            "user must be logged in with accounting/administrative privileges",
+            "Chart of Accounts must be present"
+          ]
+        }
+      ],
+      "row_actions": [
+        {
+          "action_name": "Review",
+          "on_click": "opens Provisioning_Entry_Detail_View",
+          "on_success": "shows detailed breakdown by loan product and category"
+        },
+        {
+          "action_name": "Recreate",
+          "on_click": "recreates provisioning entry",
+          "on_success": "generates provisioning journal entries for the entry and updates the listing"
+        }
+      ]
+    },
+    "Provisioning_Entry_Detail_View": {
+      "type": "detail_view",
+      "fields": {}
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Provisioning Criteria page displays a data table with columns for Criteria Name (clickable link) and Created Date. A "+ Create" button opens the creation form containing Criteria Name (required) and a Definitions table where each row specifies Loan Product, Category (STANDARD, SUB-STANDARD, DOUBTFUL, LOSS), Minimum Age (overdue days), Maximum Age (overdue days), Provisioning Percentage (percentage of outstanding principal), Liability Account (GL account dropdown), and Expense Account (GL account dropdown). Multiple rows can be added to cover different overdue ranges and product combinations.
+
+The Provisioning Entries page lists all generated provisioning journal entries with columns for Entry Date, Journal Entry Created, Created By, and action buttons. A "+ Create Provisioning Entry" button generates new provisioning entries based on the current loan portfolio status and configured criteria; the system calculates the required provision amount for each loan category and creates the corresponding journal entries. Each entry can be reviewed (showing a detailed breakdown by loan product and category) or recreated.
+
+---
+
+
+</description>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:06:43] Workflow-Extractor - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Provisioning",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Open Create Provisioning Criteria form",
+      "actor": "accounting/administrative",
+      "conditional_branch": null,
+      "terminal_action": "+ Create",
+      "on_success": "opens blank Provisioning_Criteria_Form ready for input"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Create Provisioning Criteria (submit)",
+      "actor": "accounting/administrative",
+      "conditional_branch": null,
+      "terminal_action": "Create",
+      "on_success": "saves criteria and returns to Provisioning Criteria listing"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Edit existing Provisioning Criteria (row action)",
+      "actor": "accounting/administrative",
+      "conditional_branch": null,
+      "terminal_action": "Edit",
+      "on_success": "loads selected criteria into Provisioning_Criteria_Form"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Generate new Provisioning Entry (create entries)",
+      "actor": "accounting/administrative",
+      "conditional_branch": null,
+      "terminal_action": "+ Create Provisioning Entry",
+      "on_success": "creates provisioning journal entries and refreshes the entries listing"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Review a Provisioning Entry (row action)",
+      "actor": "accounting/administrative",
+      "conditional_branch": null,
+      "terminal_action": "Review",
+      "on_success": "shows detailed breakdown by loan product and category"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Recreate a Provisioning Entry (row action)",
+      "actor": "accounting/administrative",
+      "conditional_branch": null,
+      "terminal_action": "Recreate",
+      "on_success": "generates provisioning journal entries for the entry and updates the listing"
+    }
+  ],
+  "total": 6
+}
+
+------------------------------------------------------------
+[23:06:43] Workflow-Extractor - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Provisioning",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Open Create Provisioning Criteria form",
+      "actor": "accounting/administrative",
+      "conditional_branch": null,
+      "terminal_action": "+ Create",
+      "on_success": "opens blank Provisioning_Criteria_Form ready for input"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Create Provisioning Criteria (submit)",
+      "actor": "accounting/administrative",
+      "conditional_branch": null,
+      "terminal_action": "Create",
+      "on_success": "saves criteria and returns to Provisioning Criteria listing"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Edit existing Provisioning Criteria (row action)",
+      "actor": "accounting/administrative",
+      "conditional_branch": null,
+      "terminal_action": "Edit",
+      "on_success": "loads selected criteria into Provisioning_Criteria_Form"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Generate new Provisioning Entry (create entries)",
+      "actor": "accounting/administrative",
+      "conditional_branch": null,
+      "terminal_action": "+ Create Provisioning Entry",
+      "on_success": "creates provisioning journal entries and refreshes the entries listing"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Review a Provisioning Entry (row action)",
+      "actor": "accounting/administrative",
+      "conditional_branch": null,
+      "terminal_action": "Review",
+      "on_success": "shows detailed breakdown by loan product and category"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Recreate a Provisioning Entry (row action)",
+      "actor": "accounting/administrative",
+      "conditional_branch": null,
+      "terminal_action": "Recreate",
+      "on_success": "generates provisioning journal entries for the entry and updates the listing"
+    }
+  ],
+  "total": 6
+}

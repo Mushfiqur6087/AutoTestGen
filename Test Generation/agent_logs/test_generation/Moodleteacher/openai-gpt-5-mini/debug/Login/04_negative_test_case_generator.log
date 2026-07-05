@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.041368
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.780763
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - SYSTEM PROMPT
+[22:49:29] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - USER PROMPT
+[22:49:29] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 1,
   "module_title": "Login",
-  "summary": "Provides the authentication interface with username and password fields, options for guest access and cookie information, and inline error handling for failed sign-in attempts.",
-  "where_it_fits": "Acts as the application's primary entry point for unauthenticated users before access to Dashboard, My Courses, and course pages; a successful teacher login redirects to the Dashboard referenced in the top navigation, while guest access permits limited unauthenticated browsing of site content.",
-  "assumed_state_on_entry": "User is unauthenticated and at the site's login page (or choosing guest access); valid credentials are available for successful sign-in."
+  "summary": "Provides the authentication form allowing users to enter credentials or access the site as a guest and shows inline errors for invalid submissions.",
+  "where_it_fits": "The Login module is the entry point to the application and precedes access to the top navigation and course/dashboard areas; successful authentication redirects the user to the Dashboard where the top navigation bar and subsequent course navigation become available.",
+  "assumed_state_on_entry": "User is not authenticated (logged out) and has access to the login page"
 }
 </module_context>
 
@@ -262,40 +272,40 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Login_Form": {
       "type": "form",
-      "preconditions": [
-        "User is unauthenticated and at the site's login page (or choosing guest access); valid credentials are available for successful sign-in."
-      ],
       "fields": {
-        "Username": {
+        "User_Name": {
           "type": "unspecified",
           "required": true
         },
         "Password": {
           "type": "password",
           "required": true
-        },
-        "Lost_Password": {
-          "type": "link",
-          "action_name": "Lost password?",
-          "preconditions": [
-            "disabled on this test site"
-          ]
         }
       },
+      "links": [
+        {
+          "action_name": "Lost password?",
+          "type": "link",
+          "preconditions": [
+            "link disabled on this test site"
+          ]
+        }
+      ],
       "submit_actions": [
         {
           "action_name": "Log in",
           "preconditions": [
-            "User is unauthenticated and at the site's login page (or choosing guest access); valid credentials are available for successful sign-in."
+            "user must be logged out"
           ],
-          "on_success": "redirects teacher to the Dashboard",
+          "on_success": "redirects to the Dashboard for authenticated teacher",
           "on_failure": {
-            "shows_inline_error": true,
+            "show_inline_error": true,
+            "error_message": "Invalid or empty credentials",
             "clear_fields": [
               "Password"
             ],
             "retain_fields": [
-              "Username"
+              "User_Name"
             ]
           }
         }
@@ -303,21 +313,20 @@ If a `<workflows>` block is present in the input:
     },
     "Guest_Access_Section": {
       "type": "action_group",
-      "fields": {
-        "Access_As_A_Guest": {
-          "type": "button",
+      "actions": [
+        {
           "action_name": "Access as a guest",
           "preconditions": [
-            "User is unauthenticated"
+            "user must be logged out"
           ],
-          "on_success": "grants limited unauthenticated browsing of site content"
-        },
-        "Cookies_Notice": {
-          "type": "button",
-          "action_name": "Cookies notice",
-          "on_success": "opens cookie usage information"
+          "on_success": "allows unauthenticated browsing and redirects to the Dashboard as guest"
         }
-      }
+      ]
+    },
+    "Cookies_Notice_Button": {
+      "type": "button",
+      "action_name": "Cookies notice",
+      "on_click": "opens cookie usage information"
     }
   }
 }
@@ -333,15 +342,15 @@ The login page displays a form with two required fields — Username and Passwor
 </description>
 
 <workflows>
-WF-001 | User submits credentials via Log in | actor: <role> | branch: none | terminal: Log in | on_success: redirects teacher to the Dashboard
-WF-002 | Unauthenticated user accesses site as a guest | actor: <role> | branch: User is unauthenticated | terminal: Access as a guest | on_success: grants limited unauthenticated browsing of site content
-WF-003 | User opens Cookies notice | actor: <role> | branch: none | terminal: Cookies notice | on_success: opens cookie usage information
+WF-001 | Log in (submit credentials) | actor: Unauthenticated user | branch: none | terminal: Log in | on_success: redirects to the Dashboard for authenticated teacher
+WF-002 | Access as a guest | actor: Unauthenticated user | branch: none | terminal: Access as a guest | on_success: allows unauthenticated browsing and redirects to the Dashboard as guest
+WF-003 | Open Cookies notice | actor: Unauthenticated user | branch: none | terminal: Cookies notice | on_success: opens cookie usage information
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:13:05] Test-Negative - LLM RESPONSE
+[22:50:13] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Login",
@@ -350,118 +359,122 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Submit with Username blank (required text)",
+      "test_case": "Leave Username blank and submit (required text field representative)",
       "preconditions": [
-        "User is unauthenticated and on the login page"
+        "User is on the Login page",
+        "User is logged out"
       ],
       "steps": [
-        "1. Leave the Username field blank",
+        "1. Ensure the User_Name field is empty (leave it blank)",
         "2. Enter <valid password> in the Password field",
-        "3. Click the \"Log in\" button"
+        "3. Click the 'Log in' button"
       ],
-      "expected_result": "Inline validation error appears on the Username field indicating it is required; the form does not submit; user remains on the login page and is not authenticated",
+      "expected_result": "Inline error message \"Invalid or empty credentials\" is displayed; the form is not submitted; Password field is cleared; User_Name remains blank (no value retained); the user stays on the Login page",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": null,
-      "test_case": "Submit with Password blank (required password)",
+      "test_case": "Leave Password blank and submit (password field representative)",
       "preconditions": [
-        "User is unauthenticated and on the login page"
+        "User is on the Login page",
+        "User is logged out"
       ],
       "steps": [
-        "1. Enter <valid username> in the Username field",
-        "2. Leave the Password field blank",
-        "3. Click the \"Log in\" button"
+        "1. Enter <valid username> in the User_Name field",
+        "2. Leave the Password field empty",
+        "3. Click the 'Log in' button"
       ],
-      "expected_result": "Inline validation error appears on the Password field indicating it is required; the form does not submit; user remains on the login page and is not authenticated",
+      "expected_result": "Inline error message \"Invalid or empty credentials\" is displayed; the form is not submitted; Password field is cleared (remains empty); User_Name value is retained on the form; the user stays on the Login page",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": null,
-      "test_case": "Submit with both Username and Password empty",
+      "test_case": "Submit with all required fields empty",
       "preconditions": [
-        "User is unauthenticated and on the login page"
+        "User is on the Login page",
+        "User is logged out"
       ],
       "steps": [
-        "1. Leave the Username field blank",
-        "2. Leave the Password field blank",
-        "3. Click the \"Log in\" button"
+        "1. Ensure the User_Name field is empty",
+        "2. Ensure the Password field is empty",
+        "3. Click the 'Log in' button"
       ],
-      "expected_result": "Inline validation errors appear on both Username and Password fields indicating they are required; the form does not submit; user remains on the login page and is not authenticated",
+      "expected_result": "Inline error message \"Invalid or empty credentials\" is displayed; the form is not submitted; Password field is cleared (remains empty); User_Name remains blank; the user stays on the Login page",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-001",
-      "test_case": "Submit with invalid credentials (wrong password)",
+      "test_case": "Submit invalid credentials (authentication failure)",
       "preconditions": [
-        "User is unauthenticated and on the login page",
-        "A valid Username exists to test incorrect authentication"
+        "User is on the Login page",
+        "User is logged out"
       ],
       "steps": [
-        "1. Enter <valid username> in the Username field",
-        "2. Enter <invalid password> in the Password field",
-        "3. Click the \"Log in\" button"
+        "1. Enter <existing username> in the User_Name field",
+        "2. Enter <incorrect password> in the Password field",
+        "3. Click the 'Log in' button"
       ],
-      "expected_result": "Inline authentication error appears on the form indicating sign-in failed; the Password field is cleared; the Username field retains its value; the form does not submit and the user remains unauthenticated (no redirect to Dashboard)",
+      "expected_result": "Inline error message \"Invalid or empty credentials\" is displayed; the form is not submitted; Password field is cleared; User_Name remains populated with the entered username; the user stays on the Login page",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
       "wf_ref": null,
-      "test_case": "Click 'Lost password?' when the link is disabled on this test site",
+      "test_case": "Click 'Lost password?' link when it is disabled on this site",
       "preconditions": [
-        "User is unauthenticated and on the login page",
-        "The 'Lost password?' link is marked disabled on this test site (per spec)"
+        "User is on the Login page",
+        "Test site has the Lost password? link disabled"
       ],
       "steps": [
-        "1. Locate the 'Lost password?' link on the login form",
-        "2. Click the 'Lost password?' link"
+        "1. Observe the 'Lost password?' link on the page",
+        "2. Attempt to click the 'Lost password?' link"
       ],
-      "expected_result": "The 'Lost password?' link is disabled/unresponsive (not navigable); no password-reset page or flow opens; no navigation occurs and the user remains on the login page",
+      "expected_result": "The 'Lost password?' link is displayed as disabled or non-interactive and is not clickable; clicking it has no effect and there is no navigation to a password-recovery page",
       "priority": "medium"
     },
     {
       "tc_id": "N-006",
-      "wf_ref": null,
-      "test_case": "Attempt to access the login page / perform Log in while already authenticated (precondition violation)",
+      "wf_ref": "WF-002",
+      "test_case": "Attempt 'Access as a guest' while already authenticated (precondition failure)",
       "preconditions": [
-        "User is already authenticated and has an active session"
+        "User is authenticated (logged in) and on the Dashboard"
       ],
       "steps": [
-        "1. With an authenticated session, navigate to the site's login page",
-        "2. Attempt to view or interact with the Login form or click the \"Log in\" button"
+        "1. While authenticated as <valid user>, navigate to the Login page",
+        "2. Locate the 'Access as a guest' button",
+        "3. Attempt to click the 'Access as a guest' button"
       ],
-      "expected_result": "Access to the login form is blocked for authenticated users: the system redirects the user away from the login page to the Dashboard (or the Login form is not visible); the Log in action is not available and no re-authentication occurs",
+      "expected_result": "The 'Access as a guest' action is not allowed when the user is authenticated: the button is either not visible or is disabled/non-interactive; clicking it does not start an unauthenticated session and no navigation to a guest Dashboard occurs; user remains authenticated",
       "priority": "high"
     },
     {
       "tc_id": "N-007",
-      "wf_ref": "WF-002",
-      "test_case": "Attempt 'Access as a guest' while authenticated (precondition violation)",
+      "wf_ref": null,
+      "test_case": "Attempt to use Log in action while already authenticated (precondition failure)",
       "preconditions": [
-        "User is already authenticated and has an active session"
+        "User is authenticated (logged in) and on the Dashboard"
       ],
       "steps": [
-        "1. With an authenticated session, navigate to the page containing the 'Access as a guest' control",
-        "2. Attempt to click the 'Access as a guest' button"
+        "1. While authenticated as <valid user>, navigate to the Login page",
+        "2. Attempt to interact with the 'Log in' button or submit the login form"
       ],
-      "expected_result": "The 'Access as a guest' action is not available to authenticated users: the button is either not visible or is disabled; clicking it does not grant limited unauthenticated browsing and the user's authenticated session remains active",
-      "priority": "medium"
+      "expected_result": "The 'Log in' action is not allowed when the user is already authenticated: the Log in button is either not visible or is disabled/non-interactive; attempting to submit does not create a new login session or switch to an unauthenticated/guest session; user remains authenticated",
+      "priority": "high"
     }
   ],
   "summary": {
     "total": 7,
-    "high_priority": 5,
-    "medium_priority": 2,
+    "high_priority": 6,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:13:05] Test-Negative - PARSED JSON
+[22:50:13] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Login",
@@ -470,112 +483,116 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Submit with Username blank (required text)",
+      "test_case": "Leave Username blank and submit (required text field representative)",
       "preconditions": [
-        "User is unauthenticated and on the login page"
+        "User is on the Login page",
+        "User is logged out"
       ],
       "steps": [
-        "1. Leave the Username field blank",
+        "1. Ensure the User_Name field is empty (leave it blank)",
         "2. Enter <valid password> in the Password field",
-        "3. Click the \"Log in\" button"
+        "3. Click the 'Log in' button"
       ],
-      "expected_result": "Inline validation error appears on the Username field indicating it is required; the form does not submit; user remains on the login page and is not authenticated",
+      "expected_result": "Inline error message \"Invalid or empty credentials\" is displayed; the form is not submitted; Password field is cleared; User_Name remains blank (no value retained); the user stays on the Login page",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": null,
-      "test_case": "Submit with Password blank (required password)",
+      "test_case": "Leave Password blank and submit (password field representative)",
       "preconditions": [
-        "User is unauthenticated and on the login page"
+        "User is on the Login page",
+        "User is logged out"
       ],
       "steps": [
-        "1. Enter <valid username> in the Username field",
-        "2. Leave the Password field blank",
-        "3. Click the \"Log in\" button"
+        "1. Enter <valid username> in the User_Name field",
+        "2. Leave the Password field empty",
+        "3. Click the 'Log in' button"
       ],
-      "expected_result": "Inline validation error appears on the Password field indicating it is required; the form does not submit; user remains on the login page and is not authenticated",
+      "expected_result": "Inline error message \"Invalid or empty credentials\" is displayed; the form is not submitted; Password field is cleared (remains empty); User_Name value is retained on the form; the user stays on the Login page",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": null,
-      "test_case": "Submit with both Username and Password empty",
+      "test_case": "Submit with all required fields empty",
       "preconditions": [
-        "User is unauthenticated and on the login page"
+        "User is on the Login page",
+        "User is logged out"
       ],
       "steps": [
-        "1. Leave the Username field blank",
-        "2. Leave the Password field blank",
-        "3. Click the \"Log in\" button"
+        "1. Ensure the User_Name field is empty",
+        "2. Ensure the Password field is empty",
+        "3. Click the 'Log in' button"
       ],
-      "expected_result": "Inline validation errors appear on both Username and Password fields indicating they are required; the form does not submit; user remains on the login page and is not authenticated",
+      "expected_result": "Inline error message \"Invalid or empty credentials\" is displayed; the form is not submitted; Password field is cleared (remains empty); User_Name remains blank; the user stays on the Login page",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-001",
-      "test_case": "Submit with invalid credentials (wrong password)",
+      "test_case": "Submit invalid credentials (authentication failure)",
       "preconditions": [
-        "User is unauthenticated and on the login page",
-        "A valid Username exists to test incorrect authentication"
+        "User is on the Login page",
+        "User is logged out"
       ],
       "steps": [
-        "1. Enter <valid username> in the Username field",
-        "2. Enter <invalid password> in the Password field",
-        "3. Click the \"Log in\" button"
+        "1. Enter <existing username> in the User_Name field",
+        "2. Enter <incorrect password> in the Password field",
+        "3. Click the 'Log in' button"
       ],
-      "expected_result": "Inline authentication error appears on the form indicating sign-in failed; the Password field is cleared; the Username field retains its value; the form does not submit and the user remains unauthenticated (no redirect to Dashboard)",
+      "expected_result": "Inline error message \"Invalid or empty credentials\" is displayed; the form is not submitted; Password field is cleared; User_Name remains populated with the entered username; the user stays on the Login page",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
       "wf_ref": null,
-      "test_case": "Click 'Lost password?' when the link is disabled on this test site",
+      "test_case": "Click 'Lost password?' link when it is disabled on this site",
       "preconditions": [
-        "User is unauthenticated and on the login page",
-        "The 'Lost password?' link is marked disabled on this test site (per spec)"
+        "User is on the Login page",
+        "Test site has the Lost password? link disabled"
       ],
       "steps": [
-        "1. Locate the 'Lost password?' link on the login form",
-        "2. Click the 'Lost password?' link"
+        "1. Observe the 'Lost password?' link on the page",
+        "2. Attempt to click the 'Lost password?' link"
       ],
-      "expected_result": "The 'Lost password?' link is disabled/unresponsive (not navigable); no password-reset page or flow opens; no navigation occurs and the user remains on the login page",
+      "expected_result": "The 'Lost password?' link is displayed as disabled or non-interactive and is not clickable; clicking it has no effect and there is no navigation to a password-recovery page",
       "priority": "medium"
     },
     {
       "tc_id": "N-006",
-      "wf_ref": null,
-      "test_case": "Attempt to access the login page / perform Log in while already authenticated (precondition violation)",
+      "wf_ref": "WF-002",
+      "test_case": "Attempt 'Access as a guest' while already authenticated (precondition failure)",
       "preconditions": [
-        "User is already authenticated and has an active session"
+        "User is authenticated (logged in) and on the Dashboard"
       ],
       "steps": [
-        "1. With an authenticated session, navigate to the site's login page",
-        "2. Attempt to view or interact with the Login form or click the \"Log in\" button"
+        "1. While authenticated as <valid user>, navigate to the Login page",
+        "2. Locate the 'Access as a guest' button",
+        "3. Attempt to click the 'Access as a guest' button"
       ],
-      "expected_result": "Access to the login form is blocked for authenticated users: the system redirects the user away from the login page to the Dashboard (or the Login form is not visible); the Log in action is not available and no re-authentication occurs",
+      "expected_result": "The 'Access as a guest' action is not allowed when the user is authenticated: the button is either not visible or is disabled/non-interactive; clicking it does not start an unauthenticated session and no navigation to a guest Dashboard occurs; user remains authenticated",
       "priority": "high"
     },
     {
       "tc_id": "N-007",
-      "wf_ref": "WF-002",
-      "test_case": "Attempt 'Access as a guest' while authenticated (precondition violation)",
+      "wf_ref": null,
+      "test_case": "Attempt to use Log in action while already authenticated (precondition failure)",
       "preconditions": [
-        "User is already authenticated and has an active session"
+        "User is authenticated (logged in) and on the Dashboard"
       ],
       "steps": [
-        "1. With an authenticated session, navigate to the page containing the 'Access as a guest' control",
-        "2. Attempt to click the 'Access as a guest' button"
+        "1. While authenticated as <valid user>, navigate to the Login page",
+        "2. Attempt to interact with the 'Log in' button or submit the login form"
       ],
-      "expected_result": "The 'Access as a guest' action is not available to authenticated users: the button is either not visible or is disabled; clicking it does not grant limited unauthenticated browsing and the user's authenticated session remains active",
-      "priority": "medium"
+      "expected_result": "The 'Log in' action is not allowed when the user is already authenticated: the Log in button is either not visible or is disabled/non-interactive; attempting to submit does not create a new login session or switch to an unauthenticated/guest session; user remains authenticated",
+      "priority": "high"
     }
   ],
   "summary": {
     "total": 7,
-    "high_priority": 5,
-    "medium_priority": 2,
+    "high_priority": 6,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }

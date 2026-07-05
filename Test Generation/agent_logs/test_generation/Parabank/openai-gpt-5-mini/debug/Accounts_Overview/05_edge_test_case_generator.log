@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:02:39.083010
+DEBUG SESSION STARTED: 2026-07-04T22:22:17.194463
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Edge - SYSTEM PROMPT
+[22:22:17] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Edge - USER PROMPT
+[22:22:17] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 3,
   "module_title": "Accounts Overview",
-  "summary": "Displays a personalized dashboard listing all customer accounts with masked account numbers, account details, status badges, and a total balance footer.",
-  "where_it_fits": "This module is the default dashboard view reached immediately after a successful login and is accessible via the left-hand navigation as Accounts Overview among options like Open New Account, Transfer Funds, and Security Settings. It serves as the primary landing page showing an overview of a customer's accounts and balances within the application's main lifecycle after authentication.",
-  "assumed_state_on_entry": "Authenticated customer session with permission to view the customer's account data."
+  "summary": "Displays a personalized dashboard table of the customer's accounts with masked account numbers, account types, current balances, statuses, open dates, and a total balance footer.",
+  "where_it_fits": "Serves as the default dashboard view after a successful sign-in (Accounts Overview in the left-hand navigation). It is the primary authenticated landing page and hub from which users access features like Open New Account, Transfer Funds, Payments, and other account services.",
+  "assumed_state_on_entry": "Authenticated (logged-in) customer session with one or more accounts associated to the user."
 }
 </module_context>
 
@@ -245,12 +259,37 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Accounts_Table": {
       "type": "data_table",
+      "preconditions": [
+        "Authenticated (logged-in) customer session"
+      ],
       "row_actions": [
         {
           "action_name": "Account Number",
-          "action_type": "link",
           "preconditions": [
-            "Authenticated customer session with permission to view the customer's account data"
+            "Authenticated (logged-in) customer session"
+          ]
+        }
+      ]
+    },
+    "Accounts_Action_Bar": {
+      "type": "action_bar",
+      "available_actions": [
+        {
+          "action_name": "Open New Account",
+          "preconditions": [
+            "Authenticated (logged-in) customer session"
+          ]
+        },
+        {
+          "action_name": "Transfer Funds",
+          "preconditions": [
+            "Authenticated (logged-in) customer session"
+          ]
+        },
+        {
+          "action_name": "Payments",
+          "preconditions": [
+            "Authenticated (logged-in) customer session"
           ]
         }
       ]
@@ -266,13 +305,16 @@ The dashboard displays a welcome message with the user's name and a table of all
 </description>
 
 <workflows>
-WF-001 | Click Account Number link in a row | actor: Authenticated customer | branch: none | terminal: Account Number | on_success: Clickable but not implemented yet
+WF-001 | Click Account Number (row action) | actor: Customer | branch: none | terminal: Account Number | on_success: Clickable but not implemented (no navigation or detail view is performed)
+WF-002 | Open New Account action from action bar | actor: Customer | branch: none | terminal: Open New Account | on_success: Navigate to/Open New Account flow (user is taken to the Open New Account module)
+WF-003 | Transfer Funds action from action bar | actor: Customer | branch: none | terminal: Transfer Funds | on_success: Navigate to/Transfer Funds flow (user is taken to the Transfer Funds module)
+WF-004 | Payments action from action bar | actor: Customer | branch: none | terminal: Payments | on_success: Navigate to/Payments flow (user is taken to the Payments module)
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:03:21] Test-Edge - LLM RESPONSE
+[22:22:57] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Accounts Overview",
@@ -280,87 +322,83 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": null,
-      "subcategory": "boundary",
-      "test_case": "Account number exactly 4 characters — masking boundary",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Clicking Account Number (row action) does not navigate",
       "preconditions": [
-        "Authenticated customer session with permission to view the customer's account data",
-        "There exists at least one account for this customer whose Account Number length is exactly 4 characters"
+        "Authenticated (logged-in) customer session with at least one account displayed in the Accounts table",
+        "Accounts Overview page is loaded"
       ],
       "steps": [
-        "1. Navigate to the Accounts Overview page",
-        "2. Locate the table row for the account whose Account Number length is exactly 4 characters",
-        "3. Inspect the Account Number cell in that row"
+        "1. Identify the first row in the Accounts table",
+        "2. Click the Account Number cell (the clickable row action) in that first row"
       ],
-      "expected_result": "succeeds: The Account Number cell displays only the last 4 characters (which are the full account number in this case) with no leading mask characters; the visible value equals the account's full 4-character Account Number",
+      "expected_result": "Click is handled but no navigation occurs: the Accounts Overview page (including the Accounts table) remains visible and no account detail page or new module is opened; there is no change in the visible page location or URL",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": null,
-      "subcategory": "boundary",
-      "test_case": "Account number shorter than 4 characters — one-unit-below masking boundary",
+      "wf_ref": "WF-002",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click on 'Open New Account' results in single navigation",
       "preconditions": [
-        "Authenticated customer session with permission to view the customer's account data",
-        "There exists at least one account for this customer whose Account Number length is shorter than 4 characters (e.g., 3 characters)"
+        "Authenticated (logged-in) customer session",
+        "Accounts Overview page with the Accounts Action Bar visible"
       ],
       "steps": [
-        "1. Navigate to the Accounts Overview page",
-        "2. Locate the table row for the account whose Account Number length is shorter than 4 characters",
-        "3. Inspect the Account Number cell in that row"
+        "1. Locate the 'Open New Account' action in the Accounts Action Bar",
+        "2. Perform two rapid clicks on the 'Open New Account' action (double-click) within a very short interval"
       ],
-      "expected_result": "succeeds: The Account Number cell displays the full Account Number (no mask prefix is added); visible value equals the exact stored Account Number for that account",
+      "expected_result": "Only one navigation occurs and the Open New Account module is displayed once: the Accounts Overview is replaced by the Open New Account flow (Accounts Overview no longer visible) and no duplicate navigations or multiple instances of the Open New Account module are shown",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Account number contains long value with non-digit/unicode characters — masking robustness",
+      "test_case": "Very long user display name in welcome message",
       "preconditions": [
-        "Authenticated customer session with permission to view the customer's account data",
-        "There exists at least one account for this customer whose Account Number is long (significantly longer than 4 chars) and contains non-digit or Unicode characters"
+        "Authenticated (logged-in) customer session for a user whose display name is very long (>= 200 characters)",
+        "Accounts Overview page is loaded after sign-in"
       ],
       "steps": [
-        "1. Navigate to the Accounts Overview page",
-        "2. Locate the table row for the account with the long/unicode Account Number",
-        "3. Inspect the Account Number cell in that row"
+        "1. Sign in as the user with the very long display name",
+        "2. Observe the welcome message area at the top of the Accounts Overview page"
       ],
-      "expected_result": "succeeds: The Account Number cell shows only the last 4 characters of the account number as visible characters; all preceding characters (including digits, letters, or Unicode) are replaced by mask characters (visual mask present); the visible last-4 characters match the account's stored last 4 characters exactly",
-      "priority": "medium"
+      "expected_result": "The welcome message displays the user's full display name on screen (the full characters are visible via wrapping or inline display rather than being silently truncated) so the full name is visibly present in the welcome message area",
+      "priority": "low"
     },
     {
       "tc_id": "E-004",
       "wf_ref": null,
       "subcategory": "data_edge",
-      "test_case": "Total balance precision when row balances have extra decimal precision",
+      "test_case": "Account number shorter than four digits — masking behavior",
       "preconditions": [
-        "Authenticated customer session with permission to view the customer's account data",
-        "There exist at least two accounts for this customer whose Current Balance values include more than two decimal places"
+        "Authenticated (logged-in) customer session with an account whose account number length is less than 4 digits",
+        "Accounts Overview page is loaded"
       ],
       "steps": [
-        "1. Navigate to the Accounts Overview page",
-        "2. Inspect the displayed Current Balance values for each row (note the displayed rounding/formatting for each)",
-        "3. Inspect the footer Total Balance value"
+        "1. Locate the row corresponding to the account with the short account number in the Accounts table",
+        "2. Inspect the Account Number cell for that row"
       ],
-      "expected_result": "succeeds: The footer Total Balance displays a numeric total that matches the sum as presented in the UI (i.e., it equals the arithmetic addition of the Current Balance values as displayed in each row); the UI makes its rounding behaviour visible by the footer value matching the displayed row values' rounding (confirmable by manual calculation from the displayed numbers)",
-      "priority": "medium"
+      "expected_result": "The Account Number cell displays the account number in a clear, visible form appropriate for short numbers: the full available digits are visible (no loss of digits) and the account number is presented in a stable masked/unmasked representation consistent with the UI (the displayed value shows the actual available digits so the number is not truncated or obfuscated such that visible digits are lost)",
+      "priority": "low"
     }
   ],
   "summary": {
     "total": 4,
-    "boundary": 2,
+    "boundary": 0,
     "input_edge": 1,
-    "interaction_edge": 0,
+    "interaction_edge": 2,
     "state_edge": 0,
     "data_edge": 1,
-    "medium_priority": 4,
-    "low_priority": 0
+    "medium_priority": 2,
+    "low_priority": 2
   }
 }
 
 ------------------------------------------------------------
-[21:03:21] Test-Edge - PARSED JSON
+[22:22:57] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Accounts Overview",
@@ -368,81 +406,77 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": null,
-      "subcategory": "boundary",
-      "test_case": "Account number exactly 4 characters \u2014 masking boundary",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Clicking Account Number (row action) does not navigate",
       "preconditions": [
-        "Authenticated customer session with permission to view the customer's account data",
-        "There exists at least one account for this customer whose Account Number length is exactly 4 characters"
+        "Authenticated (logged-in) customer session with at least one account displayed in the Accounts table",
+        "Accounts Overview page is loaded"
       ],
       "steps": [
-        "1. Navigate to the Accounts Overview page",
-        "2. Locate the table row for the account whose Account Number length is exactly 4 characters",
-        "3. Inspect the Account Number cell in that row"
+        "1. Identify the first row in the Accounts table",
+        "2. Click the Account Number cell (the clickable row action) in that first row"
       ],
-      "expected_result": "succeeds: The Account Number cell displays only the last 4 characters (which are the full account number in this case) with no leading mask characters; the visible value equals the account's full 4-character Account Number",
+      "expected_result": "Click is handled but no navigation occurs: the Accounts Overview page (including the Accounts table) remains visible and no account detail page or new module is opened; there is no change in the visible page location or URL",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": null,
-      "subcategory": "boundary",
-      "test_case": "Account number shorter than 4 characters \u2014 one-unit-below masking boundary",
+      "wf_ref": "WF-002",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click on 'Open New Account' results in single navigation",
       "preconditions": [
-        "Authenticated customer session with permission to view the customer's account data",
-        "There exists at least one account for this customer whose Account Number length is shorter than 4 characters (e.g., 3 characters)"
+        "Authenticated (logged-in) customer session",
+        "Accounts Overview page with the Accounts Action Bar visible"
       ],
       "steps": [
-        "1. Navigate to the Accounts Overview page",
-        "2. Locate the table row for the account whose Account Number length is shorter than 4 characters",
-        "3. Inspect the Account Number cell in that row"
+        "1. Locate the 'Open New Account' action in the Accounts Action Bar",
+        "2. Perform two rapid clicks on the 'Open New Account' action (double-click) within a very short interval"
       ],
-      "expected_result": "succeeds: The Account Number cell displays the full Account Number (no mask prefix is added); visible value equals the exact stored Account Number for that account",
+      "expected_result": "Only one navigation occurs and the Open New Account module is displayed once: the Accounts Overview is replaced by the Open New Account flow (Accounts Overview no longer visible) and no duplicate navigations or multiple instances of the Open New Account module are shown",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Account number contains long value with non-digit/unicode characters \u2014 masking robustness",
+      "test_case": "Very long user display name in welcome message",
       "preconditions": [
-        "Authenticated customer session with permission to view the customer's account data",
-        "There exists at least one account for this customer whose Account Number is long (significantly longer than 4 chars) and contains non-digit or Unicode characters"
+        "Authenticated (logged-in) customer session for a user whose display name is very long (>= 200 characters)",
+        "Accounts Overview page is loaded after sign-in"
       ],
       "steps": [
-        "1. Navigate to the Accounts Overview page",
-        "2. Locate the table row for the account with the long/unicode Account Number",
-        "3. Inspect the Account Number cell in that row"
+        "1. Sign in as the user with the very long display name",
+        "2. Observe the welcome message area at the top of the Accounts Overview page"
       ],
-      "expected_result": "succeeds: The Account Number cell shows only the last 4 characters of the account number as visible characters; all preceding characters (including digits, letters, or Unicode) are replaced by mask characters (visual mask present); the visible last-4 characters match the account's stored last 4 characters exactly",
-      "priority": "medium"
+      "expected_result": "The welcome message displays the user's full display name on screen (the full characters are visible via wrapping or inline display rather than being silently truncated) so the full name is visibly present in the welcome message area",
+      "priority": "low"
     },
     {
       "tc_id": "E-004",
       "wf_ref": null,
       "subcategory": "data_edge",
-      "test_case": "Total balance precision when row balances have extra decimal precision",
+      "test_case": "Account number shorter than four digits \u2014 masking behavior",
       "preconditions": [
-        "Authenticated customer session with permission to view the customer's account data",
-        "There exist at least two accounts for this customer whose Current Balance values include more than two decimal places"
+        "Authenticated (logged-in) customer session with an account whose account number length is less than 4 digits",
+        "Accounts Overview page is loaded"
       ],
       "steps": [
-        "1. Navigate to the Accounts Overview page",
-        "2. Inspect the displayed Current Balance values for each row (note the displayed rounding/formatting for each)",
-        "3. Inspect the footer Total Balance value"
+        "1. Locate the row corresponding to the account with the short account number in the Accounts table",
+        "2. Inspect the Account Number cell for that row"
       ],
-      "expected_result": "succeeds: The footer Total Balance displays a numeric total that matches the sum as presented in the UI (i.e., it equals the arithmetic addition of the Current Balance values as displayed in each row); the UI makes its rounding behaviour visible by the footer value matching the displayed row values' rounding (confirmable by manual calculation from the displayed numbers)",
-      "priority": "medium"
+      "expected_result": "The Account Number cell displays the account number in a clear, visible form appropriate for short numbers: the full available digits are visible (no loss of digits) and the account number is presented in a stable masked/unmasked representation consistent with the UI (the displayed value shows the actual available digits so the number is not truncated or obfuscated such that visible digits are lost)",
+      "priority": "low"
     }
   ],
   "summary": {
     "total": 4,
-    "boundary": 2,
+    "boundary": 0,
     "input_edge": 1,
-    "interaction_edge": 0,
+    "interaction_edge": 2,
     "state_edge": 0,
     "data_edge": 1,
-    "medium_priority": 4,
-    "low_priority": 0
+    "medium_priority": 2,
+    "low_priority": 2
   }
 }

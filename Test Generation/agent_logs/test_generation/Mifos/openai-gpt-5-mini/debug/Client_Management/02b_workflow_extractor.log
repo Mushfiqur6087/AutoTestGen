@@ -1,0 +1,831 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:04:00.640344
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:04:00] Workflow-Extractor - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Extractor. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to enumerate every distinct, executable interaction path through this module — one entry per workflow.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ATTEMPT CONTEXT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Attempt: 1 of 3
+
+
+
+---
+
+**INPUT:**
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+---
+
+## What is a Workflow?
+
+A **workflow** is one complete, executable interaction path — from the user entering the module to completing **one terminal action** within it.
+
+Two workflows are **distinct** if they require different user actions to reach the terminal — i.e. they activate a different conditional branch, follow a different wizard step set, target a different state, or end on a different terminal action.
+
+### Strict Rules
+
+1. **Strictly intra-module.** A workflow step is an action within this module only. If submitting redirects to another page, the redirect is the **exit** — not a step.
+2. **No invented paths.** Only enumerate paths that are traceable to AST nodes or explicit description text. No UX intuition, no assumed flows.
+3. **Minimal fields.** A workflow carries only what downstream agents actually need: who does it, what makes it distinct, what it ends with, what success looks like.
+4. **No step-by-step instructions.** Workflows do NOT spell out the full step sequence — the agents already have the AST for that. A workflow names the path, not the actions.
+
+---
+
+## What Paths to Enumerate
+
+Enumerate **distinct-outcome** paths — not one-per-type, and **not** the cartesian product of every toggle. The rule: two paths are separate workflows only if the user does something different that leads to a **different terminal outcome** (different `on_success`) **or** exercises a **different revealed required-field group** that needs its own coverage.
+
+| AST node type | What to enumerate |
+|---|---|
+| `form` with no conditionals | One workflow per `submit_actions[]` entry |
+| `form` with `visible_when` / toggle fields | One base workflow per `submit_actions[]` entry, PLUS one workflow for **each conditional branch that reveals a distinct required-field group** (e.g. enabling File submissions reveals max-files/size/types). Do **NOT** multiply independent toggles together. |
+| `wizard` | One workflow per distinct step sequence (if all steps are linear, one workflow per `submit_actions[]`; if any step is conditional, enumerate each branch) |
+| `state_bound_action_bar` | One workflow per `available_actions[]` entry per state (state × action = one workflow) |
+| `data_table` | One workflow per `row_actions[]` entry + one per `bulk_actions[]` entry (include View, Edit, Delete, and all others) |
+| `tab_container` | One workflow per tab that contains a form with a submit action |
+| `repeating_group` | Not a standalone workflow source — it is part of a form workflow that activates it |
+
+**Include all data table row actions** — View, Edit, Delete, and any others. Even read-only row actions (e.g., "View") must be included because they still require a positive test case.
+
+### DO NOT enumerate the cartesian product of toggles (CRITICAL)
+
+A form with independent toggles A, B, C and submit buttons {Save, Save+display, Cancel} must **not** produce 2×2×2×3 = 24 workflows. Independent toggles that do **not** change the terminal outcome are covered **once each**, not in combination:
+- If toggle A (e.g. `File_Submissions`) and toggle B (e.g. `Group_Submissions`) both still reach the same `on_success` ("assignment created"), they are **not** two dimensions to multiply. Emit one workflow that activates A's revealed fields, and one that activates B's revealed fields — not A×B.
+- An `+ Add restriction` / optional-picker step that does not change `on_success` is **not** a separate workflow dimension. Fold it into an existing workflow or add at most one workflow for it.
+
+### Discard / Cancel collapse rule (CRITICAL)
+
+A `Cancel` / `discard` / `abandon` terminal action discards **all** field state, so field/toggle combinations are irrelevant to it. Emit **exactly ONE** Cancel workflow for the module, regardless of how many toggles or revealed-field groups exist. Never produce a Cancel workflow per toggle combination.
+
+**Worked example — Assignment Creation** (toggles: File submissions, Group submissions, Add restriction; buttons: Save and return, Save and display, Cancel):
+- ✅ Correct (~6–8): base Save-and-return, base Save-and-display, one Save covering File-submission revealed fields, one Save covering Group-submission revealed fields, one Save covering an added restriction, one Cancel.
+- ❌ Wrong (24): every `{File}×{Group}×{Restriction}×{Save/Display/Cancel}` combination.
+
+---
+
+## Field Definitions
+
+| Field | Type | Rule |
+|---|---|---|
+| `wf_id` | `"WF-NNN"` | Sequential within this module, starting at WF-001 |
+| `name` | string | Short human name for the path — what makes it distinct |
+| `actor` | string | Role who performs this path — use `<role>` placeholder if spec doesn't specify |
+| `conditional_branch` | string or `null` | The condition(s) that activate this path's unique branch. `null` if no conditionals apply |
+| `terminal_action` | string | Exact name of the button/action that ends this workflow (matches AST `action_name` or `element_name`) |
+| `on_success` | string | Verbatim from AST `on_success` field if available; otherwise derived from description |
+
+**`conditional_branch` format:**
+- Single condition: `"Submission_Type == File_Upload"`
+- Multiple: `"Submission_Type == File_Upload AND Grade_Type == Points"`
+- State condition: `"entity_state == Draft"`
+- `null` if this is the base path with no conditionals
+
+---
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SELF-CHECK — VERIFY EVERY ITEM BEFORE OUTPUTTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Go through these one by one. If any check fails, fix it before outputting.
+
+□ 1. Every `submit_actions[]` entry in every form/wizard has at least one workflow.
+□ 2. Every state × action pair in every `state_bound_action_bar` has exactly one workflow.
+□ 3. Every `row_actions[]` and `bulk_actions[]` entry in every `data_table` has one workflow.
+□ 4. Every tab with a form submission in a `tab_container` has one workflow.
+□ 5. `wf_id` numbering is sequential (WF-001, WF-002, ...) with no gaps.
+□ 6. Every `terminal_action` matches an exact `action_name` or `element_name` from the AST.
+□ 7. No two workflows reach the **same `on_success` via the same code path** — even if their `conditional_branch` strings differ. If they do, merge them (keep the one that activates a distinct revealed required-field group; drop pure toggle-combination duplicates).
+□ 8. There is **at most ONE** `Cancel`/`discard` workflow for the whole module.
+□ 9. No independent toggles are multiplied together — the workflow count is roughly (base submits) + (revealed required-field groups) + 1 Cancel, NOT the product of all toggles × all buttons.
+□ 10. No workflow crosses module boundaries (steps in another module).
+□ 11. Every `on_success` reflects the AST or description — no generic "success" strings.
+
+---
+
+## Anti-Hallucination Gate (run after self-check)
+
+1. Does each workflow trace back to a specific AST node (`submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`) or an explicit action described in the description text? If no → delete it.
+2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
+3. Do two workflows reach the same `on_success` via the same code path (e.g. differing only by an independent toggle that does not change the outcome, or being repeated Cancel variants)? If yes → merge them into one. Keep a separate workflow only when its branch reveals a **distinct required-field group** that needs its own coverage.
+4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
+5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
+
+---
+
+## Calibration
+
+- Simple form module (no conditionals, one submit): 1–3 workflows
+- Form with conditionals/toggles: **(base submit outcomes) + (one per revealed required-field group) + 1 Cancel** — typically 4–8, NOT the product of all toggles × all buttons. A multi-toggle form like Assignment Creation should land near 6–8, never 20+.
+- Module with state machine: add 1 per (state × action) combination
+- Module with data table: add 1 per row_action + 1 per bulk_action
+
+---
+
+## OUTPUT — JSON only, no prose, no markdown fencing:
+
+{
+  "module": "Module Name",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Short human name — what makes this path distinct",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Submit",
+      "on_success": "Verbatim on_success from AST or derived from description"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Submit with File Upload submission type",
+      "actor": "<role>",
+      "conditional_branch": "Submission_Type == File_Upload",
+      "terminal_action": "Submit",
+      "on_success": "Assignment created; success message shown"
+    }
+  ],
+  "total": 2
+}
+
+
+------------------------------------------------------------
+[23:04:00] Workflow-Extractor - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 5,
+  "module_title": "Client Management",
+  "summary": "Displays and manages the application\u2019s clients via a searchable/filterable list, multi-step create wizard, bulk import, and detailed client lifecycle and account actions.",
+  "where_it_fits": "Located under Institution > Clients in the top navigation and reachable via the Clients icon in the left sidebar, this module is the primary client administration area within the application where users view client listings, import/create clients, and manage client status and related accounts as part of routine operations.",
+  "assumed_state_on_entry": "Authenticated user with permission to access the Institution > Clients section (or Clients sidebar shortcut)."
+}
+</module_context>
+
+<module_name>Client Management</module_name>
+
+<ast>
+{
+  "module_name": "Client Management",
+  "components": {
+    "Clients_Page": {
+      "type": "data_table",
+      "searchable": true,
+      "filterable_columns": [
+        "Status"
+      ],
+      "fields": {
+        "Search": {
+          "type": "search",
+          "description": "searches by name, account number, external ID, or mobile number"
+        },
+        "Status_Filter": {
+          "type": "dropdown",
+          "options": [
+            "Pending",
+            "Active",
+            "Closed",
+            "Rejected",
+            "Withdrawn"
+          ]
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "View Client",
+          "description": "Navigate to Client Detail by clicking Name link"
+        }
+      ],
+      "page_actions": [
+        {
+          "action_name": "Import Client",
+          "navigates_to": "Bulk_Import_Page",
+          "preconditions": [
+            "Authenticated user with permission to access the Institution > Clients section (or Clients sidebar shortcut)."
+          ]
+        },
+        {
+          "action_name": "Create Client",
+          "navigates_to": "Create_Client_Wizard",
+          "preconditions": [
+            "Authenticated user with permission to access the Institution > Clients section (or Clients sidebar shortcut)."
+          ]
+        }
+      ]
+    },
+    "Bulk_Import_Page": {
+      "type": "form",
+      "fields": {
+        "Download_Client_Template": {
+          "type": "button",
+          "action_name": "Download Template",
+          "preconditions": [
+            "Authenticated user with permission to access the Institution > Clients section (or Clients sidebar shortcut)."
+          ]
+        },
+        "Upload_File": {
+          "type": "file_upload"
+        }
+      },
+      "components": {
+        "Import_History_Table": {
+          "type": "data_table",
+          "description": "Shows import history with Name, Import Time, End Time, Completed, Total Records, Success Count, Failure Count and Download"
+        }
+      }
+    },
+    "Create_Client_Wizard": {
+      "type": "wizard",
+      "submit_actions": [
+        {
+          "action_name": "Submit",
+          "on_success": "creates client in Pending status",
+          "preconditions": [
+            "Authenticated user with permission to access the Institution > Clients section (or Clients sidebar shortcut)."
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "step_index": 1,
+          "step_name": "General Details",
+          "fields": {
+            "Office": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Legal_Form": {
+              "type": "unspecified"
+            },
+            "First_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Middle_Name": {
+              "type": "unspecified"
+            },
+            "Last_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Date_Of_Birth": {
+              "type": "date"
+            },
+            "Gender": {
+              "type": "unspecified"
+            },
+            "Staff": {
+              "type": "unspecified"
+            },
+            "Mobile_Number": {
+              "type": "unspecified"
+            },
+            "Email_Address": {
+              "type": "email"
+            },
+            "Client_Type": {
+              "type": "unspecified"
+            },
+            "Client_Classification": {
+              "type": "unspecified"
+            },
+            "External_ID": {
+              "type": "unspecified",
+              "constraints": [
+                "must be unique"
+              ]
+            },
+            "Submitted_On": {
+              "type": "date",
+              "required": true
+            },
+            "Is_Staff": {
+              "type": "checkbox"
+            },
+            "Active": {
+              "type": "checkbox"
+            },
+            "Open_Savings_Account": {
+              "type": "checkbox"
+            }
+          }
+        },
+        {
+          "step_index": 2,
+          "step_name": "Address Details",
+          "fields": {}
+        },
+        {
+          "step_index": 3,
+          "step_name": "Family Members",
+          "fields": {}
+        },
+        {
+          "step_index": 4,
+          "step_name": "Identifiers",
+          "fields": {
+            "Document_Type": {
+              "type": "unspecified"
+            },
+            "Document_Key": {
+              "type": "unspecified"
+            }
+          }
+        }
+      ]
+    },
+    "Client_Detail_Tabs": {
+      "type": "tab_container",
+      "tabs": [
+        {
+          "tab_name": "General",
+          "fields": {}
+        },
+        {
+          "tab_name": "Accounts",
+          "tabs": [
+            {
+              "tab_name": "Loans",
+              "fields": {}
+            },
+            {
+              "tab_name": "Savings",
+              "fields": {}
+            },
+            {
+              "tab_name": "Shares",
+              "fields": {}
+            },
+            {
+              "tab_name": "Fixed Deposits",
+              "fields": {}
+            },
+            {
+              "tab_name": "Recurring Deposits",
+              "fields": {}
+            }
+          ]
+        },
+        {
+          "tab_name": "Identifiers",
+          "fields": {
+            "Identifiers": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Document_Type": {
+                  "type": "unspecified"
+                },
+                "Document_Key": {
+                  "type": "unspecified"
+                }
+              },
+              "constraints": [
+                "duplicates not allowed"
+              ]
+            }
+          }
+        },
+        {
+          "tab_name": "Family Members",
+          "fields": {}
+        },
+        {
+          "tab_name": "Notes",
+          "fields": {}
+        },
+        {
+          "tab_name": "Documents",
+          "fields": {}
+        }
+      ]
+    },
+    "Client_Detail_Actions": {
+      "type": "state_bound_action_bar",
+      "states": {
+        "Pending": {
+          "available_actions": [
+            {
+              "action_name": "Activate",
+              "fields": {
+                "Activation_Date": {
+                  "type": "date",
+                  "required": true,
+                  "constraints": [
+                    "must not be before Submitted_On"
+                  ]
+                }
+              }
+            },
+            {
+              "action_name": "Edit"
+            },
+            {
+              "action_name": "Reject",
+              "fields": {
+                "Reason": {
+                  "type": "unspecified",
+                  "required": true
+                }
+              }
+            },
+            {
+              "action_name": "Withdraw",
+              "fields": {
+                "Reason": {
+                  "type": "unspecified",
+                  "required": true
+                }
+              }
+            }
+          ]
+        },
+        "Active": {
+          "available_actions": [
+            {
+              "action_name": "Edit"
+            },
+            {
+              "action_name": "Transfer Client",
+              "fields": {
+                "Destination_Office": {
+                  "type": "unspecified",
+                  "required": true,
+                  "constraints": [
+                    "cannot transfer to same office"
+                  ]
+                }
+              }
+            },
+            {
+              "action_name": "Close",
+              "fields": {
+                "Closure_Reason": {
+                  "type": "unspecified",
+                  "required": true
+                }
+              },
+              "constraints": [
+                "cannot close client with active accounts"
+              ]
+            },
+            {
+              "action_name": "Add Charge"
+            },
+            {
+              "action_name": "New Loan"
+            },
+            {
+              "action_name": "New Savings"
+            },
+            {
+              "action_name": "New Share Account"
+            }
+          ]
+        },
+        "Closed": {
+          "available_actions": [
+            {
+              "action_name": "Reactivate"
+            }
+          ]
+        },
+        "Rejected": {
+          "available_actions": []
+        },
+        "Withdrawn": {
+          "available_actions": []
+        }
+      },
+      "preconditions": [
+        "Authenticated user with permission to access the Institution > Clients section (or Clients sidebar shortcut)."
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Clients page displays a data table of all clients with columns for Name (clickable link), Account No., External ID, Status (Pending as yellow chip, Active as green chip, Closed as gray chip, Rejected as red chip, Withdrawn as orange chip), Office, and Staff. A search field allows searching by name, account number, external ID, or mobile number, and a filter bar supports filtering by status. Two buttons at the top-right provide "Import Client" (opens the Bulk Import page) and "Create Client." The Bulk Import page allows downloading a client Excel template, uploading a completed file, and displays an import history table with columns for Name, Import Time, End Time, Completed, Total Records, Success Count, Failure Count, and Download.
+
+The Create Client form is a multi-step wizard. Step 1 (General Details) contains Office (required), Legal Form, First Name (required), Middle Name, Last Name (required), Date of Birth, Gender, Staff, Mobile Number, Email Address, Client Type, Client Classification, External ID (must be unique), Submitted On (required), Is Staff checkbox, Active checkbox, and Open Savings Account option. Step 2 covers Address Details. Step 3 covers Family Members. Step 4 covers Identifiers (Document Type and Document Key). Clicking "Submit" creates the client in Pending status.
+
+The Client Detail page displays the client name, account number, status badge, activation date, and office. Action buttons change based on status: Pending offers Activate (requires Activation Date, which must not be before submission date), Edit, Reject (with reason), and Withdraw (with reason); Active offers Edit, Transfer Client (destination office required — same office is blocked), Close (closure reason required — cannot close with active accounts), Add Charge, New Loan, New Savings, and New Share Account; Closed offers Reactivate; Rejected and Withdrawn have no actions. Tabs on the detail page show General, Accounts (sub-tabs for Loans, Savings, Shares, Fixed Deposits, Recurring Deposits), Identifiers (Document Type and Key with add/remove — duplicates are prevented), Family Members, Notes, and Documents.
+
+---
+
+
+</description>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:04:45] Workflow-Extractor - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Client Management",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "View Client from Clients list",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "View Client",
+      "on_success": "navigates to Client Detail page"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Open Bulk Import from Clients page",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Import Client",
+      "on_success": "navigates to Bulk_Import_Page"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Start Create Client wizard from Clients page",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Create Client",
+      "on_success": "navigates to Create_Client_Wizard"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Download client import template",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Download Template",
+      "on_success": "client Excel template downloaded"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Create client via wizard - Submit",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Submit",
+      "on_success": "creates client in Pending status"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Activate Pending client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Pending",
+      "terminal_action": "Activate",
+      "on_success": "client activated; status becomes Active"
+    },
+    {
+      "wf_id": "WF-007",
+      "name": "Edit Pending client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Pending",
+      "terminal_action": "Edit",
+      "on_success": "client details updated"
+    },
+    {
+      "wf_id": "WF-008",
+      "name": "Reject Pending client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Pending",
+      "terminal_action": "Reject",
+      "on_success": "client status set to Rejected"
+    },
+    {
+      "wf_id": "WF-009",
+      "name": "Withdraw Pending client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Pending",
+      "terminal_action": "Withdraw",
+      "on_success": "client status set to Withdrawn"
+    },
+    {
+      "wf_id": "WF-010",
+      "name": "Edit Active client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Edit",
+      "on_success": "client details updated"
+    },
+    {
+      "wf_id": "WF-011",
+      "name": "Transfer Active client to another office",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Transfer Client",
+      "on_success": "client transferred to Destination_Office"
+    },
+    {
+      "wf_id": "WF-012",
+      "name": "Close Active client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Close",
+      "on_success": "client status set to Closed"
+    },
+    {
+      "wf_id": "WF-013",
+      "name": "Add charge to Active client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Add Charge",
+      "on_success": "charge added to client"
+    },
+    {
+      "wf_id": "WF-014",
+      "name": "Start New Loan for Active client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "New Loan",
+      "on_success": "navigates to New Loan creation flow"
+    },
+    {
+      "wf_id": "WF-015",
+      "name": "Start New Savings for Active client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "New Savings",
+      "on_success": "navigates to New Savings creation flow"
+    },
+    {
+      "wf_id": "WF-016",
+      "name": "Start New Share Account for Active client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "New Share Account",
+      "on_success": "navigates to New Share Account creation flow"
+    },
+    {
+      "wf_id": "WF-017",
+      "name": "Reactivate Closed client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Closed",
+      "terminal_action": "Reactivate",
+      "on_success": "client reactivated; status becomes Active"
+    }
+  ],
+  "total": 17
+}
+
+------------------------------------------------------------
+[23:04:45] Workflow-Extractor - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Client Management",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "View Client from Clients list",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "View Client",
+      "on_success": "navigates to Client Detail page"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Open Bulk Import from Clients page",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Import Client",
+      "on_success": "navigates to Bulk_Import_Page"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Start Create Client wizard from Clients page",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Create Client",
+      "on_success": "navigates to Create_Client_Wizard"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Download client import template",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Download Template",
+      "on_success": "client Excel template downloaded"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Create client via wizard - Submit",
+      "actor": "Authenticated user",
+      "conditional_branch": null,
+      "terminal_action": "Submit",
+      "on_success": "creates client in Pending status"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Activate Pending client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Pending",
+      "terminal_action": "Activate",
+      "on_success": "client activated; status becomes Active"
+    },
+    {
+      "wf_id": "WF-007",
+      "name": "Edit Pending client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Pending",
+      "terminal_action": "Edit",
+      "on_success": "client details updated"
+    },
+    {
+      "wf_id": "WF-008",
+      "name": "Reject Pending client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Pending",
+      "terminal_action": "Reject",
+      "on_success": "client status set to Rejected"
+    },
+    {
+      "wf_id": "WF-009",
+      "name": "Withdraw Pending client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Pending",
+      "terminal_action": "Withdraw",
+      "on_success": "client status set to Withdrawn"
+    },
+    {
+      "wf_id": "WF-010",
+      "name": "Edit Active client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Edit",
+      "on_success": "client details updated"
+    },
+    {
+      "wf_id": "WF-011",
+      "name": "Transfer Active client to another office",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Transfer Client",
+      "on_success": "client transferred to Destination_Office"
+    },
+    {
+      "wf_id": "WF-012",
+      "name": "Close Active client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Close",
+      "on_success": "client status set to Closed"
+    },
+    {
+      "wf_id": "WF-013",
+      "name": "Add charge to Active client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "Add Charge",
+      "on_success": "charge added to client"
+    },
+    {
+      "wf_id": "WF-014",
+      "name": "Start New Loan for Active client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "New Loan",
+      "on_success": "navigates to New Loan creation flow"
+    },
+    {
+      "wf_id": "WF-015",
+      "name": "Start New Savings for Active client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "New Savings",
+      "on_success": "navigates to New Savings creation flow"
+    },
+    {
+      "wf_id": "WF-016",
+      "name": "Start New Share Account for Active client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Active",
+      "terminal_action": "New Share Account",
+      "on_success": "navigates to New Share Account creation flow"
+    },
+    {
+      "wf_id": "WF-017",
+      "name": "Reactivate Closed client",
+      "actor": "Authenticated user",
+      "conditional_branch": "entity_state == Closed",
+      "terminal_action": "Reactivate",
+      "on_success": "client reactivated; status becomes Active"
+    }
+  ],
+  "total": 17
+}

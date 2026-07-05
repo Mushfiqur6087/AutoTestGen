@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:13.897951
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.091516
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - SYSTEM PROMPT
+[22:33:07] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - USER PROMPT
+[22:33:07] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 11,
   "module_title": "Cars Search & Listing",
-  "summary": "Provides a car rental search form and a dynamic listing of available vehicles grouped by category with detailed attributes, pricing, and filtering options.",
-  "where_it_fits": "Accessible from the main navigation under Cars or via the home page search widget's Cars tab, this module handles the search input and displays results before booking and payment flows; it sits alongside other transport modules like Flights and Tours and feeds into the Car Booking and Payment Processing modules.",
-  "assumed_state_on_entry": "Visitor has selected the Cars section (or used the home search widget) and has provided pick-up/drop-off locations and dates/times; user may be guest or authenticated."
+  "summary": "Provides car rental search and dynamic listing of available vehicles by category with detailed specs, pricing, and sidebar filters.",
+  "where_it_fits": "Accessible from the main navigation under the Cars section or via the home page search widget's Cars tab, this module handles the search input and presents matching car listings as part of the booking flow before Car Booking and Payment Processing. It sits alongside other transport modules (Flights, Tours) and links into Booking Management and User Dashboard for completed reservations.",
+  "assumed_state_on_entry": "User (guest or authenticated) has accessed the Cars section and supplied or selected car rental search criteria (pick-up/drop-off locations and dates/times); no prior booking required."
 }
 </module_context>
 
@@ -262,6 +272,15 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Cars_Search_Form": {
       "type": "form",
+      "preconditions": [
+        "User (guest or authenticated) has accessed the Cars section and supplied or selected car rental search criteria (pick-up/drop-off locations and dates/times)"
+      ],
+      "submit_actions": [
+        {
+          "action_name": "Search",
+          "on_success": "redirect to Cars_Listings_Page"
+        }
+      ],
       "fields": {
         "Pick_Up_Location": {
           "type": "unspecified"
@@ -269,32 +288,20 @@ If a `<workflows>` block is present in the input:
         "Drop_Off_Location": {
           "type": "unspecified"
         },
-        "Pick_Up_Date": {
+        "Pick_Up_Date_Time": {
           "type": "date"
         },
-        "Pick_Up_Time": {
-          "type": "unspecified"
-        },
-        "Drop_Off_Date": {
+        "Drop_Off_Date_Time": {
           "type": "date"
-        },
-        "Drop_Off_Time": {
-          "type": "unspecified"
         },
         "Driver_Age": {
           "type": "number"
         }
-      },
-      "submit_actions": [
-        {
-          "action_name": "Search",
-          "on_success": "redirect to Cars_Listing_Page"
-        }
-      ]
+      }
     },
-    "Listing_Sidebar_Filters": {
-      "type": "filters",
-      "dynamic": true,
+    "Sidebar_Filters": {
+      "type": "form",
+      "on_change": "updates_Car_Listings_dynamically",
       "fields": {
         "Car_Type": {
           "type": "dropdown",
@@ -304,104 +311,42 @@ If a `<workflows>` block is present in the input:
             "SUV",
             "Luxury",
             "Van"
-          ],
-          "on_change": "update_results"
+          ]
         },
         "Transmission": {
           "type": "dropdown",
           "options": [
             "Automatic",
             "Manual"
-          ],
-          "on_change": "update_results"
+          ]
         },
         "Fuel_Policy": {
-          "type": "unspecified",
-          "on_change": "update_results"
+          "type": "unspecified"
         },
         "Rental_Company": {
-          "type": "unspecified",
-          "on_change": "update_results"
+          "type": "unspecified"
         },
         "Price_Range": {
-          "type": "unspecified",
-          "on_change": "update_results"
+          "type": "unspecified"
         }
       }
     },
-    "Cars_Listing_Page": {
-      "type": "grouped_list",
-      "preconditions": [
-        "pick-up/drop-off locations and dates/times provided"
-      ],
+    "Car_Listings": {
+      "type": "listings",
+      "grouped_by": "Category",
       "groups": [
-        {
-          "group_name": "Economy",
-          "fields": {},
-          "item_actions": [
-            {
-              "action_name": "Book Now",
-              "preconditions": [
-                "pick-up/drop-off locations and dates/times provided"
-              ],
-              "on_success": "navigate to Car Booking module"
-            }
-          ]
-        },
-        {
-          "group_name": "Compact",
-          "fields": {},
-          "item_actions": [
-            {
-              "action_name": "Book Now",
-              "preconditions": [
-                "pick-up/drop-off locations and dates/times provided"
-              ],
-              "on_success": "navigate to Car Booking module"
-            }
-          ]
-        },
-        {
-          "group_name": "SUV",
-          "fields": {},
-          "item_actions": [
-            {
-              "action_name": "Book Now",
-              "preconditions": [
-                "pick-up/drop-off locations and dates/times provided"
-              ],
-              "on_success": "navigate to Car Booking module"
-            }
-          ]
-        },
-        {
-          "group_name": "Luxury",
-          "fields": {},
-          "item_actions": [
-            {
-              "action_name": "Book Now",
-              "preconditions": [
-                "pick-up/drop-off locations and dates/times provided"
-              ],
-              "on_success": "navigate to Car Booking module"
-            }
-          ]
-        },
-        {
-          "group_name": "Van",
-          "fields": {},
-          "item_actions": [
-            {
-              "action_name": "Book Now",
-              "preconditions": [
-                "pick-up/drop-off locations and dates/times provided"
-              ],
-              "on_success": "navigate to Car Booking module"
-            }
-          ]
-        }
+        "Economy",
+        "Compact",
+        "SUV",
+        "Luxury",
+        "Van"
       ],
-      "filters_component": "Listing_Sidebar_Filters"
+      "item_actions": [
+        {
+          "action_name": "Book Now",
+          "on_success": "proceeds to Car Booking flow"
+        }
+      ]
     }
   }
 }
@@ -417,23 +362,14 @@ The car rental search form collects pick-up and drop-off location, pick-up and d
 </description>
 
 <workflows>
-WF-001 | Submit Cars search form | actor: Visitor | branch: none | terminal: Search | on_success: redirect to Cars_Listing_Page
-WF-002 | Filter by Car Type (select option) | actor: Visitor | branch: Listing_Sidebar_Filters.fields.Car_Type selected | terminal: update_results | on_success: Listing results updated dynamically
-WF-003 | Filter by Transmission (select option) | actor: Visitor | branch: Listing_Sidebar_Filters.fields.Transmission selected | terminal: update_results | on_success: Listing results updated dynamically
-WF-004 | Filter by Fuel Policy (select option) | actor: Visitor | branch: Listing_Sidebar_Filters.fields.Fuel_Policy selected | terminal: update_results | on_success: Listing results updated dynamically
-WF-005 | Filter by Rental Company (select option) | actor: Visitor | branch: Listing_Sidebar_Filters.fields.Rental_Company selected | terminal: update_results | on_success: Listing results updated dynamically
-WF-006 | Adjust Price Range filter (change) | actor: Visitor | branch: Listing_Sidebar_Filters.fields.Price_Range changed | terminal: update_results | on_success: Listing results updated dynamically
-WF-007 | Book Now from Economy group | actor: Visitor | branch: Cars_Listing_Page.groups["Economy"].selected AND preconditions satisfied | terminal: Book Now | on_success: navigate to Car Booking module
-WF-008 | Book Now from Compact group | actor: Visitor | branch: Cars_Listing_Page.groups["Compact"].selected AND preconditions satisfied | terminal: Book Now | on_success: navigate to Car Booking module
-WF-009 | Book Now from SUV group | actor: Visitor | branch: Cars_Listing_Page.groups["SUV"].selected AND preconditions satisfied | terminal: Book Now | on_success: navigate to Car Booking module
-WF-010 | Book Now from Luxury group | actor: Visitor | branch: Cars_Listing_Page.groups["Luxury"].selected AND preconditions satisfied | terminal: Book Now | on_success: navigate to Car Booking module
-WF-011 | Book Now from Van group | actor: Visitor | branch: Cars_Listing_Page.groups["Van"].selected AND preconditions satisfied | terminal: Book Now | on_success: navigate to Car Booking module
+WF-001 | Search for available cars | actor: User | branch: none | terminal: Search | on_success: redirect to Cars_Listings_Page
+WF-002 | Book a listed car via Book Now | actor: User | branch: none | terminal: Book Now | on_success: proceeds to Car Booking flow
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:26:53] Test-Negative - LLM RESPONSE
+[22:35:28] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Cars Search & Listing",
@@ -442,157 +378,136 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Search submit with Pick Up Location left blank (required text)",
+      "test_case": "Submit Search with all search fields empty",
       "preconditions": [
-        "Visitor on Cars Search Form"
+        "User is on the Cars Search form",
+        "User has not entered any search criteria"
       ],
       "steps": [
         "1. Leave the Pick_Up_Location field blank",
-        "2. Enter <drop-off location> in the Drop_Off_Location field",
-        "3. Enter <pick-up date> in the Pick_Up_Date field",
-        "4. Enter <pick-up time> in the Pick_Up_Time field",
-        "5. Enter <drop-off date> in the Drop_Off_Date field",
-        "6. Enter <drop-off time> in the Drop_Off_Time field",
-        "7. Enter <valid driver age> in the Driver_Age field",
-        "8. Click the Search button"
+        "2. Leave the Drop_Off_Location field blank",
+        "3. Leave the Pick_Up_Date_Time field blank",
+        "4. Leave the Drop_Off_Date_Time field blank",
+        "5. Leave the Driver_Age field blank",
+        "6. Click the Search button"
       ],
-      "expected_result": "Inline validation error appears on the Pick_Up_Location field indicating it is required; the form does not submit and the user remains on the Cars Search Form (no redirect to Cars_Listing_Page)",
+      "expected_result": "Form does not submit; inline validation errors are shown on Pick_Up_Location, Drop_Off_Location, Pick_Up_Date_Time and Drop_Off_Date_Time indicating they are required; the page does not redirect to the Cars Listings page",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Search submit with Pick Up Date left blank (required date)",
+      "test_case": "Leave Pick_Up_Location blank (representative text/unspecified field) and submit",
       "preconditions": [
-        "Visitor on Cars Search Form"
+        "User is on the Cars Search form"
       ],
       "steps": [
-        "1. Enter <pick-up location> in the Pick_Up_Location field",
-        "2. Enter <drop-off location> in the Drop_Off_Location field",
-        "3. Leave the Pick_Up_Date field blank",
-        "4. Enter <pick-up time> in the Pick_Up_Time field",
-        "5. Enter <drop-off date> in the Drop_Off_Date field",
-        "6. Enter <drop-off time> in the Drop_Off_Time field",
-        "7. Enter <valid driver age> in the Driver_Age field",
-        "8. Click the Search button"
+        "1. Enter <valid drop-off location> in the Drop_Off_Location field",
+        "2. Enter <valid pick-up date/time> in the Pick_Up_Date_Time field",
+        "3. Enter <valid drop-off date/time> in the Drop_Off_Date_Time field",
+        "4. Enter <valid driver age> in the Driver_Age field",
+        "5. Leave the Pick_Up_Location field blank",
+        "6. Click the Search button"
       ],
-      "expected_result": "Inline validation error appears on the Pick_Up_Date field indicating it is required and/or invalid; the form does not submit and the user remains on the Cars Search Form (no redirect to Cars_Listing_Page)",
+      "expected_result": "Form does not submit; an inline validation error appears on the Pick_Up_Location field indicating it is required; the page does not redirect to the Cars Listings page",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Search submit with Driver Age left blank (required number)",
+      "test_case": "Leave Pick_Up_Date_Time blank (representative date field) and submit",
       "preconditions": [
-        "Visitor on Cars Search Form"
+        "User is on the Cars Search form"
       ],
       "steps": [
-        "1. Enter <pick-up location> in the Pick_Up_Location field",
-        "2. Enter <drop-off location> in the Drop_Off_Location field",
-        "3. Enter <pick-up date> in the Pick_Up_Date field",
-        "4. Enter <pick-up time> in the Pick_Up_Time field",
-        "5. Enter <drop-off date> in the Drop_Off_Date field",
-        "6. Enter <drop-off time> in the Drop_Off_Time field",
-        "7. Leave the Driver_Age field blank",
-        "8. Click the Search button"
+        "1. Enter <valid pick-up location> in the Pick_Up_Location field",
+        "2. Enter <valid drop-off location> in the Drop_Off_Location field",
+        "3. Leave the Pick_Up_Date_Time field blank",
+        "4. Enter <valid drop-off date/time> in the Drop_Off_Date_Time field",
+        "5. Enter <valid driver age> in the Driver_Age field",
+        "6. Click the Search button"
       ],
-      "expected_result": "Inline validation error appears on the Driver_Age field indicating it is required; the form does not submit and the user remains on the Cars Search Form (no redirect to Cars_Listing_Page)",
+      "expected_result": "Form does not submit; an inline validation error appears on the Pick_Up_Date_Time field indicating it is required; the page does not redirect to the Cars Listings page",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-001",
-      "test_case": "Submit Search with all required fields empty",
+      "test_case": "Enter non-numeric value in Driver_Age (number format violation)",
       "preconditions": [
-        "Visitor on Cars Search Form"
+        "User is on the Cars Search form"
       ],
       "steps": [
-        "1. Leave the Pick_Up_Location field blank",
-        "2. Leave the Drop_Off_Location field blank",
-        "3. Leave the Pick_Up_Date field blank",
-        "4. Leave the Drop_Off_Date field blank",
-        "5. Leave the Driver_Age field blank",
+        "1. Enter <valid pick-up location> in the Pick_Up_Location field",
+        "2. Enter <valid drop-off location> in the Drop_Off_Location field",
+        "3. Enter <valid pick-up date/time> in the Pick_Up_Date_Time field",
+        "4. Enter <valid drop-off date/time> in the Drop_Off_Date_Time field",
+        "5. Enter <non-numeric value> in the Driver_Age field",
         "6. Click the Search button"
       ],
-      "expected_result": "Inline validation errors appear on Pick_Up_Location, Drop_Off_Location, Pick_Up_Date, Drop_Off_Date and Driver_Age fields indicating they are required; the form does not submit and the user remains on the Cars Search Form (no redirect to Cars_Listing_Page)",
-      "priority": "high"
+      "expected_result": "Form does not submit; the Driver_Age field displays an inline validation error indicating the value must be numeric; the page does not redirect to the Cars Listings page",
+      "priority": "medium"
     },
     {
       "tc_id": "N-005",
       "wf_ref": "WF-001",
-      "test_case": "Driver Age field accepts non-numeric input (format violation)",
+      "test_case": "Submit with Drop_Off_Date_Time earlier than Pick_Up_Date_Time (date logic violation)",
       "preconditions": [
-        "Visitor on Cars Search Form"
+        "User is on the Cars Search form"
       ],
       "steps": [
-        "1. Enter <pick-up location> in the Pick_Up_Location field",
-        "2. Enter <drop-off location> in the Drop_Off_Location field",
-        "3. Enter <pick-up date> in the Pick_Up_Date field",
-        "4. Enter <pick-up time> in the Pick_Up_Time field",
-        "5. Enter <drop-off date> in the Drop_Off_Date field",
-        "6. Enter <drop-off time> in the Drop_Off_Time field",
-        "7. Enter <non-numeric input> in the Driver_Age field",
-        "8. Click the Search button"
+        "1. Enter <valid pick-up location> in the Pick_Up_Location field",
+        "2. Enter <valid drop-off location> in the Drop_Off_Location field",
+        "3. Enter <pick-up date/time> in the Pick_Up_Date_Time field",
+        "4. Enter <drop-off date/time earlier than pick-up> in the Drop_Off_Date_Time field",
+        "5. Enter <valid driver age> in the Driver_Age field",
+        "6. Click the Search button"
       ],
-      "expected_result": "Driver_Age field displays an inline validation error indicating the value must be numeric; the form does not submit and the user is not redirected to Cars_Listing_Page",
-      "priority": "medium"
+      "expected_result": "Form does not submit; an inline validation error appears on the Drop_Off_Date_Time field indicating it must be after the Pick_Up_Date_Time; no car listings are shown and the page does not redirect to the Cars Listings page",
+      "priority": "high"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Drop-off date/time earlier than pick-up date/time (cross-field date order violation)",
+      "test_case": "Enter an impossible/invalid date in Pick_Up_Date_Time (date format/validity violation)",
       "preconditions": [
-        "Visitor on Cars Search Form"
+        "User is on the Cars Search form"
       ],
       "steps": [
-        "1. Enter <pick-up location> in the Pick_Up_Location field",
-        "2. Enter <drop-off location> in the Drop_Off_Location field",
-        "3. Enter <pick-up date/time> as <date A/time A> in the Pick_Up_Date and Pick_Up_Time fields",
-        "4. Enter <drop-off date/time> as <date B/time B where B is before A> in the Drop_Off_Date and Drop_Off_Time fields",
+        "1. Enter <valid pick-up location> in the Pick_Up_Location field",
+        "2. Enter <valid drop-off location> in the Drop_Off_Location field",
+        "3. Enter <invalid or impossible date> in the Pick_Up_Date_Time field",
+        "4. Enter <valid drop-off date/time> in the Drop_Off_Date_Time field",
         "5. Enter <valid driver age> in the Driver_Age field",
         "6. Click the Search button"
       ],
-      "expected_result": "Inline validation error appears on the Drop_Off_Date (and/or Drop_Off_Time) field indicating drop-off must be after pick-up; the form does not submit and the user remains on the Cars Search Form (no redirect to Cars_Listing_Page)",
+      "expected_result": "Form does not submit; the Pick_Up_Date_Time field displays an inline validation error indicating an invalid date was entered; the page does not redirect to the Cars Listings page",
       "priority": "medium"
     },
     {
       "tc_id": "N-007",
       "wf_ref": "WF-001",
-      "test_case": "Attempt to access Cars Listing page directly without providing required pick-up/drop-off locations and dates/times (precondition not met)",
+      "test_case": "Access Cars Listings page directly without performing a search (precondition violation)",
       "preconditions": [
-        "Visitor has not performed a search and has not provided pick-up/drop-off locations or dates/times"
+        "User has not performed a search and has not supplied pick-up/drop-off locations or dates"
       ],
       "steps": [
-        "1. Navigate directly to the Cars_Listing_Page URL (bypass Search)"
+        "1. Navigate directly to the Cars Listings page URL without submitting the Cars Search form"
       ],
-      "expected_result": "Access is blocked: user is redirected to the Cars Search Form (no listing displayed) or the page displays a clear blocking message indicating 'pick-up/drop-off locations and dates/times required' and the Cars listing is not shown",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-008",
-      "wf_ref": "WF-007",
-      "test_case": "Click 'Book Now' from a listing item when pick-up/drop-off dates/times are not provided (action precondition failure)",
-      "preconditions": [
-        "Visitor is on Cars Listing Page but has not provided pick-up/drop-off locations or dates/times (e.g., arrived via a direct URL or stale link)"
-      ],
-      "steps": [
-        "1. On the Cars Listing Page, locate any vehicle item",
-        "2. Click the Book Now button for that vehicle"
-      ],
-      "expected_result": "The Book Now action is blocked: Book Now is disabled or a modal/inline error appears stating pick-up/drop-off locations and dates/times must be provided; navigation to the Car Booking module does not occur",
+      "expected_result": "The page does not display car listings for a search; the Search form is shown or an inline notice indicates search criteria are required; no Book Now buttons for individual listings are visible or enabled (user is not allowed to proceed to booking from this state)",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 8,
-    "high_priority": 6,
+    "total": 7,
+    "high_priority": 5,
     "medium_priority": 2,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:26:53] Test-Negative - PARSED JSON
+[22:35:28] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Cars Search & Listing",
@@ -601,150 +516,129 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Search submit with Pick Up Location left blank (required text)",
+      "test_case": "Submit Search with all search fields empty",
       "preconditions": [
-        "Visitor on Cars Search Form"
+        "User is on the Cars Search form",
+        "User has not entered any search criteria"
       ],
       "steps": [
         "1. Leave the Pick_Up_Location field blank",
-        "2. Enter <drop-off location> in the Drop_Off_Location field",
-        "3. Enter <pick-up date> in the Pick_Up_Date field",
-        "4. Enter <pick-up time> in the Pick_Up_Time field",
-        "5. Enter <drop-off date> in the Drop_Off_Date field",
-        "6. Enter <drop-off time> in the Drop_Off_Time field",
-        "7. Enter <valid driver age> in the Driver_Age field",
-        "8. Click the Search button"
+        "2. Leave the Drop_Off_Location field blank",
+        "3. Leave the Pick_Up_Date_Time field blank",
+        "4. Leave the Drop_Off_Date_Time field blank",
+        "5. Leave the Driver_Age field blank",
+        "6. Click the Search button"
       ],
-      "expected_result": "Inline validation error appears on the Pick_Up_Location field indicating it is required; the form does not submit and the user remains on the Cars Search Form (no redirect to Cars_Listing_Page)",
+      "expected_result": "Form does not submit; inline validation errors are shown on Pick_Up_Location, Drop_Off_Location, Pick_Up_Date_Time and Drop_Off_Date_Time indicating they are required; the page does not redirect to the Cars Listings page",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Search submit with Pick Up Date left blank (required date)",
+      "test_case": "Leave Pick_Up_Location blank (representative text/unspecified field) and submit",
       "preconditions": [
-        "Visitor on Cars Search Form"
+        "User is on the Cars Search form"
       ],
       "steps": [
-        "1. Enter <pick-up location> in the Pick_Up_Location field",
-        "2. Enter <drop-off location> in the Drop_Off_Location field",
-        "3. Leave the Pick_Up_Date field blank",
-        "4. Enter <pick-up time> in the Pick_Up_Time field",
-        "5. Enter <drop-off date> in the Drop_Off_Date field",
-        "6. Enter <drop-off time> in the Drop_Off_Time field",
-        "7. Enter <valid driver age> in the Driver_Age field",
-        "8. Click the Search button"
+        "1. Enter <valid drop-off location> in the Drop_Off_Location field",
+        "2. Enter <valid pick-up date/time> in the Pick_Up_Date_Time field",
+        "3. Enter <valid drop-off date/time> in the Drop_Off_Date_Time field",
+        "4. Enter <valid driver age> in the Driver_Age field",
+        "5. Leave the Pick_Up_Location field blank",
+        "6. Click the Search button"
       ],
-      "expected_result": "Inline validation error appears on the Pick_Up_Date field indicating it is required and/or invalid; the form does not submit and the user remains on the Cars Search Form (no redirect to Cars_Listing_Page)",
+      "expected_result": "Form does not submit; an inline validation error appears on the Pick_Up_Location field indicating it is required; the page does not redirect to the Cars Listings page",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Search submit with Driver Age left blank (required number)",
+      "test_case": "Leave Pick_Up_Date_Time blank (representative date field) and submit",
       "preconditions": [
-        "Visitor on Cars Search Form"
+        "User is on the Cars Search form"
       ],
       "steps": [
-        "1. Enter <pick-up location> in the Pick_Up_Location field",
-        "2. Enter <drop-off location> in the Drop_Off_Location field",
-        "3. Enter <pick-up date> in the Pick_Up_Date field",
-        "4. Enter <pick-up time> in the Pick_Up_Time field",
-        "5. Enter <drop-off date> in the Drop_Off_Date field",
-        "6. Enter <drop-off time> in the Drop_Off_Time field",
-        "7. Leave the Driver_Age field blank",
-        "8. Click the Search button"
+        "1. Enter <valid pick-up location> in the Pick_Up_Location field",
+        "2. Enter <valid drop-off location> in the Drop_Off_Location field",
+        "3. Leave the Pick_Up_Date_Time field blank",
+        "4. Enter <valid drop-off date/time> in the Drop_Off_Date_Time field",
+        "5. Enter <valid driver age> in the Driver_Age field",
+        "6. Click the Search button"
       ],
-      "expected_result": "Inline validation error appears on the Driver_Age field indicating it is required; the form does not submit and the user remains on the Cars Search Form (no redirect to Cars_Listing_Page)",
+      "expected_result": "Form does not submit; an inline validation error appears on the Pick_Up_Date_Time field indicating it is required; the page does not redirect to the Cars Listings page",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-001",
-      "test_case": "Submit Search with all required fields empty",
+      "test_case": "Enter non-numeric value in Driver_Age (number format violation)",
       "preconditions": [
-        "Visitor on Cars Search Form"
+        "User is on the Cars Search form"
       ],
       "steps": [
-        "1. Leave the Pick_Up_Location field blank",
-        "2. Leave the Drop_Off_Location field blank",
-        "3. Leave the Pick_Up_Date field blank",
-        "4. Leave the Drop_Off_Date field blank",
-        "5. Leave the Driver_Age field blank",
+        "1. Enter <valid pick-up location> in the Pick_Up_Location field",
+        "2. Enter <valid drop-off location> in the Drop_Off_Location field",
+        "3. Enter <valid pick-up date/time> in the Pick_Up_Date_Time field",
+        "4. Enter <valid drop-off date/time> in the Drop_Off_Date_Time field",
+        "5. Enter <non-numeric value> in the Driver_Age field",
         "6. Click the Search button"
       ],
-      "expected_result": "Inline validation errors appear on Pick_Up_Location, Drop_Off_Location, Pick_Up_Date, Drop_Off_Date and Driver_Age fields indicating they are required; the form does not submit and the user remains on the Cars Search Form (no redirect to Cars_Listing_Page)",
-      "priority": "high"
+      "expected_result": "Form does not submit; the Driver_Age field displays an inline validation error indicating the value must be numeric; the page does not redirect to the Cars Listings page",
+      "priority": "medium"
     },
     {
       "tc_id": "N-005",
       "wf_ref": "WF-001",
-      "test_case": "Driver Age field accepts non-numeric input (format violation)",
+      "test_case": "Submit with Drop_Off_Date_Time earlier than Pick_Up_Date_Time (date logic violation)",
       "preconditions": [
-        "Visitor on Cars Search Form"
+        "User is on the Cars Search form"
       ],
       "steps": [
-        "1. Enter <pick-up location> in the Pick_Up_Location field",
-        "2. Enter <drop-off location> in the Drop_Off_Location field",
-        "3. Enter <pick-up date> in the Pick_Up_Date field",
-        "4. Enter <pick-up time> in the Pick_Up_Time field",
-        "5. Enter <drop-off date> in the Drop_Off_Date field",
-        "6. Enter <drop-off time> in the Drop_Off_Time field",
-        "7. Enter <non-numeric input> in the Driver_Age field",
-        "8. Click the Search button"
+        "1. Enter <valid pick-up location> in the Pick_Up_Location field",
+        "2. Enter <valid drop-off location> in the Drop_Off_Location field",
+        "3. Enter <pick-up date/time> in the Pick_Up_Date_Time field",
+        "4. Enter <drop-off date/time earlier than pick-up> in the Drop_Off_Date_Time field",
+        "5. Enter <valid driver age> in the Driver_Age field",
+        "6. Click the Search button"
       ],
-      "expected_result": "Driver_Age field displays an inline validation error indicating the value must be numeric; the form does not submit and the user is not redirected to Cars_Listing_Page",
-      "priority": "medium"
+      "expected_result": "Form does not submit; an inline validation error appears on the Drop_Off_Date_Time field indicating it must be after the Pick_Up_Date_Time; no car listings are shown and the page does not redirect to the Cars Listings page",
+      "priority": "high"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Drop-off date/time earlier than pick-up date/time (cross-field date order violation)",
+      "test_case": "Enter an impossible/invalid date in Pick_Up_Date_Time (date format/validity violation)",
       "preconditions": [
-        "Visitor on Cars Search Form"
+        "User is on the Cars Search form"
       ],
       "steps": [
-        "1. Enter <pick-up location> in the Pick_Up_Location field",
-        "2. Enter <drop-off location> in the Drop_Off_Location field",
-        "3. Enter <pick-up date/time> as <date A/time A> in the Pick_Up_Date and Pick_Up_Time fields",
-        "4. Enter <drop-off date/time> as <date B/time B where B is before A> in the Drop_Off_Date and Drop_Off_Time fields",
+        "1. Enter <valid pick-up location> in the Pick_Up_Location field",
+        "2. Enter <valid drop-off location> in the Drop_Off_Location field",
+        "3. Enter <invalid or impossible date> in the Pick_Up_Date_Time field",
+        "4. Enter <valid drop-off date/time> in the Drop_Off_Date_Time field",
         "5. Enter <valid driver age> in the Driver_Age field",
         "6. Click the Search button"
       ],
-      "expected_result": "Inline validation error appears on the Drop_Off_Date (and/or Drop_Off_Time) field indicating drop-off must be after pick-up; the form does not submit and the user remains on the Cars Search Form (no redirect to Cars_Listing_Page)",
+      "expected_result": "Form does not submit; the Pick_Up_Date_Time field displays an inline validation error indicating an invalid date was entered; the page does not redirect to the Cars Listings page",
       "priority": "medium"
     },
     {
       "tc_id": "N-007",
       "wf_ref": "WF-001",
-      "test_case": "Attempt to access Cars Listing page directly without providing required pick-up/drop-off locations and dates/times (precondition not met)",
+      "test_case": "Access Cars Listings page directly without performing a search (precondition violation)",
       "preconditions": [
-        "Visitor has not performed a search and has not provided pick-up/drop-off locations or dates/times"
+        "User has not performed a search and has not supplied pick-up/drop-off locations or dates"
       ],
       "steps": [
-        "1. Navigate directly to the Cars_Listing_Page URL (bypass Search)"
+        "1. Navigate directly to the Cars Listings page URL without submitting the Cars Search form"
       ],
-      "expected_result": "Access is blocked: user is redirected to the Cars Search Form (no listing displayed) or the page displays a clear blocking message indicating 'pick-up/drop-off locations and dates/times required' and the Cars listing is not shown",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-008",
-      "wf_ref": "WF-007",
-      "test_case": "Click 'Book Now' from a listing item when pick-up/drop-off dates/times are not provided (action precondition failure)",
-      "preconditions": [
-        "Visitor is on Cars Listing Page but has not provided pick-up/drop-off locations or dates/times (e.g., arrived via a direct URL or stale link)"
-      ],
-      "steps": [
-        "1. On the Cars Listing Page, locate any vehicle item",
-        "2. Click the Book Now button for that vehicle"
-      ],
-      "expected_result": "The Book Now action is blocked: Book Now is disabled or a modal/inline error appears stating pick-up/drop-off locations and dates/times must be provided; navigation to the Car Booking module does not occur",
+      "expected_result": "The page does not display car listings for a search; the Search form is shown or an inline notice indicates search criteria are required; no Book Now buttons for individual listings are visible or enabled (user is not allowed to proceed to booking from this state)",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 8,
-    "high_priority": 6,
+    "total": 7,
+    "high_priority": 5,
     "medium_priority": 2,
     "low_priority": 0
   }

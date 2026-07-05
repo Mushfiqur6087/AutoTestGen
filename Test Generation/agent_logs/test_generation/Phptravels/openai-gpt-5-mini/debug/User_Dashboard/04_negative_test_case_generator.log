@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:13.946704
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.123254
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - SYSTEM PROMPT
+[22:33:07] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - USER PROMPT
+[22:33:07] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 14,
   "module_title": "User Dashboard",
-  "summary": "A post-authentication hub that displays and manages a user\u2019s bookings, profile, wallet/credits, wishlist, reviews, and account settings in one place.",
-  "where_it_fits": "Reached from the top navigation Account/Login after successful authentication, the Dashboard is the central user area following activity initiated from Home (search widget) or section-specific flows like Hotels, Flights, Tours, and Cars; it acts as the lifecycle hub for managing bookings, payments, and account preferences.",
-  "assumed_state_on_entry": "Authenticated (logged-in) user with an active session."
+  "summary": "A personalized account area that aggregates bookings, profile details, wallet/credits, wishlist, reviews, settings, and logout functionality.",
+  "where_it_fits": "Accessible from the top navigation Account/Login after successful authentication, the dashboard serves as the authenticated user's landing area for booking history and account management while the main navigation remains available across pages.",
+  "assumed_state_on_entry": "Authenticated (logged-in) user session with an existing user account."
 }
 </module_context>
 
@@ -260,7 +270,7 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "User Dashboard",
   "components": {
-    "My_Bookings": {
+    "My_Bookings_Table": {
       "type": "data_table",
       "row_actions": [
         {
@@ -269,13 +279,15 @@ If a `<workflows>` block is present in the input:
         {
           "action_name": "Cancel",
           "preconditions": [
-            "cancellation allowed by booking type and cancellation policy"
+            "booking type permits this action",
+            "cancellation policy permits this action"
           ]
         },
         {
           "action_name": "Modify",
           "preconditions": [
-            "modification allowed by booking type and cancellation policy"
+            "booking type permits this action",
+            "cancellation policy permits this action"
           ]
         },
         {
@@ -290,91 +302,98 @@ If a `<workflows>` block is present in the input:
       ]
     },
     "My_Profile": {
-      "type": "panel",
-      "actions": [
+      "type": "form",
+      "fields": {
+        "Edit_Profile": {
+          "type": "button",
+          "action_name": "Edit"
+        }
+      }
+    },
+    "Profile_Edit_Form": {
+      "type": "form",
+      "visible_when": "Edit_Profile == clicked",
+      "fields": {},
+      "submit_actions": [
         {
-          "action_name": "Edit",
-          "opens_form": "Edit_Profile_Form"
+          "action_name": "Save Profile",
+          "on_success": "profile updated"
         }
       ]
     },
-    "Edit_Profile_Form": {
-      "type": "form",
-      "fields": {}
-    },
     "Wallet_Credits": {
-      "type": "panel",
+      "type": "data_table",
+      "description": "Transaction history for wallet/credits",
       "fields": {}
     },
     "Wishlist": {
-      "type": "panel",
+      "type": "data_table",
+      "description": "Saved hotels, tours, or flights",
       "fields": {}
     },
-    "Reviews": {
-      "type": "panel",
-      "actions": [
-        {
-          "action_name": "Write Review",
-          "preconditions": [
-            "booking is completed"
-          ],
-          "opens_form": "Write_Review_Form"
-        }
-      ]
-    },
-    "Write_Review_Form": {
+    "Review_Submission_Form": {
       "type": "form",
       "fields": {
+        "Selected_Booking": {
+          "type": "unspecified"
+        },
         "Rating": {
           "type": "unspecified"
         },
         "Review_Text": {
           "type": "unspecified"
         }
-      }
+      },
+      "visible_when": "Selected_Booking_Status == Completed",
+      "submit_actions": [
+        {
+          "action_name": "Submit Review",
+          "on_success": "review posted"
+        }
+      ]
     },
     "Settings": {
       "type": "form",
       "fields": {
+        "Current_Password": {
+          "type": "password"
+        },
+        "New_Password": {
+          "type": "password"
+        },
+        "Confirm_Password": {
+          "type": "password"
+        },
         "Notification_Preferences": {
           "type": "unspecified"
         },
         "Default_Currency": {
-          "type": "unspecified"
+          "type": "dropdown"
         },
         "Default_Language": {
-          "type": "unspecified"
+          "type": "dropdown"
         }
       },
-      "actions": [
+      "constraints": [
+        "New_Password must match Confirm_Password"
+      ],
+      "submit_actions": [
         {
-          "action_name": "Change Password",
-          "opens_form": "Change_Password_Form"
-        },
-        {
-          "action_name": "Logout",
+          "action_name": "Save Settings",
+          "on_success": "settings updated",
           "preconditions": [
-            "user must be logged in"
+            "Authenticated (logged-in) user session with an existing user account"
           ]
         }
       ]
     },
-    "Change_Password_Form": {
-      "type": "form",
-      "fields": {
-        "Current_Password": {
-          "type": "password",
-          "required": true
-        },
-        "New_Password": {
-          "type": "password",
-          "required": true
-        },
-        "Confirm_New_Password": {
-          "type": "password",
-          "required": true
-        }
-      }
+    "Logout_Button": {
+      "type": "button",
+      "action_name": "Logout",
+      "preconditions": [
+        "Authenticated (logged-in) user session with an existing user account"
+      ],
+      "on_success": "session ended"
     }
   }
 }
@@ -390,22 +409,22 @@ The dashboard is organized into the following sections. My Bookings displays all
 </description>
 
 <workflows>
-WF-001 | View booking details | actor: Authenticated user | branch: none | terminal: View Details | on_success: Booking details displayed
-WF-002 | Cancel booking when cancellation allowed | actor: Authenticated user | branch: cancellation allowed by booking type and cancellation policy | terminal: Cancel | on_success: Booking cancelled; booking status updated; confirmation shown
-WF-003 | Modify booking when modification allowed | actor: Authenticated user | branch: modification allowed by booking type and cancellation policy | terminal: Modify | on_success: Booking modification flow opened
-WF-004 | Download booking confirmation | actor: Authenticated user | branch: none | terminal: Download Confirmation | on_success: Booking confirmation file downloaded
-WF-005 | Download invoice for booking | actor: Authenticated user | branch: none | terminal: Download Invoice | on_success: Invoice file downloaded
-WF-006 | Download voucher for booking | actor: Authenticated user | branch: none | terminal: Download Voucher | on_success: Voucher file downloaded
-WF-007 | Edit profile (open edit form) | actor: Authenticated user | branch: none | terminal: Edit | on_success: Edit_Profile_Form opened
-WF-008 | Write review for completed booking | actor: Authenticated user | branch: booking is completed | terminal: Write Review | on_success: Write_Review_Form opened
-WF-009 | Open change password form | actor: Authenticated user | branch: none | terminal: Change Password | on_success: Change_Password_Form opened
-WF-010 | Logout (end session) | actor: Authenticated user | branch: user must be logged in | terminal: Logout | on_success: User session ended; user logged out
+WF-001 | View booking details (row action) | actor: Authenticated user | branch: none | terminal: View Details | on_success: booking details displayed
+WF-002 | Cancel booking (row action, when permitted) | actor: Authenticated user | branch: none | terminal: Cancel | on_success: booking cancelled
+WF-003 | Modify booking (row action, when permitted) | actor: Authenticated user | branch: none | terminal: Modify | on_success: booking modification started
+WF-004 | Download booking confirmation (row action) | actor: Authenticated user | branch: none | terminal: Download Confirmation | on_success: confirmation downloaded
+WF-005 | Download booking invoice (row action) | actor: Authenticated user | branch: none | terminal: Download Invoice | on_success: invoice downloaded
+WF-006 | Download booking voucher (row action) | actor: Authenticated user | branch: none | terminal: Download Voucher | on_success: voucher downloaded
+WF-007 | Edit profile and save changes | actor: Authenticated user | branch: Edit_Profile == clicked | terminal: Save Profile | on_success: profile updated
+WF-008 | Submit review for a completed booking | actor: Authenticated user | branch: Selected_Booking_Status == Completed | terminal: Submit Review | on_success: review posted
+WF-009 | Save settings (password, preferences, currency/language) | actor: Authenticated user | branch: none | terminal: Save Settings | on_success: settings updated
+WF-010 | Logout (end session) | actor: Authenticated user | branch: none | terminal: Logout | on_success: session ended
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:27:30] Test-Negative - LLM RESPONSE
+[22:35:59] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "User Dashboard",
@@ -414,116 +433,128 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access Dashboard",
+      "test_case": "Unauthenticated user cannot access the User Dashboard",
       "preconditions": [
-        "User is not logged in"
+        "User is not authenticated"
       ],
       "steps": [
-        "1. In a new browser session ensure no active authentication (user is logged out)",
-        "2. Navigate to the Dashboard URL / Account > Dashboard"
+        "1. Navigate to the User Dashboard URL without logging in"
       ],
-      "expected_result": "Access is blocked: the user is redirected to the login page; a visible message or login form appears stating that authentication is required; Dashboard content is not displayed",
+      "expected_result": "User is redirected to the login page or shown an authentication prompt; no dashboard sections (My Bookings, My Profile, Settings, etc.) are visible or accessible",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-002",
-      "test_case": "Attempt to Cancel a booking when cancellation is not allowed by policy",
+      "test_case": "Cancel action is blocked when booking's cancellation policy prohibits cancellation",
       "preconditions": [
         "Authenticated user",
-        "A booking exists that has cancellation disallowed by booking type or cancellation policy (e.g., non-refundable or outside allowed window) — referred to as <booking with cancellation disallowed>"
+        "A booking exists with <cancellation policy that prohibits cancellation> and <booking type where cancellation is not permitted>"
       ],
       "steps": [
         "1. Log in as an authenticated user",
-        "2. Navigate to Dashboard > My Bookings",
-        "3. Locate the row for <booking with cancellation disallowed>",
-        "4. Click the Cancel action for that booking"
+        "2. Open the User Dashboard",
+        "3. Locate the booking row with the non-cancellable policy",
+        "4. Attempt to click the Cancel action for that booking"
       ],
-      "expected_result": "Cancel is blocked: the Cancel action does not succeed; an inline error/toast appears on the booking row stating cancellation is not permitted (e.g. 'Cancellation not allowed by booking type and cancellation policy'); the booking status remains unchanged (remains <booking status>) and no cancellation confirmation is shown or sent",
+      "expected_result": "Cancel action for that booking is not available (Cancel button is either not visible or is shown disabled); attempting to invoke Cancel has no effect and the booking status remains <original status>; no cancellation occurs",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-003",
-      "test_case": "Attempt to Modify a booking when modification is not allowed by policy",
+      "test_case": "Modify action is blocked when booking type or policy prohibits modification",
       "preconditions": [
         "Authenticated user",
-        "A booking exists for which modification is disallowed by booking type or policy — referred to as <booking with modification disallowed>"
+        "A booking exists with <booking type that does not permit modification> or <cancellation/modification policy that prohibits modification>"
       ],
       "steps": [
         "1. Log in as an authenticated user",
-        "2. Navigate to Dashboard > My Bookings",
-        "3. Locate the row for <booking with modification disallowed>",
-        "4. Click the Modify action for that booking"
+        "2. Open the User Dashboard",
+        "3. Locate the booking row where modification is not permitted",
+        "4. Attempt to click the Modify action for that booking"
       ],
-      "expected_result": "Modify is blocked: the Modify action does not open the modification flow; an inline error/toast appears on the booking row stating modification is not permitted (e.g. 'Modification not allowed by booking type and cancellation policy'); the booking details remain unchanged and no modification UI is shown",
+      "expected_result": "Modify action for that booking is not available (Modify button is either not visible or is shown disabled); attempting to invoke Modify has no effect and no modification flow starts",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-008",
-      "test_case": "Attempt to write a review for a booking that is not completed",
+      "test_case": "Cannot submit a review for a booking that is not Completed",
       "preconditions": [
         "Authenticated user",
-        "A booking exists with status that is not 'completed' (e.g., <Pending> or <Confirmed but not completed>)"
+        "A booking exists with Selected_Booking_Status == <not Completed> (e.g., Pending or Confirmed)"
       ],
       "steps": [
         "1. Log in as an authenticated user",
-        "2. Navigate to Dashboard > Reviews or Dashboard > My Bookings and locate the booking that is not completed (<booking not completed>)",
-        "3. Click the Write Review action for that booking"
+        "2. Open the User Dashboard",
+        "3. Select the booking whose status is <not Completed>",
+        "4. Attempt to open or submit the Review Submission Form for that booking"
       ],
-      "expected_result": "Write Review is blocked: the Write_Review_Form does not open; an inline message near the action appears stating reviews are only allowed for completed bookings (e.g. 'Review allowed only for completed bookings'); no review form is presented and no review can be submitted",
+      "expected_result": "Review Submission Form and the Submit Review action are not visible/available for that booking (form does not appear); user cannot post a review for a non-completed booking",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
       "wf_ref": "WF-009",
-      "test_case": "Leave required field blank in Change Password dialog (Current_Password required)",
+      "test_case": "Saving Settings is blocked when New_Password and Confirm_Password do not match",
       "preconditions": [
-        "Authenticated user"
+        "Authenticated user",
+        "User is on the Settings section of the User Dashboard"
       ],
       "steps": [
-        "1. Log in as an authenticated user",
-        "2. Navigate to Dashboard > Settings",
-        "3. Click Change Password to open Change_Password_Form",
-        "4. Leave the Current_Password field blank",
-        "5. Enter <valid new password> in New_Password",
-        "6. Enter the same <valid new password> in Confirm_New_Password",
-        "7. Click Submit / Save"
+        "1. Open Settings",
+        "2. Enter <current password> into the Current_Password field",
+        "3. Enter <new password A> into the New_Password field",
+        "4. Enter <different new password B> into the Confirm_Password field",
+        "5. Click Save Settings"
       ],
-      "expected_result": "Form submission is blocked: Current_Password field displays an inline validation error indicating it is required (e.g. 'Current password is required'); the form does not submit and the password is not changed",
+      "expected_result": "Inline validation error appears on the Confirm_Password field indicating it must match New_Password; the form is not submitted and settings are not updated",
       "priority": "high"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-009",
-      "test_case": "Submit Change Password form with all required password fields empty",
+      "test_case": "Attempting to Save Settings while unauthenticated is blocked by authentication precondition",
       "preconditions": [
-        "Authenticated user"
+        "User is not authenticated",
+        "Settings page URL is accessible directly"
+      ],
+      "steps": [
+        "1. Navigate directly to the Settings section URL without logging in",
+        "2. Attempt to interact with settings controls (for example, click Save Settings)"
+      ],
+      "expected_result": "User is redirected to the login page or shown an authentication prompt; Save Settings action is not performed and settings are not updated",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-002",
+      "test_case": "Cannot cancel a booking that is already Cancelled",
+      "preconditions": [
+        "Authenticated user",
+        "A booking exists with status == Cancelled"
       ],
       "steps": [
         "1. Log in as an authenticated user",
-        "2. Navigate to Dashboard > Settings",
-        "3. Click Change Password to open Change_Password_Form",
-        "4. Leave Current_Password blank",
-        "5. Leave New_Password blank",
-        "6. Leave Confirm_New_Password blank",
-        "7. Click Submit / Save"
+        "2. Open the User Dashboard",
+        "3. Locate the booking row with status Cancelled",
+        "4. Attempt to click the Cancel action for that booking"
       ],
-      "expected_result": "Form submission is blocked: inline validation errors appear on Current_Password, New_Password, and Confirm_New_Password indicating each is required; the form does not submit and the password remains unchanged",
-      "priority": "high"
+      "expected_result": "Cancel action is not available for a Cancelled booking (Cancel button is not visible or is disabled); attempting to cancel has no effect and the booking remains in status Cancelled",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 6,
+    "total": 7,
     "high_priority": 6,
-    "medium_priority": 0,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:27:30] Test-Negative - PARSED JSON
+[22:35:59] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "User Dashboard",
@@ -532,110 +563,122 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access Dashboard",
+      "test_case": "Unauthenticated user cannot access the User Dashboard",
       "preconditions": [
-        "User is not logged in"
+        "User is not authenticated"
       ],
       "steps": [
-        "1. In a new browser session ensure no active authentication (user is logged out)",
-        "2. Navigate to the Dashboard URL / Account > Dashboard"
+        "1. Navigate to the User Dashboard URL without logging in"
       ],
-      "expected_result": "Access is blocked: the user is redirected to the login page; a visible message or login form appears stating that authentication is required; Dashboard content is not displayed",
+      "expected_result": "User is redirected to the login page or shown an authentication prompt; no dashboard sections (My Bookings, My Profile, Settings, etc.) are visible or accessible",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-002",
-      "test_case": "Attempt to Cancel a booking when cancellation is not allowed by policy",
+      "test_case": "Cancel action is blocked when booking's cancellation policy prohibits cancellation",
       "preconditions": [
         "Authenticated user",
-        "A booking exists that has cancellation disallowed by booking type or cancellation policy (e.g., non-refundable or outside allowed window) \u2014 referred to as <booking with cancellation disallowed>"
+        "A booking exists with <cancellation policy that prohibits cancellation> and <booking type where cancellation is not permitted>"
       ],
       "steps": [
         "1. Log in as an authenticated user",
-        "2. Navigate to Dashboard > My Bookings",
-        "3. Locate the row for <booking with cancellation disallowed>",
-        "4. Click the Cancel action for that booking"
+        "2. Open the User Dashboard",
+        "3. Locate the booking row with the non-cancellable policy",
+        "4. Attempt to click the Cancel action for that booking"
       ],
-      "expected_result": "Cancel is blocked: the Cancel action does not succeed; an inline error/toast appears on the booking row stating cancellation is not permitted (e.g. 'Cancellation not allowed by booking type and cancellation policy'); the booking status remains unchanged (remains <booking status>) and no cancellation confirmation is shown or sent",
+      "expected_result": "Cancel action for that booking is not available (Cancel button is either not visible or is shown disabled); attempting to invoke Cancel has no effect and the booking status remains <original status>; no cancellation occurs",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-003",
-      "test_case": "Attempt to Modify a booking when modification is not allowed by policy",
+      "test_case": "Modify action is blocked when booking type or policy prohibits modification",
       "preconditions": [
         "Authenticated user",
-        "A booking exists for which modification is disallowed by booking type or policy \u2014 referred to as <booking with modification disallowed>"
+        "A booking exists with <booking type that does not permit modification> or <cancellation/modification policy that prohibits modification>"
       ],
       "steps": [
         "1. Log in as an authenticated user",
-        "2. Navigate to Dashboard > My Bookings",
-        "3. Locate the row for <booking with modification disallowed>",
-        "4. Click the Modify action for that booking"
+        "2. Open the User Dashboard",
+        "3. Locate the booking row where modification is not permitted",
+        "4. Attempt to click the Modify action for that booking"
       ],
-      "expected_result": "Modify is blocked: the Modify action does not open the modification flow; an inline error/toast appears on the booking row stating modification is not permitted (e.g. 'Modification not allowed by booking type and cancellation policy'); the booking details remain unchanged and no modification UI is shown",
+      "expected_result": "Modify action for that booking is not available (Modify button is either not visible or is shown disabled); attempting to invoke Modify has no effect and no modification flow starts",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-008",
-      "test_case": "Attempt to write a review for a booking that is not completed",
+      "test_case": "Cannot submit a review for a booking that is not Completed",
       "preconditions": [
         "Authenticated user",
-        "A booking exists with status that is not 'completed' (e.g., <Pending> or <Confirmed but not completed>)"
+        "A booking exists with Selected_Booking_Status == <not Completed> (e.g., Pending or Confirmed)"
       ],
       "steps": [
         "1. Log in as an authenticated user",
-        "2. Navigate to Dashboard > Reviews or Dashboard > My Bookings and locate the booking that is not completed (<booking not completed>)",
-        "3. Click the Write Review action for that booking"
+        "2. Open the User Dashboard",
+        "3. Select the booking whose status is <not Completed>",
+        "4. Attempt to open or submit the Review Submission Form for that booking"
       ],
-      "expected_result": "Write Review is blocked: the Write_Review_Form does not open; an inline message near the action appears stating reviews are only allowed for completed bookings (e.g. 'Review allowed only for completed bookings'); no review form is presented and no review can be submitted",
+      "expected_result": "Review Submission Form and the Submit Review action are not visible/available for that booking (form does not appear); user cannot post a review for a non-completed booking",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
       "wf_ref": "WF-009",
-      "test_case": "Leave required field blank in Change Password dialog (Current_Password required)",
+      "test_case": "Saving Settings is blocked when New_Password and Confirm_Password do not match",
       "preconditions": [
-        "Authenticated user"
+        "Authenticated user",
+        "User is on the Settings section of the User Dashboard"
       ],
       "steps": [
-        "1. Log in as an authenticated user",
-        "2. Navigate to Dashboard > Settings",
-        "3. Click Change Password to open Change_Password_Form",
-        "4. Leave the Current_Password field blank",
-        "5. Enter <valid new password> in New_Password",
-        "6. Enter the same <valid new password> in Confirm_New_Password",
-        "7. Click Submit / Save"
+        "1. Open Settings",
+        "2. Enter <current password> into the Current_Password field",
+        "3. Enter <new password A> into the New_Password field",
+        "4. Enter <different new password B> into the Confirm_Password field",
+        "5. Click Save Settings"
       ],
-      "expected_result": "Form submission is blocked: Current_Password field displays an inline validation error indicating it is required (e.g. 'Current password is required'); the form does not submit and the password is not changed",
+      "expected_result": "Inline validation error appears on the Confirm_Password field indicating it must match New_Password; the form is not submitted and settings are not updated",
       "priority": "high"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-009",
-      "test_case": "Submit Change Password form with all required password fields empty",
+      "test_case": "Attempting to Save Settings while unauthenticated is blocked by authentication precondition",
       "preconditions": [
-        "Authenticated user"
+        "User is not authenticated",
+        "Settings page URL is accessible directly"
+      ],
+      "steps": [
+        "1. Navigate directly to the Settings section URL without logging in",
+        "2. Attempt to interact with settings controls (for example, click Save Settings)"
+      ],
+      "expected_result": "User is redirected to the login page or shown an authentication prompt; Save Settings action is not performed and settings are not updated",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-002",
+      "test_case": "Cannot cancel a booking that is already Cancelled",
+      "preconditions": [
+        "Authenticated user",
+        "A booking exists with status == Cancelled"
       ],
       "steps": [
         "1. Log in as an authenticated user",
-        "2. Navigate to Dashboard > Settings",
-        "3. Click Change Password to open Change_Password_Form",
-        "4. Leave Current_Password blank",
-        "5. Leave New_Password blank",
-        "6. Leave Confirm_New_Password blank",
-        "7. Click Submit / Save"
+        "2. Open the User Dashboard",
+        "3. Locate the booking row with status Cancelled",
+        "4. Attempt to click the Cancel action for that booking"
       ],
-      "expected_result": "Form submission is blocked: inline validation errors appear on Current_Password, New_Password, and Confirm_New_Password indicating each is required; the form does not submit and the password remains unchanged",
-      "priority": "high"
+      "expected_result": "Cancel action is not available for a Cancelled booking (Cancel button is not visible or is disabled); attempting to cancel has no effect and the booking remains in status Cancelled",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 6,
+    "total": 7,
     "high_priority": 6,
-    "medium_priority": 0,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }

@@ -69,6 +69,7 @@ Banned patterns — if your expected_result matches any of these, rewrite it:
 - ❌ `"updates [entity]"` → name the field or value that visibly changed
 - ❌ `"deletes [entity]"` → state that the row is no longer present in the table
 - ❌ `"[system] adjusts automatically"` → that is a backend side effect; assert only what is visible on the current screen immediately after the last step
+- ❌ `"a confirmation email is sent"`, `"a refund is initiated"`, `"the preference is saved to the profile"`, `"the balance is updated"` → these are non-visible backend side effects. Do NOT assert them unless a **visible on-screen confirmation** is named (e.g. `"A 'Booking confirmed' banner with reference number is shown"`). Assert only what appears on the current screen.
 - ❌ `"[field] contains <value>"` after a filter action → assert that the *list/table* is filtered, not that the input field holds a value
 
 Good pattern examples:
@@ -82,7 +83,10 @@ Good pattern examples:
 If a feature has two distinct output paths (e.g., on-screen result vs. file export), generate TWO separate test cases, each with its own expected_result describing only that one path. Never write `"when X, result A; when Y, result B"` inside a single expected_result.
 
 **Rule C — When the description quotes exact success text, use it verbatim.**
-Always use the `on_success` value from the AST when available.
+Use the `on_success` value from the AST **only when it is an actual UI string the app displays** (a quoted message like `"Account opened successfully!"`). Otherwise `on_success` is an internal behavior **token** ("navigates to activity page", "persists configuration and returns to course page", "updates results and result count", "opens the Enrol users dialog") — do NOT paste the token as your `expected_result`. Rewrite it into a describable visible screen state: name the page/heading/row/badge/dialog the tester now sees.
+- ❌ `expected_result: "navigates to activity page"` → ✅ `"The <activity name> activity page opens, showing its title and content"`
+- ❌ `expected_result: "persists configuration and returns to course page"` → ✅ `"The Course page is shown; the course heading displays the saved <full name>"`
+- ❌ `expected_result: "updates results and result count"` → ✅ `"The listing shows only items matching <filter>; the result count decreases accordingly"`
 
 **Rule D — If the module performs calculations or updates a status badge, explicitly assert that visual update** (badge color, calculated value, running balance change).
 Additionally: if the spec describes a **running total, summary row, price breakdown, or auto-calculated field** that derives its value from other inputs, the expected_result must assert that the calculated field *updates visibly* after the dependent inputs are filled — e.g., `"The Total field updates to reflect Base Price + Taxes + Fees"` or `"The Course Total row displays the aggregated grade across all weighted items"`.
@@ -194,10 +198,16 @@ If a TC exceeds **15 steps**, split it at the first sub-feature boundary (e.g., 
 1. Does this test trace back to a specific node in the AST or a specific action/state in the description? If no → delete it.
 2. For each pair of tests: Do they reach a DIFFERENT success state, OR take a DIFFERENT conditional branch/form layout to reach the same state?
    - If two tests share the same code path (e.g., same form, just different optional fields filled) → merge them. Keep the more complete version.
+   - **Filter / sort / layout dedup:** do NOT generate one positive test per filter field or per sort/layout option. A set of filter controls, or a First/Last A–Z alphabetical matrix, or a Card/List/Summary layout switch, is **one representative** filter test (or one navigation test) — not one-per-field/one-per-permutation. Keep separate only where a filter targets a genuinely different result path or form.
 3. Read each `expected_result`. Does it match any **banned pattern** from the ASSERTION STYLE rules?
    - ❌ `"creates/updates/deletes [entity]"` → rewrite to name the visible row, badge, or notification
    - ❌ `"[system] adjusts/recalculates automatically"` → rewrite to describe the immediate visible screen state
-   - ❌ `"when X, result A; when Y, result B"` in a single TC → split into two TCs
+   - ❌ **`on_success` token pasted verbatim** (e.g. `"navigates to activity page"`, `"opens the dialog"`, `"updates results and result count"`) → rewrite to name the visible screen state (see Rule C)
+   - ❌ **Hedged / dual outcome** — `"Either X or Y"`, `"when X, result A; when Y, result B"`, `"succeeds … otherwise blocked"`, `"if credentials exist … if not …"` → pick the single most-likely outcome per the spec and assert it definitively; if two genuinely distinct outcomes exist, split into two TCs
+   - ❌ **Fabricated verbatim message string** — a quoted error/success string the spec never provides (e.g. inventing `'Attribute is required.'`) → either describe it generically (`"an inline error indicating the field is required"`) or, if the spec quotes it, copy the spec's exact text. Quotation marks are reserved for spec-sourced text.
+   - ❌ **Invented numeric/length threshold** — testing or asserting behavior "at the maximum allowed length/value" when the spec/AST states no such number; do not invent one
+   - ❌ **Condition mistaken for quoted text** — spec prose stating THAT validation happens (e.g. "the system checks subject length") is not the spec quoting the message; only copy text the spec itself puts in quotation marks
+   - ❌ **Backend side effect** — `"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"` → assert only a visible on-screen confirmation, or drop it
    - ❌ `"[field] contains <value>"` after a filter/search → rewrite to assert the filtered list/table state
    - ❌ `"a success message is displayed"` when spec quotes exact text → replace with the verbatim quoted string
    - ❌ `"filter is applied"` → rewrite to describe the filtered content visible in the results

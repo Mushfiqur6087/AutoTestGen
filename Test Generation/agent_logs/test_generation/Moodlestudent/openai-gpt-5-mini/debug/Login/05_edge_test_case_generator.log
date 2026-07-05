@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:34.299159
+DEBUG SESSION STARTED: 2026-07-04T22:41:47.984508
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Edge - SYSTEM PROMPT
+[22:41:47] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Edge - USER PROMPT
+[22:41:47] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 1,
   "module_title": "Login",
-  "summary": "Provides the authentication form for users to enter Username and Password, with options for guest access and cookie information, and displays inline errors for invalid credentials.",
-  "where_it_fits": "Serves as the primary entry point to the application for unauthenticated users before accessing the Top Navigation (Home, Dashboard, My Courses); successful authentication redirects users to the Dashboard and then allows access to course-level views and the Course Index sidebar.",
-  "assumed_state_on_entry": "User is unauthenticated and at the login page (no active session)."
+  "summary": "Provides a form for users to authenticate with Username and Password, offers guest access and cookie information, and displays inline errors on invalid credentials.",
+  "where_it_fits": "Serves as the application's primary authentication entry point reached from the Home page and other public links; successful authentication redirects the user to the Dashboard, and the Log out action returns users to this page. It precedes access to course-specific navigation (Dashboard, My Courses, Course Page) and other authenticated modules.",
+  "assumed_state_on_entry": "User is not authenticated (logged out) or browsing as a guest-capable session."
 }
 </module_context>
 
@@ -248,57 +262,61 @@ If a `<workflows>` block is present in the input:
       "fields": {
         "Username": {
           "type": "unspecified",
-          "required": true,
-          "constraints": [
-            "must not be empty"
-          ]
+          "required": true
         },
         "Password": {
           "type": "password",
-          "required": true,
-          "constraints": [
-            "must not be empty"
-          ]
+          "required": true
         }
       },
       "submit_actions": [
         {
           "action_name": "Log in",
           "preconditions": [
-            "User must be unauthenticated and at the login page (no active session)"
+            "User is not authenticated (logged out) or browsing as a guest-capable session."
           ],
-          "on_success": "redirects to Dashboard",
+          "on_success": "redirects to the Dashboard",
           "on_failure": {
-            "show": "inline_error",
+            "shows_inline_error": true,
             "clear_fields": [
               "Password"
             ],
             "retain_fields": [
               "Username"
             ]
-          }
+          },
+          "constraints": [
+            "invalid or empty credentials produce an inline error message"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "action_name": "Lost password?",
+          "type": "link",
+          "preconditions": [
+            "disabled on test site"
+          ]
         }
       ]
     },
-    "Lost_Password_Link": {
-      "type": "link",
-      "action_name": "Lost password?",
-      "preconditions": [
-        "feature disabled on this test site"
+    "Guest_Access_Section": {
+      "type": "actions",
+      "actions": [
+        {
+          "action_name": "Access as a guest",
+          "type": "button",
+          "preconditions": [
+            "User is not authenticated (logged out) or browsing as a guest-capable session."
+          ],
+          "on_success": "grants unauthenticated browsing access"
+        },
+        {
+          "action_name": "Cookies notice",
+          "type": "button",
+          "on_click": "displays cookie usage information"
+        }
       ]
-    },
-    "Access_As_Guest": {
-      "type": "button",
-      "action_name": "Access as a guest",
-      "preconditions": [
-        "User must be unauthenticated and at the login page (no active session)"
-      ],
-      "on_success": "grants unauthenticated browsing access"
-    },
-    "Cookies_Notice_Button": {
-      "type": "button",
-      "action_name": "Cookies notice",
-      "on_success": "displays cookie usage information"
     }
   }
 }
@@ -314,16 +332,16 @@ The login page displays a form with two required fields — Username and Passwor
 </description>
 
 <workflows>
-WF-001 | Successful login (valid credentials) | actor: Unauthenticated user | branch: none | terminal: Log in | on_success: redirects to Dashboard
-WF-002 | Failed login (invalid or empty credentials) | actor: Unauthenticated user | branch: none | terminal: Log in | on_success: show inline_error; clear Password; retain Username
-WF-003 | Access as a guest | actor: Unauthenticated user | branch: none | terminal: Access as a guest | on_success: grants unauthenticated browsing access
-WF-004 | View cookies notice | actor: Unauthenticated user | branch: none | terminal: Cookies notice | on_success: displays cookie usage information
+WF-001 | Log in (successful credentials) | actor: User | branch: none | terminal: Log in | on_success: redirects to the Dashboard
+WF-002 | Log in (invalid or empty credentials — failure) | actor: User | branch: none | terminal: Log in | on_success: shows inline error; clears Password field; retains Username
+WF-003 | Access as a guest | actor: User | branch: none | terminal: Access as a guest | on_success: grants unauthenticated browsing access
+WF-004 | View Cookies notice | actor: User | branch: none | terminal: Cookies notice | on_success: displays cookie usage information
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:13:07] Test-Edge - LLM RESPONSE
+[22:42:20] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Login",
@@ -333,70 +351,73 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-002",
       "subcategory": "input_edge",
-      "test_case": "Very long Username retained after failed login",
+      "test_case": "Very long Username entered then submit with invalid credentials — retention of full value",
       "preconditions": [
-        "User is unauthenticated and at the login page (no active session)"
+        "User is not authenticated and is on the Login page"
       ],
       "steps": [
         "1. Focus the Username field",
         "2. Enter a very long string (200+ characters) into the Username field",
         "3. Focus the Password field",
-        "4. Enter an incorrect password into the Password field",
-        "5. Click the \"Log in\" button"
+        "4. Enter an invalid password into the Password field",
+        "5. Click the Log in button"
       ],
-      "expected_result": "Login attempt is blocked / error shown: an inline error is displayed; the Password field is cleared; the Username field retains the exact very-long string entered (no silent truncation visible in the field); no redirect to Dashboard occurs.",
+      "expected_result": "Log in is blocked; an inline error message is shown; the Password field is cleared (visible empty); the Username field remains populated and visibly retains the full long string that was entered",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-002",
       "subcategory": "input_edge",
-      "test_case": "Unicode/emoji and special characters in Username and Password are retained on failure",
+      "test_case": "Username entered with leading and trailing whitespace then submit — trimming behaviour on failure",
       "preconditions": [
-        "User is unauthenticated and at the login page (no active session)"
+        "User is not authenticated and is on the Login page"
       ],
       "steps": [
         "1. Focus the Username field",
-        "2. Enter a string containing emoji and non-ASCII Unicode characters into the Username field",
+        "2. Enter the correct username value surrounded by leading and trailing whitespace into the Username field",
         "3. Focus the Password field",
-        "4. Enter a password containing emoji and special characters into the Password field",
-        "5. Click the \"Log in\" button"
+        "4. Enter an invalid password into the Password field",
+        "5. Click the Log in button"
       ],
-      "expected_result": "Login attempt is blocked / error shown: an inline error is displayed; the Password field is cleared; the Username field retains the exact Unicode/emoji characters as entered (no character loss or replacement visible in the field); no redirect to Dashboard occurs.",
-      "priority": "low"
+      "expected_result": "Log in is blocked; an inline error message is shown; the Password field is cleared (visible empty); the Username field is retained and visibly shows the username with leading/trailing whitespace trimmed (no leading/trailing spaces visible)",
+      "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-002",
       "subcategory": "input_edge",
-      "test_case": "Whitespace-only Username (border of 'empty') results in inline error and retained input",
+      "test_case": "Username and Password containing special characters and emoji submitted as credentials",
       "preconditions": [
-        "User is unauthenticated and at the login page (no active session)"
+        "User is not authenticated and is on the Login page"
       ],
       "steps": [
         "1. Focus the Username field",
-        "2. Enter a Username that consists only of whitespace characters",
+        "2. Enter a username containing special characters and emoji into the Username field",
         "3. Focus the Password field",
-        "4. Enter a non-empty password into the Password field",
-        "5. Click the \"Log in\" button"
+        "4. Enter a password containing special characters and emoji into the Password field",
+        "5. Click the Log in button"
       ],
-      "expected_result": "Login attempt is blocked / error shown: an inline error is displayed (treated as invalid/empty); the Password field is cleared; the Username field retains the whitespace characters exactly as entered (no implicit trimming visible); no redirect to Dashboard occurs.",
+      "expected_result": "Log in is blocked; an inline error message is shown; the Password field is cleared (visible empty); the Username field is retained and visibly shows the exact entered value including the special characters/emoji",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": null,
+      "wf_ref": "WF-002",
       "subcategory": "interaction_edge",
-      "test_case": "Clicking the disabled \"Lost password?\" link is blocked on this test site",
+      "test_case": "Rapid double-click of Log in with invalid credentials to check duplicate submissions are prevented",
       "preconditions": [
-        "User is unauthenticated and at the login page (no active session)",
-        "The \"Lost password?\" feature is disabled on this test site"
+        "User is not authenticated and is on the Login page"
       ],
       "steps": [
-        "1. Locate the \"Lost password?\" link on the login page",
-        "2. Click the \"Lost password?\" link"
+        "1. Focus the Username field",
+        "2. Enter a valid-looking username into the Username field",
+        "3. Focus the Password field",
+        "4. Enter an invalid password into the Password field",
+        "5. Rapidly click the Log in button twice (two quick clicks)",
+        "6. Observe the page after the clicks"
       ],
-      "expected_result": "Click is blocked / error shown: no navigation or password-reset UI is displayed; the UI remains on the login page and the link does not open a modal or redirect. (Visible state indicates the link is disabled or no action occurs.)",
+      "expected_result": "Second submission attempt is blocked; only a single inline error message is visible; the Password field is cleared (visible empty) after the action; the Username field remains populated with the entered value (no duplicate navigation or duplicate success occurs)",
       "priority": "medium"
     }
   ],
@@ -407,13 +428,13 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 3,
-    "low_priority": 1
+    "medium_priority": 4,
+    "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:13:07] Test-Edge - PARSED JSON
+[22:42:20] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Login",
@@ -423,70 +444,73 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-002",
       "subcategory": "input_edge",
-      "test_case": "Very long Username retained after failed login",
+      "test_case": "Very long Username entered then submit with invalid credentials \u2014 retention of full value",
       "preconditions": [
-        "User is unauthenticated and at the login page (no active session)"
+        "User is not authenticated and is on the Login page"
       ],
       "steps": [
         "1. Focus the Username field",
         "2. Enter a very long string (200+ characters) into the Username field",
         "3. Focus the Password field",
-        "4. Enter an incorrect password into the Password field",
-        "5. Click the \"Log in\" button"
+        "4. Enter an invalid password into the Password field",
+        "5. Click the Log in button"
       ],
-      "expected_result": "Login attempt is blocked / error shown: an inline error is displayed; the Password field is cleared; the Username field retains the exact very-long string entered (no silent truncation visible in the field); no redirect to Dashboard occurs.",
+      "expected_result": "Log in is blocked; an inline error message is shown; the Password field is cleared (visible empty); the Username field remains populated and visibly retains the full long string that was entered",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-002",
       "subcategory": "input_edge",
-      "test_case": "Unicode/emoji and special characters in Username and Password are retained on failure",
+      "test_case": "Username entered with leading and trailing whitespace then submit \u2014 trimming behaviour on failure",
       "preconditions": [
-        "User is unauthenticated and at the login page (no active session)"
+        "User is not authenticated and is on the Login page"
       ],
       "steps": [
         "1. Focus the Username field",
-        "2. Enter a string containing emoji and non-ASCII Unicode characters into the Username field",
+        "2. Enter the correct username value surrounded by leading and trailing whitespace into the Username field",
         "3. Focus the Password field",
-        "4. Enter a password containing emoji and special characters into the Password field",
-        "5. Click the \"Log in\" button"
+        "4. Enter an invalid password into the Password field",
+        "5. Click the Log in button"
       ],
-      "expected_result": "Login attempt is blocked / error shown: an inline error is displayed; the Password field is cleared; the Username field retains the exact Unicode/emoji characters as entered (no character loss or replacement visible in the field); no redirect to Dashboard occurs.",
-      "priority": "low"
+      "expected_result": "Log in is blocked; an inline error message is shown; the Password field is cleared (visible empty); the Username field is retained and visibly shows the username with leading/trailing whitespace trimmed (no leading/trailing spaces visible)",
+      "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-002",
       "subcategory": "input_edge",
-      "test_case": "Whitespace-only Username (border of 'empty') results in inline error and retained input",
+      "test_case": "Username and Password containing special characters and emoji submitted as credentials",
       "preconditions": [
-        "User is unauthenticated and at the login page (no active session)"
+        "User is not authenticated and is on the Login page"
       ],
       "steps": [
         "1. Focus the Username field",
-        "2. Enter a Username that consists only of whitespace characters",
+        "2. Enter a username containing special characters and emoji into the Username field",
         "3. Focus the Password field",
-        "4. Enter a non-empty password into the Password field",
-        "5. Click the \"Log in\" button"
+        "4. Enter a password containing special characters and emoji into the Password field",
+        "5. Click the Log in button"
       ],
-      "expected_result": "Login attempt is blocked / error shown: an inline error is displayed (treated as invalid/empty); the Password field is cleared; the Username field retains the whitespace characters exactly as entered (no implicit trimming visible); no redirect to Dashboard occurs.",
+      "expected_result": "Log in is blocked; an inline error message is shown; the Password field is cleared (visible empty); the Username field is retained and visibly shows the exact entered value including the special characters/emoji",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": null,
+      "wf_ref": "WF-002",
       "subcategory": "interaction_edge",
-      "test_case": "Clicking the disabled \"Lost password?\" link is blocked on this test site",
+      "test_case": "Rapid double-click of Log in with invalid credentials to check duplicate submissions are prevented",
       "preconditions": [
-        "User is unauthenticated and at the login page (no active session)",
-        "The \"Lost password?\" feature is disabled on this test site"
+        "User is not authenticated and is on the Login page"
       ],
       "steps": [
-        "1. Locate the \"Lost password?\" link on the login page",
-        "2. Click the \"Lost password?\" link"
+        "1. Focus the Username field",
+        "2. Enter a valid-looking username into the Username field",
+        "3. Focus the Password field",
+        "4. Enter an invalid password into the Password field",
+        "5. Rapidly click the Log in button twice (two quick clicks)",
+        "6. Observe the page after the clicks"
       ],
-      "expected_result": "Click is blocked / error shown: no navigation or password-reset UI is displayed; the UI remains on the login page and the link does not open a modal or redirect. (Visible state indicates the link is disabled or no action occurs.)",
+      "expected_result": "Second submission attempt is blocked; only a single inline error message is visible; the Password field is cleared (visible empty) after the action; the Username field remains populated with the entered value (no duplicate navigation or duplicate success occurs)",
       "priority": "medium"
     }
   ],
@@ -497,7 +521,7 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 3,
-    "low_priority": 1
+    "medium_priority": 4,
+    "low_priority": 0
   }
 }

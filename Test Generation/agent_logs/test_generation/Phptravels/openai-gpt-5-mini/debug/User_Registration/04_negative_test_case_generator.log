@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:13.748852
+DEBUG SESSION STARTED: 2026-07-04T22:33:06.979796
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - SYSTEM PROMPT
+[22:33:06] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - USER PROMPT
+[22:33:06] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 2,
   "module_title": "User Registration",
-  "summary": "Collects and validates user personal and contact information to create a new account and either log the user in or initiate email verification.",
-  "where_it_fits": "Accessible from the Home page via the Account/Login option in the top navigation, this module is part of the onboarding flow that leads into the authenticated User Dashboard and booking lifecycle. It precedes features like Booking Management and Payment Processing by provisioning an authenticated user account.",
-  "assumed_state_on_entry": "Visitor is unauthenticated and attempting to create an account (no existing registered account for the provided email) and has access to the registration form via Home -> Account/Login."
+  "summary": "Collects personal and contact information to create a new user account with validation and optional email verification.",
+  "where_it_fits": "Accessible from the Home page top navigation under Account/Login and used before accessing account-restricted areas like the User Dashboard and Booking Management; it is part of the onboarding flow that transitions anonymous visitors into authenticated users. The main navigation remains available while contextual menus update after successful registration and login.",
+  "assumed_state_on_entry": "Visitor is not authenticated and has access to the Home or Account/Login page"
 }
 </module_context>
 
@@ -260,10 +270,20 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "User Registration",
   "components": {
-    "User_Registration_Form": {
+    "Registration_Form": {
       "type": "form",
-      "preconditions": [
-        "Visitor is unauthenticated and attempting to create an account (no existing registered account for the provided email) and has access to the registration form via Home -> Account/Login."
+      "submit_actions": [
+        {
+          "action_name": "Register",
+          "preconditions": [
+            "Visitor is not authenticated and has access to the Home or Account/Login page"
+          ],
+          "on_failure": "display inline field errors",
+          "on_success": {
+            "auto_login_and_redirect": "automatically log in the user and redirect to dashboard",
+            "email_verification_flow": "prompt user to verify their email before granting access"
+          }
+        }
       ],
       "fields": {
         "First_Name": {
@@ -278,8 +298,8 @@ If a `<workflows>` block is present in the input:
           "type": "email",
           "required": true,
           "constraints": [
-            "must be a valid email format",
-            "must be unique (email uniqueness validated on submission)"
+            "must be valid email format",
+            "must be unique"
           ]
         },
         "Password": {
@@ -305,25 +325,14 @@ If a `<workflows>` block is present in the input:
         "Country": {
           "type": "unspecified"
         },
-        "Terms_And_Conditions": {
+        "Terms_and_Conditions": {
           "type": "checkbox",
-          "required": true
+          "required": true,
+          "constraints": [
+            "must be checked to proceed"
+          ]
         }
-      },
-      "error_display": "inline",
-      "submit_actions": [
-        {
-          "action_name": "Register",
-          "preconditions": [
-            "Visitor is unauthenticated and attempting to create an account (no existing registered account for the provided email) and has access to the registration form via Home -> Account/Login."
-          ],
-          "on_success": [
-            "creates account and automatically logs the user in and redirects to the user dashboard",
-            "creates account and requires email verification before granting access (user prompted to verify email)"
-          ],
-          "on_failure": "field-level validation errors returned and displayed inline"
-        }
-      ]
+      }
     }
   }
 }
@@ -339,13 +348,15 @@ The registration form collects First Name, Last Name, Email, Password, Confirm P
 </description>
 
 <workflows>
-WF-001 | Register new account | actor: Visitor | branch: none | terminal: Register | on_success: ['creates account and automatically logs the user in and redirects to the user dashboard', 'creates account and requires email verification before granting access (user prompted to verify email)']
+WF-001 | Successful registration — auto login and redirect | actor: Visitor | branch: none | terminal: Register | on_success: automatically log in the user and redirect to dashboard
+WF-002 | Successful registration — email verification required | actor: Visitor | branch: none | terminal: Register | on_success: prompt user to verify their email before granting access
+WF-003 | Registration failure — validation errors shown inline | actor: Visitor | branch: none | terminal: Register | on_success: None
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:24:59] Test-Negative - LLM RESPONSE
+[22:33:50] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "User Registration",
@@ -353,159 +364,163 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": null,
-      "test_case": "Leave a required text field (First Name) blank and submit",
+      "wf_ref": "WF-003",
+      "test_case": "Submit with ALL required fields empty",
       "preconditions": [
-        "Visitor is unauthenticated and on the Registration page"
+        "Visitor is on the Registration page"
       ],
       "steps": [
-        "1. Navigate to the Registration page (Home -> Account/Login -> Register).",
-        "2. Leave the First Name field blank.",
-        "3. Enter <valid last name> in Last Name field.",
-        "4. Enter <valid email> in Email field.",
-        "5. Enter <valid password> in Password field.",
-        "6. Enter <same valid password> in Confirm Password field.",
-        "7. Check the Terms and Conditions checkbox.",
-        "8. Click Register."
+        "1. Navigate to the Registration page",
+        "2. Leave the First Name field blank",
+        "3. Leave the Last Name field blank",
+        "4. Leave the Email field blank",
+        "5. Leave the Password field blank",
+        "6. Leave the Confirm Password field blank",
+        "7. Leave the Terms and Conditions checkbox unchecked",
+        "8. Click the Register button"
       ],
-      "expected_result": "First Name field displays an inline validation error indicating it is required; the form does not submit and no account is created; the user remains on the registration page.",
+      "expected_result": "Form does not submit; inline validation errors appear on First Name, Last Name, Email, Password, Confirm Password and Terms and Conditions fields indicating they are required; no account is created and user remains on the Registration page",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": null,
-      "test_case": "Submit with ALL required fields empty",
+      "wf_ref": "WF-003",
+      "test_case": "Leave a required text field blank (representative: First Name)",
       "preconditions": [
-        "Visitor is unauthenticated and on the Registration page"
+        "Visitor is on the Registration page",
+        "All other required fields are available to fill"
       ],
       "steps": [
-        "1. Navigate to the Registration page (Home -> Account/Login -> Register).",
-        "2. Leave First Name blank.",
-        "3. Leave Last Name blank.",
-        "4. Leave Email blank.",
-        "5. Leave Password blank.",
-        "6. Leave Confirm Password blank.",
-        "7. Leave Terms and Conditions unchecked.",
-        "8. Click Register."
+        "1. Navigate to the Registration page",
+        "2. Leave the First Name field blank",
+        "3. Enter <valid last name> in Last Name",
+        "4. Enter <valid, unique email> in Email",
+        "5. Enter <valid password> in Password",
+        "6. Enter the same <valid password> in Confirm Password",
+        "7. Check the Terms and Conditions checkbox",
+        "8. Click the Register button"
       ],
-      "expected_result": "Inline validation errors appear on First Name, Last Name, Email, Password, Confirm Password and the Terms and Conditions checkbox indicating each is required; the form does not submit and no account is created; user remains on the registration page.",
+      "expected_result": "Inline validation error appears on the First Name field indicating it is required; form does not submit; account is not created",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": null,
-      "test_case": "Leave Password (password-type required field) blank and submit",
+      "wf_ref": "WF-003",
+      "test_case": "Leave Email field blank (representative for email type required)",
       "preconditions": [
-        "Visitor is unauthenticated and on the Registration page"
+        "Visitor is on the Registration page",
+        "All other required fields are filled with valid values"
       ],
       "steps": [
-        "1. Navigate to the Registration page (Home -> Account/Login -> Register).",
-        "2. Enter <valid first name> in First Name field.",
-        "3. Enter <valid last name> in Last Name field.",
-        "4. Enter <valid email> in Email field.",
-        "5. Leave Password blank.",
-        "6. Enter <same value as Password (blank)> in Confirm Password field.",
-        "7. Check the Terms and Conditions checkbox.",
-        "8. Click Register."
+        "1. Navigate to the Registration page",
+        "2. Enter <valid first name> in First Name",
+        "3. Enter <valid last name> in Last Name",
+        "4. Leave the Email field blank",
+        "5. Enter <valid password> in Password",
+        "6. Enter the same <valid password> in Confirm Password",
+        "7. Check the Terms and Conditions checkbox",
+        "8. Click the Register button"
       ],
-      "expected_result": "Password field displays an inline validation error indicating it is required; the form does not submit and no account is created; user remains on the registration page.",
+      "expected_result": "Inline validation error appears on the Email field indicating it is required; form does not submit; account is not created",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": null,
-      "test_case": "Enter an invalid email format and submit",
+      "wf_ref": "WF-003",
+      "test_case": "Enter invalid email format",
       "preconditions": [
-        "Visitor is unauthenticated and on the Registration page"
+        "Visitor is on the Registration page",
+        "All other required fields are filled with valid values"
       ],
       "steps": [
-        "1. Navigate to the Registration page (Home -> Account/Login -> Register).",
-        "2. Enter <valid first name> in First Name field.",
-        "3. Enter <valid last name> in Last Name field.",
-        "4. Enter <invalid email format> in Email field.",
-        "5. Enter <valid password> in Password field.",
-        "6. Enter <same valid password> in Confirm Password field.",
-        "7. Check the Terms and Conditions checkbox.",
-        "8. Click Register."
+        "1. Navigate to the Registration page",
+        "2. Enter <valid first name> in First Name",
+        "3. Enter <valid last name> in Last Name",
+        "4. Enter <invalid email format> in Email",
+        "5. Enter <valid password> in Password",
+        "6. Enter the same <valid password> in Confirm Password",
+        "7. Check the Terms and Conditions checkbox",
+        "8. Click the Register button"
       ],
-      "expected_result": "Email field displays an inline validation error indicating the email must be a valid email format; the form does not submit and no account is created; user remains on the registration page.",
+      "expected_result": "Inline validation error appears on the Email field indicating the email must be in a valid format; form does not submit; account is not created",
       "priority": "medium"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-001",
-      "test_case": "Attempt to register using an email that already exists (email uniqueness violation)",
+      "wf_ref": "WF-003",
+      "test_case": "Register with an Email that already exists (uniqueness constraint)",
       "preconditions": [
-        "An existing account exists with <existing registered email>",
-        "Visitor is unauthenticated and on the Registration page"
+        "An existing account with email <existing email> exists in the system",
+        "Visitor is on the Registration page"
       ],
       "steps": [
-        "1. Navigate to the Registration page (Home -> Account/Login -> Register).",
-        "2. Enter <valid first name> in First Name field.",
-        "3. Enter <valid last name> in Last Name field.",
-        "4. Enter <existing registered email> in Email field.",
-        "5. Enter <valid password> in Password field.",
-        "6. Enter <same valid password> in Confirm Password field.",
-        "7. Check the Terms and Conditions checkbox.",
-        "8. Click Register."
+        "1. Navigate to the Registration page",
+        "2. Enter <valid first name> in First Name",
+        "3. Enter <valid last name> in Last Name",
+        "4. Enter <existing email> in Email",
+        "5. Enter <valid password> in Password",
+        "6. Enter the same <valid password> in Confirm Password",
+        "7. Check the Terms and Conditions checkbox",
+        "8. Click the Register button"
       ],
-      "expected_result": "Email field displays an inline validation error indicating the email is already registered (email must be unique); the form does not submit and no new account is created; user remains on the registration page.",
+      "expected_result": "Inline validation error appears on the Email field indicating the email must be unique; form does not submit; account is not created",
       "priority": "high"
     },
     {
       "tc_id": "N-006",
-      "wf_ref": null,
-      "test_case": "Confirm Password does not match Password",
+      "wf_ref": "WF-003",
+      "test_case": "Password and Confirm Password do not match",
       "preconditions": [
-        "Visitor is unauthenticated and on the Registration page"
+        "Visitor is on the Registration page",
+        "All other required fields are filled with valid values"
       ],
       "steps": [
-        "1. Navigate to the Registration page (Home -> Account/Login -> Register).",
-        "2. Enter <valid first name> in First Name field.",
-        "3. Enter <valid last name> in Last Name field.",
-        "4. Enter <valid email> in Email field.",
-        "5. Enter <valid password> in Password field.",
-        "6. Enter <different password> in Confirm Password field.",
-        "7. Check the Terms and Conditions checkbox.",
-        "8. Click Register."
+        "1. Navigate to the Registration page",
+        "2. Enter <valid first name> in First Name",
+        "3. Enter <valid last name> in Last Name",
+        "4. Enter <valid, unique email> in Email",
+        "5. Enter <valid password> in Password",
+        "6. Enter a different <non-matching password> in Confirm Password",
+        "7. Check the Terms and Conditions checkbox",
+        "8. Click the Register button"
       ],
-      "expected_result": "Confirm Password field displays an inline validation error: 'Must match Password' (Confirm Password must match Password); the form does not submit and no account is created; user remains on the registration page.",
+      "expected_result": "Inline validation error appears on the Confirm Password field indicating it must match the Password; form does not submit; account is not created",
       "priority": "high"
     },
     {
       "tc_id": "N-007",
-      "wf_ref": null,
-      "test_case": "Attempt to register without accepting Terms and Conditions (checkbox required)",
+      "wf_ref": "WF-003",
+      "test_case": "Terms and Conditions checkbox left unchecked (required)",
       "preconditions": [
-        "Visitor is unauthenticated and on the Registration page"
+        "Visitor is on the Registration page",
+        "All other required fields are filled with valid values"
       ],
       "steps": [
-        "1. Navigate to the Registration page (Home -> Account/Login -> Register).",
-        "2. Enter <valid first name> in First Name field.",
-        "3. Enter <valid last name> in Last Name field.",
-        "4. Enter <valid email> in Email field.",
-        "5. Enter <valid password> in Password field.",
-        "6. Enter <same valid password> in Confirm Password field.",
-        "7. Leave the Terms and Conditions checkbox unchecked.",
-        "8. Click Register."
+        "1. Navigate to the Registration page",
+        "2. Enter <valid first name> in First Name",
+        "3. Enter <valid last name> in Last Name",
+        "4. Enter <valid, unique email> in Email",
+        "5. Enter <valid password> in Password",
+        "6. Enter the same <valid password> in Confirm Password",
+        "7. Leave the Terms and Conditions checkbox unchecked",
+        "8. Click the Register button"
       ],
-      "expected_result": "Terms and Conditions checkbox displays an inline validation error indicating acceptance is required; the form does not submit and no account is created; user remains on the registration page.",
+      "expected_result": "Inline validation error appears on the Terms and Conditions checkbox indicating it must be checked to proceed; form does not submit; account is not created",
       "priority": "high"
     },
     {
       "tc_id": "N-008",
       "wf_ref": null,
-      "test_case": "Attempt to use the Register action while already authenticated (precondition not met)",
+      "test_case": "Attempt to access/submit the Registration form while already authenticated (submit precondition violation)",
       "preconditions": [
-        "User is authenticated (logged in) and navigates to the Registration page"
+        "User is already authenticated and has access to the Dashboard"
       ],
       "steps": [
-        "1. Log in as an existing authenticated user.",
-        "2. Navigate to the Registration page (attempt to access Home -> Account/Login -> Register).",
-        "3. Observe whether the Register button or registration form is present.",
-        "4. If the Register button is present, attempt to fill required fields with <valid values> and click Register."
+        "1. Log in as an authenticated user",
+        "2. While authenticated, navigate to the Registration page or click the Register link in navigation",
+        "3. Observe the Registration page or UI elements"
       ],
-      "expected_result": "Register action is blocked due to precondition (user must be unauthenticated): the Register button is not visible or the registration form cannot be submitted while authenticated; no new account is created. The user is prevented from completing registration while logged in (no redirect to account-creation flow).",
+      "expected_result": "Registration is blocked for authenticated users: the Registration form or Register button is not presented (or the user is redirected away from the Registration page); no ability to submit a new registration is available while authenticated",
       "priority": "high"
     }
   ],
@@ -518,7 +533,7 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
 }
 
 ------------------------------------------------------------
-[21:24:59] Test-Negative - PARSED JSON
+[22:33:50] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "User Registration",
@@ -526,159 +541,163 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": null,
-      "test_case": "Leave a required text field (First Name) blank and submit",
+      "wf_ref": "WF-003",
+      "test_case": "Submit with ALL required fields empty",
       "preconditions": [
-        "Visitor is unauthenticated and on the Registration page"
+        "Visitor is on the Registration page"
       ],
       "steps": [
-        "1. Navigate to the Registration page (Home -> Account/Login -> Register).",
-        "2. Leave the First Name field blank.",
-        "3. Enter <valid last name> in Last Name field.",
-        "4. Enter <valid email> in Email field.",
-        "5. Enter <valid password> in Password field.",
-        "6. Enter <same valid password> in Confirm Password field.",
-        "7. Check the Terms and Conditions checkbox.",
-        "8. Click Register."
+        "1. Navigate to the Registration page",
+        "2. Leave the First Name field blank",
+        "3. Leave the Last Name field blank",
+        "4. Leave the Email field blank",
+        "5. Leave the Password field blank",
+        "6. Leave the Confirm Password field blank",
+        "7. Leave the Terms and Conditions checkbox unchecked",
+        "8. Click the Register button"
       ],
-      "expected_result": "First Name field displays an inline validation error indicating it is required; the form does not submit and no account is created; the user remains on the registration page.",
+      "expected_result": "Form does not submit; inline validation errors appear on First Name, Last Name, Email, Password, Confirm Password and Terms and Conditions fields indicating they are required; no account is created and user remains on the Registration page",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": null,
-      "test_case": "Submit with ALL required fields empty",
+      "wf_ref": "WF-003",
+      "test_case": "Leave a required text field blank (representative: First Name)",
       "preconditions": [
-        "Visitor is unauthenticated and on the Registration page"
+        "Visitor is on the Registration page",
+        "All other required fields are available to fill"
       ],
       "steps": [
-        "1. Navigate to the Registration page (Home -> Account/Login -> Register).",
-        "2. Leave First Name blank.",
-        "3. Leave Last Name blank.",
-        "4. Leave Email blank.",
-        "5. Leave Password blank.",
-        "6. Leave Confirm Password blank.",
-        "7. Leave Terms and Conditions unchecked.",
-        "8. Click Register."
+        "1. Navigate to the Registration page",
+        "2. Leave the First Name field blank",
+        "3. Enter <valid last name> in Last Name",
+        "4. Enter <valid, unique email> in Email",
+        "5. Enter <valid password> in Password",
+        "6. Enter the same <valid password> in Confirm Password",
+        "7. Check the Terms and Conditions checkbox",
+        "8. Click the Register button"
       ],
-      "expected_result": "Inline validation errors appear on First Name, Last Name, Email, Password, Confirm Password and the Terms and Conditions checkbox indicating each is required; the form does not submit and no account is created; user remains on the registration page.",
+      "expected_result": "Inline validation error appears on the First Name field indicating it is required; form does not submit; account is not created",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": null,
-      "test_case": "Leave Password (password-type required field) blank and submit",
+      "wf_ref": "WF-003",
+      "test_case": "Leave Email field blank (representative for email type required)",
       "preconditions": [
-        "Visitor is unauthenticated and on the Registration page"
+        "Visitor is on the Registration page",
+        "All other required fields are filled with valid values"
       ],
       "steps": [
-        "1. Navigate to the Registration page (Home -> Account/Login -> Register).",
-        "2. Enter <valid first name> in First Name field.",
-        "3. Enter <valid last name> in Last Name field.",
-        "4. Enter <valid email> in Email field.",
-        "5. Leave Password blank.",
-        "6. Enter <same value as Password (blank)> in Confirm Password field.",
-        "7. Check the Terms and Conditions checkbox.",
-        "8. Click Register."
+        "1. Navigate to the Registration page",
+        "2. Enter <valid first name> in First Name",
+        "3. Enter <valid last name> in Last Name",
+        "4. Leave the Email field blank",
+        "5. Enter <valid password> in Password",
+        "6. Enter the same <valid password> in Confirm Password",
+        "7. Check the Terms and Conditions checkbox",
+        "8. Click the Register button"
       ],
-      "expected_result": "Password field displays an inline validation error indicating it is required; the form does not submit and no account is created; user remains on the registration page.",
+      "expected_result": "Inline validation error appears on the Email field indicating it is required; form does not submit; account is not created",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": null,
-      "test_case": "Enter an invalid email format and submit",
+      "wf_ref": "WF-003",
+      "test_case": "Enter invalid email format",
       "preconditions": [
-        "Visitor is unauthenticated and on the Registration page"
+        "Visitor is on the Registration page",
+        "All other required fields are filled with valid values"
       ],
       "steps": [
-        "1. Navigate to the Registration page (Home -> Account/Login -> Register).",
-        "2. Enter <valid first name> in First Name field.",
-        "3. Enter <valid last name> in Last Name field.",
-        "4. Enter <invalid email format> in Email field.",
-        "5. Enter <valid password> in Password field.",
-        "6. Enter <same valid password> in Confirm Password field.",
-        "7. Check the Terms and Conditions checkbox.",
-        "8. Click Register."
+        "1. Navigate to the Registration page",
+        "2. Enter <valid first name> in First Name",
+        "3. Enter <valid last name> in Last Name",
+        "4. Enter <invalid email format> in Email",
+        "5. Enter <valid password> in Password",
+        "6. Enter the same <valid password> in Confirm Password",
+        "7. Check the Terms and Conditions checkbox",
+        "8. Click the Register button"
       ],
-      "expected_result": "Email field displays an inline validation error indicating the email must be a valid email format; the form does not submit and no account is created; user remains on the registration page.",
+      "expected_result": "Inline validation error appears on the Email field indicating the email must be in a valid format; form does not submit; account is not created",
       "priority": "medium"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-001",
-      "test_case": "Attempt to register using an email that already exists (email uniqueness violation)",
+      "wf_ref": "WF-003",
+      "test_case": "Register with an Email that already exists (uniqueness constraint)",
       "preconditions": [
-        "An existing account exists with <existing registered email>",
-        "Visitor is unauthenticated and on the Registration page"
+        "An existing account with email <existing email> exists in the system",
+        "Visitor is on the Registration page"
       ],
       "steps": [
-        "1. Navigate to the Registration page (Home -> Account/Login -> Register).",
-        "2. Enter <valid first name> in First Name field.",
-        "3. Enter <valid last name> in Last Name field.",
-        "4. Enter <existing registered email> in Email field.",
-        "5. Enter <valid password> in Password field.",
-        "6. Enter <same valid password> in Confirm Password field.",
-        "7. Check the Terms and Conditions checkbox.",
-        "8. Click Register."
+        "1. Navigate to the Registration page",
+        "2. Enter <valid first name> in First Name",
+        "3. Enter <valid last name> in Last Name",
+        "4. Enter <existing email> in Email",
+        "5. Enter <valid password> in Password",
+        "6. Enter the same <valid password> in Confirm Password",
+        "7. Check the Terms and Conditions checkbox",
+        "8. Click the Register button"
       ],
-      "expected_result": "Email field displays an inline validation error indicating the email is already registered (email must be unique); the form does not submit and no new account is created; user remains on the registration page.",
+      "expected_result": "Inline validation error appears on the Email field indicating the email must be unique; form does not submit; account is not created",
       "priority": "high"
     },
     {
       "tc_id": "N-006",
-      "wf_ref": null,
-      "test_case": "Confirm Password does not match Password",
+      "wf_ref": "WF-003",
+      "test_case": "Password and Confirm Password do not match",
       "preconditions": [
-        "Visitor is unauthenticated and on the Registration page"
+        "Visitor is on the Registration page",
+        "All other required fields are filled with valid values"
       ],
       "steps": [
-        "1. Navigate to the Registration page (Home -> Account/Login -> Register).",
-        "2. Enter <valid first name> in First Name field.",
-        "3. Enter <valid last name> in Last Name field.",
-        "4. Enter <valid email> in Email field.",
-        "5. Enter <valid password> in Password field.",
-        "6. Enter <different password> in Confirm Password field.",
-        "7. Check the Terms and Conditions checkbox.",
-        "8. Click Register."
+        "1. Navigate to the Registration page",
+        "2. Enter <valid first name> in First Name",
+        "3. Enter <valid last name> in Last Name",
+        "4. Enter <valid, unique email> in Email",
+        "5. Enter <valid password> in Password",
+        "6. Enter a different <non-matching password> in Confirm Password",
+        "7. Check the Terms and Conditions checkbox",
+        "8. Click the Register button"
       ],
-      "expected_result": "Confirm Password field displays an inline validation error: 'Must match Password' (Confirm Password must match Password); the form does not submit and no account is created; user remains on the registration page.",
+      "expected_result": "Inline validation error appears on the Confirm Password field indicating it must match the Password; form does not submit; account is not created",
       "priority": "high"
     },
     {
       "tc_id": "N-007",
-      "wf_ref": null,
-      "test_case": "Attempt to register without accepting Terms and Conditions (checkbox required)",
+      "wf_ref": "WF-003",
+      "test_case": "Terms and Conditions checkbox left unchecked (required)",
       "preconditions": [
-        "Visitor is unauthenticated and on the Registration page"
+        "Visitor is on the Registration page",
+        "All other required fields are filled with valid values"
       ],
       "steps": [
-        "1. Navigate to the Registration page (Home -> Account/Login -> Register).",
-        "2. Enter <valid first name> in First Name field.",
-        "3. Enter <valid last name> in Last Name field.",
-        "4. Enter <valid email> in Email field.",
-        "5. Enter <valid password> in Password field.",
-        "6. Enter <same valid password> in Confirm Password field.",
-        "7. Leave the Terms and Conditions checkbox unchecked.",
-        "8. Click Register."
+        "1. Navigate to the Registration page",
+        "2. Enter <valid first name> in First Name",
+        "3. Enter <valid last name> in Last Name",
+        "4. Enter <valid, unique email> in Email",
+        "5. Enter <valid password> in Password",
+        "6. Enter the same <valid password> in Confirm Password",
+        "7. Leave the Terms and Conditions checkbox unchecked",
+        "8. Click the Register button"
       ],
-      "expected_result": "Terms and Conditions checkbox displays an inline validation error indicating acceptance is required; the form does not submit and no account is created; user remains on the registration page.",
+      "expected_result": "Inline validation error appears on the Terms and Conditions checkbox indicating it must be checked to proceed; form does not submit; account is not created",
       "priority": "high"
     },
     {
       "tc_id": "N-008",
       "wf_ref": null,
-      "test_case": "Attempt to use the Register action while already authenticated (precondition not met)",
+      "test_case": "Attempt to access/submit the Registration form while already authenticated (submit precondition violation)",
       "preconditions": [
-        "User is authenticated (logged in) and navigates to the Registration page"
+        "User is already authenticated and has access to the Dashboard"
       ],
       "steps": [
-        "1. Log in as an existing authenticated user.",
-        "2. Navigate to the Registration page (attempt to access Home -> Account/Login -> Register).",
-        "3. Observe whether the Register button or registration form is present.",
-        "4. If the Register button is present, attempt to fill required fields with <valid values> and click Register."
+        "1. Log in as an authenticated user",
+        "2. While authenticated, navigate to the Registration page or click the Register link in navigation",
+        "3. Observe the Registration page or UI elements"
       ],
-      "expected_result": "Register action is blocked due to precondition (user must be unauthenticated): the Register button is not visible or the registration form cannot be submitted while authenticated; no new account is created. The user is prevented from completing registration while logged in (no redirect to account-creation flow).",
+      "expected_result": "Registration is blocked for authenticated users: the Registration form or Register button is not presented (or the user is redirected away from the Registration page); no ability to submit a new registration is available while authenticated",
       "priority": "high"
     }
   ],

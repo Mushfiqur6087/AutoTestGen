@@ -1,0 +1,1064 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T22:57:38.868815
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[22:59:38] Structural Model Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Structural Model Validator. You receive (1) a raw functional description and
+(2) a generated Structural Model JSON.
+
+Your single job: decide whether this AST is good enough to use, or whether it should
+be regenerated.
+
+You DO NOT modify the JSON.
+You DO NOT generate a new JSON.
+You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CANONICAL SCOPE — IDENTICAL TO THE GENERATOR'S SCOPE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+IN SCOPE — an element qualifies if a user can:
+  (a) Input or edit a value: form fields, checkboxes, file uploads, search inputs, toggles
+  (b) Trigger an action: buttons, links, row actions, bulk actions, submit actions
+  (c) Navigate: tabs, sub-tabs, wizard steps
+  (d) Action metadata on interactive elements: on_success, preconditions, state
+      transitions, validation constraints
+
+OUT OF SCOPE — do NOT expect these in the AST:
+  - Passive display labels: "the page shows client name, account number, status badge"
+    → 0 expected items. The AST is correct to omit them.
+  - Chip colors, badge styles, decorative icons, visual styling
+  - Read-only info panels with no interactive element
+  - Display-formatting or rendering rules applied to a passive (non-interactive) value —
+    e.g. masking ("showing only last 4 digits"), truncation, currency/number formatting,
+    default sort order of a read-only column → 0 expected items. These are NOT validation
+    constraints. Do not expect a field/column AST node, a "constraints" entry, or a
+    "columns" block created solely to house one of these rules.
+
+STATE (Pending / Active / Closed) is a routing key in state_bound_action_bar.states{},
+NOT a display field. Do not expect it anywhere else.
+
+"Constraint" (as used everywhere below) means a rule that governs INPUT or ACTION
+behavior — required-ness, format, bounds, uniqueness, cross-field ordering, state
+preconditions. A rule that only describes how an already-displayed, non-interactive
+value is rendered (masked, truncated, formatted, sorted) is a display-formatting rule,
+not a constraint, even if the description uses words like "must" or states a concrete
+detail (e.g. "must show only last 4 digits"). Do not upgrade a display-formatting rule
+to CRITICAL missing just because it is stated precisely.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MINOR missing
+  An optional field (no "required": true, no required_when) with no business logic,
+  state transition, or action consequence attached. Losing it doesn't break any flow.
+  Example: an unlabeled optional "Notes" textarea on a secondary form.
+
+MINOR phantom
+  An element not named in the description but so universally implied by the component
+  type that its presence is unsurprising — e.g., a "Cancel" button on a modal the
+  description never explicitly names. Flag it; don't auto-retry for it alone.
+
+CRITICAL missing
+  Any of: a required field, any state key in a state_bound_action_bar, any submit
+  action, any named tab or wizard step, any element with a stated precondition or
+  on_success consequence, any INTERACTIVE field with a stated constraint (see the
+  constraint definition above — a display-formatting rule on a passive field does
+  NOT qualify and must never be flagged as critical missing).
+
+CRITICAL phantom
+  Any of: a field invented inside a generic-name tab (Add_Note in a Notes tab,
+  Upload_Document in a Documents tab) when the description only names the tab;
+  a passive display field appearing as an AST node — including a "columns" block,
+  or any field/column entry, added only to carry a masking/truncation/formatting rule
+  for a non-interactive value; a constraint with no textual anchor; a display_fields
+  block anywhere in the output; "required": false anywhere.
+
+WORKED EXAMPLE — display-formatting rule, NOT a critical missing:
+
+Description: "Each row shows Account Number (clickable but not implemented yet),
+Account Type, Current Balance, Account Status, and Open Date. Account numbers are
+masked for security (showing only last 4 digits as ****5001)."
+
+AST under review:
+{
+  "Accounts_Table": {
+    "type": "data_table",
+    "row_actions": [
+      { "action_name": "Account Number", "constraints": ["clickable but not implemented yet"] }
+    ]
+  }
+}
+
+CORRECT verdict: the masking rule and the other four listed fields (Account Type,
+Current Balance, Account Status, Open Date) are passive display labels — 0 expected
+AST items for them, per the OUT OF SCOPE rule above. The only interactive element is
+the Account Number click, and it is already present. Do NOT flag
+"components.Accounts_Table.columns.Account_Number" (or any columns block) as a
+CRITICAL missing item. Do NOT instruct the generator to add a "columns" block with
+typed entries (e.g. "Open_Date": {"type": "date"}) — that fabricates interactive
+field types for read-only data and will cause downstream test generators to invent
+boundary/date tests against a page that has none.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Step 1 — Walk the description. List every expected interactive element.
+Apply the canonical scope above. A sentence that only displays data produces 0 expected
+items. For each tab or step named with no described fields, expected output is
+"fields": {} — do NOT expect fields there.
+
+Step 2 — Walk the AST. Check for MISSING elements.
+For each expected element from Step 1, confirm it exists at the correct path.
+Classify each missing item as critical or minor using the definitions above.
+
+Step 3 — Walk the AST. Check for PHANTOMS.
+Flag any AST element with no textual anchor in the description.
+Classify each phantom as critical or minor using the definitions above.
+
+Step 4 — Check conditional logic.
+Count a conditional as EXPECTED only if the description contains an explicit trigger
+phrase. Both affirmative and negative phrasings qualify:
+
+  Affirmative: "when X is selected/checked/chosen", "if X then Y", "Y appears when X",
+               "selecting X reveals Y", "required if X", "enabled when X", "only if X",
+               "Y is shown for X"
+  Negative:    "unless X", "except when X", "disabled if X", "not shown when X",
+               "hidden when X", "required for non-X", "only for X users"
+  Abbreviated: "required for minors", "admin only", "international trips only"
+               → treat as conditional even without explicit trigger syntax
+
+If a visible_when / required_when / enabled_when appears in the AST but no trigger
+phrase (affirmative or negative) exists in the description: flag as critical phantom.
+If a trigger phrase exists in the description but no conditional appears in the AST:
+flag as critical missing.
+
+Step 5 — Check structural integrity. Flag any of these as STRUCTURAL ERRORS:
+  - A constraint floating at form/component level when the description attached it to
+    a specific field or action
+  - Sub-tabs or sub-steps described as nested but flattened in the AST
+  - State keys in state_bound_action_bar that don't match exact status names in the
+    description
+  - A display_fields block anywhere in the AST
+  - "required": false appearing anywhere in the AST
+  - Component or field names not in Pascal_Snake_Case
+
+Step 6 — Decide the verdict.
+
+Precondition note: If a `<module_context>` block is present, cross-check any
+`preconditions[]` in the AST against the `assumed_state_on_entry` value. A precondition
+that directly contradicts or wildly exceeds the described entry state is a CRITICAL phantom.
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Step 5)
+                       → fixes must be []
+
+  retry                Any CRITICAL missing element
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any Step 5 structural error
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       element is interactive — not a close call, but truly unresolvable
+                       from the text alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "Component.path.to.element",
+      "severity": "critical | minor",
+      "reason": "<why this element is expected from the description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "Component.path.to.element",
+      "severity": "critical | minor",
+      "reason": "<why this element has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Step 5 violation and its AST path>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact JSON path and required change>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+------------------------------------------------------------
+[22:59:38] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 24,
+  "module_title": "Teller & Cashier Management",
+  "summary": "Manages tellers and their cashier assignments, including creation, allocation, cash operations (allocate/settle), and transaction history in a tabular/detail view.",
+  "where_it_fits": "This module is part of the application's operational/administration functionality and is surfaced as an entity listing and detail area in the main content region (accessible from the top navigation's Institution area and other admin sections), using the same breadcrumbed layout and Material Design tables/forms as other entity pages.",
+  "assumed_state_on_entry": "Authenticated user with teller/cashier management permissions, and at least one Office and at least one Staff record exist in the system."
+}
+</module_context>
+
+<description>
+
+The Tellers page displays a data table with columns for Teller Name (clickable link), Office, Status (Active, Inactive), and Description. A "+ Create Teller" button opens the creation form containing Office (required), Teller Name (required), Description, Start Date (required), End Date, and Status (Active, Inactive). The Teller Detail page displays teller information with an Edit option and a Cashiers section listing all assignments with columns for Cashier Name, Start Date, End Date, Is Full Day, and Status. A "+ Allocate Cashier" button opens the allocation form with Staff (required), Start Date (required), End Date, Is Full Day checkbox, and Description. The Cashier Detail page shows Opening Balance and Cash In Hand, with actions for Allocate Cash (add cash from the vault) and Settle Cash (return cash to the vault — with Amount, Currency, and Transaction Date fields). A Cashier Transactions list shows all allocations, settlements, deposits, and withdrawals with columns for Date, Type, Amount, and Running Balance.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Teller & Cashier Management",
+  "components": {
+    "Tellers_Table": {
+      "type": "data_table",
+      "row_actions": [
+        {
+          "action_name": "View"
+        }
+      ],
+      "page_actions": [
+        {
+          "action_name": "+ Create Teller",
+          "preconditions": [
+            "Authenticated user with teller/cashier management permissions, and at least one Office and at least one Staff record exist in the system."
+          ],
+          "opens_component": "Create_Teller_Form"
+        }
+      ]
+    },
+    "Create_Teller_Form": {
+      "type": "form",
+      "fields": {
+        "Office": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Teller_Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Description": {
+          "type": "unspecified"
+        },
+        "Start_Date": {
+          "type": "date",
+          "required": true
+        },
+        "End_Date": {
+          "type": "date"
+        },
+        "Status": {
+          "type": "dropdown",
+          "options": [
+            "Active",
+            "Inactive"
+          ]
+        }
+      }
+    },
+    "Teller_Detail_Page": {
+      "type": "detail_page",
+      "actions": [
+        {
+          "action_name": "Edit",
+          "preconditions": [
+            "Authenticated user with teller/cashier management permissions, and at least one Office and at least one Staff record exist in the system."
+          ],
+          "opens_component": "Create_Teller_Form"
+        }
+      ]
+    },
+    "Teller_Detail_Cashiers_Table": {
+      "type": "data_table",
+      "row_actions": [
+        {
+          "action_name": "View"
+        }
+      ],
+      "page_actions": [
+        {
+          "action_name": "+ Allocate Cashier",
+          "preconditions": [
+            "Authenticated user with teller/cashier management permissions, and at least one Office and at least one Staff record exist in the system."
+          ],
+          "opens_component": "Allocate_Cashier_Form"
+        }
+      ]
+    },
+    "Allocate_Cashier_Form": {
+      "type": "form",
+      "fields": {
+        "Staff": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Start_Date": {
+          "type": "date",
+          "required": true
+        },
+        "End_Date": {
+          "type": "date"
+        },
+        "Is_Full_Day": {
+          "type": "checkbox"
+        },
+        "Description": {
+          "type": "unspecified"
+        }
+      }
+    },
+    "Cashier_Detail_Page": {
+      "type": "detail_page",
+      "actions": [
+        {
+          "action_name": "Allocate Cash",
+          "preconditions": [
+            "Authenticated user with teller/cashier management permissions, and at least one Office and at least one Staff record exist in the system."
+          ]
+        },
+        {
+          "action_name": "Settle Cash",
+          "preconditions": [
+            "Authenticated user with teller/cashier management permissions, and at least one Office and at least one Staff record exist in the system."
+          ],
+          "fields": {
+            "Amount": {
+              "type": "number"
+            },
+            "Currency": {
+              "type": "unspecified"
+            },
+            "Transaction_Date": {
+              "type": "date"
+            }
+          }
+        }
+      ]
+    },
+    "Cashier_Transactions_Table": {
+      "type": "data_table"
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:00:55] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "AST is missing required submit actions for forms and flattens the Teller Detail's Cashiers section instead of nesting it under the Teller Detail page; also contains two minor phantom generic 'View' row actions.",
+  "missing": [
+    {
+      "path": "components.Create_Teller_Form.actions",
+      "severity": "critical",
+      "reason": "The description describes a 'Create Teller' form (opened by the + Create Teller button) — a submit action (create/save) is required to complete the creation flow."
+    },
+    {
+      "path": "components.Allocate_Cashier_Form.actions",
+      "severity": "critical",
+      "reason": "The description describes an 'Allocate Cashier' form (opened by + Allocate Cashier) — a submit action (allocate/save) is required to complete the allocation flow."
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "components.Tellers_Table.row_actions[0]",
+      "severity": "minor",
+      "reason": "There is a generic 'View' row action but the description only states 'Teller Name (clickable link)'; the generator invented a 'View' action name that has no explicit textual anchor."
+    },
+    {
+      "path": "components.Teller_Detail_Cashiers_Table.row_actions[0]",
+      "severity": "minor",
+      "reason": "There is a generic 'View' row action for the Cashiers table though the description lists columns for the Cashiers section but does not name a specific row action label; the 'View' label is a generator invention."
+    }
+  ],
+  "structural_errors": [
+    "components.Teller_Detail_Cashiers_Table is provided as a top-level component but the description places the Cashiers listing as a section of the Teller Detail page — the Cashiers table should be nested under components.Teller_Detail_Page (e.g., components.Teller_Detail_Page.subcomponents or components.Teller_Detail_Page.sections)."
+  ],
+  "fixes": [
+    "Add a submit action to components.Create_Teller_Form by creating components.Create_Teller_Form.actions as an array and adding an action object such as { \"action_name\": \"Create\", \"type\": \"submit\", \"on_success\": { \"navigate_to\": \"Teller_Detail_Page\" } }.",
+    "Add a submit action to components.Allocate_Cashier_Form by creating components.Allocate_Cashier_Form.actions as an array and adding an action object such as { \"action_name\": \"Allocate\", \"type\": \"submit\", \"on_success\": { \"refresh_component\": \"Teller_Detail_Cashiers_Table\" } }.",
+    "Nest the Teller Detail's Cashiers table under the Teller Detail page: move the object at components.Teller_Detail_Cashiers_Table into components.Teller_Detail_Page (e.g., components.Teller_Detail_Page.subcomponents.Teller_Detail_Cashiers_Table = components.Teller_Detail_Cashiers_Table) and then remove the top-level components.Teller_Detail_Cashiers_Table entry."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:00:55] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "AST is missing required submit actions for forms and flattens the Teller Detail's Cashiers section instead of nesting it under the Teller Detail page; also contains two minor phantom generic 'View' row actions.",
+  "missing": [
+    {
+      "path": "components.Create_Teller_Form.actions",
+      "severity": "critical",
+      "reason": "The description describes a 'Create Teller' form (opened by the + Create Teller button) \u2014 a submit action (create/save) is required to complete the creation flow."
+    },
+    {
+      "path": "components.Allocate_Cashier_Form.actions",
+      "severity": "critical",
+      "reason": "The description describes an 'Allocate Cashier' form (opened by + Allocate Cashier) \u2014 a submit action (allocate/save) is required to complete the allocation flow."
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "components.Tellers_Table.row_actions[0]",
+      "severity": "minor",
+      "reason": "There is a generic 'View' row action but the description only states 'Teller Name (clickable link)'; the generator invented a 'View' action name that has no explicit textual anchor."
+    },
+    {
+      "path": "components.Teller_Detail_Cashiers_Table.row_actions[0]",
+      "severity": "minor",
+      "reason": "There is a generic 'View' row action for the Cashiers table though the description lists columns for the Cashiers section but does not name a specific row action label; the 'View' label is a generator invention."
+    }
+  ],
+  "structural_errors": [
+    "components.Teller_Detail_Cashiers_Table is provided as a top-level component but the description places the Cashiers listing as a section of the Teller Detail page \u2014 the Cashiers table should be nested under components.Teller_Detail_Page (e.g., components.Teller_Detail_Page.subcomponents or components.Teller_Detail_Page.sections)."
+  ],
+  "fixes": [
+    "Add a submit action to components.Create_Teller_Form by creating components.Create_Teller_Form.actions as an array and adding an action object such as { \"action_name\": \"Create\", \"type\": \"submit\", \"on_success\": { \"navigate_to\": \"Teller_Detail_Page\" } }.",
+    "Add a submit action to components.Allocate_Cashier_Form by creating components.Allocate_Cashier_Form.actions as an array and adding an action object such as { \"action_name\": \"Allocate\", \"type\": \"submit\", \"on_success\": { \"refresh_component\": \"Teller_Detail_Cashiers_Table\" } }.",
+    "Nest the Teller Detail's Cashiers table under the Teller Detail page: move the object at components.Teller_Detail_Cashiers_Table into components.Teller_Detail_Page (e.g., components.Teller_Detail_Page.subcomponents.Teller_Detail_Cashiers_Table = components.Teller_Detail_Cashiers_Table) and then remove the top-level components.Teller_Detail_Cashiers_Table entry."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:01:51] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 24,
+  "module_title": "Teller & Cashier Management",
+  "summary": "Manages tellers and their cashier assignments, including creation, allocation, cash operations (allocate/settle), and transaction history in a tabular/detail view.",
+  "where_it_fits": "This module is part of the application's operational/administration functionality and is surfaced as an entity listing and detail area in the main content region (accessible from the top navigation's Institution area and other admin sections), using the same breadcrumbed layout and Material Design tables/forms as other entity pages.",
+  "assumed_state_on_entry": "Authenticated user with teller/cashier management permissions, and at least one Office and at least one Staff record exist in the system."
+}
+</module_context>
+
+<description>
+
+The Tellers page displays a data table with columns for Teller Name (clickable link), Office, Status (Active, Inactive), and Description. A "+ Create Teller" button opens the creation form containing Office (required), Teller Name (required), Description, Start Date (required), End Date, and Status (Active, Inactive). The Teller Detail page displays teller information with an Edit option and a Cashiers section listing all assignments with columns for Cashier Name, Start Date, End Date, Is Full Day, and Status. A "+ Allocate Cashier" button opens the allocation form with Staff (required), Start Date (required), End Date, Is Full Day checkbox, and Description. The Cashier Detail page shows Opening Balance and Cash In Hand, with actions for Allocate Cash (add cash from the vault) and Settle Cash (return cash to the vault — with Amount, Currency, and Transaction Date fields). A Cashier Transactions list shows all allocations, settlements, deposits, and withdrawals with columns for Date, Type, Amount, and Running Balance.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Teller & Cashier Management",
+  "components": {
+    "Tellers_Table": {
+      "type": "data_table",
+      "row_actions": [
+        {
+          "action_name": "View",
+          "on_click": {
+            "navigate_to": "Teller_Detail_Page"
+          }
+        }
+      ]
+    },
+    "Create_Teller_Form": {
+      "type": "form",
+      "preconditions": [
+        "Authenticated user with teller/cashier management permissions, and at least one Office and at least one Staff record exist in the system."
+      ],
+      "fields": {
+        "Office": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Teller_Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Description": {
+          "type": "unspecified"
+        },
+        "Start_Date": {
+          "type": "date",
+          "required": true
+        },
+        "End_Date": {
+          "type": "date"
+        },
+        "Status": {
+          "type": "dropdown",
+          "options": [
+            "Active",
+            "Inactive"
+          ]
+        }
+      },
+      "actions": [
+        {
+          "action_name": "Create",
+          "type": "submit",
+          "on_success": {
+            "navigate_to": "Teller_Detail_Page"
+          }
+        }
+      ]
+    },
+    "Teller_Detail_Page": {
+      "type": "detail_page",
+      "actions": [
+        {
+          "action_name": "Edit",
+          "type": "button",
+          "on_click": {
+            "open_component": "Create_Teller_Form",
+            "mode": "edit"
+          }
+        },
+        {
+          "action_name": "Allocate Cashier",
+          "type": "button",
+          "on_click": {
+            "open_component": "Allocate_Cashier_Form"
+          },
+          "preconditions": [
+            "Authenticated user with teller/cashier management permissions, and at least one Office and at least one Staff record exist in the system."
+          ]
+        }
+      ],
+      "subcomponents": {
+        "Teller_Detail_Cashiers_Table": {
+          "type": "data_table",
+          "row_actions": [
+            {
+              "action_name": "View Cashier",
+              "on_click": {
+                "navigate_to": "Cashier_Detail_Page"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "Allocate_Cashier_Form": {
+      "type": "form",
+      "preconditions": [
+        "Authenticated user with teller/cashier management permissions, and at least one Office and at least one Staff record exist in the system."
+      ],
+      "fields": {
+        "Staff": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Start_Date": {
+          "type": "date",
+          "required": true
+        },
+        "End_Date": {
+          "type": "date"
+        },
+        "Is_Full_Day": {
+          "type": "checkbox"
+        },
+        "Description": {
+          "type": "unspecified"
+        }
+      },
+      "actions": [
+        {
+          "action_name": "Allocate",
+          "type": "submit",
+          "on_success": {
+            "refresh_component": "Teller_Detail_Cashiers_Table"
+          }
+        }
+      ]
+    },
+    "Cashier_Detail_Page": {
+      "type": "detail_page",
+      "actions": [
+        {
+          "action_name": "Allocate Cash",
+          "type": "button",
+          "on_click": {
+            "open_component": "Allocate_Cash_Form"
+          },
+          "preconditions": [
+            "Authenticated user with teller/cashier management permissions, and at least one Office and at least one Staff record exist in the system."
+          ]
+        },
+        {
+          "action_name": "Settle Cash",
+          "type": "button",
+          "on_click": {
+            "open_component": "Settle_Cash_Form"
+          },
+          "preconditions": [
+            "Authenticated user with teller/cashier management permissions, and at least one Office and at least one Staff record exist in the system."
+          ]
+        }
+      ],
+      "subcomponents": {
+        "Cashier_Transactions_Table": {
+          "type": "data_table",
+          "row_actions": [
+            {
+              "action_name": "View Transaction"
+            }
+          ]
+        }
+      }
+    },
+    "Allocate_Cash_Form": {
+      "type": "form",
+      "fields": {
+        "Amount": {
+          "type": "number",
+          "required": true
+        },
+        "Currency": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Transaction_Date": {
+          "type": "date",
+          "required": true
+        },
+        "Description": {
+          "type": "unspecified"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Allocate Cash",
+          "on_success": {
+            "refresh_component": "Cashier_Transactions_Table"
+          }
+        }
+      ]
+    },
+    "Settle_Cash_Form": {
+      "type": "form",
+      "fields": {
+        "Amount": {
+          "type": "number",
+          "required": true
+        },
+        "Currency": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Transaction_Date": {
+          "type": "date",
+          "required": true
+        },
+        "Description": {
+          "type": "unspecified"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Settle Cash",
+          "on_success": {
+            "refresh_component": "Cashier_Transactions_Table"
+          }
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:02:22] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 2,
+  "summary": "The AST is mostly complete but is missing the explicit \"+ Create Teller\" action on the Tellers table required by the description.",
+  "missing": [
+    {
+      "path": "components.Tellers_Table.actions.Create_Teller",
+      "severity": "critical",
+      "reason": "The description explicitly names a \"+ Create Teller\" button on the Tellers page that opens the creation form; the AST has no top-level create action on Tellers_Table to trigger Create_Teller_Form."
+    }
+  ],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [
+    "Add an actions array to components.Tellers_Table (if missing) and include a Create action that opens the Create_Teller_Form: components.Tellers_Table.actions = [{ \"action_name\": \"+ Create Teller\", \"type\": \"button\", \"on_click\": { \"open_component\": \"Create_Teller_Form\" } }]. Ensure the action_name matches the description and the on_click.open_component references components.Create_Teller_Form."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:02:22] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 2,
+  "summary": "The AST is mostly complete but is missing the explicit \"+ Create Teller\" action on the Tellers table required by the description.",
+  "missing": [
+    {
+      "path": "components.Tellers_Table.actions.Create_Teller",
+      "severity": "critical",
+      "reason": "The description explicitly names a \"+ Create Teller\" button on the Tellers page that opens the creation form; the AST has no top-level create action on Tellers_Table to trigger Create_Teller_Form."
+    }
+  ],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [
+    "Add an actions array to components.Tellers_Table (if missing) and include a Create action that opens the Create_Teller_Form: components.Tellers_Table.actions = [{ \"action_name\": \"+ Create Teller\", \"type\": \"button\", \"on_click\": { \"open_component\": \"Create_Teller_Form\" } }]. Ensure the action_name matches the description and the on_click.open_component references components.Create_Teller_Form."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:03:27] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 24,
+  "module_title": "Teller & Cashier Management",
+  "summary": "Manages tellers and their cashier assignments, including creation, allocation, cash operations (allocate/settle), and transaction history in a tabular/detail view.",
+  "where_it_fits": "This module is part of the application's operational/administration functionality and is surfaced as an entity listing and detail area in the main content region (accessible from the top navigation's Institution area and other admin sections), using the same breadcrumbed layout and Material Design tables/forms as other entity pages.",
+  "assumed_state_on_entry": "Authenticated user with teller/cashier management permissions, and at least one Office and at least one Staff record exist in the system."
+}
+</module_context>
+
+<description>
+
+The Tellers page displays a data table with columns for Teller Name (clickable link), Office, Status (Active, Inactive), and Description. A "+ Create Teller" button opens the creation form containing Office (required), Teller Name (required), Description, Start Date (required), End Date, and Status (Active, Inactive). The Teller Detail page displays teller information with an Edit option and a Cashiers section listing all assignments with columns for Cashier Name, Start Date, End Date, Is Full Day, and Status. A "+ Allocate Cashier" button opens the allocation form with Staff (required), Start Date (required), End Date, Is Full Day checkbox, and Description. The Cashier Detail page shows Opening Balance and Cash In Hand, with actions for Allocate Cash (add cash from the vault) and Settle Cash (return cash to the vault — with Amount, Currency, and Transaction Date fields). A Cashier Transactions list shows all allocations, settlements, deposits, and withdrawals with columns for Date, Type, Amount, and Running Balance.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Teller & Cashier Management",
+  "components": {
+    "Tellers_Table": {
+      "type": "data_table",
+      "row_actions": [
+        {
+          "action_name": "View",
+          "type": "link",
+          "on_click": {
+            "open_component": "Teller_Detail"
+          }
+        }
+      ],
+      "actions": [
+        {
+          "action_name": "+ Create Teller",
+          "type": "button",
+          "on_click": {
+            "open_component": "Create_Teller_Form"
+          }
+        }
+      ]
+    },
+    "Create_Teller_Form": {
+      "type": "form",
+      "fields": {
+        "Office": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Teller_Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Description": {
+          "type": "unspecified"
+        },
+        "Start_Date": {
+          "type": "date",
+          "required": true
+        },
+        "End_Date": {
+          "type": "date"
+        },
+        "Status": {
+          "type": "dropdown",
+          "options": [
+            "Active",
+            "Inactive"
+          ]
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create Teller"
+        }
+      ]
+    },
+    "Edit_Teller_Form": {
+      "type": "form",
+      "fields": {
+        "Office": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Teller_Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Description": {
+          "type": "unspecified"
+        },
+        "Start_Date": {
+          "type": "date",
+          "required": true
+        },
+        "End_Date": {
+          "type": "date"
+        },
+        "Status": {
+          "type": "dropdown",
+          "options": [
+            "Active",
+            "Inactive"
+          ]
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Save Changes"
+        }
+      ]
+    },
+    "Teller_Detail": {
+      "type": "detail_view",
+      "actions": [
+        {
+          "action_name": "Edit",
+          "type": "button",
+          "on_click": {
+            "open_component": "Edit_Teller_Form"
+          }
+        }
+      ],
+      "fields": {
+        "Cashiers": {
+          "type": "data_table",
+          "row_actions": [
+            {
+              "action_name": "View Cashier",
+              "type": "link",
+              "on_click": {
+                "open_component": "Cashier_Detail"
+              }
+            }
+          ],
+          "actions": [
+            {
+              "action_name": "+ Allocate Cashier",
+              "type": "button",
+              "on_click": {
+                "open_component": "Allocate_Cashier_Form"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "Allocate_Cashier_Form": {
+      "type": "form",
+      "fields": {
+        "Staff": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Start_Date": {
+          "type": "date",
+          "required": true
+        },
+        "End_Date": {
+          "type": "date"
+        },
+        "Is_Full_Day": {
+          "type": "checkbox"
+        },
+        "Description": {
+          "type": "unspecified"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Allocate Cashier"
+        }
+      ]
+    },
+    "Cashier_Detail": {
+      "type": "detail_view",
+      "actions": [
+        {
+          "action_name": "Allocate Cash",
+          "type": "button",
+          "on_click": {
+            "open_component": "Allocate_Cash_Form"
+          }
+        },
+        {
+          "action_name": "Settle Cash",
+          "type": "button",
+          "on_click": {
+            "open_component": "Settle_Cash_Form"
+          }
+        }
+      ],
+      "fields": {
+        "Transactions": {
+          "type": "data_table",
+          "component_reference": "Cashier_Transactions_Table"
+        }
+      }
+    },
+    "Allocate_Cash_Form": {
+      "type": "form",
+      "fields": {
+        "Amount": {
+          "type": "number",
+          "required": true
+        },
+        "Currency": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Transaction_Date": {
+          "type": "date",
+          "required": true
+        },
+        "Description": {
+          "type": "unspecified"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Allocate Cash"
+        }
+      ]
+    },
+    "Settle_Cash_Form": {
+      "type": "form",
+      "fields": {
+        "Amount": {
+          "type": "number",
+          "required": true
+        },
+        "Currency": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Transaction_Date": {
+          "type": "date",
+          "required": true
+        },
+        "Description": {
+          "type": "unspecified"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Settle Cash"
+        }
+      ]
+    },
+    "Cashier_Transactions_Table": {
+      "type": "data_table"
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:03:43] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 3,
+  "summary": "AST matches the described interactive elements (tables, forms, actions) with no critical omissions or structural errors.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:03:43] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 3,
+  "summary": "AST matches the described interactive elements (tables, forms, actions) with no critical omissions or structural errors.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}

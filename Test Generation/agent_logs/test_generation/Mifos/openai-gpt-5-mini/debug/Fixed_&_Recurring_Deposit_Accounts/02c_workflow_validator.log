@@ -1,0 +1,485 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:04:00.751417
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:05:00] Workflow-Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Validator. You receive (1) a raw functional description, (2) a Structural Model JSON, and (3) a generated workflow list for one module.
+
+Your single job: decide whether this workflow list is complete and correct, or whether it must be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the workflow list. You DO NOT generate new workflows. You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+<workflows>
+{workflows}
+</workflows>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**WHAT A WORKFLOW IS:**
+
+A workflow is one complete, executable interaction path through the module — from entry to one terminal action. Two workflows are distinct if they require different user actions to reach the terminal (different conditional branch, different state, different terminal button).
+
+MINOR missing
+  A non-critical row action (e.g., "View" on a data table) where omission does not
+  break any downstream state transition or form submission. Flag it; don't auto-retry
+  for it alone.
+
+CRITICAL missing
+  Any of: a form submit_action with no matching workflow, a state × action pair with
+  no workflow, a bulk_action with no workflow, any submit path through a conditional
+  branch with no workflow.
+
+MINOR phantom
+  A workflow whose terminal_action is not literally named in the AST but is so
+  universally implied by the component type that its presence is unsurprising
+  (e.g., a "Search" workflow when the table has `searchable: true`). Flag it;
+  don't auto-retry for it alone.
+
+CRITICAL phantom
+  A workflow whose terminal_action cannot be traced to any AST node's
+  submit_actions[], available_actions[], row_actions[], or bulk_actions[] —
+  and is not an explicit action verb in the description text.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD — Seven Checks
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Check 1 — Missing form workflows.**
+Walk every `form` node in the AST. For each entry in `submit_actions[]`, there must be at least one workflow with a matching `terminal_action`. If the form has `visible_when` or `required_when` fields, there must be one workflow per unique condition combination × submit action. Flag any missing combinations. Classify each as critical or minor.
+
+**Check 2 — Missing state-machine workflows.**
+Walk every `state_bound_action_bar` node. For each state key in `states{}`, for each entry in `available_actions[]`, there must be one workflow with `terminal_action` matching that action and `conditional_branch` containing `entity_state == <state>`. Flag any missing state × action pairs. Classify each as critical.
+If a `<module_context>` block is present, use its `assumed_state_on_entry` to confirm that the entry state named in the context is represented as a workflow's starting condition where applicable.
+
+**Check 3 — Missing data table workflows.**
+Walk every `data_table` node. For each entry in `row_actions[]` and `bulk_actions[]`, there must be one workflow with `terminal_action` matching that action. Flag any missing entries. This includes read-only actions like View/Details. Classify bulk_actions as critical; row_actions as minor if read-only, critical otherwise.
+
+**Check 4 — Phantom workflows.**
+A workflow is a phantom if its `terminal_action` cannot be found in any AST node's `submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`, or as an explicit action verb in the description text. Classify each as critical or minor per the definitions above.
+
+**Check 5 — Wrong conditional branch.**
+If a workflow has a non-null `conditional_branch`, verify the condition references a real field name that appears in the AST under `visible_when`, `required_when`, or a real state key in `state_bound_action_bar`. Flag any condition that references a field or state that does not exist. Classify as structural error.
+
+**Check 6 — Empty or generic on_success.**
+If a workflow's `on_success` is empty, null, "success", "done", or any single-word generic string, and the AST has a concrete `on_success` value for that action, flag it. The `on_success` must reflect what the AST or description says actually happens. Classify as structural error.
+
+**Check 7 — Zero workflows when module clearly has actions.**
+If the workflow list is empty (total = 0) but the AST contains any `form`, `wizard`, `state_bound_action_bar`, or `data_table` component, that is a critical failure — flag it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERDICT RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Check 5, 6)
+                       AND Check 7 passes
+                       → fixes must be []
+
+  retry                Any CRITICAL missing workflow
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any structural error (wrong conditional, generic on_success)
+                       OR Check 7 failure
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       interaction path exists — not a close call, but truly unresolvable
+                       from the text and AST alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "AST path or state×action pair",
+      "severity": "critical | minor",
+      "reason": "<why this workflow is expected from the AST/description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "WF-NNN terminal_action=X",
+      "severity": "critical | minor",
+      "reason": "<why this workflow has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Check 5/6 violation and the affected workflow>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact missing path or phantom to remove>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+
+------------------------------------------------------------
+[23:05:00] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 17,
+  "module_title": "Fixed & Recurring Deposit Accounts",
+  "summary": "Manages creation, lifecycle actions, and detailed views for Fixed Deposit (FD) and Recurring Deposit (RD) accounts including schedules, balances, interest calculations, and maturity operations.",
+  "where_it_fits": "Accessed from a Client Detail page within the Institution \u2192 Clients flow (and reachable via product/account shortcuts in the left sidebar), this module is part of the Products/Accounts area showing FD and RD accounts for individual clients. It integrates with product configuration (deposit products and interest rate charts) and appears alongside other account detail pages with tabs for Summary, Transactions, and Charges.",
+  "assumed_state_on_entry": "An active client is selected on the Client Detail page and relevant FD/RD products and interest rate charts are configured in the system."
+}
+</module_context>
+
+<description>
+
+Fixed Deposit and Recurring Deposit accounts are created from the Client Detail page. The FD Account creation form contains Fixed Deposit Product dropdown, Deposit Amount, Deposit Period (numeric and unit — Days, Months, Years), and Maturity Instructions (Transfer to Savings, Re-Invest, or Re-Invest Principal and Transfer Interest). The FD Account Detail page shows deposit amount, maturity date, maturity amount, interest rate, and status with action buttons for Approve, Activate, Premature Close, and Close on Maturity. The RD Account creation form contains Recurring Deposit Product dropdown, Mandatory Deposit Amount per installment, Deposit Period, Deposit Frequency (Daily, Weekly, Monthly, Quarterly, Yearly), and Expected First Deposit On date. The RD Account Detail page shows the deposit schedule, total deposits made, maturity details, interest rate, and status with action buttons for Approve, Activate, Deposit, Premature Close, and Close on Maturity. Both FD and RD detail pages include tabs for Summary, Transactions, and Charges. Interest rates are determined by the Interest Rate Chart configured on the product, with tiered rates based on deposit amount and term length.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Fixed & Recurring Deposit Accounts",
+  "components": {
+    "Fixed_Deposit_Create_Form": {
+      "type": "form",
+      "preconditions": [
+        "An active client is selected on the Client Detail page and relevant FD/RD products and interest rate charts are configured in the system."
+      ],
+      "fields": {
+        "Fixed_Deposit_Product": {
+          "type": "dropdown"
+        },
+        "Deposit_Amount": {
+          "type": "unspecified"
+        },
+        "Deposit_Period_Value": {
+          "type": "number",
+          "description": "Numeric portion of the deposit period (paired with Deposit_Period_Unit)."
+        },
+        "Deposit_Period_Unit": {
+          "type": "dropdown",
+          "options": [
+            "Days",
+            "Months",
+            "Years"
+          ]
+        },
+        "Maturity_Instructions": {
+          "type": "dropdown",
+          "options": [
+            "Transfer to Savings",
+            "Re-Invest",
+            "Re-Invest Principal and Transfer Interest"
+          ]
+        },
+        "Interest_Rate": {
+          "type": "unspecified",
+          "description": "Show computed Interest Rate on create form derived from product/amount/term."
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create Fixed Deposit",
+          "preconditions": [
+            "An active client is selected on the Client Detail page and relevant FD/RD products and interest rate charts are configured in the system."
+          ]
+        }
+      ]
+    },
+    "Recurring_Deposit_Create_Form": {
+      "type": "form",
+      "preconditions": [
+        "An active client is selected on the Client Detail page and relevant FD/RD products and interest rate charts are configured in the system."
+      ],
+      "fields": {
+        "Recurring_Deposit_Product": {
+          "type": "dropdown"
+        },
+        "Mandatory_Deposit_Amount": {
+          "type": "unspecified"
+        },
+        "Deposit_Period_Value": {
+          "type": "unspecified",
+          "description": "Numeric length of the deposit period (paired with Deposit_Period_Unit)."
+        },
+        "Deposit_Period_Unit": {
+          "type": "dropdown",
+          "options": [
+            "Days",
+            "Months",
+            "Years"
+          ],
+          "description": "Recurring Deposit's Deposit Period includes a unit (Days, Months, Years); this field is required on the RD creation form.",
+          "required": true
+        },
+        "Deposit_Frequency": {
+          "type": "dropdown",
+          "options": [
+            "Daily",
+            "Weekly",
+            "Monthly",
+            "Quarterly",
+            "Yearly"
+          ]
+        },
+        "Expected_First_Deposit_On": {
+          "type": "date"
+        },
+        "Interest_Rate": {
+          "type": "unspecified",
+          "description": "Show computed Interest Rate on create form derived from product/amount/term/frequency."
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create Recurring Deposit",
+          "preconditions": [
+            "An active client is selected on the Client Detail page and relevant FD/RD products and interest rate charts are configured in the system."
+          ]
+        }
+      ]
+    },
+    "Fixed_Deposit_Detail_Tabs": {
+      "type": "tab_container",
+      "tabs": [
+        {
+          "tab_name": "Summary",
+          "fields": {}
+        },
+        {
+          "tab_name": "Transactions",
+          "fields": {}
+        },
+        {
+          "tab_name": "Charges",
+          "fields": {}
+        }
+      ]
+    },
+    "Recurring_Deposit_Detail_Tabs": {
+      "type": "tab_container",
+      "tabs": [
+        {
+          "tab_name": "Summary",
+          "fields": {}
+        },
+        {
+          "tab_name": "Transactions",
+          "fields": {}
+        },
+        {
+          "tab_name": "Charges",
+          "fields": {}
+        }
+      ]
+    },
+    "Fixed_Deposit_Detail_Actions": {
+      "type": "action_bar",
+      "available_actions": [
+        {
+          "action_name": "Approve"
+        },
+        {
+          "action_name": "Activate"
+        },
+        {
+          "action_name": "Premature Close"
+        },
+        {
+          "action_name": "Close on Maturity"
+        }
+      ]
+    },
+    "Recurring_Deposit_Detail_Actions": {
+      "type": "action_bar",
+      "available_actions": [
+        {
+          "action_name": "Approve"
+        },
+        {
+          "action_name": "Activate"
+        },
+        {
+          "action_name": "Deposit"
+        },
+        {
+          "action_name": "Premature Close"
+        },
+        {
+          "action_name": "Close on Maturity"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Create Fixed Deposit account",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Create Fixed Deposit",
+    "on_success": "Fixed Deposit account created; detail page shows deposit amount, maturity date, maturity amount, interest rate, and status."
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Create Recurring Deposit account",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Create Recurring Deposit",
+    "on_success": "Recurring Deposit account created; detail page shows deposit schedule, total deposits made, maturity details, and interest rate."
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Approve Fixed Deposit account",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Approve",
+    "on_success": "Fixed Deposit account approved; status updated to Approved."
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Activate Fixed Deposit account",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Activate",
+    "on_success": "Fixed Deposit account activated; status updated to Active."
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Prematurely close Fixed Deposit account",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Premature Close",
+    "on_success": "Fixed Deposit account prematurely closed; balances settled per product rules."
+  },
+  {
+    "wf_id": "WF-006",
+    "name": "Close Fixed Deposit account on maturity",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Close on Maturity",
+    "on_success": "Fixed Deposit account closed on maturity; maturity amount handled per Maturity Instructions."
+  },
+  {
+    "wf_id": "WF-007",
+    "name": "Approve Recurring Deposit account",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Approve",
+    "on_success": "Recurring Deposit account approved; status updated to Approved."
+  },
+  {
+    "wf_id": "WF-008",
+    "name": "Activate Recurring Deposit account",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Activate",
+    "on_success": "Recurring Deposit account activated; status updated to Active."
+  },
+  {
+    "wf_id": "WF-009",
+    "name": "Record Deposit to Recurring Deposit account",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Deposit",
+    "on_success": "Deposit recorded against Recurring Deposit account; deposit schedule and total deposits updated."
+  },
+  {
+    "wf_id": "WF-010",
+    "name": "Prematurely close Recurring Deposit account",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Premature Close",
+    "on_success": "Recurring Deposit account prematurely closed; balances settled per product rules."
+  },
+  {
+    "wf_id": "WF-011",
+    "name": "Close Recurring Deposit account on maturity",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Close on Maturity",
+    "on_success": "Recurring Deposit account closed on maturity; maturity amount handled per product and schedule."
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:06:03] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 1,
+  "summary": "The provided workflows cover all form submit_actions and all action_bar available_actions present in the AST; no critical or structural issues detected.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:06:03] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 1,
+  "summary": "The provided workflows cover all form submit_actions and all action_bar available_actions present in the AST; no critical or structural issues detected.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}

@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:02:39.094004
+DEBUG SESSION STARTED: 2026-07-04T22:22:17.260394
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Edge - SYSTEM PROMPT
+[22:22:17] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Edge - USER PROMPT
+[22:22:17] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 7,
   "module_title": "Request Loan",
-  "summary": "Provides an interface to apply for Personal, Auto, or Home loans with validation of amounts, down payments, collateral, and a simulated credit decision.",
-  "where_it_fits": "Accessible from the left-hand navigation under \"Request Loan\" after successful sign-in, this module is part of the post-login financial services allowing users to initiate new loan requests alongside other actions like Transfer Funds and Open New Account. It sits in the application lifecycle at the point where authenticated customers request credit and receive an immediate simulated approval or denial outcome.",
-  "assumed_state_on_entry": "User is logged in and has at least one existing account eligible to be selected as a collateral account with sufficient displayed balance"
+  "summary": "Provides an interface for applying for Personal, Auto, or Home loans with amount and down-payment validation, collateral selection and simulated credit approval that returns approval or denial reasons.",
+  "where_it_fits": "Available from the left-hand navigation as option \u2464 Request Loan after successful login and arrival at the account dashboard (Accounts Overview). It is part of the account services flow where users submit credit applications and, if approved, a loan account is created and shown alongside other accounts.",
+  "assumed_state_on_entry": "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present in the system."
 }
 </module_context>
 
@@ -245,9 +259,6 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Request_Loan_Form": {
       "type": "form",
-      "constraints": [
-        "Down_Payment < Loan_Amount"
-      ],
       "fields": {
         "Loan_Type": {
           "type": "radio",
@@ -255,52 +266,50 @@ If a `<workflows>` block is present in the input:
             "Personal",
             "Auto",
             "Home"
-          ],
-          "required": true
+          ]
         },
         "Loan_Amount": {
           "type": "number",
-          "required": true,
           "constraints": [
-            "if Loan_Type == Personal then min 1000 and max 50000",
-            "if Loan_Type == Auto then min 5000 and max 75000",
-            "if Loan_Type == Home then min 50000 and max 500000"
+            "when Loan_Type == Personal: minimum 1000, maximum 50000",
+            "when Loan_Type == Auto: minimum 5000, maximum 75000",
+            "when Loan_Type == Home: minimum 50000, maximum 500000",
+            "must be within the type-specific range above"
           ]
         },
-        "Down_Payment": {
+        "Down_Payment_Amount": {
           "type": "number",
-          "required": true,
           "constraints": [
-            "must be at least 10% of Loan_Amount"
+            "must be less than Loan_Amount",
+            "must be at least 10% of Loan_Amount (minimum down payment requirement)"
           ]
         },
         "Collateral_Account": {
           "type": "dropdown",
-          "required": true,
           "constraints": [
-            "selected account balance must be >= 20% of Loan_Amount",
-            "system validates the selected account has sufficient displayed balance for required collateral value"
+            "selected account must have sufficient available balance",
+            "collateral value must be at least 20% of Loan_Amount",
+            "system validates sufficient collateral funds and 20% collateral value"
           ]
         }
       },
       "submit_actions": [
         {
-          "action_name": "Submit Application",
+          "action_name": "Apply",
           "preconditions": [
-            "User is logged in and has at least one existing account eligible to be selected as a collateral account with sufficient displayed balance"
+            "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present in the system."
           ],
           "simulation": {
-            "approval_rate": "80%",
+            "credit_engine_approval_rate": "80%",
             "minimum_down_payment_percent": 10
           },
-          "on_success": "Loan approved and created successfully! Display created loan and associated account details. Note: No actual balance debits occur in this mock system.",
-          "on_failure": {
-            "message": "Loan application denied",
-            "possible_reasons": [
-              "Insufficient credit history",
-              "Inadequate collateral value"
-            ]
-          }
+          "on_success": "Loan approved and created successfully! (mock account details displayed; no actual balance debits occur in this mock system)",
+          "on_failure_reasons": [
+            "Insufficient credit history",
+            "Inadequate collateral value",
+            "Down payment below minimum requirement",
+            "Other credit risk factors"
+          ]
         }
       ]
     }
@@ -315,15 +324,16 @@ The loan page has interactive loan type cards (Personal, Auto, Home) with intere
 </description>
 
 <workflows>
-WF-001 | Submit Personal Loan application | actor: Authenticated User | branch: Loan_Type == Personal | terminal: Submit Application | on_success: Loan approved and created successfully! Display created loan and associated account details. Note: No actual balance debits occur in this mock system.
-WF-002 | Submit Auto Loan application | actor: Authenticated User | branch: Loan_Type == Auto | terminal: Submit Application | on_success: Loan approved and created successfully! Display created loan and associated account details. Note: No actual balance debits occur in this mock system.
-WF-003 | Submit Home Loan application | actor: Authenticated User | branch: Loan_Type == Home | terminal: Submit Application | on_success: Loan approved and created successfully! Display created loan and associated account details. Note: No actual balance debits occur in this mock system.
+WF-001 | Apply (base submission) | actor: User | branch: none | terminal: Apply | on_success: Loan approved and created successfully! (mock account details displayed; no actual balance debits occur in this mock system)
+WF-002 | Apply with Loan_Type == Personal (Loan Amount validation: $1,000-$50,000) | actor: User | branch: Loan_Type == Personal | terminal: Apply | on_success: Loan approved and created successfully! (mock account details displayed; no actual balance debits occur in this mock system)
+WF-003 | Apply with Loan_Type == Auto (Loan Amount validation: $5,000-$75,000) | actor: User | branch: Loan_Type == Auto | terminal: Apply | on_success: Loan approved and created successfully! (mock account details displayed; no actual balance debits occur in this mock system)
+WF-004 | Apply with Loan_Type == Home (Loan Amount validation: $50,000-$500,000) | actor: User | branch: Loan_Type == Home | terminal: Apply | on_success: Loan approved and created successfully! (mock account details displayed; no actual balance debits occur in this mock system)
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:04:34] Test-Edge - LLM RESPONSE
+[22:24:11] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Request Loan",
@@ -331,171 +341,187 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-001",
+      "wf_ref": "WF-002",
       "subcategory": "boundary",
-      "test_case": "Personal loan: Loan_Amount exactly at Personal minimum allowed",
+      "test_case": "Personal loan: Loan_Amount exactly equal to Personal minimum (passes validation)",
       "preconditions": [
-        "User is logged in",
-        "User has at least one existing account eligible to be selected as Collateral_Account with sufficient displayed balance"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral"
       ],
       "steps": [
-        "1. Click the 'Personal' loan type option",
-        "2. Enter the Personal Loan_Amount equal to the Personal minimum allowed",
-        "3. Enter Down_Payment equal to 10% of the entered Loan_Amount",
-        "4. Select a Collateral_Account whose displayed balance is equal to or greater than 20% of the entered Loan_Amount",
-        "5. Click 'Submit Application'"
+        "1. Click the Loan_Type card 'Personal'",
+        "2. Enter 1000 in the Loan_Amount field (Personal minimum)",
+        "3. Select any Collateral_Account with available balance >= required collateral (tester ensures account meets collateral rule)",
+        "4. Click Apply"
       ],
-      "expected_result": "Form validation succeeds and submission proceeds; the application is accepted for simulation. A post-submission banner is shown: either 'Loan approved and created successfully!' or 'Loan application denied' from the simulation. No Loan_Amount validation error is shown (submission succeeds).",
+      "expected_result": "succeeds: Form validation passes for Loan_Amount; Apply proceeds past client-side validation and the UI displays a credit decision result (visible either the success banner 'Loan approved and created successfully!' with mock account details or a denial pane listing denial reasons).",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-001",
+      "wf_ref": "WF-002",
       "subcategory": "boundary",
-      "test_case": "Personal loan: Loan_Amount one unit below Personal minimum is blocked",
+      "test_case": "Personal loan: Loan_Amount one unit below Personal minimum (blocked)",
       "preconditions": [
-        "User is logged in",
-        "User has at least one existing account eligible to be selected as Collateral_Account with sufficient displayed balance"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral"
       ],
       "steps": [
-        "1. Click the 'Personal' loan type option",
-        "2. Enter the Loan_Amount equal to one unit below the Personal minimum allowed",
-        "3. Enter Down_Payment equal to 10% of the entered Loan_Amount (or as close as arithmetic allows)",
-        "4. Select a Collateral_Account whose displayed balance is equal to or greater than 20% of the entered Loan_Amount",
-        "5. Click 'Submit Application'"
+        "1. Click the Loan_Type card 'Personal'",
+        "2. Enter 999 in the Loan_Amount field (one unit below Personal minimum)",
+        "3. Click Apply"
       ],
-      "expected_result": "Submission is blocked; Loan_Amount field displays an error indicating the value is below the minimum allowed and the form is not submitted (is blocked / error shown).",
+      "expected_result": "is blocked / error shown: Loan_Amount displays an inline validation error indicating the value is below the minimum allowed for Personal loans; Apply is disabled or submission is blocked.",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Auto loan: Loan_Amount exactly at Auto minimum allowed",
+      "test_case": "Auto loan: Loan_Amount exactly equal to Auto minimum (passes validation)",
       "preconditions": [
-        "User is logged in",
-        "User has at least one existing account eligible to be selected as Collateral_Account with sufficient displayed balance"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral"
       ],
       "steps": [
-        "1. Click the 'Auto' loan type option",
-        "2. Enter the Auto Loan_Amount equal to the Auto minimum allowed",
-        "3. Enter Down_Payment equal to 10% of the entered Loan_Amount",
-        "4. Select a Collateral_Account whose displayed balance is equal to or greater than 20% of the entered Loan_Amount",
-        "5. Click 'Submit Application'"
+        "1. Click the Loan_Type card 'Auto'",
+        "2. Enter 5000 in the Loan_Amount field (Auto minimum)",
+        "3. Select any Collateral_Account with available balance >= required collateral (tester ensures account meets collateral rule)",
+        "4. Click Apply"
       ],
-      "expected_result": "Form validation succeeds and submission proceeds; the application is accepted for simulation. Either the success banner 'Loan approved and created successfully!' or the denial message 'Loan application denied' is shown by the simulator. No Loan_Amount validation error is shown (submission succeeds).",
+      "expected_result": "succeeds: Form validation passes for Loan_Amount; Apply proceeds past client-side validation and the UI displays a credit decision result (visible either the success banner 'Loan approved and created successfully!' with mock account details or a denial pane listing denial reasons).",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Auto loan: Loan_Amount one unit below Auto minimum is blocked",
+      "test_case": "Auto loan: Loan_Amount one unit below Auto minimum (blocked)",
       "preconditions": [
-        "User is logged in",
-        "User has at least one existing account eligible to be selected as Collateral_Account with sufficient displayed balance"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral"
       ],
       "steps": [
-        "1. Click the 'Auto' loan type option",
-        "2. Enter the Loan_Amount equal to one unit below the Auto minimum allowed",
-        "3. Enter Down_Payment equal to 10% of the entered Loan_Amount (or as close as arithmetic allows)",
-        "4. Select a Collateral_Account whose displayed balance is equal to or greater than 20% of the entered Loan_Amount",
-        "5. Click 'Submit Application'"
+        "1. Click the Loan_Type card 'Auto'",
+        "2. Enter 4999 in the Loan_Amount field (one unit below Auto minimum)",
+        "3. Click Apply"
       ],
-      "expected_result": "Submission is blocked; Loan_Amount field displays an error indicating the value is below the minimum allowed and the form is not submitted (is blocked / error shown).",
+      "expected_result": "is blocked / error shown: Loan_Amount displays an inline validation error indicating the value is below the minimum allowed for Auto loans; Apply is disabled or submission is blocked.",
       "priority": "medium"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": "WF-003",
+      "wf_ref": "WF-004",
       "subcategory": "boundary",
-      "test_case": "Home loan: Loan_Amount exactly at Home maximum allowed",
+      "test_case": "Home loan: Loan_Amount exactly equal to Home minimum (passes validation)",
       "preconditions": [
-        "User is logged in",
-        "User has at least one existing account eligible to be selected as Collateral_Account with sufficient displayed balance"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral"
       ],
       "steps": [
-        "1. Click the 'Home' loan type option",
-        "2. Enter the Home Loan_Amount equal to the Home maximum allowed",
-        "3. Enter Down_Payment equal to 10% of the entered Loan_Amount (which must also be less than the Loan_Amount)",
-        "4. Select a Collateral_Account whose displayed balance is equal to or greater than 20% of the entered Loan_Amount",
-        "5. Click 'Submit Application'"
+        "1. Click the Loan_Type card 'Home'",
+        "2. Enter 50000 in the Loan_Amount field (Home minimum)",
+        "3. Select any Collateral_Account with available balance >= required collateral (tester ensures account meets collateral rule)",
+        "4. Click Apply"
       ],
-      "expected_result": "Form validation succeeds and submission proceeds; the application is accepted for simulation. Either the success banner 'Loan approved and created successfully!' or the denial message 'Loan application denied' is shown by the simulator. No Loan_Amount validation error is shown (submission succeeds).",
+      "expected_result": "succeeds: Form validation passes for Loan_Amount; Apply proceeds past client-side validation and the UI displays a credit decision result (visible either the success banner 'Loan approved and created successfully!' with mock account details or a denial pane listing denial reasons).",
       "priority": "medium"
     },
     {
       "tc_id": "E-006",
-      "wf_ref": "WF-003",
+      "wf_ref": "WF-004",
       "subcategory": "boundary",
-      "test_case": "Home loan: Loan_Amount one unit above Home maximum is blocked",
+      "test_case": "Home loan: Loan_Amount one unit below Home minimum (blocked)",
       "preconditions": [
-        "User is logged in",
-        "User has at least one existing account eligible to be selected as Collateral_Account with sufficient displayed balance"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral"
       ],
       "steps": [
-        "1. Click the 'Home' loan type option",
-        "2. Enter the Loan_Amount equal to one unit above the Home maximum allowed",
-        "3. Enter Down_Payment equal to 10% of the entered Loan_Amount (or as close as arithmetic allows)",
-        "4. Select a Collateral_Account whose displayed balance is equal to or greater than 20% of the entered Loan_Amount",
-        "5. Click 'Submit Application'"
+        "1. Click the Loan_Type card 'Home'",
+        "2. Enter 49999 in the Loan_Amount field (one unit below Home minimum)",
+        "3. Click Apply"
       ],
-      "expected_result": "Submission is blocked; Loan_Amount field displays an error indicating the value exceeds the maximum allowed and the form is not submitted (is blocked / error shown).",
+      "expected_result": "is blocked / error shown: Loan_Amount displays an inline validation error indicating the value is below the minimum allowed for Home loans; Apply is disabled or submission is blocked.",
       "priority": "medium"
     },
     {
       "tc_id": "E-007",
-      "wf_ref": "WF-002",
+      "wf_ref": null,
       "subcategory": "boundary",
-      "test_case": "Collateral: selected account balance exactly equals 20% of Loan_Amount (accepted)",
+      "test_case": "Down_Payment: exactly 10% of Loan_Amount satisfies minimum down payment",
       "preconditions": [
-        "User is logged in",
-        "User has at least one existing account whose displayed balance equals exactly 20% of the chosen Loan_Amount"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral"
       ],
       "steps": [
-        "1. Click the 'Auto' loan type option",
-        "2. Enter an Auto Loan_Amount within the allowed Auto range",
-        "3. Enter Down_Payment equal to 10% of the entered Loan_Amount",
-        "4. In the Collateral_Account dropdown, select the account whose displayed balance equals 20% of the entered Loan_Amount",
-        "5. Click 'Submit Application'"
+        "1. Click the Loan_Type card 'Personal'",
+        "2. Enter 1000 in the Loan_Amount field",
+        "3. Enter 100 in the Down_Payment_Amount field (exactly 10% of Loan_Amount)",
+        "4. Select any Collateral_Account that meets collateral rules",
+        "5. Click Apply"
       ],
-      "expected_result": "Collateral validation succeeds and submission proceeds; the application is accepted for simulation. Either 'Loan approved and created successfully!' or 'Loan application denied' appears. No collateral insufficiency error is shown (submission succeeds).",
+      "expected_result": "succeeds: Down_Payment_Amount passes the minimum down payment check and the form passes validation; Apply proceeds to show a credit decision (visible either the success banner 'Loan approved and created successfully!' with mock account details or a denial pane listing denial reasons).",
       "priority": "medium"
     },
     {
       "tc_id": "E-008",
-      "wf_ref": "WF-002",
+      "wf_ref": null,
       "subcategory": "boundary",
-      "test_case": "Collateral: selected account balance one unit below required 20% is blocked",
+      "test_case": "Down_Payment: one unit below 10% of Loan_Amount is blocked",
       "preconditions": [
-        "User is logged in",
-        "User has at least one existing account whose displayed balance is one unit below 20% of the chosen Loan_Amount"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral"
       ],
       "steps": [
-        "1. Click the 'Auto' loan type option",
-        "2. Enter an Auto Loan_Amount within the allowed Auto range",
-        "3. Enter Down_Payment equal to 10% of the entered Loan_Amount",
-        "4. In the Collateral_Account dropdown, select the account whose displayed balance is one unit below 20% of the entered Loan_Amount",
-        "5. Click 'Submit Application'"
+        "1. Click the Loan_Type card 'Personal'",
+        "2. Enter 1000 in the Loan_Amount field",
+        "3. Enter 99 in the Down_Payment_Amount field (one unit below 10% of Loan_Amount)",
+        "4. Click Apply"
       ],
-      "expected_result": "Submission is blocked; the Collateral_Account control displays an inline error indicating the selected account balance is below the required 20% of Loan_Amount and the form is not submitted (is blocked / error shown).",
+      "expected_result": "is blocked / error shown: Down_Payment_Amount displays an inline validation error indicating it is below the minimum 10% requirement; Apply is disabled or submission is blocked.",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-009",
+      "wf_ref": null,
+      "subcategory": "boundary",
+      "test_case": "Collateral: selected account available balance exactly equals required 20% of Loan_Amount (passes collateral validation)",
+      "preconditions": [
+        "User is logged in and on the dashboard with at least two existing accounts; at least one account can be selected with available balance set to exactly the required collateral amount for the test"
+      ],
+      "steps": [
+        "1. Click the Loan_Type card 'Auto'",
+        "2. Enter 5000 in the Loan_Amount field",
+        "3. Select a Collateral_Account whose available balance is exactly 1000 (exactly 20% of Loan_Amount)",
+        "4. Click Apply"
+      ],
+      "expected_result": "succeeds: Collateral_Account selection meets the 20% collateral value and available balance requirement; form validation passes and Apply proceeds to display a credit decision (visible either the success banner 'Loan approved and created successfully!' with mock account details or a denial pane listing denial reasons).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-010",
+      "wf_ref": null,
+      "subcategory": "boundary",
+      "test_case": "Collateral: selected account available balance one unit below 20% of Loan_Amount is blocked",
+      "preconditions": [
+        "User is logged in and on the dashboard with at least two existing accounts; at least one account exists with available balance set to one unit below required collateral amount for the test"
+      ],
+      "steps": [
+        "1. Click the Loan_Type card 'Auto'",
+        "2. Enter 5000 in the Loan_Amount field",
+        "3. Select a Collateral_Account whose available balance is 999 (one unit below 20% of Loan_Amount)",
+        "4. Click Apply"
+      ],
+      "expected_result": "is blocked / error shown: Collateral_Account field displays an inline validation error indicating the collateral value is below the required 20% of Loan_Amount or that the selected account does not have sufficient available balance; Apply is disabled or submission is blocked.",
       "priority": "medium"
     }
   ],
   "summary": {
-    "total": 8,
-    "boundary": 8,
+    "total": 10,
+    "boundary": 10,
     "input_edge": 0,
     "interaction_edge": 0,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 8,
+    "medium_priority": 10,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:04:34] Test-Edge - PARSED JSON
+[22:24:11] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Request Loan",
@@ -503,165 +529,181 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-001",
+      "wf_ref": "WF-002",
       "subcategory": "boundary",
-      "test_case": "Personal loan: Loan_Amount exactly at Personal minimum allowed",
+      "test_case": "Personal loan: Loan_Amount exactly equal to Personal minimum (passes validation)",
       "preconditions": [
-        "User is logged in",
-        "User has at least one existing account eligible to be selected as Collateral_Account with sufficient displayed balance"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral"
       ],
       "steps": [
-        "1. Click the 'Personal' loan type option",
-        "2. Enter the Personal Loan_Amount equal to the Personal minimum allowed",
-        "3. Enter Down_Payment equal to 10% of the entered Loan_Amount",
-        "4. Select a Collateral_Account whose displayed balance is equal to or greater than 20% of the entered Loan_Amount",
-        "5. Click 'Submit Application'"
+        "1. Click the Loan_Type card 'Personal'",
+        "2. Enter 1000 in the Loan_Amount field (Personal minimum)",
+        "3. Select any Collateral_Account with available balance >= required collateral (tester ensures account meets collateral rule)",
+        "4. Click Apply"
       ],
-      "expected_result": "Form validation succeeds and submission proceeds; the application is accepted for simulation. A post-submission banner is shown: either 'Loan approved and created successfully!' or 'Loan application denied' from the simulation. No Loan_Amount validation error is shown (submission succeeds).",
+      "expected_result": "succeeds: Form validation passes for Loan_Amount; Apply proceeds past client-side validation and the UI displays a credit decision result (visible either the success banner 'Loan approved and created successfully!' with mock account details or a denial pane listing denial reasons).",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-001",
+      "wf_ref": "WF-002",
       "subcategory": "boundary",
-      "test_case": "Personal loan: Loan_Amount one unit below Personal minimum is blocked",
+      "test_case": "Personal loan: Loan_Amount one unit below Personal minimum (blocked)",
       "preconditions": [
-        "User is logged in",
-        "User has at least one existing account eligible to be selected as Collateral_Account with sufficient displayed balance"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral"
       ],
       "steps": [
-        "1. Click the 'Personal' loan type option",
-        "2. Enter the Loan_Amount equal to one unit below the Personal minimum allowed",
-        "3. Enter Down_Payment equal to 10% of the entered Loan_Amount (or as close as arithmetic allows)",
-        "4. Select a Collateral_Account whose displayed balance is equal to or greater than 20% of the entered Loan_Amount",
-        "5. Click 'Submit Application'"
+        "1. Click the Loan_Type card 'Personal'",
+        "2. Enter 999 in the Loan_Amount field (one unit below Personal minimum)",
+        "3. Click Apply"
       ],
-      "expected_result": "Submission is blocked; Loan_Amount field displays an error indicating the value is below the minimum allowed and the form is not submitted (is blocked / error shown).",
+      "expected_result": "is blocked / error shown: Loan_Amount displays an inline validation error indicating the value is below the minimum allowed for Personal loans; Apply is disabled or submission is blocked.",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Auto loan: Loan_Amount exactly at Auto minimum allowed",
+      "test_case": "Auto loan: Loan_Amount exactly equal to Auto minimum (passes validation)",
       "preconditions": [
-        "User is logged in",
-        "User has at least one existing account eligible to be selected as Collateral_Account with sufficient displayed balance"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral"
       ],
       "steps": [
-        "1. Click the 'Auto' loan type option",
-        "2. Enter the Auto Loan_Amount equal to the Auto minimum allowed",
-        "3. Enter Down_Payment equal to 10% of the entered Loan_Amount",
-        "4. Select a Collateral_Account whose displayed balance is equal to or greater than 20% of the entered Loan_Amount",
-        "5. Click 'Submit Application'"
+        "1. Click the Loan_Type card 'Auto'",
+        "2. Enter 5000 in the Loan_Amount field (Auto minimum)",
+        "3. Select any Collateral_Account with available balance >= required collateral (tester ensures account meets collateral rule)",
+        "4. Click Apply"
       ],
-      "expected_result": "Form validation succeeds and submission proceeds; the application is accepted for simulation. Either the success banner 'Loan approved and created successfully!' or the denial message 'Loan application denied' is shown by the simulator. No Loan_Amount validation error is shown (submission succeeds).",
+      "expected_result": "succeeds: Form validation passes for Loan_Amount; Apply proceeds past client-side validation and the UI displays a credit decision result (visible either the success banner 'Loan approved and created successfully!' with mock account details or a denial pane listing denial reasons).",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Auto loan: Loan_Amount one unit below Auto minimum is blocked",
+      "test_case": "Auto loan: Loan_Amount one unit below Auto minimum (blocked)",
       "preconditions": [
-        "User is logged in",
-        "User has at least one existing account eligible to be selected as Collateral_Account with sufficient displayed balance"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral"
       ],
       "steps": [
-        "1. Click the 'Auto' loan type option",
-        "2. Enter the Loan_Amount equal to one unit below the Auto minimum allowed",
-        "3. Enter Down_Payment equal to 10% of the entered Loan_Amount (or as close as arithmetic allows)",
-        "4. Select a Collateral_Account whose displayed balance is equal to or greater than 20% of the entered Loan_Amount",
-        "5. Click 'Submit Application'"
+        "1. Click the Loan_Type card 'Auto'",
+        "2. Enter 4999 in the Loan_Amount field (one unit below Auto minimum)",
+        "3. Click Apply"
       ],
-      "expected_result": "Submission is blocked; Loan_Amount field displays an error indicating the value is below the minimum allowed and the form is not submitted (is blocked / error shown).",
+      "expected_result": "is blocked / error shown: Loan_Amount displays an inline validation error indicating the value is below the minimum allowed for Auto loans; Apply is disabled or submission is blocked.",
       "priority": "medium"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": "WF-003",
+      "wf_ref": "WF-004",
       "subcategory": "boundary",
-      "test_case": "Home loan: Loan_Amount exactly at Home maximum allowed",
+      "test_case": "Home loan: Loan_Amount exactly equal to Home minimum (passes validation)",
       "preconditions": [
-        "User is logged in",
-        "User has at least one existing account eligible to be selected as Collateral_Account with sufficient displayed balance"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral"
       ],
       "steps": [
-        "1. Click the 'Home' loan type option",
-        "2. Enter the Home Loan_Amount equal to the Home maximum allowed",
-        "3. Enter Down_Payment equal to 10% of the entered Loan_Amount (which must also be less than the Loan_Amount)",
-        "4. Select a Collateral_Account whose displayed balance is equal to or greater than 20% of the entered Loan_Amount",
-        "5. Click 'Submit Application'"
+        "1. Click the Loan_Type card 'Home'",
+        "2. Enter 50000 in the Loan_Amount field (Home minimum)",
+        "3. Select any Collateral_Account with available balance >= required collateral (tester ensures account meets collateral rule)",
+        "4. Click Apply"
       ],
-      "expected_result": "Form validation succeeds and submission proceeds; the application is accepted for simulation. Either the success banner 'Loan approved and created successfully!' or the denial message 'Loan application denied' is shown by the simulator. No Loan_Amount validation error is shown (submission succeeds).",
+      "expected_result": "succeeds: Form validation passes for Loan_Amount; Apply proceeds past client-side validation and the UI displays a credit decision result (visible either the success banner 'Loan approved and created successfully!' with mock account details or a denial pane listing denial reasons).",
       "priority": "medium"
     },
     {
       "tc_id": "E-006",
-      "wf_ref": "WF-003",
+      "wf_ref": "WF-004",
       "subcategory": "boundary",
-      "test_case": "Home loan: Loan_Amount one unit above Home maximum is blocked",
+      "test_case": "Home loan: Loan_Amount one unit below Home minimum (blocked)",
       "preconditions": [
-        "User is logged in",
-        "User has at least one existing account eligible to be selected as Collateral_Account with sufficient displayed balance"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral"
       ],
       "steps": [
-        "1. Click the 'Home' loan type option",
-        "2. Enter the Loan_Amount equal to one unit above the Home maximum allowed",
-        "3. Enter Down_Payment equal to 10% of the entered Loan_Amount (or as close as arithmetic allows)",
-        "4. Select a Collateral_Account whose displayed balance is equal to or greater than 20% of the entered Loan_Amount",
-        "5. Click 'Submit Application'"
+        "1. Click the Loan_Type card 'Home'",
+        "2. Enter 49999 in the Loan_Amount field (one unit below Home minimum)",
+        "3. Click Apply"
       ],
-      "expected_result": "Submission is blocked; Loan_Amount field displays an error indicating the value exceeds the maximum allowed and the form is not submitted (is blocked / error shown).",
+      "expected_result": "is blocked / error shown: Loan_Amount displays an inline validation error indicating the value is below the minimum allowed for Home loans; Apply is disabled or submission is blocked.",
       "priority": "medium"
     },
     {
       "tc_id": "E-007",
-      "wf_ref": "WF-002",
+      "wf_ref": null,
       "subcategory": "boundary",
-      "test_case": "Collateral: selected account balance exactly equals 20% of Loan_Amount (accepted)",
+      "test_case": "Down_Payment: exactly 10% of Loan_Amount satisfies minimum down payment",
       "preconditions": [
-        "User is logged in",
-        "User has at least one existing account whose displayed balance equals exactly 20% of the chosen Loan_Amount"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral"
       ],
       "steps": [
-        "1. Click the 'Auto' loan type option",
-        "2. Enter an Auto Loan_Amount within the allowed Auto range",
-        "3. Enter Down_Payment equal to 10% of the entered Loan_Amount",
-        "4. In the Collateral_Account dropdown, select the account whose displayed balance equals 20% of the entered Loan_Amount",
-        "5. Click 'Submit Application'"
+        "1. Click the Loan_Type card 'Personal'",
+        "2. Enter 1000 in the Loan_Amount field",
+        "3. Enter 100 in the Down_Payment_Amount field (exactly 10% of Loan_Amount)",
+        "4. Select any Collateral_Account that meets collateral rules",
+        "5. Click Apply"
       ],
-      "expected_result": "Collateral validation succeeds and submission proceeds; the application is accepted for simulation. Either 'Loan approved and created successfully!' or 'Loan application denied' appears. No collateral insufficiency error is shown (submission succeeds).",
+      "expected_result": "succeeds: Down_Payment_Amount passes the minimum down payment check and the form passes validation; Apply proceeds to show a credit decision (visible either the success banner 'Loan approved and created successfully!' with mock account details or a denial pane listing denial reasons).",
       "priority": "medium"
     },
     {
       "tc_id": "E-008",
-      "wf_ref": "WF-002",
+      "wf_ref": null,
       "subcategory": "boundary",
-      "test_case": "Collateral: selected account balance one unit below required 20% is blocked",
+      "test_case": "Down_Payment: one unit below 10% of Loan_Amount is blocked",
       "preconditions": [
-        "User is logged in",
-        "User has at least one existing account whose displayed balance is one unit below 20% of the chosen Loan_Amount"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral"
       ],
       "steps": [
-        "1. Click the 'Auto' loan type option",
-        "2. Enter an Auto Loan_Amount within the allowed Auto range",
-        "3. Enter Down_Payment equal to 10% of the entered Loan_Amount",
-        "4. In the Collateral_Account dropdown, select the account whose displayed balance is one unit below 20% of the entered Loan_Amount",
-        "5. Click 'Submit Application'"
+        "1. Click the Loan_Type card 'Personal'",
+        "2. Enter 1000 in the Loan_Amount field",
+        "3. Enter 99 in the Down_Payment_Amount field (one unit below 10% of Loan_Amount)",
+        "4. Click Apply"
       ],
-      "expected_result": "Submission is blocked; the Collateral_Account control displays an inline error indicating the selected account balance is below the required 20% of Loan_Amount and the form is not submitted (is blocked / error shown).",
+      "expected_result": "is blocked / error shown: Down_Payment_Amount displays an inline validation error indicating it is below the minimum 10% requirement; Apply is disabled or submission is blocked.",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-009",
+      "wf_ref": null,
+      "subcategory": "boundary",
+      "test_case": "Collateral: selected account available balance exactly equals required 20% of Loan_Amount (passes collateral validation)",
+      "preconditions": [
+        "User is logged in and on the dashboard with at least two existing accounts; at least one account can be selected with available balance set to exactly the required collateral amount for the test"
+      ],
+      "steps": [
+        "1. Click the Loan_Type card 'Auto'",
+        "2. Enter 5000 in the Loan_Amount field",
+        "3. Select a Collateral_Account whose available balance is exactly 1000 (exactly 20% of Loan_Amount)",
+        "4. Click Apply"
+      ],
+      "expected_result": "succeeds: Collateral_Account selection meets the 20% collateral value and available balance requirement; form validation passes and Apply proceeds to display a credit decision (visible either the success banner 'Loan approved and created successfully!' with mock account details or a denial pane listing denial reasons).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-010",
+      "wf_ref": null,
+      "subcategory": "boundary",
+      "test_case": "Collateral: selected account available balance one unit below 20% of Loan_Amount is blocked",
+      "preconditions": [
+        "User is logged in and on the dashboard with at least two existing accounts; at least one account exists with available balance set to one unit below required collateral amount for the test"
+      ],
+      "steps": [
+        "1. Click the Loan_Type card 'Auto'",
+        "2. Enter 5000 in the Loan_Amount field",
+        "3. Select a Collateral_Account whose available balance is 999 (one unit below 20% of Loan_Amount)",
+        "4. Click Apply"
+      ],
+      "expected_result": "is blocked / error shown: Collateral_Account field displays an inline validation error indicating the collateral value is below the required 20% of Loan_Amount or that the selected account does not have sufficient available balance; Apply is disabled or submission is blocked.",
       "priority": "medium"
     }
   ],
   "summary": {
-    "total": 8,
-    "boundary": 8,
+    "total": 10,
+    "boundary": 10,
     "input_edge": 0,
     "interaction_edge": 0,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 8,
+    "medium_priority": 10,
     "low_priority": 0
   }
 }

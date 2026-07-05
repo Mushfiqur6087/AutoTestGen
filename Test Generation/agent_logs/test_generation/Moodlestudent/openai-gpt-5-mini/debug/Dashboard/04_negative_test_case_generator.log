@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:34.314627
+DEBUG SESSION STARTED: 2026-07-04T22:41:47.994802
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Negative - SYSTEM PROMPT
+[22:41:47] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Negative - USER PROMPT
+[22:41:47] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 2,
   "module_title": "Dashboard",
-  "summary": "The Dashboard presents a personalized overview containing a Timeline of upcoming activities and deadlines and a Calendar with month navigation and course filtering.",
-  "where_it_fits": "Accessible from the top navigation bar via the Dashboard link, this module is the user's landing/overview page that aggregates information across My Courses and links into course-level views (e.g., Course Page and full calendar). It sits early in the user session lifecycle as the central hub users consult after signing in.",
-  "assumed_state_on_entry": "User is logged in (authenticated); user has at least one enrolled course or a valid personal calendar."
+  "summary": "The Dashboard presents a personalized landing page with a Timeline of upcoming activities and a Calendar view for events across the user\u2019s courses, plus edit-mode controls for adding and configuring blocks.",
+  "where_it_fits": "Accessible from the top navigation bar as the Dashboard link and serving as the user\u2019s primary landing/overview screen after login, it aggregates course activity and calendar data and links to the full calendar and calendar import/export pages. It complements course-level views (Course Page, Activities) by providing cross-course timelines and quick access to calendar management in the application lifecycle.",
+  "assumed_state_on_entry": "Authenticated (logged-in) user; user context loaded (profile and enrolled courses information available)"
 }
 </module_context>
 
@@ -262,35 +272,28 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Dashboard_Page": {
       "type": "page",
-      "preconditions": [
-        "user must be logged in"
-      ],
       "fields": {
-        "Edit_Mode": {
+        "Edit_Mode_Toggle": {
           "type": "checkbox"
-        },
-        "Add_A_Block": {
-          "type": "button",
-          "action_name": "+ Add a block",
-          "visible_when": "Edit_Mode == true",
-          "on_success": "opens Block_Type_Chooser_Page",
-          "preconditions": [
-            "user must be logged in"
-          ]
         },
         "Reset_Page_To_Default": {
           "type": "button",
           "action_name": "Reset page to default",
-          "visible_when": "Edit_Mode == true",
+          "visible_when": "Edit_Mode_Toggle == true",
           "preconditions": [
-            "user must be logged in"
+            "Authenticated (logged-in) user"
+          ]
+        },
+        "Add_A_Block": {
+          "type": "button",
+          "action_name": "+ Add a block",
+          "visible_when": "Edit_Mode_Toggle == true",
+          "on_success": "opens block library page",
+          "preconditions": [
+            "Authenticated (logged-in) user"
           ]
         }
-      },
-      "blocks": [
-        "Timeline_Block",
-        "Calendar_Block"
-      ]
+      }
     },
     "Timeline_Block": {
       "type": "block",
@@ -301,121 +304,97 @@ If a `<workflows>` block is present in the input:
         "Sort_Order": {
           "type": "dropdown"
         },
-        "Search_Activities": {
-          "type": "search"
+        "Search": {
+          "type": "search",
+          "constraints": []
         },
-        "Empty_State": {
-          "type": "empty_state",
-          "visible_when": "Timeline_Block.items_in_range == 0",
-          "message": "No upcoming activities in the selected range"
+        "Move_Icon": {
+          "type": "unspecified",
+          "visible_when": "Edit_Mode_Toggle == true"
         },
-        "Edit_Controls": {
-          "type": "group",
-          "visible_when": "Edit_Mode == true",
-          "fields": {
-            "Move_Icon": {
-              "type": "button",
-              "action_name": "Move"
+        "Block_Menu": {
+          "type": "menu",
+          "visible_when": "Edit_Mode_Toggle == true",
+          "menu_actions": [
+            {
+              "action_name": "Configure",
+              "preconditions": [
+                "Authenticated (logged-in) user"
+              ]
             },
-            "More_Menu": {
-              "type": "menu",
-              "actions": [
-                {
-                  "action_name": "Configure"
-                },
-                {
-                  "action_name": "Move"
-                },
-                {
-                  "action_name": "Delete"
-                }
+            {
+              "action_name": "Move",
+              "preconditions": [
+                "Authenticated (logged-in) user"
+              ]
+            },
+            {
+              "action_name": "Delete",
+              "preconditions": [
+                "Authenticated (logged-in) user"
               ]
             }
-          }
+          ]
         }
       }
     },
     "Calendar_Block": {
       "type": "block",
       "fields": {
-        "All_Courses_Filter": {
+        "All_Courses": {
           "type": "dropdown"
         },
-        "New_Event": {
+        "New_Event_Button": {
           "type": "button",
           "action_name": "New event",
-          "on_success": "opens new personal event modal",
           "preconditions": [
-            "user must be logged in"
+            "Authenticated (logged-in) user"
           ]
         },
-        "Previous_Month": {
-          "type": "button",
-          "action_name": "Previous month"
+        "Prev_Month": {
+          "type": "button"
         },
         "Next_Month": {
-          "type": "button",
-          "action_name": "Next month"
+          "type": "button"
         },
         "Full_Calendar_Link": {
           "type": "link",
-          "action_name": "Full calendar",
-          "on_click": "navigate to full calendar view",
-          "preconditions": [
-            "user must be logged in"
-          ]
+          "action_name": "Full calendar"
         },
-        "Import_Export_Calendars_Link": {
+        "Import_or_Export_Calendars_Link": {
           "type": "link",
           "action_name": "Import or export calendars",
-          "on_click": "navigate to calendar data management",
           "preconditions": [
-            "user must be logged in"
+            "Authenticated (logged-in) user"
           ]
         },
-        "Edit_Controls": {
-          "type": "group",
-          "visible_when": "Edit_Mode == true",
-          "fields": {
-            "Move_Icon": {
-              "type": "button",
-              "action_name": "Move"
+        "Move_Icon": {
+          "type": "unspecified",
+          "visible_when": "Edit_Mode_Toggle == true"
+        },
+        "Block_Menu": {
+          "type": "menu",
+          "visible_when": "Edit_Mode_Toggle == true",
+          "menu_actions": [
+            {
+              "action_name": "Configure",
+              "preconditions": [
+                "Authenticated (logged-in) user"
+              ]
             },
-            "More_Menu": {
-              "type": "menu",
-              "actions": [
-                {
-                  "action_name": "Configure"
-                },
-                {
-                  "action_name": "Move"
-                },
-                {
-                  "action_name": "Delete"
-                }
+            {
+              "action_name": "Move",
+              "preconditions": [
+                "Authenticated (logged-in) user"
+              ]
+            },
+            {
+              "action_name": "Delete",
+              "preconditions": [
+                "Authenticated (logged-in) user"
               ]
             }
-          }
-        }
-      }
-    },
-    "Block_Type_Chooser_Page": {
-      "type": "page",
-      "preconditions": [
-        "user must be logged in"
-      ],
-      "fields": {
-        "Block_Types": {
-          "type": "repeating_group",
-          "item_fields": {
-            "Block_Type_Name": {
-              "type": "unspecified"
-            },
-            "Add_Block": {
-              "type": "button",
-              "action_name": "Add"
-            }
-          }
+          ]
         }
       }
     }
@@ -433,28 +412,32 @@ The Dashboard displays a personalized greeting at the top. The main content area
 </description>
 
 <workflows>
-WF-001 | Open Block Type Chooser via + Add a block | actor: <role> | branch: Edit_Mode == true | terminal: + Add a block | on_success: opens Block_Type_Chooser_Page
-WF-002 | Reset page to default (Edit mode) | actor: <role> | branch: Edit_Mode == true | terminal: Reset page to default | on_success: Dashboard layout reset to default
-WF-003 | Add a block from Block Type Chooser | actor: <role> | branch: none | terminal: Add | on_success: selected block added to Dashboard
-WF-004 | Timeline block: click Move icon | actor: <role> | branch: Edit_Mode == true AND Timeline_Block.Edit_Controls.Move_Icon | terminal: Move | on_success: block repositioning initiated
-WF-005 | Timeline block: More menu → Configure | actor: <role> | branch: Edit_Mode == true AND Timeline_Block.Edit_Controls.More_Menu.Configure | terminal: Configure | on_success: opens block configuration
-WF-006 | Timeline block: More menu → Move | actor: <role> | branch: Edit_Mode == true AND Timeline_Block.Edit_Controls.More_Menu.Move | terminal: Move | on_success: block repositioning initiated
-WF-007 | Timeline block: More menu → Delete | actor: <role> | branch: Edit_Mode == true AND Timeline_Block.Edit_Controls.More_Menu.Delete | terminal: Delete | on_success: block removed from Dashboard
-WF-008 | Calendar: create new personal event | actor: <role> | branch: none | terminal: New event | on_success: opens new personal event modal
-WF-009 | Calendar: navigate to previous month | actor: <role> | branch: none | terminal: Previous month | on_success: calendar navigated to previous month view
-WF-010 | Calendar: navigate to next month | actor: <role> | branch: none | terminal: Next month | on_success: calendar navigated to next month view
-WF-011 | Open full calendar view | actor: <role> | branch: none | terminal: Full calendar | on_success: navigate to full calendar view
-WF-012 | Open Import or Export Calendars | actor: <role> | branch: none | terminal: Import or export calendars | on_success: navigate to calendar data management
-WF-013 | Calendar block: click Move icon | actor: <role> | branch: Edit_Mode == true AND Calendar_Block.Edit_Controls.Move_Icon | terminal: Move | on_success: block repositioning initiated
-WF-014 | Calendar block: More menu → Configure | actor: <role> | branch: Edit_Mode == true AND Calendar_Block.Edit_Controls.More_Menu.Configure | terminal: Configure | on_success: opens block configuration
-WF-015 | Calendar block: More menu → Move | actor: <role> | branch: Edit_Mode == true AND Calendar_Block.Edit_Controls.More_Menu.Move | terminal: Move | on_success: block repositioning initiated
-WF-016 | Calendar block: More menu → Delete | actor: <role> | branch: Edit_Mode == true AND Calendar_Block.Edit_Controls.More_Menu.Delete | terminal: Delete | on_success: block removed from Dashboard
+WF-001 | Open full calendar view | actor: Authenticated user | branch: none | terminal: Full calendar | on_success: opens full calendar view
+WF-002 | Open calendar import/export page | actor: Authenticated user | branch: none | terminal: Import or export calendars | on_success: opens calendar import/export page
+WF-003 | Create a new personal event | actor: Authenticated user | branch: none | terminal: New event | on_success: opens event creation interface
+WF-004 | Navigate to previous month in calendar | actor: Authenticated user | branch: none | terminal: Prev_Month | on_success: calendar month view updated to previous month
+WF-005 | Navigate to next month in calendar | actor: Authenticated user | branch: none | terminal: Next_Month | on_success: calendar month view updated to next month
+WF-006 | Change Timeline time range filter | actor: Authenticated user | branch: none | terminal: Time_Range | on_success: Timeline updated to selected time range
+WF-007 | Change Timeline sort order | actor: Authenticated user | branch: none | terminal: Sort_Order | on_success: Timeline resorted according to selected sort order
+WF-008 | Search Timeline items | actor: Authenticated user | branch: none | terminal: Search | on_success: Timeline filtered by search query
+WF-009 | Enable Edit mode | actor: Authenticated user | branch: Edit_Mode_Toggle == true | terminal: Edit_Mode_Toggle | on_success: Edit mode enabled; edit controls become visible
+WF-010 | Disable Edit mode | actor: Authenticated user | branch: Edit_Mode_Toggle == false | terminal: Edit_Mode_Toggle | on_success: Edit mode disabled; edit controls hidden
+WF-011 | Add a block (Add button) while in Edit mode | actor: Authenticated user | branch: Edit_Mode_Toggle == true | terminal: + Add a block | on_success: opens block library page
+WF-012 | Reset dashboard to default (Edit mode) | actor: Authenticated user | branch: Edit_Mode_Toggle == true | terminal: Reset page to default | on_success: Dashboard layout reset to default
+WF-013 | Configure Timeline block (Edit mode menu) | actor: Authenticated user | branch: Edit_Mode_Toggle == true | terminal: Configure | on_success: opens configuration for Timeline block
+WF-014 | Move Timeline block (Edit mode menu) | actor: Authenticated user | branch: Edit_Mode_Toggle == true | terminal: Move | on_success: initiates move of Timeline block via menu
+WF-015 | Delete Timeline block (Edit mode menu) | actor: Authenticated user | branch: Edit_Mode_Toggle == true | terminal: Delete | on_success: removes Timeline block from dashboard
+WF-016 | Configure Calendar block (Edit mode menu) | actor: Authenticated user | branch: Edit_Mode_Toggle == true | terminal: Configure | on_success: opens configuration for Calendar block
+WF-017 | Move Calendar block (Edit mode menu) | actor: Authenticated user | branch: Edit_Mode_Toggle == true | terminal: Move | on_success: initiates move of Calendar block via menu
+WF-018 | Delete Calendar block (Edit mode menu) | actor: Authenticated user | branch: Edit_Mode_Toggle == true | terminal: Delete | on_success: removes Calendar block from dashboard
+WF-019 | Initiate drag move of Timeline block (Move icon) | actor: Authenticated user | branch: Edit_Mode_Toggle == true | terminal: Move_Icon | on_success: initiates drag move of Timeline block
+WF-020 | Initiate drag move of Calendar block (Move icon) | actor: Authenticated user | branch: Edit_Mode_Toggle == true | terminal: Move_Icon | on_success: initiates drag move of Calendar block
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:13:02] Test-Negative - LLM RESPONSE
+[22:42:16] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Dashboard",
@@ -465,109 +448,61 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "wf_ref": null,
       "test_case": "Unauthenticated user cannot access Dashboard page",
       "preconditions": [
-        "user is not logged in"
+        "User is NOT authenticated (not logged in)"
       ],
       "steps": [
-        "1. Navigate to the Dashboard URL"
+        "1. Navigate to the Dashboard page URL"
       ],
-      "expected_result": "User is redirected to the Login page; Dashboard content is not displayed and no Timeline or Calendar blocks are visible",
+      "expected_result": "User is not shown the Dashboard. The application redirects to the login page or shows the login prompt; no Dashboard content (Timeline, Calendar, edit controls) is visible.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-001",
-      "test_case": "Unauthenticated direct access to Block Type Chooser is blocked",
+      "wf_ref": "WF-011",
+      "test_case": "'+ Add a block' action is not available when Edit mode is OFF",
       "preconditions": [
-        "user is not logged in"
+        "Authenticated (logged-in) user",
+        "Dashboard is open",
+        "Edit_Mode_Toggle is OFF"
       ],
       "steps": [
-        "1. Navigate directly to the Block Type Chooser page URL"
+        "1. Ensure the user is logged in and open the Dashboard",
+        "2. Verify Edit mode is OFF (Edit_Mode_Toggle unchecked)",
+        "3. Attempt to find and click the '+ Add a block' button"
       ],
-      "expected_result": "User is redirected to the Login page; Block_Type_Chooser_Page does not open and no block type list is shown",
+      "expected_result": "The '+ Add a block' button is not present/visible on the Dashboard when Edit mode is OFF; the user cannot click it and cannot open the block library from the Dashboard; the Dashboard remains on the same view.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-001",
-      "test_case": "'+ Add a block' button is not available when Edit Mode is off",
+      "wf_ref": "WF-013",
+      "test_case": "Block-level menu actions (Configure) are not available when Edit mode is OFF",
       "preconditions": [
-        "user is logged in",
-        "Edit_Mode == false"
+        "Authenticated (logged-in) user",
+        "Dashboard is open",
+        "Edit_Mode_Toggle is OFF",
+        "Timeline block is present on the Dashboard"
       ],
       "steps": [
-        "1. Open the Dashboard as an authenticated user",
-        "2. Look for the '+ Add a block' button below the Dashboard heading"
+        "1. Ensure the user is logged in and open the Dashboard",
+        "2. Verify Edit mode is OFF (Edit_Mode_Toggle unchecked)",
+        "3. Inspect the Timeline block area for the three-dot Block_Menu or Move_Icon",
+        "4. Attempt to open the block menu or click Configure for the Timeline block"
       ],
-      "expected_result": "The '+ Add a block' button is not visible on the page; attempting to open the Block Type Chooser is not possible from the Dashboard and no navigation occurs",
+      "expected_result": "The block-level three-dot menu and Move icon are not visible on the Timeline block when Edit mode is OFF; the user cannot open a Configure action from the Dashboard and no configuration UI appears.",
       "priority": "medium"
-    },
-    {
-      "tc_id": "N-004",
-      "wf_ref": "WF-002",
-      "test_case": "'Reset page to default' is not available when Edit Mode is off",
-      "preconditions": [
-        "user is logged in",
-        "Edit_Mode == false"
-      ],
-      "steps": [
-        "1. Open the Dashboard as an authenticated user",
-        "2. Inspect the top-right area for the 'Reset page to default' button"
-      ],
-      "expected_result": "The 'Reset page to default' button is not visible; no reset action can be triggered and the Dashboard layout remains unchanged",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-005",
-      "wf_ref": "WF-004",
-      "test_case": "Timeline block edit controls (Move) are not available when Edit Mode is off",
-      "preconditions": [
-        "user is logged in",
-        "Edit_Mode == false"
-      ],
-      "steps": [
-        "1. Open the Dashboard as an authenticated user",
-        "2. Inspect the Timeline block for the Move icon and three-dot More menu"
-      ],
-      "expected_result": "The Timeline block's Move icon and More menu are not visible; block repositioning or configure/delete actions cannot be initiated from the Timeline block",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-006",
-      "wf_ref": "WF-011",
-      "test_case": "Unauthenticated direct access to Full calendar view is blocked",
-      "preconditions": [
-        "user is not logged in"
-      ],
-      "steps": [
-        "1. Navigate directly to the Full calendar view URL"
-      ],
-      "expected_result": "User is redirected to the Login page; Full calendar view is not displayed and navigation to the calendar view is blocked",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": "WF-012",
-      "test_case": "Unauthenticated direct access to Import or export calendars is blocked",
-      "preconditions": [
-        "user is not logged in"
-      ],
-      "steps": [
-        "1. Navigate directly to the Import or export calendars URL"
-      ],
-      "expected_result": "User is redirected to the Login page; the calendar data management page is not displayed and import/export actions are not available",
-      "priority": "high"
     }
   ],
   "summary": {
-    "total": 7,
-    "high_priority": 4,
-    "medium_priority": 3,
+    "total": 3,
+    "high_priority": 2,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:13:02] Test-Negative - PARSED JSON
+[22:42:16] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Dashboard",
@@ -578,103 +513,55 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "wf_ref": null,
       "test_case": "Unauthenticated user cannot access Dashboard page",
       "preconditions": [
-        "user is not logged in"
+        "User is NOT authenticated (not logged in)"
       ],
       "steps": [
-        "1. Navigate to the Dashboard URL"
+        "1. Navigate to the Dashboard page URL"
       ],
-      "expected_result": "User is redirected to the Login page; Dashboard content is not displayed and no Timeline or Calendar blocks are visible",
+      "expected_result": "User is not shown the Dashboard. The application redirects to the login page or shows the login prompt; no Dashboard content (Timeline, Calendar, edit controls) is visible.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-001",
-      "test_case": "Unauthenticated direct access to Block Type Chooser is blocked",
+      "wf_ref": "WF-011",
+      "test_case": "'+ Add a block' action is not available when Edit mode is OFF",
       "preconditions": [
-        "user is not logged in"
+        "Authenticated (logged-in) user",
+        "Dashboard is open",
+        "Edit_Mode_Toggle is OFF"
       ],
       "steps": [
-        "1. Navigate directly to the Block Type Chooser page URL"
+        "1. Ensure the user is logged in and open the Dashboard",
+        "2. Verify Edit mode is OFF (Edit_Mode_Toggle unchecked)",
+        "3. Attempt to find and click the '+ Add a block' button"
       ],
-      "expected_result": "User is redirected to the Login page; Block_Type_Chooser_Page does not open and no block type list is shown",
+      "expected_result": "The '+ Add a block' button is not present/visible on the Dashboard when Edit mode is OFF; the user cannot click it and cannot open the block library from the Dashboard; the Dashboard remains on the same view.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-001",
-      "test_case": "'+ Add a block' button is not available when Edit Mode is off",
+      "wf_ref": "WF-013",
+      "test_case": "Block-level menu actions (Configure) are not available when Edit mode is OFF",
       "preconditions": [
-        "user is logged in",
-        "Edit_Mode == false"
+        "Authenticated (logged-in) user",
+        "Dashboard is open",
+        "Edit_Mode_Toggle is OFF",
+        "Timeline block is present on the Dashboard"
       ],
       "steps": [
-        "1. Open the Dashboard as an authenticated user",
-        "2. Look for the '+ Add a block' button below the Dashboard heading"
+        "1. Ensure the user is logged in and open the Dashboard",
+        "2. Verify Edit mode is OFF (Edit_Mode_Toggle unchecked)",
+        "3. Inspect the Timeline block area for the three-dot Block_Menu or Move_Icon",
+        "4. Attempt to open the block menu or click Configure for the Timeline block"
       ],
-      "expected_result": "The '+ Add a block' button is not visible on the page; attempting to open the Block Type Chooser is not possible from the Dashboard and no navigation occurs",
+      "expected_result": "The block-level three-dot menu and Move icon are not visible on the Timeline block when Edit mode is OFF; the user cannot open a Configure action from the Dashboard and no configuration UI appears.",
       "priority": "medium"
-    },
-    {
-      "tc_id": "N-004",
-      "wf_ref": "WF-002",
-      "test_case": "'Reset page to default' is not available when Edit Mode is off",
-      "preconditions": [
-        "user is logged in",
-        "Edit_Mode == false"
-      ],
-      "steps": [
-        "1. Open the Dashboard as an authenticated user",
-        "2. Inspect the top-right area for the 'Reset page to default' button"
-      ],
-      "expected_result": "The 'Reset page to default' button is not visible; no reset action can be triggered and the Dashboard layout remains unchanged",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-005",
-      "wf_ref": "WF-004",
-      "test_case": "Timeline block edit controls (Move) are not available when Edit Mode is off",
-      "preconditions": [
-        "user is logged in",
-        "Edit_Mode == false"
-      ],
-      "steps": [
-        "1. Open the Dashboard as an authenticated user",
-        "2. Inspect the Timeline block for the Move icon and three-dot More menu"
-      ],
-      "expected_result": "The Timeline block's Move icon and More menu are not visible; block repositioning or configure/delete actions cannot be initiated from the Timeline block",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-006",
-      "wf_ref": "WF-011",
-      "test_case": "Unauthenticated direct access to Full calendar view is blocked",
-      "preconditions": [
-        "user is not logged in"
-      ],
-      "steps": [
-        "1. Navigate directly to the Full calendar view URL"
-      ],
-      "expected_result": "User is redirected to the Login page; Full calendar view is not displayed and navigation to the calendar view is blocked",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": "WF-012",
-      "test_case": "Unauthenticated direct access to Import or export calendars is blocked",
-      "preconditions": [
-        "user is not logged in"
-      ],
-      "steps": [
-        "1. Navigate directly to the Import or export calendars URL"
-      ],
-      "expected_result": "User is redirected to the Login page; the calendar data management page is not displayed and import/export actions are not available",
-      "priority": "high"
     }
   ],
   "summary": {
-    "total": 7,
-    "high_priority": 4,
-    "medium_priority": 3,
+    "total": 3,
+    "high_priority": 2,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }

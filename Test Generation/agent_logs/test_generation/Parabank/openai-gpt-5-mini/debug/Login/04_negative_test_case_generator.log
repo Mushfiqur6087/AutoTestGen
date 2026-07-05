@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:02:39.069804
+DEBUG SESSION STARTED: 2026-07-04T22:22:17.145892
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Negative - SYSTEM PROMPT
+[22:22:17] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Negative - USER PROMPT
+[22:22:17] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 1,
   "module_title": "Login",
-  "summary": "The Login module provides a credential form that validates Email/Username and Password against the registered-user database and handles successful or failed authentication responses.",
-  "where_it_fits": "This module is the initial sign-in entry point shown to visitors before reaching the Accounts Overview dashboard; upon successful authentication it redirects users into the app where the left-hand navigation (Accounts Overview, Open New Account, Transfer Funds, etc.) becomes available. It sits at the start of the user session lifecycle, gating access to all subsequent modules.",
-  "assumed_state_on_entry": "Visitor is not authenticated and is presented with the sign-in page (no active user session)."
+  "summary": "The Login module authenticates users by validating Email/Username and Password credentials and directing successful sign-ins to the Accounts Overview.",
+  "where_it_fits": "This module is the application's entry point for returning users on the initial sign-in page; upon successful authentication it redirects to the Accounts Overview and unlocks the left-hand navigation (Open New Account, Transfer Funds, Payments, Request Loan, etc.).",
+  "assumed_state_on_entry": "User is unauthenticated and accessing the sign-in page with a registered account credential to provide."
 }
 </module_context>
 
@@ -264,10 +274,10 @@ If a `<workflows>` block is present in the input:
       "type": "form",
       "fields": {
         "Email_Username": {
-          "type": "email",
+          "type": "unspecified",
           "required": true,
           "constraints": [
-            "must be a valid email format"
+            "if value is an email address it must be a valid email format"
           ]
         },
         "Password": {
@@ -281,7 +291,7 @@ If a `<workflows>` block is present in the input:
             "must contain at least one special character"
           ]
         },
-        "Forgot_Password_Link": {
+        "Forgot_Password": {
           "type": "link",
           "action_name": "Forgot Password?"
         }
@@ -290,17 +300,11 @@ If a `<workflows>` block is present in the input:
         {
           "action_name": "Sign In",
           "preconditions": [
-            "Visitor is not authenticated and is presented with the sign-in page (no active user session)."
+            "User is unauthenticated and accessing the sign-in page with a registered account credential to provide."
           ],
-          "server_validation": "validate credentials securely against the registered-user database",
-          "on_success": "flash 'Signed in successfully.' and redirect to Accounts Overview page",
-          "on_failure": {
-            "message": "Incorrect email or password. Please try again.",
-            "clear_fields": [
-              "Password"
-            ],
-            "allow_retry": true
-          }
+          "on_submit": "securely validate credentials against registered-user database",
+          "on_success": "flash 'Signed in successfully.' and redirect to Accounts Overview and unlock left-hand navigation",
+          "on_failure": "show 'Incorrect email or password. Please try again.'; clear Password field and allow retry"
         }
       ]
     }
@@ -315,13 +319,14 @@ The login page contains a login form with two required input fields—Email/User
 </description>
 
 <workflows>
-WF-001 | Sign in with valid credentials | actor: Visitor | branch: none | terminal: Sign In | on_success: flash 'Signed in successfully.' and redirect to Accounts Overview page
+WF-001 | Sign in with valid credentials | actor: User | branch: none | terminal: Sign In | on_success: flash 'Signed in successfully.' and redirect to Accounts Overview and unlock left-hand navigation
+WF-002 | Navigate to Forgot Password (request password reset) | actor: User | branch: none | terminal: Forgot Password? | on_success: redirect to Forgot Password / Password Reset page
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:03:23] Test-Negative - LLM RESPONSE
+[22:22:58] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Login",
@@ -330,105 +335,106 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Email/Username required - leave blank and submit",
+      "test_case": "Leave Email/Username blank and attempt Sign In",
       "preconditions": [
-        "Visitor is not authenticated and is presented with the sign-in page (no active user session)."
+        "User is unauthenticated and on the Sign In page"
       ],
       "steps": [
         "1. Leave the Email/Username field blank",
-        "2. Enter <valid password meeting policy> in the Password field",
-        "3. Click the 'Sign In' button"
+        "2. Enter <valid password> in the Password field",
+        "3. Click the Sign In button"
       ],
-      "expected_result": "Inline validation error appears on the Email/Username field indicating it is required; the form does not submit and the user remains on the sign-in page",
+      "expected_result": "Inline validation error appears on the Email/Username field indicating it is required; the form does not submit and the user is not signed in",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": null,
-      "test_case": "Password required - leave blank and submit",
+      "test_case": "Leave Password blank and attempt Sign In",
       "preconditions": [
-        "Visitor is not authenticated and is presented with the sign-in page (no active user session)."
+        "User is unauthenticated and on the Sign In page"
       ],
       "steps": [
-        "1. Enter <registered email> in the Email/Username field",
+        "1. Enter <valid email or username> in the Email/Username field",
         "2. Leave the Password field blank",
-        "3. Click the 'Sign In' button"
+        "3. Click the Sign In button"
       ],
-      "expected_result": "Inline validation error appears on the Password field indicating it is required; the form does not submit and the user remains on the sign-in page",
+      "expected_result": "Inline validation error appears on the Password field indicating it is required; the form does not submit and the user is not signed in",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": null,
-      "test_case": "All required fields empty - submit with both fields blank",
+      "test_case": "Submit with all required fields empty",
       "preconditions": [
-        "Visitor is not authenticated and is presented with the sign-in page (no active user session)."
+        "User is unauthenticated and on the Sign In page"
       ],
       "steps": [
         "1. Leave the Email/Username field blank",
         "2. Leave the Password field blank",
-        "3. Click the 'Sign In' button"
+        "3. Click the Sign In button"
       ],
-      "expected_result": "Inline validation errors appear on both Email/Username and Password fields indicating they are required; the form does not submit and the user remains on the sign-in page",
+      "expected_result": "Inline validation errors appear on both Email/Username and Password fields indicating they are required; the form does not submit and the user is not signed in",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": null,
-      "test_case": "Email format validation - invalid email format",
+      "test_case": "Enter an invalid email format in Email/Username when providing an email",
       "preconditions": [
-        "Visitor is not authenticated and is presented with the sign-in page (no active user session)."
+        "User is unauthenticated and on the Sign In page"
       ],
       "steps": [
         "1. Enter <invalid email format> in the Email/Username field",
-        "2. Enter <valid password meeting policy> in the Password field",
-        "3. Click the 'Sign In' button"
+        "2. Enter <valid password> in the Password field",
+        "3. Click the Sign In button"
       ],
-      "expected_result": "Email/Username field displays an inline validation error: 'Must be a valid email format'; the form does not submit and the user remains on the sign-in page",
+      "expected_result": "Email/Username field displays an inline validation error indicating it must be a valid email address; the form does not submit and the user is not signed in",
       "priority": "medium"
     },
     {
       "tc_id": "N-005",
       "wf_ref": null,
-      "test_case": "Password policy violation - representative (too short / missing required character classes)",
+      "test_case": "Password fails policy (too short) and Sign In is attempted",
       "preconditions": [
-        "Visitor is not authenticated and is presented with the sign-in page (no active user session)."
+        "User is unauthenticated and on the Sign In page"
       ],
       "steps": [
-        "1. Enter <registered email> in the Email/Username field",
-        "2. Enter <password shorter than minimum length or missing required character classes> in the Password field",
-        "3. Click the 'Sign In' button"
+        "1. Enter <valid email or username> in the Email/Username field",
+        "2. Enter <password shorter than minimum length> in the Password field",
+        "3. Click the Sign In button"
       ],
-      "expected_result": "Password field displays an inline validation error indicating the policy is not met, for example: 'Password must be at least 8 characters and include uppercase, lowercase, number, and special character'; the form does not submit and the user remains on the sign-in page",
+      "expected_result": "Password field displays an inline validation error indicating it does not meet the password policy (minimum length 8 and required character types); the form does not submit and the user is not signed in",
       "priority": "medium"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Server-side authentication failure - incorrect credentials",
+      "test_case": "Submit with incorrect credentials (authentication failure)",
       "preconditions": [
-        "Visitor is not authenticated and is presented with the sign-in page (no active user session).",
-        "<registered email> exists in the registered-user database"
+        "User is unauthenticated and on the Sign In page"
       ],
       "steps": [
-        "1. Enter <registered email> in the Email/Username field",
+        "1. Enter <registered email or username> in the Email/Username field",
         "2. Enter <incorrect password> in the Password field",
-        "3. Click the 'Sign In' button"
+        "3. Click the Sign In button"
       ],
-      "expected_result": "Server rejects credentials; page displays exact error message: 'Incorrect email or password. Please try again.'; the Password field is cleared; no redirect occurs and the user remains on the sign-in page (no session is created)",
+      "expected_result": "The page displays 'Incorrect email or password. Please try again.'; the Password field is cleared; the user remains unauthenticated and is not redirected",
       "priority": "high"
     },
     {
       "tc_id": "N-007",
       "wf_ref": null,
-      "test_case": "Precondition violation - authenticated user attempts to access Sign In page",
+      "test_case": "Attempt to access Sign In while already authenticated (precondition not met)",
       "preconditions": [
-        "User is already authenticated with an active session and has been redirected to Accounts Overview"
+        "User is already authenticated and on the Accounts Overview page"
       ],
       "steps": [
-        "1. Navigate to the Sign In page URL (or click a link that would open the sign-in page)"
+        "1. Sign in as <registered account> and arrive at Accounts Overview",
+        "2. Navigate to the Sign In page (e.g., enter the sign-in URL or click Sign In link)",
+        "3. Observe the resulting page"
       ],
-      "expected_result": "Access to the Sign In page is blocked due to precondition; the user is redirected to the Accounts Overview and the Sign In form is not displayed",
+      "expected_result": "Sign In form is not displayed; the user remains on Accounts Overview (or is redirected to Accounts Overview) and no Sign In action is presented, indicating the Sign In precondition is enforced",
       "priority": "high"
     }
   ],
@@ -441,7 +447,7 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
 }
 
 ------------------------------------------------------------
-[21:03:23] Test-Negative - PARSED JSON
+[22:22:58] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Login",
@@ -450,105 +456,106 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Email/Username required - leave blank and submit",
+      "test_case": "Leave Email/Username blank and attempt Sign In",
       "preconditions": [
-        "Visitor is not authenticated and is presented with the sign-in page (no active user session)."
+        "User is unauthenticated and on the Sign In page"
       ],
       "steps": [
         "1. Leave the Email/Username field blank",
-        "2. Enter <valid password meeting policy> in the Password field",
-        "3. Click the 'Sign In' button"
+        "2. Enter <valid password> in the Password field",
+        "3. Click the Sign In button"
       ],
-      "expected_result": "Inline validation error appears on the Email/Username field indicating it is required; the form does not submit and the user remains on the sign-in page",
+      "expected_result": "Inline validation error appears on the Email/Username field indicating it is required; the form does not submit and the user is not signed in",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": null,
-      "test_case": "Password required - leave blank and submit",
+      "test_case": "Leave Password blank and attempt Sign In",
       "preconditions": [
-        "Visitor is not authenticated and is presented with the sign-in page (no active user session)."
+        "User is unauthenticated and on the Sign In page"
       ],
       "steps": [
-        "1. Enter <registered email> in the Email/Username field",
+        "1. Enter <valid email or username> in the Email/Username field",
         "2. Leave the Password field blank",
-        "3. Click the 'Sign In' button"
+        "3. Click the Sign In button"
       ],
-      "expected_result": "Inline validation error appears on the Password field indicating it is required; the form does not submit and the user remains on the sign-in page",
+      "expected_result": "Inline validation error appears on the Password field indicating it is required; the form does not submit and the user is not signed in",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": null,
-      "test_case": "All required fields empty - submit with both fields blank",
+      "test_case": "Submit with all required fields empty",
       "preconditions": [
-        "Visitor is not authenticated and is presented with the sign-in page (no active user session)."
+        "User is unauthenticated and on the Sign In page"
       ],
       "steps": [
         "1. Leave the Email/Username field blank",
         "2. Leave the Password field blank",
-        "3. Click the 'Sign In' button"
+        "3. Click the Sign In button"
       ],
-      "expected_result": "Inline validation errors appear on both Email/Username and Password fields indicating they are required; the form does not submit and the user remains on the sign-in page",
+      "expected_result": "Inline validation errors appear on both Email/Username and Password fields indicating they are required; the form does not submit and the user is not signed in",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": null,
-      "test_case": "Email format validation - invalid email format",
+      "test_case": "Enter an invalid email format in Email/Username when providing an email",
       "preconditions": [
-        "Visitor is not authenticated and is presented with the sign-in page (no active user session)."
+        "User is unauthenticated and on the Sign In page"
       ],
       "steps": [
         "1. Enter <invalid email format> in the Email/Username field",
-        "2. Enter <valid password meeting policy> in the Password field",
-        "3. Click the 'Sign In' button"
+        "2. Enter <valid password> in the Password field",
+        "3. Click the Sign In button"
       ],
-      "expected_result": "Email/Username field displays an inline validation error: 'Must be a valid email format'; the form does not submit and the user remains on the sign-in page",
+      "expected_result": "Email/Username field displays an inline validation error indicating it must be a valid email address; the form does not submit and the user is not signed in",
       "priority": "medium"
     },
     {
       "tc_id": "N-005",
       "wf_ref": null,
-      "test_case": "Password policy violation - representative (too short / missing required character classes)",
+      "test_case": "Password fails policy (too short) and Sign In is attempted",
       "preconditions": [
-        "Visitor is not authenticated and is presented with the sign-in page (no active user session)."
+        "User is unauthenticated and on the Sign In page"
       ],
       "steps": [
-        "1. Enter <registered email> in the Email/Username field",
-        "2. Enter <password shorter than minimum length or missing required character classes> in the Password field",
-        "3. Click the 'Sign In' button"
+        "1. Enter <valid email or username> in the Email/Username field",
+        "2. Enter <password shorter than minimum length> in the Password field",
+        "3. Click the Sign In button"
       ],
-      "expected_result": "Password field displays an inline validation error indicating the policy is not met, for example: 'Password must be at least 8 characters and include uppercase, lowercase, number, and special character'; the form does not submit and the user remains on the sign-in page",
+      "expected_result": "Password field displays an inline validation error indicating it does not meet the password policy (minimum length 8 and required character types); the form does not submit and the user is not signed in",
       "priority": "medium"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Server-side authentication failure - incorrect credentials",
+      "test_case": "Submit with incorrect credentials (authentication failure)",
       "preconditions": [
-        "Visitor is not authenticated and is presented with the sign-in page (no active user session).",
-        "<registered email> exists in the registered-user database"
+        "User is unauthenticated and on the Sign In page"
       ],
       "steps": [
-        "1. Enter <registered email> in the Email/Username field",
+        "1. Enter <registered email or username> in the Email/Username field",
         "2. Enter <incorrect password> in the Password field",
-        "3. Click the 'Sign In' button"
+        "3. Click the Sign In button"
       ],
-      "expected_result": "Server rejects credentials; page displays exact error message: 'Incorrect email or password. Please try again.'; the Password field is cleared; no redirect occurs and the user remains on the sign-in page (no session is created)",
+      "expected_result": "The page displays 'Incorrect email or password. Please try again.'; the Password field is cleared; the user remains unauthenticated and is not redirected",
       "priority": "high"
     },
     {
       "tc_id": "N-007",
       "wf_ref": null,
-      "test_case": "Precondition violation - authenticated user attempts to access Sign In page",
+      "test_case": "Attempt to access Sign In while already authenticated (precondition not met)",
       "preconditions": [
-        "User is already authenticated with an active session and has been redirected to Accounts Overview"
+        "User is already authenticated and on the Accounts Overview page"
       ],
       "steps": [
-        "1. Navigate to the Sign In page URL (or click a link that would open the sign-in page)"
+        "1. Sign in as <registered account> and arrive at Accounts Overview",
+        "2. Navigate to the Sign In page (e.g., enter the sign-in URL or click Sign In link)",
+        "3. Observe the resulting page"
       ],
-      "expected_result": "Access to the Sign In page is blocked due to precondition; the user is redirected to the Accounts Overview and the Sign In form is not displayed",
+      "expected_result": "Sign In form is not displayed; the user remains on Accounts Overview (or is redirected to Accounts Overview) and no Sign In action is presented, indicating the Sign In precondition is enforced",
       "priority": "high"
     }
   ],

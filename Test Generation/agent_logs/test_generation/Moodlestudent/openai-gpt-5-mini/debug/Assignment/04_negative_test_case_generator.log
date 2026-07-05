@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:34.398064
+DEBUG SESSION STARTED: 2026-07-04T22:41:48.086846
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Negative - SYSTEM PROMPT
+[22:41:48] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Negative - USER PROMPT
+[22:41:48] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 7,
   "module_title": "Assignment",
-  "summary": "Displays an individual course assignment's open/due dates, full description, submission form options, submission and grading status, and any teacher feedback.",
-  "where_it_fits": "This is an activity-level page within a course, reached from the Course Page (via the Course tab or the Course Index sidebar) or via breadcrumbs when viewing an activity. It surfaces assignment-specific submission and grading information and ties into the course's Activities and Grades areas.",
-  "assumed_state_on_entry": "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them."
+  "summary": "Displays an individual assignment\u2019s details, submission interface, and submission/grading status including dates, description, student submissions, and teacher feedback.",
+  "where_it_fits": "Accessible from a Course Page via the Activities tab or the Course Index sidebar when viewing a course; it is the activity-level view where students submit work and later review grades and feedback as part of the course workflow.",
+  "assumed_state_on_entry": "Logged in as a course participant (student) enrolled in the course, viewing the specific course with the assignment published and visible in the course\u2019s activity list."
 }
 </module_context>
 
@@ -260,37 +270,42 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Assignment",
   "components": {
-    "Submission_Form": {
+    "Assignment_Submission_Form": {
       "type": "form",
       "fields": {
-        "Online_Text_Editor": {
+        "Online_Text": {
           "type": "unspecified",
-          "visible_when": "assignment allows online text editor"
+          "visible_when": "assignment configuration allows an online text editor"
         },
         "File_Upload": {
           "type": "file_upload",
-          "visible_when": "assignment allows file upload"
+          "visible_when": "assignment configuration allows file uploads"
         }
       },
       "submit_actions": [
         {
           "action_name": "Submit",
-          "on_success": "creates submission and updates submission status to 'Submitted for grading'",
+          "on_success": "creates or updates the student's submission and updates submission status",
           "preconditions": [
-            "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them."
+            "Logged in as a course participant (student) enrolled in the course, viewing the specific course with the assignment published and visible in the course\u2019s activity list."
           ]
         }
       ]
     },
-    "Submission_State_Actions": {
+    "Assignment_Action_Bar": {
       "type": "state_bound_action_bar",
+      "preconditions": [
+        "Logged in as a course participant (student) enrolled in the course, viewing the specific course with the assignment published and visible in the course\u2019s activity list."
+      ],
       "states": {
         "No submissions have been made yet": {
           "available_actions": [
             {
               "action_name": "Add submission",
-              "on_success": "opens submission form",
-              "opens_component": "Submission_Form"
+              "opens_form": "Assignment_Submission_Form",
+              "preconditions": [
+                "Logged in as a course participant (student) enrolled in the course, viewing the specific course with the assignment published and visible in the course\u2019s activity list."
+              ]
             }
           ]
         },
@@ -298,20 +313,15 @@ If a `<workflows>` block is present in the input:
           "available_actions": [
             {
               "action_name": "View submission",
-              "preconditions": [
-                "due date has not passed",
-                "teacher permits resubmission"
-              ],
-              "on_success": "shows submitted content"
+              "visible_when": "submission exists"
             },
             {
               "action_name": "Edit submission",
+              "opens_form": "Assignment_Submission_Form",
+              "visible_when": "submission exists and due date has not passed and teacher permits resubmission",
               "preconditions": [
-                "due date has not passed",
-                "teacher permits resubmission"
-              ],
-              "on_success": "opens submission form for editing",
-              "opens_component": "Submission_Form"
+                "Logged in as a course participant (student) enrolled in the course, viewing the specific course with the assignment published and visible in the course\u2019s activity list."
+              ]
             }
           ]
         },
@@ -319,7 +329,7 @@ If a `<workflows>` block is present in the input:
           "available_actions": [
             {
               "action_name": "View submission",
-              "on_success": "shows submitted content and grading feedback"
+              "visible_when": "submission exists"
             }
           ]
         }
@@ -339,19 +349,19 @@ The Assignment page displays the assignment's Opened date, Due date, and full De
 </description>
 
 <workflows>
-WF-001 | Open submission form from 'No submissions have been made yet' state | actor: <role> | branch: entity_state == No submissions have been made yet | terminal: Add submission | on_success: opens submission form
-WF-002 | View submission while 'Submitted for grading' and resubmission allowed (due date not passed) | actor: <role> | branch: entity_state == Submitted for grading AND due date has not passed AND teacher permits resubmission | terminal: View submission | on_success: shows submitted content
-WF-003 | Edit submission while 'Submitted for grading' and resubmission allowed (due date not passed) | actor: <role> | branch: entity_state == Submitted for grading AND due date has not passed AND teacher permits resubmission | terminal: Edit submission | on_success: opens submission form for editing
-WF-004 | View submission after assignment is Graded | actor: <role> | branch: entity_state == Graded | terminal: View submission | on_success: shows submitted content and grading feedback
-WF-005 | Submit using Online Text Editor only | actor: <role> | branch: assignment allows online text editor AND assignment does not allow file upload | terminal: Submit | on_success: creates submission and updates submission status to 'Submitted for grading'
-WF-006 | Submit using File Upload only | actor: <role> | branch: assignment allows file upload AND assignment does not allow online text editor | terminal: Submit | on_success: creates submission and updates submission status to 'Submitted for grading'
-WF-007 | Submit using both Online Text Editor and File Upload | actor: <role> | branch: assignment allows online text editor AND assignment allows file upload | terminal: Submit | on_success: creates submission and updates submission status to 'Submitted for grading'
+WF-001 | Open Add submission (no submissions yet) | actor: student | branch: entity_state == No submissions have been made yet | terminal: Add submission | on_success: opens Assignment_Submission_Form
+WF-002 | Submit (base - no specific submission-type revealed) | actor: student | branch: none | terminal: Submit | on_success: creates or updates the student's submission and updates submission status
+WF-003 | Submit with online text editor visible | actor: student | branch: Online_Text is visible | terminal: Submit | on_success: creates or updates the student's submission and updates submission status
+WF-004 | Submit with file upload area visible | actor: student | branch: File_Upload is visible | terminal: Submit | on_success: creates or updates the student's submission and updates submission status
+WF-005 | View submission (submitted for grading) | actor: student | branch: entity_state == Submitted for grading AND submission exists | terminal: View submission | on_success: submission details displayed
+WF-006 | Edit submission (submitted for grading, resubmission allowed) | actor: student | branch: entity_state == Submitted for grading AND submission exists AND due date has not passed AND teacher permits resubmission | terminal: Edit submission | on_success: opens Assignment_Submission_Form for editing
+WF-007 | View submission (graded) | actor: student | branch: entity_state == Graded AND submission exists | terminal: View submission | on_success: submission and grade/feedback displayed
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:14:18] Test-Negative - LLM RESPONSE
+[22:43:31] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Assignment",
@@ -359,162 +369,79 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": null,
-      "test_case": "Unauthenticated user cannot open the submission form",
-      "preconditions": [
-        "User is not logged in",
-        "Assignment exists and is visible to enrolled users"
-      ],
+      "wf_ref": "WF-001",
+      "test_case": "Unauthenticated user cannot open Add submission / cannot access submission form",
+      "preconditions": ["User is not logged in (unauthenticated)"],
       "steps": [
-        "1. As an unauthenticated user, navigate to the Assignment page for <assignment>",
-        "2. Attempt to click the 'Add submission' button"
+        "1. As an unauthenticated user, navigate to the Assignment page URL for a published assignment in a course",
+        "2. Observe the action bar area / attempt to open Add submission"
       ],
-      "expected_result": "Action is blocked: the user is redirected to the login page / shown a login prompt; the submission form is not opened and no submission is created.",
+      "expected_result": "Access is blocked: the user is redirected to the login page (Assignment page and Add submission are not accessible while unauthenticated); the Assignment_Submission_Form is not opened",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-001",
-      "test_case": "User not enrolled cannot open submission form (Add submission not available)",
-      "preconditions": [
-        "User is logged in but NOT enrolled in the course",
-        "Assignment is in state 'No submissions have been made yet'"
-      ],
+      "wf_ref": "WF-002",
+      "test_case": "Logged-in user who is not enrolled cannot submit (Add submission not available)",
+      "preconditions": ["User is logged in but is NOT enrolled in the course"],
       "steps": [
         "1. Log in as a user who is not enrolled in the course",
-        "2. Navigate to the Assignment page for <assignment>"
+        "2. Navigate to the Assignment page for that course's assignment",
+        "3. Look for or attempt to click the Add submission button / open the submission form"
       ],
-      "expected_result": "Add submission button is not visible / not actionable; attempting to open the submission form is blocked and no submission form opens.",
+      "expected_result": "Add submission button is not present in the action bar and the Assignment_Submission_Form cannot be opened for this user; no submission can be created",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": null,
-      "test_case": "Cannot View submission when no submissions have been made (View action unavailable)",
-      "preconditions": [
-        "Assignment state is 'No submissions have been made yet'",
-        "User is logged in and enrolled in the course"
-      ],
+      "test_case": "When state is 'No submissions have been made yet', 'View submission' and 'Edit submission' actions are not available",
+      "preconditions": ["Logged in as a course participant (student) enrolled in the course", "Assignment shows status 'No submissions have been made yet'"],
       "steps": [
-        "1. Log in as an enrolled user",
-        "2. Navigate to the Assignment page for <assignment> that has state 'No submissions have been made yet'",
-        "3. Attempt to click a 'View submission' action/button if present"
+        "1. Log in as an enrolled student",
+        "2. Open the Assignment page that shows status 'No submissions have been made yet'",
+        "3. Inspect the action bar for View submission or Edit submission controls"
       ],
-      "expected_result": "View submission action is not present / not actionable; submitted content is not shown and the page continues to display 'No submissions have been made yet'.",
+      "expected_result": "View submission and Edit submission buttons are not visible in the action bar; submission status remains 'No submissions have been made yet' and no submission details are accessible",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": null,
-      "test_case": "Add submission is not available from 'Submitted for grading' state",
-      "preconditions": [
-        "Assignment state is 'Submitted for grading'",
-        "User is logged in and enrolled in the course"
-      ],
+      "wf_ref": "WF-006",
+      "test_case": "Edit submission is blocked when due date has passed or teacher disallows resubmission",
+      "preconditions": ["Logged in as a course participant (student) enrolled in the course", "Assignment state is 'Submitted for grading' and a submission exists", "Either the assignment due date has passed OR the teacher has disabled resubmissions"],
       "steps": [
-        "1. Log in as an enrolled user",
-        "2. Navigate to the Assignment page for <assignment> in state 'Submitted for grading'",
-        "3. Attempt to click the 'Add submission' button"
+        "1. Log in as an enrolled student who has an existing submission",
+        "2. Open the Assignment page for the submission when the due date has passed or resubmissions are not permitted",
+        "3. Inspect the action bar for an Edit submission button / attempt to open the submission form for editing"
       ],
-      "expected_result": "Add submission button is not visible / not actionable; the submission form does not open and submission status remains 'Submitted for grading'.",
+      "expected_result": "Edit submission button is not visible; the submission cannot be edited (the UI does not open the Assignment_Submission_Form for editing) and the submission status remains 'Submitted for grading'",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": null,
-      "test_case": "Edit submission not available after assignment is Graded",
-      "preconditions": [
-        "Assignment state is 'Graded'",
-        "User is logged in and enrolled in the course"
-      ],
+      "wf_ref": "WF-007",
+      "test_case": "No add/edit action available after assignment is graded (submission is read-only)",
+      "preconditions": ["Logged in as a course participant (student) enrolled in the course", "Assignment state is 'Graded' and a graded submission exists"],
       "steps": [
-        "1. Log in as an enrolled user",
-        "2. Navigate to the Assignment page for <assignment> in state 'Graded'",
-        "3. Attempt to click an 'Edit submission' action/button"
+        "1. Log in as an enrolled student with a graded submission",
+        "2. Open the Assignment page showing the Graded status",
+        "3. Inspect the action bar for Add submission, Edit submission, or other modification actions"
       ],
-      "expected_result": "Edit submission action is not present / is disabled; submission form does not open and the graded submission and feedback remain unchanged.",
+      "expected_result": "No Add submission or Edit submission actions are visible; submission is read-only on the page and grade/feedback are displayed; no changes to the submission can be made",
       "priority": "high"
-    },
-    {
-      "tc_id": "N-006",
-      "wf_ref": "WF-002",
-      "test_case": "Cannot View submission when due date has passed (precondition fail)",
-      "preconditions": [
-        "Assignment state is 'Submitted for grading'",
-        "Due date has passed",
-        "User is logged in and enrolled in the course"
-      ],
-      "steps": [
-        "1. Log in as an enrolled user",
-        "2. Navigate to the Assignment page for <assignment> in state 'Submitted for grading' where the due date has passed",
-        "3. Attempt to click the 'View submission' button"
-      ],
-      "expected_result": "View submission action is not visible or is disabled; submission content is not shown and the submission status remains 'Submitted for grading'.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": "WF-003",
-      "test_case": "Cannot Edit submission when teacher does not permit resubmission (precondition fail)",
-      "preconditions": [
-        "Assignment state is 'Submitted for grading'",
-        "Due date has not passed",
-        "Teacher setting: resubmission NOT permitted",
-        "User is logged in and enrolled in the course"
-      ],
-      "steps": [
-        "1. Log in as an enrolled user",
-        "2. Navigate to the Assignment page for <assignment> in state 'Submitted for grading' where resubmission is not permitted and due date has not passed",
-        "3. Attempt to click the 'Edit submission' button"
-      ],
-      "expected_result": "Edit submission action is not visible or is disabled; the submission form does not open and the existing submission is unchanged.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-008",
-      "wf_ref": null,
-      "test_case": "File upload area is not present when assignment disallows file uploads",
-      "preconditions": [
-        "Assignment configuration: does NOT allow file upload",
-        "User is logged in and enrolled in the course",
-        "Submission form is opened (e.g., via 'Add submission')"
-      ],
-      "steps": [
-        "1. Log in as an enrolled user",
-        "2. Navigate to the Assignment page for <assignment> configured to disallow file upload",
-        "3. Open the submission form by clicking 'Add submission'"
-      ],
-      "expected_result": "File Upload area/control is not present in the submission form; there is no control to attach files and submitting via file upload is not possible.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-009",
-      "wf_ref": null,
-      "test_case": "Online text editor is not present when assignment disallows online text submissions",
-      "preconditions": [
-        "Assignment configuration: does NOT allow online text editor",
-        "User is logged in and enrolled in the course",
-        "Submission form is opened (e.g., via 'Add submission')"
-      ],
-      "steps": [
-        "1. Log in as an enrolled user",
-        "2. Navigate to the Assignment page for <assignment> configured to disallow online text editor",
-        "3. Open the submission form by clicking 'Add submission'"
-      ],
-      "expected_result": "Online text editor field is not present in the submission form; there is no text-entry area and submitting via online text is not possible.",
-      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 9,
-    "high_priority": 7,
-    "medium_priority": 2,
+    "total": 5,
+    "high_priority": 5,
+    "medium_priority": 0,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:14:18] Test-Negative - PARSED JSON
+[22:43:31] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Assignment",
@@ -522,156 +449,87 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": null,
-      "test_case": "Unauthenticated user cannot open the submission form",
+      "wf_ref": "WF-001",
+      "test_case": "Unauthenticated user cannot open Add submission / cannot access submission form",
       "preconditions": [
-        "User is not logged in",
-        "Assignment exists and is visible to enrolled users"
+        "User is not logged in (unauthenticated)"
       ],
       "steps": [
-        "1. As an unauthenticated user, navigate to the Assignment page for <assignment>",
-        "2. Attempt to click the 'Add submission' button"
+        "1. As an unauthenticated user, navigate to the Assignment page URL for a published assignment in a course",
+        "2. Observe the action bar area / attempt to open Add submission"
       ],
-      "expected_result": "Action is blocked: the user is redirected to the login page / shown a login prompt; the submission form is not opened and no submission is created.",
+      "expected_result": "Access is blocked: the user is redirected to the login page (Assignment page and Add submission are not accessible while unauthenticated); the Assignment_Submission_Form is not opened",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-001",
-      "test_case": "User not enrolled cannot open submission form (Add submission not available)",
+      "wf_ref": "WF-002",
+      "test_case": "Logged-in user who is not enrolled cannot submit (Add submission not available)",
       "preconditions": [
-        "User is logged in but NOT enrolled in the course",
-        "Assignment is in state 'No submissions have been made yet'"
+        "User is logged in but is NOT enrolled in the course"
       ],
       "steps": [
         "1. Log in as a user who is not enrolled in the course",
-        "2. Navigate to the Assignment page for <assignment>"
+        "2. Navigate to the Assignment page for that course's assignment",
+        "3. Look for or attempt to click the Add submission button / open the submission form"
       ],
-      "expected_result": "Add submission button is not visible / not actionable; attempting to open the submission form is blocked and no submission form opens.",
+      "expected_result": "Add submission button is not present in the action bar and the Assignment_Submission_Form cannot be opened for this user; no submission can be created",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": null,
-      "test_case": "Cannot View submission when no submissions have been made (View action unavailable)",
+      "test_case": "When state is 'No submissions have been made yet', 'View submission' and 'Edit submission' actions are not available",
       "preconditions": [
-        "Assignment state is 'No submissions have been made yet'",
-        "User is logged in and enrolled in the course"
+        "Logged in as a course participant (student) enrolled in the course",
+        "Assignment shows status 'No submissions have been made yet'"
       ],
       "steps": [
-        "1. Log in as an enrolled user",
-        "2. Navigate to the Assignment page for <assignment> that has state 'No submissions have been made yet'",
-        "3. Attempt to click a 'View submission' action/button if present"
+        "1. Log in as an enrolled student",
+        "2. Open the Assignment page that shows status 'No submissions have been made yet'",
+        "3. Inspect the action bar for View submission or Edit submission controls"
       ],
-      "expected_result": "View submission action is not present / not actionable; submitted content is not shown and the page continues to display 'No submissions have been made yet'.",
+      "expected_result": "View submission and Edit submission buttons are not visible in the action bar; submission status remains 'No submissions have been made yet' and no submission details are accessible",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": null,
-      "test_case": "Add submission is not available from 'Submitted for grading' state",
+      "wf_ref": "WF-006",
+      "test_case": "Edit submission is blocked when due date has passed or teacher disallows resubmission",
       "preconditions": [
-        "Assignment state is 'Submitted for grading'",
-        "User is logged in and enrolled in the course"
+        "Logged in as a course participant (student) enrolled in the course",
+        "Assignment state is 'Submitted for grading' and a submission exists",
+        "Either the assignment due date has passed OR the teacher has disabled resubmissions"
       ],
       "steps": [
-        "1. Log in as an enrolled user",
-        "2. Navigate to the Assignment page for <assignment> in state 'Submitted for grading'",
-        "3. Attempt to click the 'Add submission' button"
+        "1. Log in as an enrolled student who has an existing submission",
+        "2. Open the Assignment page for the submission when the due date has passed or resubmissions are not permitted",
+        "3. Inspect the action bar for an Edit submission button / attempt to open the submission form for editing"
       ],
-      "expected_result": "Add submission button is not visible / not actionable; the submission form does not open and submission status remains 'Submitted for grading'.",
+      "expected_result": "Edit submission button is not visible; the submission cannot be edited (the UI does not open the Assignment_Submission_Form for editing) and the submission status remains 'Submitted for grading'",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": null,
-      "test_case": "Edit submission not available after assignment is Graded",
+      "wf_ref": "WF-007",
+      "test_case": "No add/edit action available after assignment is graded (submission is read-only)",
       "preconditions": [
-        "Assignment state is 'Graded'",
-        "User is logged in and enrolled in the course"
+        "Logged in as a course participant (student) enrolled in the course",
+        "Assignment state is 'Graded' and a graded submission exists"
       ],
       "steps": [
-        "1. Log in as an enrolled user",
-        "2. Navigate to the Assignment page for <assignment> in state 'Graded'",
-        "3. Attempt to click an 'Edit submission' action/button"
+        "1. Log in as an enrolled student with a graded submission",
+        "2. Open the Assignment page showing the Graded status",
+        "3. Inspect the action bar for Add submission, Edit submission, or other modification actions"
       ],
-      "expected_result": "Edit submission action is not present / is disabled; submission form does not open and the graded submission and feedback remain unchanged.",
+      "expected_result": "No Add submission or Edit submission actions are visible; submission is read-only on the page and grade/feedback are displayed; no changes to the submission can be made",
       "priority": "high"
-    },
-    {
-      "tc_id": "N-006",
-      "wf_ref": "WF-002",
-      "test_case": "Cannot View submission when due date has passed (precondition fail)",
-      "preconditions": [
-        "Assignment state is 'Submitted for grading'",
-        "Due date has passed",
-        "User is logged in and enrolled in the course"
-      ],
-      "steps": [
-        "1. Log in as an enrolled user",
-        "2. Navigate to the Assignment page for <assignment> in state 'Submitted for grading' where the due date has passed",
-        "3. Attempt to click the 'View submission' button"
-      ],
-      "expected_result": "View submission action is not visible or is disabled; submission content is not shown and the submission status remains 'Submitted for grading'.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": "WF-003",
-      "test_case": "Cannot Edit submission when teacher does not permit resubmission (precondition fail)",
-      "preconditions": [
-        "Assignment state is 'Submitted for grading'",
-        "Due date has not passed",
-        "Teacher setting: resubmission NOT permitted",
-        "User is logged in and enrolled in the course"
-      ],
-      "steps": [
-        "1. Log in as an enrolled user",
-        "2. Navigate to the Assignment page for <assignment> in state 'Submitted for grading' where resubmission is not permitted and due date has not passed",
-        "3. Attempt to click the 'Edit submission' button"
-      ],
-      "expected_result": "Edit submission action is not visible or is disabled; the submission form does not open and the existing submission is unchanged.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-008",
-      "wf_ref": null,
-      "test_case": "File upload area is not present when assignment disallows file uploads",
-      "preconditions": [
-        "Assignment configuration: does NOT allow file upload",
-        "User is logged in and enrolled in the course",
-        "Submission form is opened (e.g., via 'Add submission')"
-      ],
-      "steps": [
-        "1. Log in as an enrolled user",
-        "2. Navigate to the Assignment page for <assignment> configured to disallow file upload",
-        "3. Open the submission form by clicking 'Add submission'"
-      ],
-      "expected_result": "File Upload area/control is not present in the submission form; there is no control to attach files and submitting via file upload is not possible.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-009",
-      "wf_ref": null,
-      "test_case": "Online text editor is not present when assignment disallows online text submissions",
-      "preconditions": [
-        "Assignment configuration: does NOT allow online text editor",
-        "User is logged in and enrolled in the course",
-        "Submission form is opened (e.g., via 'Add submission')"
-      ],
-      "steps": [
-        "1. Log in as an enrolled user",
-        "2. Navigate to the Assignment page for <assignment> configured to disallow online text editor",
-        "3. Open the submission form by clicking 'Add submission'"
-      ],
-      "expected_result": "Online text editor field is not present in the submission form; there is no text-entry area and submitting via online text is not possible.",
-      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 9,
-    "high_priority": 7,
-    "medium_priority": 2,
+    "total": 5,
+    "high_priority": 5,
+    "medium_priority": 0,
     "low_priority": 0
   }
 }

@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.120232
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.860242
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Edge - SYSTEM PROMPT
+[22:49:29] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Edge - USER PROMPT
+[22:49:29] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 5,
   "module_title": "Course Page",
-  "summary": "Displays the full course content organized into collapsible sections with activities and resources listed under each section.",
-  "where_it_fits": "Accessible from the main navigation via Home / Dashboard / My Courses or by selecting a course link (breadcrumbs reflect the path), this view is the central course workspace where the horizontal course tab bar and Course Index sidebar provide navigation between course-level screens and activities.",
-  "assumed_state_on_entry": "User is logged in and has access to the course (enrolled student or teacher) with the course available in My Courses or Dashboard."
+  "summary": "Displays a selected course\u2019s full content organized into collapsible sections with activities and resources listed and a course-level tab bar.",
+  "where_it_fits": "Reached from the top navigation (e.g., My Courses or Dashboard) when a user opens a specific course, this is the primary course view located beneath the course title and horizontal tab bar (Course, Participants, Grades, Activities, Competencies) and works with the Course Index sidebar to navigate sections and activities. It is the main lifecycle screen for viewing course materials and activity links.",
+  "assumed_state_on_entry": "User is logged in and has opened a specific course (the course exists and the user has permission to view it)."
 }
 </module_context>
 
@@ -243,57 +257,68 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Course Page",
   "components": {
-    "Course_Tab_Bar": {
+    "Course_Page_Tabs": {
       "type": "tab_container",
-      "tabs": []
-    },
-    "Course_Index_Sidebar": {
-      "type": "navigation_sidebar",
-      "preconditions": [
-        "User is logged in and has access to the course (enrolled student or teacher) with the course available in My Courses or Dashboard."
-      ],
-      "Items": {
-        "type": "repeating_group",
-        "item_fields": {
-          "Index_Item_Link": {
-            "type": "link"
-          }
-        }
-      }
-    },
-    "Course_Content_Sections": {
-      "type": "repeating_group",
-      "preconditions": [
-        "User is logged in and has access to the course (enrolled student or teacher) with the course available in My Courses or Dashboard."
-      ],
-      "item_fields": {
-        "Toggle_Collapse": {
-          "type": "button"
-        },
-        "Activities": {
-          "type": "repeating_group",
-          "item_fields": {
-            "Activity_Link": {
-              "type": "link"
-            }
-          }
-        },
-        "Resources": {
-          "type": "repeating_group",
-          "item_fields": {
-            "Resource_Link": {
-              "type": "link"
-            }
-          }
-        }
-      },
-      "actions": [
+      "tabs": [
         {
-          "action_name": "Collapse all",
-          "type": "link",
-          "preconditions": [
-            "User is logged in and has access to the course (enrolled student or teacher) with the course available in My Courses or Dashboard."
-          ]
+          "tab_name": "Course",
+          "fields": {
+            "Collapse_All": {
+              "type": "link",
+              "on_success": {
+                "set_all": {
+                  "path": "Sections.item_fields.Is_Collapsed",
+                  "value": true
+                }
+              },
+              "preconditions": [
+                "User is logged in and has opened a specific course (the course exists and the user has permission to view it)."
+              ]
+            },
+            "Sections": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Section_Name": {
+                  "type": "unspecified"
+                },
+                "Toggle_Section": {
+                  "type": "button",
+                  "on_success": {
+                    "toggle": "Sections.item_fields.Is_Collapsed"
+                  }
+                },
+                "Is_Collapsed": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "Activities": {
+                  "type": "repeating_group",
+                  "visible_when": "Is_Collapsed == false",
+                  "item_fields": {
+                    "Activity_Name": {
+                      "type": "link"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "tab_name": "Participants",
+          "fields": {}
+        },
+        {
+          "tab_name": "Grades",
+          "fields": {}
+        },
+        {
+          "tab_name": "Activities",
+          "fields": {}
+        },
+        {
+          "tab_name": "Competencies",
+          "fields": {}
         }
       ]
     }
@@ -311,17 +336,15 @@ The Course page displays the full course content organized into collapsible sect
 </description>
 
 <workflows>
-WF-001 | Navigate to section via Course Index | actor: Enrolled student or teacher | branch: none | terminal: Index_Item_Link | on_success: Navigates to the selected section in the course content (Course Index sidebar link activates the section view).
-WF-002 | Toggle a single section (expand/collapse) | actor: Enrolled student or teacher | branch: none | terminal: Toggle_Collapse | on_success: The targeted section toggles between expanded and collapsed states; its activities and resources are shown or hidden accordingly.
-WF-003 | Collapse all sections | actor: Enrolled student or teacher | branch: none | terminal: Collapse all | on_success: All course content sections collapse so only section headers remain visible.
-WF-004 | Open an activity from a section | actor: Enrolled student or teacher | branch: none | terminal: Activity_Link | on_success: Navigates to the selected activity (opens the activity page or view).
-WF-005 | Open a resource from a section | actor: Enrolled student or teacher | branch: none | terminal: Resource_Link | on_success: Navigates to or opens the selected resource.
+WF-001 | Collapse all sections via Collapse_All link | actor: User | branch: none | terminal: Collapse_All | on_success: set_all: Sections.item_fields.Is_Collapsed = true
+WF-002 | Toggle a single section's collapsed state | actor: User | branch: none | terminal: Toggle_Section | on_success: toggle: Sections.item_fields.Is_Collapsed
+WF-003 | Open an activity/resource from a visible section | actor: User | branch: Is_Collapsed == false | terminal: Activity_Name | on_success: Navigate to activity/resource page
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:13:43] Test-Edge - LLM RESPONSE
+[22:50:42] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Course Page",
@@ -329,130 +352,80 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-003",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid repeated toggling of a single section",
+      "test_case": "Attempt to open an activity when its section has been collapsed via Collapse All",
       "preconditions": [
-        "User is logged in and has access to the course",
-        "Course contains at least one section with visible Activities and Resources"
+        "User is logged in and viewing a course with at least one section that contains at least one activity"
       ],
       "steps": [
-        "1. Navigate to the Course Page for the course",
-        "2. Locate Section A in the Course_Content_Sections list",
-        "3. Click the Toggle_Collapse control for Section A",
-        "4. Immediately click the Toggle_Collapse control for Section A a second time",
-        "5. Immediately click the Toggle_Collapse control for Section A a third time",
-        "6. Observe the Section A header and its Activities and Resources list"
+        "1. Click the Collapse All link",
+        "2. Attempt to click the Activity_Name link for an activity that was in a now-collapsed section"
       ],
-      "expected_result": "After the three rapid Toggle_Collapse clicks, Section A is expanded (final state matches parity of clicks) and the Activities and Resources lists are visible; no duplicate activity/resource rows are rendered in the DOM and the UI remains responsive — action sequence succeeds.",
+      "expected_result": "Click is blocked; the Activity_Name link is not visible in the section and no navigation to the activity/resource page occurs",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-003",
-      "subcategory": "interaction_edge",
-      "test_case": "Click 'Collapse all' when sections are partially expanded, then click it again immediately",
+      "wf_ref": "WF-002",
+      "subcategory": "state_edge",
+      "test_case": "After using Collapse All, expand a single section via its Toggle_Section and verify only that section expands",
       "preconditions": [
-        "User is logged in and has access to the course",
-        "Course contains multiple sections; at least two sections are expanded at test start"
+        "User is logged in and viewing a course with multiple sections, at least one section contains at least one activity"
       ],
       "steps": [
-        "1. Navigate to the Course Page for the course",
-        "2. Click the Toggle_Collapse control to ensure Section A is expanded",
-        "3. Click the Toggle_Collapse control to ensure Section B is expanded",
-        "4. Click the 'Collapse all' link in the Course_Content_Sections actions area",
-        "5. Immediately click the 'Collapse all' link again"
+        "1. Click the Collapse All link",
+        "2. Click the Toggle_Section button for a single section (Section A)"
       ],
-      "expected_result": "The first 'Collapse all' click collapses all sections so only section headers remain visible; the immediate second click makes no visible change and produces no error message — 'Collapse all' action succeeds and is idempotent (sections remain collapsed).",
+      "expected_result": "Toggle_Section succeeds; Section A becomes expanded (Is_Collapsed == false) and its Activities list becomes visible while all other sections remain collapsed",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Use Course Index link to navigate to a section that is currently collapsed and offscreen",
+      "test_case": "Click Collapse All twice in succession to verify idempotent behavior",
       "preconditions": [
-        "User is logged in and has access to the course",
-        "Course_Index_Sidebar is visible and includes a link to Section X",
-        "Section X is currently collapsed and located offscreen (requires scrolling)"
+        "User is logged in and viewing a course with multiple sections (some expanded, some collapsed)"
       ],
       "steps": [
-        "1. Navigate to the Course Page for the course",
-        "2. Verify Section X header is collapsed and not in the current viewport",
-        "3. In the Course_Index_Sidebar, click the Index_Item_Link corresponding to Section X"
+        "1. Click the Collapse All link",
+        "2. Click the Collapse All link a second time"
       ],
-      "expected_result": "The Course Page scrolls to Section X, the Section X header is expanded and its Activities and Resources lists become visible; focus/viewport moves to the expanded section — navigation via the index link succeeds.",
-      "priority": "medium"
+      "expected_result": "Second Collapse All click succeeds with no error shown; all sections remain collapsed (Is_Collapsed == true) and there is no visible error or change beyond the collapsed state",
+      "priority": "low"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-004",
+      "wf_ref": "WF-003",
       "subcategory": "interaction_edge",
-      "test_case": "Open an activity then immediately press the browser Back button",
+      "test_case": "Expand a section via Toggle_Section and open an activity to verify activity links and icons are visible and navigable",
       "preconditions": [
-        "User is logged in and has access to the course",
-        "Course contains at least one section with at least one Activity_Link"
+        "User is logged in and viewing a course with at least one section containing at least one activity"
       ],
       "steps": [
-        "1. Navigate to the Course Page for the course",
-        "2. Expand the section containing Activity A so Activity_Link is visible",
-        "3. Click Activity_Link for Activity A",
-        "4. Wait until the Activity page/view has loaded",
-        "5. Press the browser Back button"
+        "1. If the target section is collapsed, click its Toggle_Section button to expand it",
+        "2. Confirm the section's Activities list is visible",
+        "3. Click the Activity_Name link for an activity in the now-visible Activities list"
       ],
-      "expected_result": "After pressing Back, the Course Page is displayed; the section that contained Activity A is in a stable state (expanded or per the app's standard behavior) and the Activities list contains a single entry for Activity A (no duplicate entries were created). Navigation and history behavior succeeds (no error shown).",
+      "expected_result": "Toggle_Section succeeds; the Activities list for the section is visible showing activity type icons and Activity_Name links; clicking Activity_Name succeeds and the UI navigates to the activity/resource page",
       "priority": "medium"
-    },
-    {
-      "tc_id": "E-005",
-      "wf_ref": null,
-      "subcategory": "input_edge",
-      "test_case": "Display behavior for a very long section name",
-      "preconditions": [
-        "User is logged in and has access to the course",
-        "Course contains a section whose name is a very long string (significantly longer than a single line)"
-      ],
-      "steps": [
-        "1. Navigate to the Course Page for the course",
-        "2. Observe the presentation of the very long section name in the section header"
-      ],
-      "expected_result": "The very long section name is rendered without overlapping the chevron/toggle control; the title wraps to multiple lines (readable) and does not break layout or obscure the Toggle_Collapse control — display of the long name succeeds.",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-006",
-      "wf_ref": null,
-      "subcategory": "input_edge",
-      "test_case": "Activity and resource names containing emojis and special characters are displayed and actionable",
-      "preconditions": [
-        "User is logged in and has access to the course",
-        "Course contains at least one activity and one resource whose display names include emoji and special characters"
-      ],
-      "steps": [
-        "1. Navigate to the Course Page for the course",
-        "2. Expand the section(s) containing the activity and the resource",
-        "3. Observe the Activity_Link and Resource_Link text rendering",
-        "4. Click the Activity_Link that contains emoji/special characters",
-        "5. Return to the Course Page and click the Resource_Link that contains emoji/special characters"
-      ],
-      "expected_result": "Activity and resource names render emoji and special characters in the Course Page link text without truncation or replacement; clicking each link opens the corresponding activity/resource view without error — display and navigation succeed.",
-      "priority": "low"
     }
   ],
   "summary": {
-    "total": 6,
+    "total": 4,
     "boundary": 0,
-    "input_edge": 2,
-    "interaction_edge": 4,
-    "state_edge": 0,
+    "input_edge": 0,
+    "interaction_edge": 3,
+    "state_edge": 1,
     "data_edge": 0,
-    "medium_priority": 4,
-    "low_priority": 2
+    "medium_priority": 3,
+    "low_priority": 1
   }
 }
 
 ------------------------------------------------------------
-[21:13:43] Test-Edge - PARSED JSON
+[22:50:42] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Course Page",
@@ -460,124 +433,74 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-003",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid repeated toggling of a single section",
+      "test_case": "Attempt to open an activity when its section has been collapsed via Collapse All",
       "preconditions": [
-        "User is logged in and has access to the course",
-        "Course contains at least one section with visible Activities and Resources"
+        "User is logged in and viewing a course with at least one section that contains at least one activity"
       ],
       "steps": [
-        "1. Navigate to the Course Page for the course",
-        "2. Locate Section A in the Course_Content_Sections list",
-        "3. Click the Toggle_Collapse control for Section A",
-        "4. Immediately click the Toggle_Collapse control for Section A a second time",
-        "5. Immediately click the Toggle_Collapse control for Section A a third time",
-        "6. Observe the Section A header and its Activities and Resources list"
+        "1. Click the Collapse All link",
+        "2. Attempt to click the Activity_Name link for an activity that was in a now-collapsed section"
       ],
-      "expected_result": "After the three rapid Toggle_Collapse clicks, Section A is expanded (final state matches parity of clicks) and the Activities and Resources lists are visible; no duplicate activity/resource rows are rendered in the DOM and the UI remains responsive \u2014 action sequence succeeds.",
+      "expected_result": "Click is blocked; the Activity_Name link is not visible in the section and no navigation to the activity/resource page occurs",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-003",
-      "subcategory": "interaction_edge",
-      "test_case": "Click 'Collapse all' when sections are partially expanded, then click it again immediately",
+      "wf_ref": "WF-002",
+      "subcategory": "state_edge",
+      "test_case": "After using Collapse All, expand a single section via its Toggle_Section and verify only that section expands",
       "preconditions": [
-        "User is logged in and has access to the course",
-        "Course contains multiple sections; at least two sections are expanded at test start"
+        "User is logged in and viewing a course with multiple sections, at least one section contains at least one activity"
       ],
       "steps": [
-        "1. Navigate to the Course Page for the course",
-        "2. Click the Toggle_Collapse control to ensure Section A is expanded",
-        "3. Click the Toggle_Collapse control to ensure Section B is expanded",
-        "4. Click the 'Collapse all' link in the Course_Content_Sections actions area",
-        "5. Immediately click the 'Collapse all' link again"
+        "1. Click the Collapse All link",
+        "2. Click the Toggle_Section button for a single section (Section A)"
       ],
-      "expected_result": "The first 'Collapse all' click collapses all sections so only section headers remain visible; the immediate second click makes no visible change and produces no error message \u2014 'Collapse all' action succeeds and is idempotent (sections remain collapsed).",
+      "expected_result": "Toggle_Section succeeds; Section A becomes expanded (Is_Collapsed == false) and its Activities list becomes visible while all other sections remain collapsed",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Use Course Index link to navigate to a section that is currently collapsed and offscreen",
+      "test_case": "Click Collapse All twice in succession to verify idempotent behavior",
       "preconditions": [
-        "User is logged in and has access to the course",
-        "Course_Index_Sidebar is visible and includes a link to Section X",
-        "Section X is currently collapsed and located offscreen (requires scrolling)"
+        "User is logged in and viewing a course with multiple sections (some expanded, some collapsed)"
       ],
       "steps": [
-        "1. Navigate to the Course Page for the course",
-        "2. Verify Section X header is collapsed and not in the current viewport",
-        "3. In the Course_Index_Sidebar, click the Index_Item_Link corresponding to Section X"
+        "1. Click the Collapse All link",
+        "2. Click the Collapse All link a second time"
       ],
-      "expected_result": "The Course Page scrolls to Section X, the Section X header is expanded and its Activities and Resources lists become visible; focus/viewport moves to the expanded section \u2014 navigation via the index link succeeds.",
-      "priority": "medium"
+      "expected_result": "Second Collapse All click succeeds with no error shown; all sections remain collapsed (Is_Collapsed == true) and there is no visible error or change beyond the collapsed state",
+      "priority": "low"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-004",
+      "wf_ref": "WF-003",
       "subcategory": "interaction_edge",
-      "test_case": "Open an activity then immediately press the browser Back button",
+      "test_case": "Expand a section via Toggle_Section and open an activity to verify activity links and icons are visible and navigable",
       "preconditions": [
-        "User is logged in and has access to the course",
-        "Course contains at least one section with at least one Activity_Link"
+        "User is logged in and viewing a course with at least one section containing at least one activity"
       ],
       "steps": [
-        "1. Navigate to the Course Page for the course",
-        "2. Expand the section containing Activity A so Activity_Link is visible",
-        "3. Click Activity_Link for Activity A",
-        "4. Wait until the Activity page/view has loaded",
-        "5. Press the browser Back button"
+        "1. If the target section is collapsed, click its Toggle_Section button to expand it",
+        "2. Confirm the section's Activities list is visible",
+        "3. Click the Activity_Name link for an activity in the now-visible Activities list"
       ],
-      "expected_result": "After pressing Back, the Course Page is displayed; the section that contained Activity A is in a stable state (expanded or per the app's standard behavior) and the Activities list contains a single entry for Activity A (no duplicate entries were created). Navigation and history behavior succeeds (no error shown).",
+      "expected_result": "Toggle_Section succeeds; the Activities list for the section is visible showing activity type icons and Activity_Name links; clicking Activity_Name succeeds and the UI navigates to the activity/resource page",
       "priority": "medium"
-    },
-    {
-      "tc_id": "E-005",
-      "wf_ref": null,
-      "subcategory": "input_edge",
-      "test_case": "Display behavior for a very long section name",
-      "preconditions": [
-        "User is logged in and has access to the course",
-        "Course contains a section whose name is a very long string (significantly longer than a single line)"
-      ],
-      "steps": [
-        "1. Navigate to the Course Page for the course",
-        "2. Observe the presentation of the very long section name in the section header"
-      ],
-      "expected_result": "The very long section name is rendered without overlapping the chevron/toggle control; the title wraps to multiple lines (readable) and does not break layout or obscure the Toggle_Collapse control \u2014 display of the long name succeeds.",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-006",
-      "wf_ref": null,
-      "subcategory": "input_edge",
-      "test_case": "Activity and resource names containing emojis and special characters are displayed and actionable",
-      "preconditions": [
-        "User is logged in and has access to the course",
-        "Course contains at least one activity and one resource whose display names include emoji and special characters"
-      ],
-      "steps": [
-        "1. Navigate to the Course Page for the course",
-        "2. Expand the section(s) containing the activity and the resource",
-        "3. Observe the Activity_Link and Resource_Link text rendering",
-        "4. Click the Activity_Link that contains emoji/special characters",
-        "5. Return to the Course Page and click the Resource_Link that contains emoji/special characters"
-      ],
-      "expected_result": "Activity and resource names render emoji and special characters in the Course Page link text without truncation or replacement; clicking each link opens the corresponding activity/resource view without error \u2014 display and navigation succeed.",
-      "priority": "low"
     }
   ],
   "summary": {
-    "total": 6,
+    "total": 4,
     "boundary": 0,
-    "input_edge": 2,
-    "interaction_edge": 4,
-    "state_edge": 0,
+    "input_edge": 0,
+    "interaction_edge": 3,
+    "state_edge": 1,
     "data_edge": 0,
-    "medium_priority": 4,
-    "low_priority": 2
+    "medium_priority": 3,
+    "low_priority": 1
   }
 }

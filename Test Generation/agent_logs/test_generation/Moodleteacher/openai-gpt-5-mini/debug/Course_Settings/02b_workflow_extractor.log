@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:10:14.016425
+DEBUG SESSION STARTED: 2026-07-04T22:46:26.203432
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:10:14] Workflow-Extractor - SYSTEM PROMPT
+[22:46:26] Workflow-Extractor - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Workflow Extractor. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to enumerate every distinct, executable interaction path through this module — one entry per workflow.
 
@@ -54,12 +54,12 @@ Two workflows are **distinct** if they require different user actions to reach t
 
 ## What Paths to Enumerate
 
-Enumerate **all** distinct paths — not one-per-type. The rule: if two paths require the user to do something different to reach the terminal action, they are separate workflows.
+Enumerate **distinct-outcome** paths — not one-per-type, and **not** the cartesian product of every toggle. The rule: two paths are separate workflows only if the user does something different that leads to a **different terminal outcome** (different `on_success`) **or** exercises a **different revealed required-field group** that needs its own coverage.
 
 | AST node type | What to enumerate |
 |---|---|
 | `form` with no conditionals | One workflow per `submit_actions[]` entry |
-| `form` with `visible_when` fields | One workflow per unique combination of conditional branches activated, times each `submit_actions[]` entry |
+| `form` with `visible_when` / toggle fields | One base workflow per `submit_actions[]` entry, PLUS one workflow for **each conditional branch that reveals a distinct required-field group** (e.g. enabling File submissions reveals max-files/size/types). Do **NOT** multiply independent toggles together. |
 | `wizard` | One workflow per distinct step sequence (if all steps are linear, one workflow per `submit_actions[]`; if any step is conditional, enumerate each branch) |
 | `state_bound_action_bar` | One workflow per `available_actions[]` entry per state (state × action = one workflow) |
 | `data_table` | One workflow per `row_actions[]` entry + one per `bulk_actions[]` entry (include View, Edit, Delete, and all others) |
@@ -67,6 +67,20 @@ Enumerate **all** distinct paths — not one-per-type. The rule: if two paths re
 | `repeating_group` | Not a standalone workflow source — it is part of a form workflow that activates it |
 
 **Include all data table row actions** — View, Edit, Delete, and any others. Even read-only row actions (e.g., "View") must be included because they still require a positive test case.
+
+### DO NOT enumerate the cartesian product of toggles (CRITICAL)
+
+A form with independent toggles A, B, C and submit buttons {Save, Save+display, Cancel} must **not** produce 2×2×2×3 = 24 workflows. Independent toggles that do **not** change the terminal outcome are covered **once each**, not in combination:
+- If toggle A (e.g. `File_Submissions`) and toggle B (e.g. `Group_Submissions`) both still reach the same `on_success` ("assignment created"), they are **not** two dimensions to multiply. Emit one workflow that activates A's revealed fields, and one that activates B's revealed fields — not A×B.
+- An `+ Add restriction` / optional-picker step that does not change `on_success` is **not** a separate workflow dimension. Fold it into an existing workflow or add at most one workflow for it.
+
+### Discard / Cancel collapse rule (CRITICAL)
+
+A `Cancel` / `discard` / `abandon` terminal action discards **all** field state, so field/toggle combinations are irrelevant to it. Emit **exactly ONE** Cancel workflow for the module, regardless of how many toggles or revealed-field groups exist. Never produce a Cancel workflow per toggle combination.
+
+**Worked example — Assignment Creation** (toggles: File submissions, Group submissions, Add restriction; buttons: Save and return, Save and display, Cancel):
+- ✅ Correct (~6–8): base Save-and-return, base Save-and-display, one Save covering File-submission revealed fields, one Save covering Group-submission revealed fields, one Save covering an added restriction, one Cancel.
+- ❌ Wrong (24): every `{File}×{Group}×{Restriction}×{Save/Display/Cancel}` combination.
 
 ---
 
@@ -101,9 +115,11 @@ Go through these one by one. If any check fails, fix it before outputting.
 □ 4. Every tab with a form submission in a `tab_container` has one workflow.
 □ 5. `wf_id` numbering is sequential (WF-001, WF-002, ...) with no gaps.
 □ 6. Every `terminal_action` matches an exact `action_name` or `element_name` from the AST.
-□ 7. No two workflows share the same `conditional_branch` AND `terminal_action`.
-□ 8. No workflow crosses module boundaries (steps in another module).
-□ 9. Every `on_success` reflects the AST or description — no generic "success" strings.
+□ 7. No two workflows reach the **same `on_success` via the same code path** — even if their `conditional_branch` strings differ. If they do, merge them (keep the one that activates a distinct revealed required-field group; drop pure toggle-combination duplicates).
+□ 8. There is **at most ONE** `Cancel`/`discard` workflow for the whole module.
+□ 9. No independent toggles are multiplied together — the workflow count is roughly (base submits) + (revealed required-field groups) + 1 Cancel, NOT the product of all toggles × all buttons.
+□ 10. No workflow crosses module boundaries (steps in another module).
+□ 11. Every `on_success` reflects the AST or description — no generic "success" strings.
 
 ---
 
@@ -111,7 +127,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 1. Does each workflow trace back to a specific AST node (`submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`) or an explicit action described in the description text? If no → delete it.
 2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
-3. Are two workflows identical in `conditional_branch` AND `terminal_action`? If yes → merge them into one.
+3. Do two workflows reach the same `on_success` via the same code path (e.g. differing only by an independent toggle that does not change the outcome, or being repeated Cancel variants)? If yes → merge them into one. Keep a separate workflow only when its branch reveals a **distinct required-field group** that needs its own coverage.
 4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
 5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
 
@@ -120,7 +136,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 ## Calibration
 
 - Simple form module (no conditionals, one submit): 1–3 workflows
-- Form with conditionals: 3–8 workflows
+- Form with conditionals/toggles: **(base submit outcomes) + (one per revealed required-field group) + 1 Cancel** — typically 4–8, NOT the product of all toggles × all buttons. A multi-toggle form like Assignment Creation should land near 6–8, never 20+.
 - Module with state machine: add 1 per (state × action) combination
 - Module with data table: add 1 per row_action + 1 per bulk_action
 
@@ -153,15 +169,15 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 
 ------------------------------------------------------------
-[21:10:14] Workflow-Extractor - USER PROMPT
+[22:46:26] Workflow-Extractor - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 8,
   "module_title": "Course Settings",
-  "summary": "A collapsible form for viewing and editing a course's metadata, appearance, enrollment and participation settings, and completion/grouping options with inline validation and image/summary fields.",
-  "where_it_fits": "This module is accessed from a course's horizontal tab bar under the Settings tab (visible to teachers) and sits within the course page workflow between Course Page and Course Edit Mode, persisting changes back to the course view (Save and display) or aborting (Cancel). It is reachable via the course breadcrumbs and the Course Index when a specific course is active.",
-  "assumed_state_on_entry": "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
+  "summary": "Provides a collapsible form for configuring course metadata, appearance, format, enrollment and completion settings, and media with inline validation and save/cancel actions.",
+  "where_it_fits": "Accessed from a course's horizontal tab bar (the Settings tab shown to teachers) when viewing a course; saving returns to the course page while canceling leaves settings unchanged. It sits alongside other course-level tools such as Participants, Grades, and Activities and is part of the course configuration lifecycle.",
+  "assumed_state_on_entry": "User is logged in, viewing an existing course, and has teacher/editing permissions (Settings tab visible)."
 }
 </module_context>
 
@@ -173,6 +189,11 @@ Go through these one by one. If any check fails, fix it before outputting.
   "components": {
     "Course_Settings_Form": {
       "type": "form",
+      "preconditions": [
+        "User is logged in",
+        "Viewing an existing course",
+        "User has teacher/editing permissions"
+      ],
       "panels": [
         {
           "panel_name": "General",
@@ -182,22 +203,19 @@ Go through these one by one. If any check fails, fix it before outputting.
               "type": "unspecified",
               "required": true,
               "constraints": [
-                "required, inline validation"
+                "inline validation: must not be empty"
               ]
             },
             "Course_Short_Name": {
               "type": "unspecified",
               "required": true,
               "constraints": [
-                "required, inline validation"
+                "inline validation: must not be empty"
               ]
             },
             "Course_Category": {
               "type": "dropdown",
-              "required": true,
-              "constraints": [
-                "required, inline validation"
-              ]
+              "required": true
             },
             "Course_Visibility": {
               "type": "dropdown",
@@ -206,35 +224,44 @@ Go through these one by one. If any check fails, fix it before outputting.
                 "Hide"
               ]
             },
+            "Course_Start_Date": {
+              "type": "date",
+              "constraints": [
+                "must be a valid date"
+              ]
+            },
+            "Enable_Course_End_Date": {
+              "type": "checkbox"
+            },
+            "Course_End_Date": {
+              "type": "date",
+              "enabled_when": "Enable_Course_End_Date == true",
+              "constraints": [
+                "must be a valid date"
+              ]
+            },
             "Course_ID_Number": {
               "type": "unspecified"
             },
             "Course_Summary": {
-              "type": "rich_text_editor"
-            },
+              "type": "unspecified",
+              "constraints": [
+                "rich text editor with inline validation"
+              ]
+            }
+          }
+        },
+        {
+          "panel_name": "Media",
+          "collapsible": true,
+          "fields": {
             "Course_Image_Upload": {
               "type": "file_upload"
             }
           }
         },
         {
-          "panel_name": "Dates",
-          "collapsible": true,
-          "fields": {
-            "Course_Start_Date": {
-              "type": "date"
-            },
-            "Course_End_Date_Enable": {
-              "type": "checkbox"
-            },
-            "Course_End_Date": {
-              "type": "date",
-              "enabled_when": "Course_End_Date_Enable == true"
-            }
-          }
-        },
-        {
-          "panel_name": "Format & Layout",
+          "panel_name": "Format",
           "collapsible": true,
           "fields": {
             "Course_Format": {
@@ -243,18 +270,16 @@ Go through these one by one. If any check fails, fix it before outputting.
                 "Topics format",
                 "Weekly format"
               ],
-              "metadata": {
-                "options_note": "partial \u2014 others not specified in description"
-              }
+              "options_note": "partial \u2014 others not specified in description"
             },
             "Layout_Controls": {
               "type": "unspecified",
-              "visible_when": "Course_Format == Topics format OR Course_Format == Weekly format"
+              "visible_when": "Course_Format is set"
             }
           }
         },
         {
-          "panel_name": "Appearance & Participation",
+          "panel_name": "Appearance",
           "collapsible": true,
           "fields": {
             "Language": {
@@ -263,15 +288,25 @@ Go through these one by one. If any check fails, fix it before outputting.
             "News_Items": {
               "type": "unspecified"
             },
-            "Activity_Dates_Display": {
-              "type": "checkbox"
+            "Activity_Dates": {
+              "type": "unspecified"
             },
             "Completion_Conditions_Display": {
               "type": "checkbox"
             },
             "Maximum_Upload_Size": {
-              "type": "unspecified"
-            },
+              "type": "number",
+              "constraints": [
+                "must be a valid number",
+                "inline validation enforced"
+              ]
+            }
+          }
+        },
+        {
+          "panel_name": "Enrollment_and_Completion",
+          "collapsible": true,
+          "fields": {
             "Completion_Tracking": {
               "type": "checkbox"
             },
@@ -290,14 +325,21 @@ Go through these one by one. If any check fails, fix it before outputting.
       "submit_actions": [
         {
           "action_name": "Save and display",
-          "on_success": "persists configuration and returns to course page",
+          "on_success": "persists configuration and returns to the course page",
           "preconditions": [
-            "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
+            "User is logged in",
+            "Viewing an existing course",
+            "User has teacher/editing permissions"
           ]
         },
         {
           "action_name": "Cancel",
-          "on_success": "abandons changes and returns to course page"
+          "on_success": "leaves settings unchanged",
+          "preconditions": [
+            "User is logged in",
+            "Viewing an existing course",
+            "User has teacher/editing permissions"
+          ]
         }
       ]
     }
@@ -317,213 +359,359 @@ The Course Settings form is organized into collapsible panels with the following
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:10:32] Workflow-Extractor - LLM RESPONSE
+[22:46:37] Workflow-Extractor - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Course Settings",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Save with End Date enabled and Topics format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == true AND Course_Format == Topics format",
+      "name": "Save and display (persist course settings)",
+      "actor": "Teacher (editing)",
+      "conditional_branch": null,
       "terminal_action": "Save and display",
-      "on_success": "persists configuration and returns to course page"
+      "on_success": "persists configuration and returns to the course page"
     },
     {
       "wf_id": "WF-002",
-      "name": "Cancel with End Date enabled and Topics format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == true AND Course_Format == Topics format",
+      "name": "Cancel (discard changes)",
+      "actor": "Teacher (editing)",
+      "conditional_branch": null,
       "terminal_action": "Cancel",
-      "on_success": "abandons changes and returns to course page"
-    },
-    {
-      "wf_id": "WF-003",
-      "name": "Save with End Date disabled and Topics format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == false AND Course_Format == Topics format",
-      "terminal_action": "Save and display",
-      "on_success": "persists configuration and returns to course page"
-    },
-    {
-      "wf_id": "WF-004",
-      "name": "Cancel with End Date disabled and Topics format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == false AND Course_Format == Topics format",
-      "terminal_action": "Cancel",
-      "on_success": "abandons changes and returns to course page"
-    },
-    {
-      "wf_id": "WF-005",
-      "name": "Save with End Date enabled and Weekly format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == true AND Course_Format == Weekly format",
-      "terminal_action": "Save and display",
-      "on_success": "persists configuration and returns to course page"
-    },
-    {
-      "wf_id": "WF-006",
-      "name": "Cancel with End Date enabled and Weekly format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == true AND Course_Format == Weekly format",
-      "terminal_action": "Cancel",
-      "on_success": "abandons changes and returns to course page"
-    },
-    {
-      "wf_id": "WF-007",
-      "name": "Save with End Date disabled and Weekly format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == false AND Course_Format == Weekly format",
-      "terminal_action": "Save and display",
-      "on_success": "persists configuration and returns to course page"
-    },
-    {
-      "wf_id": "WF-008",
-      "name": "Cancel with End Date disabled and Weekly format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == false AND Course_Format == Weekly format",
-      "terminal_action": "Cancel",
-      "on_success": "abandons changes and returns to course page"
-    },
-    {
-      "wf_id": "WF-009",
-      "name": "Save with End Date enabled and Other format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == true AND Course_Format == Other",
-      "terminal_action": "Save and display",
-      "on_success": "persists configuration and returns to course page"
-    },
-    {
-      "wf_id": "WF-010",
-      "name": "Cancel with End Date enabled and Other format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == true AND Course_Format == Other",
-      "terminal_action": "Cancel",
-      "on_success": "abandons changes and returns to course page"
-    },
-    {
-      "wf_id": "WF-011",
-      "name": "Save with End Date disabled and Other format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == false AND Course_Format == Other",
-      "terminal_action": "Save and display",
-      "on_success": "persists configuration and returns to course page"
-    },
-    {
-      "wf_id": "WF-012",
-      "name": "Cancel with End Date disabled and Other format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == false AND Course_Format == Other",
-      "terminal_action": "Cancel",
-      "on_success": "abandons changes and returns to course page"
+      "on_success": "leaves settings unchanged"
     }
   ],
-  "total": 12
+  "total": 2
 }
 
 ------------------------------------------------------------
-[21:10:32] Workflow-Extractor - PARSED JSON
+[22:46:37] Workflow-Extractor - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Course Settings",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Save with End Date enabled and Topics format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == true AND Course_Format == Topics format",
+      "name": "Save and display (persist course settings)",
+      "actor": "Teacher (editing)",
+      "conditional_branch": null,
       "terminal_action": "Save and display",
-      "on_success": "persists configuration and returns to course page"
+      "on_success": "persists configuration and returns to the course page"
     },
     {
       "wf_id": "WF-002",
-      "name": "Cancel with End Date enabled and Topics format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == true AND Course_Format == Topics format",
+      "name": "Cancel (discard changes)",
+      "actor": "Teacher (editing)",
+      "conditional_branch": null,
       "terminal_action": "Cancel",
-      "on_success": "abandons changes and returns to course page"
+      "on_success": "leaves settings unchanged"
+    }
+  ],
+  "total": 2
+}
+
+------------------------------------------------------------
+[22:47:14] Workflow-Extractor - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 8,
+  "module_title": "Course Settings",
+  "summary": "Provides a collapsible form for configuring course metadata, appearance, format, enrollment and completion settings, and media with inline validation and save/cancel actions.",
+  "where_it_fits": "Accessed from a course's horizontal tab bar (the Settings tab shown to teachers) when viewing a course; saving returns to the course page while canceling leaves settings unchanged. It sits alongside other course-level tools such as Participants, Grades, and Activities and is part of the course configuration lifecycle.",
+  "assumed_state_on_entry": "User is logged in, viewing an existing course, and has teacher/editing permissions (Settings tab visible)."
+}
+</module_context>
+
+<module_name>Course Settings</module_name>
+
+<ast>
+{
+  "module_name": "Course Settings",
+  "components": {
+    "Course_Settings_Form": {
+      "type": "form",
+      "preconditions": [
+        "User is logged in",
+        "Viewing an existing course",
+        "User has teacher/editing permissions"
+      ],
+      "panels": [
+        {
+          "panel_name": "General",
+          "collapsible": true,
+          "fields": {
+            "Course_Full_Name": {
+              "type": "unspecified",
+              "required": true,
+              "constraints": [
+                "inline validation: must not be empty"
+              ]
+            },
+            "Course_Short_Name": {
+              "type": "unspecified",
+              "required": true,
+              "constraints": [
+                "inline validation: must not be empty"
+              ]
+            },
+            "Course_Category": {
+              "type": "dropdown",
+              "required": true
+            },
+            "Course_Visibility": {
+              "type": "dropdown",
+              "options": [
+                "Show",
+                "Hide"
+              ]
+            },
+            "Course_Start_Date": {
+              "type": "date",
+              "constraints": [
+                "must be a valid date"
+              ]
+            },
+            "Enable_Course_End_Date": {
+              "type": "checkbox"
+            },
+            "Course_End_Date": {
+              "type": "date",
+              "enabled_when": "Enable_Course_End_Date == true",
+              "constraints": [
+                "must be a valid date"
+              ]
+            },
+            "Course_ID_Number": {
+              "type": "unspecified"
+            },
+            "Course_Summary": {
+              "type": "unspecified",
+              "constraints": [
+                "rich text editor with inline validation"
+              ]
+            }
+          }
+        },
+        {
+          "panel_name": "Media",
+          "collapsible": true,
+          "fields": {
+            "Course_Image_Upload": {
+              "type": "file_upload"
+            }
+          }
+        },
+        {
+          "panel_name": "Format",
+          "collapsible": true,
+          "fields": {
+            "Course_Format": {
+              "type": "dropdown",
+              "options": [
+                "Topics format",
+                "Weekly format"
+              ],
+              "options_note": "partial \u2014 others not specified in description"
+            },
+            "Layout_Controls": {
+              "type": "unspecified",
+              "visible_when": "Course_Format is set"
+            }
+          }
+        },
+        {
+          "panel_name": "Appearance",
+          "collapsible": true,
+          "fields": {
+            "Language": {
+              "type": "unspecified"
+            },
+            "News_Items": {
+              "type": "unspecified"
+            },
+            "Activity_Dates": {
+              "type": "unspecified"
+            },
+            "Completion_Conditions_Display": {
+              "type": "checkbox"
+            },
+            "Maximum_Upload_Size": {
+              "type": "number",
+              "constraints": [
+                "must be a valid number",
+                "inline validation enforced"
+              ]
+            }
+          }
+        },
+        {
+          "panel_name": "Enrollment_and_Completion",
+          "collapsible": true,
+          "fields": {
+            "Completion_Tracking": {
+              "type": "checkbox"
+            },
+            "Group_Mode": {
+              "type": "dropdown"
+            },
+            "Grouping": {
+              "type": "dropdown"
+            },
+            "Tags": {
+              "type": "unspecified"
+            }
+          }
+        }
+      ],
+      "submit_actions": [
+        {
+          "action_name": "Save and display",
+          "on_success": "persists configuration and returns to the course page",
+          "preconditions": [
+            "User is logged in",
+            "Viewing an existing course",
+            "User has teacher/editing permissions"
+          ]
+        },
+        {
+          "action_name": "Cancel",
+          "on_success": "leaves settings unchanged",
+          "preconditions": [
+            "User is logged in",
+            "Viewing an existing course",
+            "User has teacher/editing permissions"
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Course Settings form is organized into collapsible panels with the following fields: Course full name (required), Course short name (required), Course category (required dropdown), Course visibility (Show/Hide dropdown), Course start date, Course end date (with Enable toggle), Course ID number, Course summary (rich text editor), Course image upload, Course format (Topics format, Weekly format, etc.), layout controls dependent on the selected format, appearance settings (language, news items, activity dates, completion conditions display), Maximum upload size, Completion tracking toggle, Groups (group mode and grouping dropdowns), and Tags. "Save and display" persists the configuration and returns to the course page; "Cancel" leaves existing settings unchanged. Required fields and format validations are enforced inline.
+
+---
+
+
+</description>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[22:47:43] Workflow-Extractor - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Course Settings",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Save and display (base)",
+      "actor": "Teacher",
+      "conditional_branch": null,
+      "terminal_action": "Save and display",
+      "on_success": "persists configuration and returns to the course page"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Save and display with Course_Format set",
+      "actor": "Teacher",
+      "conditional_branch": "Course_Format is set",
+      "terminal_action": "Save and display",
+      "on_success": "persists configuration and returns to the course page"
     },
     {
       "wf_id": "WF-003",
-      "name": "Save with End Date disabled and Topics format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == false AND Course_Format == Topics format",
+      "name": "Save and display with Course_Format not set",
+      "actor": "Teacher",
+      "conditional_branch": "Course_Format is not set",
       "terminal_action": "Save and display",
-      "on_success": "persists configuration and returns to course page"
+      "on_success": "persists configuration and returns to the course page"
     },
     {
       "wf_id": "WF-004",
-      "name": "Cancel with End Date disabled and Topics format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == false AND Course_Format == Topics format",
+      "name": "Cancel (base)",
+      "actor": "Teacher",
+      "conditional_branch": null,
       "terminal_action": "Cancel",
-      "on_success": "abandons changes and returns to course page"
+      "on_success": "leaves settings unchanged"
     },
     {
       "wf_id": "WF-005",
-      "name": "Save with End Date enabled and Weekly format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == true AND Course_Format == Weekly format",
-      "terminal_action": "Save and display",
-      "on_success": "persists configuration and returns to course page"
+      "name": "Cancel with Course_Format set",
+      "actor": "Teacher",
+      "conditional_branch": "Course_Format is set",
+      "terminal_action": "Cancel",
+      "on_success": "leaves settings unchanged"
     },
     {
       "wf_id": "WF-006",
-      "name": "Cancel with End Date enabled and Weekly format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == true AND Course_Format == Weekly format",
+      "name": "Cancel with Course_Format not set",
+      "actor": "Teacher",
+      "conditional_branch": "Course_Format is not set",
       "terminal_action": "Cancel",
-      "on_success": "abandons changes and returns to course page"
-    },
-    {
-      "wf_id": "WF-007",
-      "name": "Save with End Date disabled and Weekly format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == false AND Course_Format == Weekly format",
-      "terminal_action": "Save and display",
-      "on_success": "persists configuration and returns to course page"
-    },
-    {
-      "wf_id": "WF-008",
-      "name": "Cancel with End Date disabled and Weekly format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == false AND Course_Format == Weekly format",
-      "terminal_action": "Cancel",
-      "on_success": "abandons changes and returns to course page"
-    },
-    {
-      "wf_id": "WF-009",
-      "name": "Save with End Date enabled and Other format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == true AND Course_Format == Other",
-      "terminal_action": "Save and display",
-      "on_success": "persists configuration and returns to course page"
-    },
-    {
-      "wf_id": "WF-010",
-      "name": "Cancel with End Date enabled and Other format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == true AND Course_Format == Other",
-      "terminal_action": "Cancel",
-      "on_success": "abandons changes and returns to course page"
-    },
-    {
-      "wf_id": "WF-011",
-      "name": "Save with End Date disabled and Other format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == false AND Course_Format == Other",
-      "terminal_action": "Save and display",
-      "on_success": "persists configuration and returns to course page"
-    },
-    {
-      "wf_id": "WF-012",
-      "name": "Cancel with End Date disabled and Other format",
-      "actor": "Teacher/Manager",
-      "conditional_branch": "Course_End_Date_Enable == false AND Course_Format == Other",
-      "terminal_action": "Cancel",
-      "on_success": "abandons changes and returns to course page"
+      "on_success": "leaves settings unchanged"
     }
   ],
-  "total": 12
+  "total": 6
+}
+
+------------------------------------------------------------
+[22:47:43] Workflow-Extractor - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Course Settings",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Save and display (base)",
+      "actor": "Teacher",
+      "conditional_branch": null,
+      "terminal_action": "Save and display",
+      "on_success": "persists configuration and returns to the course page"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Save and display with Course_Format set",
+      "actor": "Teacher",
+      "conditional_branch": "Course_Format is set",
+      "terminal_action": "Save and display",
+      "on_success": "persists configuration and returns to the course page"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Save and display with Course_Format not set",
+      "actor": "Teacher",
+      "conditional_branch": "Course_Format is not set",
+      "terminal_action": "Save and display",
+      "on_success": "persists configuration and returns to the course page"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Cancel (base)",
+      "actor": "Teacher",
+      "conditional_branch": null,
+      "terminal_action": "Cancel",
+      "on_success": "leaves settings unchanged"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Cancel with Course_Format set",
+      "actor": "Teacher",
+      "conditional_branch": "Course_Format is set",
+      "terminal_action": "Cancel",
+      "on_success": "leaves settings unchanged"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Cancel with Course_Format not set",
+      "actor": "Teacher",
+      "conditional_branch": "Course_Format is not set",
+      "terminal_action": "Cancel",
+      "on_success": "leaves settings unchanged"
+    }
+  ],
+  "total": 6
 }

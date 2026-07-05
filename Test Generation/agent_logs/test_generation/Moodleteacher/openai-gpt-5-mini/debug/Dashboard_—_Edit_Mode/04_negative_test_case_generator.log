@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.078464
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.827191
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - SYSTEM PROMPT
+[22:49:29] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - USER PROMPT
+[22:49:29] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 3,
   "module_title": "Dashboard \u2014 Edit Mode",
-  "summary": "Provides an interface for customizing the Dashboard layout by adding, configuring, moving, and removing blocks, with an option to reset the page to the default layout.",
-  "where_it_fits": "Accessible from the top navigation via the Dashboard link, this mode is the Dashboard-specific editing state where block management controls (add block, move, configure, delete) and layout persistence are exposed; it complements the regular Dashboard viewing path and sits alongside other course/activity edit modes in the app's navigation structure.",
-  "assumed_state_on_entry": "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
+  "summary": "A mode for the Dashboard that enables adding, configuring, moving, and deleting page blocks with layout changes persisted per user and an option to reset the page to default.",
+  "where_it_fits": "This module is reached from the top navigation via the Dashboard link and activates while viewing the Dashboard page; it is part of the user-facing customization workflow that lets users personalize their Dashboard layout within the application's main navigation. It complements other course- and activity-level editing areas but specifically controls the Dashboard's block layout and content.",
+  "assumed_state_on_entry": "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
 }
 </module_context>
 
@@ -260,61 +270,40 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Dashboard \u2014 Edit Mode",
   "components": {
-    "Dashboard_Edit_Mode": {
-      "type": "page",
-      "preconditions": [
-        "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
-      ],
+    "Dashboard_Edit_Mode_Control": {
+      "type": "form",
       "fields": {
-        "Reset_Page_To_Default": {
-          "type": "button",
-          "action_name": "Reset page to default",
-          "visible_when": "Edit_Mode == on",
-          "preconditions": [
-            "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
-          ],
-          "on_success": "reverts layout to default for the user"
-        },
-        "Add_A_Block_Button": {
-          "type": "button",
-          "action_name": "+ Add a block",
-          "visible_when": "Edit_Mode == on",
-          "preconditions": [
-            "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
-          ],
-          "opens": "Add_A_Block_Page"
-        },
-        "Blocks": {
-          "type": "repeating_group",
-          "visible_when": "Edit_Mode == on",
-          "item_fields": {
-            "Move_Icon": {
-              "type": "button",
-              "action_name": "Move"
-            },
-            "Options_Menu": {
-              "type": "menu",
-              "row_actions": [
-                {
-                  "action_name": "Configure"
-                },
-                {
-                  "action_name": "Move"
-                },
-                {
-                  "action_name": "Delete"
-                }
-              ]
-            }
-          }
+        "Edit_Mode": {
+          "type": "checkbox"
         }
       }
+    },
+    "Dashboard_Edit_Action_Bar": {
+      "type": "action_bar",
+      "actions": [
+        {
+          "action_name": "Reset page to default",
+          "visible_when": "Edit_Mode == true",
+          "preconditions": [
+            "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
+          ],
+          "on_success": "Reverts user's dashboard layout to the default and persists the change for the user"
+        },
+        {
+          "action_name": "+ Add a block",
+          "visible_when": "Edit_Mode == true",
+          "preconditions": [
+            "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
+          ],
+          "on_success": "Opens the Add a block page"
+        }
+      ]
     },
     "Add_A_Block_Page": {
       "type": "form",
       "fields": {
         "Block_Type": {
-          "type": "unspecified",
+          "type": "dropdown",
           "options": [
             "Comments",
             "Course overview",
@@ -332,11 +321,52 @@ If a `<workflows>` block is present in the input:
             "Text",
             "Upcoming events"
           ]
-        },
-        "Cancel_Link": {
-          "type": "link",
+        }
+      },
+      "submit_actions": [
+        {
           "action_name": "Cancel",
-          "on_success": "returns to the Dashboard without adding a block"
+          "action_type": "link",
+          "preconditions": [
+            "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
+          ],
+          "on_success": "Returns to the Dashboard without adding a block"
+        }
+      ]
+    },
+    "Dashboard_Blocks": {
+      "type": "repeating_group",
+      "item_fields": {
+        "Move_Handle": {
+          "type": "unspecified",
+          "visible_when": "Edit_Mode == true",
+          "description": "Drag handle shown when Edit mode is on to move the block"
+        },
+        "Options_Menu": {
+          "type": "unspecified",
+          "visible_when": "Edit_Mode == true",
+          "row_actions": [
+            {
+              "action_name": "Configure",
+              "preconditions": [
+                "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
+              ]
+            },
+            {
+              "action_name": "Move",
+              "preconditions": [
+                "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
+              ],
+              "on_success": "Updates block position and persists layout changes for the user"
+            },
+            {
+              "action_name": "Delete",
+              "preconditions": [
+                "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
+              ],
+              "on_success": "Removes the block and persists layout changes for the user"
+            }
+          ]
         }
       }
     }
@@ -354,19 +384,18 @@ When Edit mode is toggled on, a "Reset page to default" button appears at the to
 </description>
 
 <workflows>
-WF-001 | Reset page to default (while in Edit mode) | actor: <role> | branch: Edit_Mode == on | terminal: Reset page to default | on_success: reverts layout to default for the user
-WF-002 | Open Add a block page (while in Edit mode) | actor: <role> | branch: Edit_Mode == on | terminal: + Add a block | on_success: opens Add_A_Block_Page
-WF-003 | Cancel from Add a block page | actor: <role> | branch: none | terminal: Cancel | on_success: returns to the Dashboard without adding a block
-WF-004 | Move a block using the move icon (row-level) | actor: <role> | branch: Edit_Mode == on AND Blocks.Move_Icon | terminal: Move | on_success: initiates block repositioning; layout changes persisted for the user
-WF-005 | Configure a block via options menu (row-level) | actor: <role> | branch: Edit_Mode == on AND Blocks.Options_Menu.Configure | terminal: Configure | on_success: opens configuration controls for the selected block
-WF-006 | Move a block via options menu (row-level) | actor: <role> | branch: Edit_Mode == on AND Blocks.Options_Menu.Move | terminal: Move | on_success: initiates block repositioning; layout changes persisted for the user
-WF-007 | Delete a block via options menu (row-level) | actor: <role> | branch: Edit_Mode == on AND Blocks.Options_Menu.Delete | terminal: Delete | on_success: removes the block from the dashboard; layout changes persisted for the user
+WF-001 | Reset page to default (Edit mode on) | actor: Logged in user with permission to edit the Dashboard | branch: Edit_Mode == true | terminal: Reset page to default | on_success: Reverts user's dashboard layout to the default and persists the change for the user
+WF-002 | Open Add a block page (Edit mode on) | actor: Logged in user with permission to edit the Dashboard | branch: Edit_Mode == true | terminal: + Add a block | on_success: Opens the Add a block page
+WF-003 | Cancel from Add a block page | actor: Logged in user with permission to edit the Dashboard | branch: Edit_Mode == true | terminal: Cancel | on_success: Returns to the Dashboard without adding a block
+WF-004 | Configure a block (Edit mode on) | actor: Logged in user with permission to edit the Dashboard | branch: Edit_Mode == true | terminal: Configure | on_success: Opens the block configuration UI
+WF-005 | Move a block (Edit mode on) | actor: Logged in user with permission to edit the Dashboard | branch: Edit_Mode == true | terminal: Move | on_success: Updates block position and persists layout changes for the user
+WF-006 | Delete a block (Edit mode on) | actor: Logged in user with permission to edit the Dashboard | branch: Edit_Mode == true | terminal: Delete | on_success: Removes the block and persists layout changes for the user
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:13:12] Test-Negative - LLM RESPONSE
+[22:50:12] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Dashboard — Edit Mode",
@@ -375,115 +404,123 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access Edit mode controls",
+      "test_case": "Unauthenticated user cannot access Edit mode controls",
       "preconditions": [
-        "User is not authenticated"
+        "User is not logged in",
+        "Dashboard page exists"
       ],
       "steps": [
-        "1. Open the application in a browser while not logged in",
-        "2. Navigate to the Dashboard page or the URL that would open Dashboard edit mode"
+        "1. Navigate to the Dashboard page as an unauthenticated user",
+        "2. Attempt to open Edit mode by clicking the Edit mode toggle or visiting the Edit mode URL"
       ],
-      "expected_result": "Navigation is blocked: the user is redirected to the login page; no Edit-mode controls are visible (no 'Reset page to default' button, no '+ Add a block' button, no block move icons or options menus) and no layout edit actions can be performed",
+      "expected_result": "User is redirected to the login page or shown a login prompt; Edit mode controls (Edit toggle, 'Reset page to default', '+ Add a block', move handles, options menu) are not available/visible on the Dashboard",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Attempt to use 'Reset page to default' when Edit mode is OFF",
+      "test_case": "Reset page to default button is not available when Edit mode is off",
       "preconditions": [
-        "User is authenticated",
-        "Dashboard Edit mode is toggled OFF"
+        "Logged in as a user with edit permission",
+        "Dashboard loaded with Edit mode OFF (Edit_Mode == false)"
       ],
       "steps": [
-        "1. Log in as an authenticated user",
-        "2. Open the Dashboard page",
-        "3. Ensure Edit mode is toggled OFF",
-        "4. Look for the 'Reset page to default' button"
+        "1. Ensure the Edit mode checkbox is unchecked (Edit mode OFF)",
+        "2. Attempt to click the top-right 'Reset page to default' button"
       ],
-      "expected_result": "The 'Reset page to default' button is not visible when Edit mode is OFF; the reset action cannot be triggered and the dashboard layout remains unchanged",
+      "expected_result": "'Reset page to default' button is not visible or clickable while Edit mode is off; attempting to click it does not revert the user's dashboard layout and the dashboard remains unchanged",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-002",
-      "test_case": "Attempt to open 'Add a block' when Edit mode is OFF (button not present)",
+      "test_case": "'+ Add a block' action is not available when Edit mode is off",
       "preconditions": [
-        "User is authenticated",
-        "Dashboard Edit mode is toggled OFF"
+        "Logged in as a user with edit permission",
+        "Dashboard loaded with Edit mode OFF (Edit_Mode == false)"
       ],
       "steps": [
-        "1. Log in as an authenticated user",
-        "2. Open the Dashboard page",
-        "3. Ensure Edit mode is toggled OFF",
-        "4. Look for the '+ Add a block' button below the Dashboard heading"
+        "1. Ensure the Edit mode checkbox is unchecked (Edit mode OFF)",
+        "2. Attempt to click the '+ Add a block' button below the Dashboard heading"
       ],
-      "expected_result": "The '+ Add a block' button is not visible when Edit mode is OFF; the Add a block page cannot be opened from the Dashboard and no block can be added",
+      "expected_result": "'+ Add a block' button is not visible or clickable while Edit mode is off; no Add a block page opens and the Dashboard remains displayed",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-002",
-      "test_case": "Direct navigation to Add a block page is blocked when Edit mode is OFF",
+      "test_case": "User without dashboard edit permission cannot open Add a block page (precondition failure)",
       "preconditions": [
-        "User is authenticated",
-        "Dashboard Edit mode is toggled OFF"
+        "Logged in as <user without dashboard edit permission>",
+        "Dashboard loaded"
       ],
       "steps": [
-        "1. Log in as an authenticated user",
-        "2. Open the Dashboard page",
-        "3. Ensure Edit mode is toggled OFF",
-        "4. Manually navigate to the Add a block page URL or attempt to open it via a direct link"
+        "1. Log in as <user without dashboard edit permission>",
+        "2. If Edit mode toggle is present, enable Edit mode (if not present, skip this step)",
+        "3. Click the '+ Add a block' button (if visible) or navigate to the Add a block page URL"
       ],
-      "expected_result": "Navigation to the Add a block page is blocked when Edit mode is OFF: the Add a block page is not displayed, the user remains on the standard Dashboard view, and no block addition UI or controls are available",
-      "priority": "medium"
+      "expected_result": "The Add a block page does not open; either the '+ Add a block' control is not visible to this user or clicking it is blocked; the user remains on the Dashboard and no Add a block UI is shown (no block can be added)",
+      "priority": "high"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-005",
-      "test_case": "Options menu (Configure/Move/Delete) is not accessible when Edit mode is OFF",
+      "wf_ref": "WF-004",
+      "test_case": "Configure action is blocked for users without edit permission",
       "preconditions": [
-        "User is authenticated",
-        "Dashboard contains at least one block",
-        "Dashboard Edit mode is toggled OFF"
+        "Logged in as <user without dashboard edit permission>",
+        "Dashboard loaded with at least one block present"
       ],
       "steps": [
-        "1. Log in as an authenticated user",
-        "2. Open the Dashboard page that contains existing blocks",
-        "3. Ensure Edit mode is toggled OFF",
-        "4. Attempt to open a block's three-dot options menu (row-level options)"
+        "1. Log in as <user without dashboard edit permission>",
+        "2. Open the options menu for an existing block",
+        "3. Attempt to click the 'Configure' row action"
       ],
-      "expected_result": "The block's options menu is not visible / does not open when Edit mode is OFF; the 'Configure', 'Move', and 'Delete' actions are not accessible and no block configuration, move, or delete can be performed",
+      "expected_result": "'Configure' is not present or not actionable for this user; clicking does not open the block configuration UI and the block remains unchanged; no configuration UI is displayed",
       "priority": "high"
     },
     {
       "tc_id": "N-006",
-      "wf_ref": "WF-004",
-      "test_case": "Move icon/drag to reposition is disabled or absent when Edit mode is OFF",
+      "wf_ref": "WF-005",
+      "test_case": "Move handle is not available and blocks cannot be moved when Edit mode is off",
       "preconditions": [
-        "User is authenticated",
-        "Dashboard contains at least one block",
-        "Dashboard Edit mode is toggled OFF"
+        "Logged in as a user with edit permission",
+        "Dashboard loaded with Edit mode OFF (Edit_Mode == false)",
+        "At least one block is present"
       ],
       "steps": [
-        "1. Log in as an authenticated user",
-        "2. Open the Dashboard page that contains existing blocks",
-        "3. Ensure Edit mode is toggled OFF",
-        "4. Attempt to click or drag a block using its Move icon"
+        "1. Ensure the Edit mode checkbox is unchecked (Edit mode OFF)",
+        "2. Attempt to grab the block's move handle and drag the block to a new position"
       ],
-      "expected_result": "The Move icon is not visible or is disabled when Edit mode is OFF; dragging/repositioning does not start and the dashboard layout remains unchanged",
+      "expected_result": "Move handle is not visible when Edit mode is off and dragging is not possible; attempting to drag does not change block position and the dashboard layout remains unchanged",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-006",
+      "test_case": "Delete action is blocked for users without edit permission",
+      "preconditions": [
+        "Logged in as <user without dashboard edit permission>",
+        "Dashboard loaded with at least one block present"
+      ],
+      "steps": [
+        "1. Log in as <user without dashboard edit permission>",
+        "2. Open the options menu for an existing block",
+        "3. Attempt to click the 'Delete' row action"
+      ],
+      "expected_result": "'Delete' is not present or not actionable for this user; clicking does not remove the block and no deletion confirmation or change occurs; the block remains on the Dashboard",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 6,
-    "high_priority": 5,
+    "total": 7,
+    "high_priority": 6,
     "medium_priority": 1,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:13:12] Test-Negative - PARSED JSON
+[22:50:12] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Dashboard \u2014 Edit Mode",
@@ -492,108 +529,116 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access Edit mode controls",
+      "test_case": "Unauthenticated user cannot access Edit mode controls",
       "preconditions": [
-        "User is not authenticated"
+        "User is not logged in",
+        "Dashboard page exists"
       ],
       "steps": [
-        "1. Open the application in a browser while not logged in",
-        "2. Navigate to the Dashboard page or the URL that would open Dashboard edit mode"
+        "1. Navigate to the Dashboard page as an unauthenticated user",
+        "2. Attempt to open Edit mode by clicking the Edit mode toggle or visiting the Edit mode URL"
       ],
-      "expected_result": "Navigation is blocked: the user is redirected to the login page; no Edit-mode controls are visible (no 'Reset page to default' button, no '+ Add a block' button, no block move icons or options menus) and no layout edit actions can be performed",
+      "expected_result": "User is redirected to the login page or shown a login prompt; Edit mode controls (Edit toggle, 'Reset page to default', '+ Add a block', move handles, options menu) are not available/visible on the Dashboard",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Attempt to use 'Reset page to default' when Edit mode is OFF",
+      "test_case": "Reset page to default button is not available when Edit mode is off",
       "preconditions": [
-        "User is authenticated",
-        "Dashboard Edit mode is toggled OFF"
+        "Logged in as a user with edit permission",
+        "Dashboard loaded with Edit mode OFF (Edit_Mode == false)"
       ],
       "steps": [
-        "1. Log in as an authenticated user",
-        "2. Open the Dashboard page",
-        "3. Ensure Edit mode is toggled OFF",
-        "4. Look for the 'Reset page to default' button"
+        "1. Ensure the Edit mode checkbox is unchecked (Edit mode OFF)",
+        "2. Attempt to click the top-right 'Reset page to default' button"
       ],
-      "expected_result": "The 'Reset page to default' button is not visible when Edit mode is OFF; the reset action cannot be triggered and the dashboard layout remains unchanged",
+      "expected_result": "'Reset page to default' button is not visible or clickable while Edit mode is off; attempting to click it does not revert the user's dashboard layout and the dashboard remains unchanged",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-002",
-      "test_case": "Attempt to open 'Add a block' when Edit mode is OFF (button not present)",
+      "test_case": "'+ Add a block' action is not available when Edit mode is off",
       "preconditions": [
-        "User is authenticated",
-        "Dashboard Edit mode is toggled OFF"
+        "Logged in as a user with edit permission",
+        "Dashboard loaded with Edit mode OFF (Edit_Mode == false)"
       ],
       "steps": [
-        "1. Log in as an authenticated user",
-        "2. Open the Dashboard page",
-        "3. Ensure Edit mode is toggled OFF",
-        "4. Look for the '+ Add a block' button below the Dashboard heading"
+        "1. Ensure the Edit mode checkbox is unchecked (Edit mode OFF)",
+        "2. Attempt to click the '+ Add a block' button below the Dashboard heading"
       ],
-      "expected_result": "The '+ Add a block' button is not visible when Edit mode is OFF; the Add a block page cannot be opened from the Dashboard and no block can be added",
+      "expected_result": "'+ Add a block' button is not visible or clickable while Edit mode is off; no Add a block page opens and the Dashboard remains displayed",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-002",
-      "test_case": "Direct navigation to Add a block page is blocked when Edit mode is OFF",
+      "test_case": "User without dashboard edit permission cannot open Add a block page (precondition failure)",
       "preconditions": [
-        "User is authenticated",
-        "Dashboard Edit mode is toggled OFF"
+        "Logged in as <user without dashboard edit permission>",
+        "Dashboard loaded"
       ],
       "steps": [
-        "1. Log in as an authenticated user",
-        "2. Open the Dashboard page",
-        "3. Ensure Edit mode is toggled OFF",
-        "4. Manually navigate to the Add a block page URL or attempt to open it via a direct link"
+        "1. Log in as <user without dashboard edit permission>",
+        "2. If Edit mode toggle is present, enable Edit mode (if not present, skip this step)",
+        "3. Click the '+ Add a block' button (if visible) or navigate to the Add a block page URL"
       ],
-      "expected_result": "Navigation to the Add a block page is blocked when Edit mode is OFF: the Add a block page is not displayed, the user remains on the standard Dashboard view, and no block addition UI or controls are available",
-      "priority": "medium"
+      "expected_result": "The Add a block page does not open; either the '+ Add a block' control is not visible to this user or clicking it is blocked; the user remains on the Dashboard and no Add a block UI is shown (no block can be added)",
+      "priority": "high"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-005",
-      "test_case": "Options menu (Configure/Move/Delete) is not accessible when Edit mode is OFF",
+      "wf_ref": "WF-004",
+      "test_case": "Configure action is blocked for users without edit permission",
       "preconditions": [
-        "User is authenticated",
-        "Dashboard contains at least one block",
-        "Dashboard Edit mode is toggled OFF"
+        "Logged in as <user without dashboard edit permission>",
+        "Dashboard loaded with at least one block present"
       ],
       "steps": [
-        "1. Log in as an authenticated user",
-        "2. Open the Dashboard page that contains existing blocks",
-        "3. Ensure Edit mode is toggled OFF",
-        "4. Attempt to open a block's three-dot options menu (row-level options)"
+        "1. Log in as <user without dashboard edit permission>",
+        "2. Open the options menu for an existing block",
+        "3. Attempt to click the 'Configure' row action"
       ],
-      "expected_result": "The block's options menu is not visible / does not open when Edit mode is OFF; the 'Configure', 'Move', and 'Delete' actions are not accessible and no block configuration, move, or delete can be performed",
+      "expected_result": "'Configure' is not present or not actionable for this user; clicking does not open the block configuration UI and the block remains unchanged; no configuration UI is displayed",
       "priority": "high"
     },
     {
       "tc_id": "N-006",
-      "wf_ref": "WF-004",
-      "test_case": "Move icon/drag to reposition is disabled or absent when Edit mode is OFF",
+      "wf_ref": "WF-005",
+      "test_case": "Move handle is not available and blocks cannot be moved when Edit mode is off",
       "preconditions": [
-        "User is authenticated",
-        "Dashboard contains at least one block",
-        "Dashboard Edit mode is toggled OFF"
+        "Logged in as a user with edit permission",
+        "Dashboard loaded with Edit mode OFF (Edit_Mode == false)",
+        "At least one block is present"
       ],
       "steps": [
-        "1. Log in as an authenticated user",
-        "2. Open the Dashboard page that contains existing blocks",
-        "3. Ensure Edit mode is toggled OFF",
-        "4. Attempt to click or drag a block using its Move icon"
+        "1. Ensure the Edit mode checkbox is unchecked (Edit mode OFF)",
+        "2. Attempt to grab the block's move handle and drag the block to a new position"
       ],
-      "expected_result": "The Move icon is not visible or is disabled when Edit mode is OFF; dragging/repositioning does not start and the dashboard layout remains unchanged",
+      "expected_result": "Move handle is not visible when Edit mode is off and dragging is not possible; attempting to drag does not change block position and the dashboard layout remains unchanged",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": "WF-006",
+      "test_case": "Delete action is blocked for users without edit permission",
+      "preconditions": [
+        "Logged in as <user without dashboard edit permission>",
+        "Dashboard loaded with at least one block present"
+      ],
+      "steps": [
+        "1. Log in as <user without dashboard edit permission>",
+        "2. Open the options menu for an existing block",
+        "3. Attempt to click the 'Delete' row action"
+      ],
+      "expected_result": "'Delete' is not present or not actionable for this user; clicking does not remove the block and no deletion confirmation or change occurs; the block remains on the Dashboard",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 6,
-    "high_priority": 5,
+    "total": 7,
+    "high_priority": 6,
     "medium_priority": 1,
     "low_priority": 0
   }

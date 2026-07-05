@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:02:39.100856
+DEBUG SESSION STARTED: 2026-07-04T22:22:17.293527
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Negative - SYSTEM PROMPT
+[22:22:17] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Negative - USER PROMPT
+[22:22:17] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 10,
   "module_title": "Investments",
-  "summary": "Provides a portfolio snapshot and workflows for executing same-day fund trades and creating recurring investment plans, with input validation and confirmation messages.",
-  "where_it_fits": "Accessible from the left-hand navigation (Investments, item \u2467) after successful login and landing on the account dashboard; it is the application area for managing brokerage-style holdings and scheduling contributions as part of account management features.",
-  "assumed_state_on_entry": "Logged in customer session with at least one linked funding/destination account and investment privileges (existing holdings or funding account available)."
+  "summary": "Displays a portfolio snapshot and provides forms to execute same-day buy/sell trades and to create recurring investment plans with inline validation and success confirmations.",
+  "where_it_fits": "Accessible from the left-hand navigation as the Investments option after successful sign-in, it complements the Accounts Overview and other account-management features (e.g., Transfer Funds, Manage Cards) by handling investment holdings and trade activity within the user's account lifecycle. Actions on this page update the user's holdings and are reflected in portfolio data shown across the application.",
+  "assumed_state_on_entry": "Logged in as a customer with an active account and at least one funding/destination account available for trades."
 }
 </module_context>
 
@@ -273,37 +283,30 @@ If a `<workflows>` block is present in the input:
         "Fund_Symbol": {
           "type": "search",
           "constraints": [
-            "symbol must exist"
+            "symbol must exist (validated against available funds)"
           ]
         },
         "Quantity": {
           "type": "number",
           "constraints": [
-            "must be greater than zero"
+            "must be greater than 0"
           ]
         },
         "Funding_Or_Destination_Account": {
           "type": "dropdown"
         }
       },
-      "constraints": [
-        "if Action == Buy then customer must have sufficient buying power for the requested Quantity",
-        "if Action == Sell then customer must have sufficient share balance of Fund_Symbol for the requested Quantity"
-      ],
       "submit_actions": [
         {
           "action_name": "Execute Trade",
           "preconditions": [
-            "Logged in customer session with at least one linked funding/destination account and investment privileges (existing holdings or funding account available)."
+            "Logged in as a customer with an active account and at least one funding/destination account available for trades."
           ],
           "constraints": [
-            "Fund_Symbol must exist (validated inline)",
-            "Quantity must be greater than zero",
             "if Action == Buy then customer must have sufficient buying power",
             "if Action == Sell then customer must have sufficient share balance"
           ],
-          "on_success": "Trade executed successfully. Returns Order ID and updates holdings.",
-          "validation_errors_display": "inline"
+          "on_success": "executes same-day trade, updates holdings, displays \"Trade executed successfully.\" with order ID"
         }
       ]
     },
@@ -313,13 +316,13 @@ If a `<workflows>` block is present in the input:
         "Fund_Symbol": {
           "type": "search",
           "constraints": [
-            "symbol must exist"
+            "symbol must exist (validated against available funds)"
           ]
         },
         "Contribution_Amount": {
           "type": "number",
           "constraints": [
-            "must meet the minimum contribution"
+            "must meet the minimum contribution requirement"
           ]
         },
         "Frequency": {
@@ -332,7 +335,8 @@ If a `<workflows>` block is present in the input:
         "Start_Date": {
           "type": "date",
           "constraints": [
-            "must be in the future"
+            "must be in the future",
+            "Start date must be in the future"
           ]
         },
         "Funding_Account": {
@@ -343,15 +347,14 @@ If a `<workflows>` block is present in the input:
         {
           "action_name": "Create Plan",
           "preconditions": [
-            "Logged in customer session with at least one linked funding/destination account and investment privileges (existing holdings or funding account available)."
+            "Logged in as a customer with an active account and at least one funding/destination account available for trades."
           ],
           "constraints": [
-            "Start_Date must be in the future",
-            "Contribution_Amount must meet the minimum contribution",
-            "funding account must have adequate balance to cover initial contribution and scheduled transfers"
+            "funding account must have adequate balance",
+            "contribution amount must meet the minimum contribution requirement",
+            "start date must be in the future"
           ],
-          "on_success": "Plan created successfully. Schedule stored.",
-          "validation_errors_display": "inline"
+          "on_success": "stores schedule and shows \"Plan created successfully.\""
         }
       ]
     }
@@ -366,15 +369,15 @@ The Investments page is a multi-section workspace.The portfolio snapshot is a re
 </description>
 
 <workflows>
-WF-001 | Execute Trade — Buy | actor: Customer | branch: Action == Buy | terminal: Execute Trade | on_success: Trade executed successfully. Returns Order ID and updates holdings.
-WF-002 | Execute Trade — Sell | actor: Customer | branch: Action == Sell | terminal: Execute Trade | on_success: Trade executed successfully. Returns Order ID and updates holdings.
-WF-003 | Create Recurring Investment Plan | actor: Customer | branch: none | terminal: Create Plan | on_success: Plan created successfully. Schedule stored.
+WF-001 | Execute Buy trade | actor: Customer | branch: Action == Buy | terminal: Execute Trade | on_success: executes same-day trade, updates holdings, displays "Trade executed successfully." with order ID
+WF-002 | Execute Sell trade | actor: Customer | branch: Action == Sell | terminal: Execute Trade | on_success: executes same-day trade, updates holdings, displays "Trade executed successfully." with order ID
+WF-003 | Create recurring investment plan | actor: Customer | branch: none | terminal: Create Plan | on_success: stores schedule and shows "Plan created successfully."
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:05:04] Test-Negative - LLM RESPONSE
+[22:24:36] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Investments",
@@ -383,231 +386,202 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Unauthenticated user cannot access Investments page",
-      "preconditions": ["User is not authenticated (no active session)"],
+      "test_case": "Unauthenticated user attempts to access Investments page",
+      "preconditions": ["User is not signed in"],
       "steps": [
-        "1. Open the application and navigate to the Investments page URL"
+        "1. Navigate to the Investments page URL"
       ],
-      "expected_result": "Navigation is blocked: the user is redirected to the login page; Investments page content is not displayed.",
+      "expected_result": "User is redirected to the login page; Investments page is not displayed and no forms are accessible",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Execute Trade — submit with Fund Symbol left blank",
-      "preconditions": ["Logged in customer session with investment privileges and at least one linked funding/destination account"],
+      "test_case": "Execute Trade — submit with all required trade fields empty",
+      "preconditions": ["Logged in as a customer with an active account and at least one funding/destination account available for trades."],
       "steps": [
-        "1. Navigate to Investments → Trade Funds form",
-        "2. Select Action = <Buy>",
-        "3. Leave Fund_Symbol field blank",
-        "4. Enter <valid quantity> into Quantity field",
-        "5. Select <funding account> in Funding_Or_Destination_Account",
+        "1. Open the Trade Funds form on the Investments page",
+        "2. Leave Action blank",
+        "3. Leave Fund Symbol blank",
+        "4. Leave Quantity blank",
+        "5. Leave Funding or Destination Account blank",
         "6. Click Execute Trade"
       ],
-      "expected_result": "Form does not submit; Fund_Symbol field displays an inline validation error indicating it is required (e.g. 'Fund symbol must exist'); no order is created and holdings are not updated.",
+      "expected_result": "Form does not submit; inline validation errors appear on Action, Fund Symbol, Quantity, and Funding or Destination Account indicating they must be provided; no trade is executed",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Execute Trade — submit with Quantity left blank",
-      "preconditions": ["Logged in customer session with investment privileges and at least one linked funding/destination account"],
+      "test_case": "Execute Trade — leave Fund Symbol blank",
+      "preconditions": ["Logged in as a customer with an active account and at least one funding/destination account available for trades."],
       "steps": [
-        "1. Navigate to Investments → Trade Funds form",
-        "2. Select Action = <Buy>",
-        "3. Enter <valid fund symbol> into Fund_Symbol field",
-        "4. Leave Quantity field blank",
-        "5. Select <funding account> in Funding_Or_Destination_Account",
+        "1. Open the Trade Funds form",
+        "2. Select Action = Buy",
+        "3. Leave Fund Symbol blank",
+        "4. Enter a valid Quantity in the Quantity field",
+        "5. Select a Funding or Destination Account",
         "6. Click Execute Trade"
       ],
-      "expected_result": "Form does not submit; Quantity field displays an inline validation error indicating it is required and must be greater than zero (e.g. 'Quantity must be greater than zero'); no order is created.",
+      "expected_result": "Form does not submit; an inline validation error appears on the Fund Symbol field indicating the symbol must exist or be selected; trade is not executed",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-001",
-      "test_case": "Execute Trade — enter non-numeric input into Quantity",
-      "preconditions": ["Logged in customer session with investment privileges and at least one linked funding/destination account"],
+      "test_case": "Execute Trade — leave Quantity blank",
+      "preconditions": ["Logged in as a customer with an active account and at least one funding/destination account available for trades."],
       "steps": [
-        "1. Navigate to Investments → Trade Funds form",
-        "2. Select Action = <Buy>",
-        "3. Enter <valid fund symbol> into Fund_Symbol field",
-        "4. Enter <non-numeric input> into Quantity field",
-        "5. Select <funding account> in Funding_Or_Destination_Account",
+        "1. Open the Trade Funds form",
+        "2. Select Action = Buy",
+        "3. Enter a valid Fund Symbol",
+        "4. Leave Quantity blank",
+        "5. Select a Funding or Destination Account",
         "6. Click Execute Trade"
       ],
-      "expected_result": "Form does not submit; Quantity field displays an inline validation error indicating the value must be numeric (e.g. 'Quantity must be a number'); no order is created.",
-      "priority": "medium"
+      "expected_result": "Form does not submit; an inline validation error appears on the Quantity field indicating it must be greater than 0; trade is not executed",
+      "priority": "high"
     },
     {
       "tc_id": "N-005",
       "wf_ref": "WF-001",
-      "test_case": "Execute Trade — submit with non-existent Fund Symbol",
-      "preconditions": ["Logged in customer session with investment privileges and at least one linked funding/destination account"],
+      "test_case": "Execute Trade — non-numeric input in Quantity (format violation)",
+      "preconditions": ["Logged in as a customer with an active account and at least one funding/destination account available for trades."],
       "steps": [
-        "1. Navigate to Investments → Trade Funds form",
-        "2. Select Action = <Buy>",
-        "3. Enter <non-existent fund symbol> into Fund_Symbol field",
-        "4. Enter <valid quantity> into Quantity field",
-        "5. Select <funding account> in Funding_Or_Destination_Account",
+        "1. Open the Trade Funds form",
+        "2. Select Action = Buy",
+        "3. Enter a valid Fund Symbol",
+        "4. Enter <non-numeric input> in the Quantity field",
+        "5. Select a Funding or Destination Account",
         "6. Click Execute Trade"
       ],
-      "expected_result": "Form does not submit; Fund_Symbol field displays an inline validation error: 'Fund symbol must exist' (symbol not found); no order is created.",
-      "priority": "high"
+      "expected_result": "Form does not submit; an inline validation error appears on the Quantity field indicating Quantity must be a numeric value greater than 0; trade is not executed",
+      "priority": "medium"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Execute Trade (Buy) — insufficient buying power blocks trade",
-      "preconditions": ["Logged in customer session with investment privileges and at least one linked funding/destination account", "Selected funding account has buying power less than required for requested Quantity"],
+      "test_case": "Execute Buy trade — insufficient buying power",
+      "preconditions": ["Logged in as a customer with an active account and at least one funding/destination account available for trades.", "Customer does not have sufficient buying power for the requested purchase"],
       "steps": [
-        "1. Navigate to Investments → Trade Funds form",
-        "2. Select Action = <Buy>",
-        "3. Enter <valid fund symbol> into Fund_Symbol field",
-        "4. Enter <quantity that requires more buying power than available> into Quantity field",
-        "5. Select the <funding account with insufficient buying power> in Funding_Or_Destination_Account",
+        "1. Open the Trade Funds form",
+        "2. Select Action = Buy",
+        "3. Enter a valid Fund Symbol",
+        "4. Enter <quantity resulting in cost greater than available buying power> in Quantity",
+        "5. Select a Funding or Destination Account",
         "6. Click Execute Trade"
       ],
-      "expected_result": "Form does not submit; inline validation error is shown (e.g. 'Insufficient buying power for requested trade') and the trade is not executed; no Order ID is returned; holdings are not updated.",
+      "expected_result": "Form does not submit; an inline validation error is shown indicating insufficient buying power; no trade is executed",
       "priority": "high"
     },
     {
       "tc_id": "N-007",
       "wf_ref": "WF-002",
-      "test_case": "Execute Trade (Sell) — insufficient share balance blocks trade",
-      "preconditions": ["Logged in customer session with investment privileges and at least one linked funding/destination account", "Customer's holdings for <Fund_Symbol> are less than requested Quantity"],
+      "test_case": "Execute Sell trade — insufficient share balance",
+      "preconditions": ["Logged in as a customer with an active account and at least one funding/destination account available for trades.", "Customer holds fewer shares than the requested sell quantity"],
       "steps": [
-        "1. Navigate to Investments → Trade Funds form",
-        "2. Select Action = <Sell>",
-        "3. Enter <valid fund symbol that is held but with insufficient shares> into Fund_Symbol field",
-        "4. Enter <quantity greater than available share balance> into Quantity field",
-        "5. Select <destination account> in Funding_Or_Destination_Account",
+        "1. Open the Trade Funds form",
+        "2. Select Action = Sell",
+        "3. Enter a valid Fund Symbol that the customer holds",
+        "4. Enter <quantity greater than customer's share balance> in Quantity",
+        "5. Select a Funding or Destination Account",
         "6. Click Execute Trade"
       ],
-      "expected_result": "Form does not submit; inline validation error appears on Quantity or Fund_Symbol: 'Insufficient share balance for selected fund' and the sell order is not created; holdings remain unchanged.",
+      "expected_result": "Form does not submit; an inline validation error is shown indicating insufficient share balance to complete the sale; no trade is executed",
       "priority": "high"
     },
     {
       "tc_id": "N-008",
       "wf_ref": "WF-003",
-      "test_case": "Create Plan — submit with Start Date left blank (violates future-date constraint)",
-      "preconditions": ["Logged in customer session with investment privileges and at least one linked funding account"],
+      "test_case": "Create Plan — leave Start Date blank",
+      "preconditions": ["Logged in as a customer with an active account and at least one funding account available."],
       "steps": [
-        "1. Navigate to Investments → Recurring Investment Plan form",
-        "2. Enter <valid fund symbol> into Fund_Symbol field",
-        "3. Enter <valid contribution amount meeting min> into Contribution_Amount field",
-        "4. Select Frequency = <Monthly>",
-        "5. Leave Start_Date field blank",
-        "6. Select <funding account> in Funding_Account",
+        "1. Open the Recurring Investment Plan form",
+        "2. Enter a valid Fund Symbol",
+        "3. Enter a valid Contribution Amount that meets the minimum",
+        "4. Select Frequency",
+        "5. Leave Start Date blank",
+        "6. Select a Funding Account",
         "7. Click Create Plan"
       ],
-      "expected_result": "Form does not submit; Start_Date field displays an inline validation error indicating the start date is required and must be in the future (e.g. 'Start date must be in the future'); plan is not created and no schedule is stored.",
+      "expected_result": "Form does not submit; an inline validation error appears on the Start Date field indicating the start date must be provided and must be in the future (\"Start date must be in the future\"); plan is not created",
       "priority": "high"
     },
     {
       "tc_id": "N-009",
       "wf_ref": "WF-003",
-      "test_case": "Create Plan — Contribution amount below minimum blocks creation",
-      "preconditions": ["Logged in customer session with investment privileges and at least one linked funding account"],
+      "test_case": "Create Plan — Start Date is in the past",
+      "preconditions": ["Logged in as a customer with an active account and at least one funding account available."],
       "steps": [
-        "1. Navigate to Investments → Recurring Investment Plan form",
-        "2. Enter <valid fund symbol> into Fund_Symbol field",
-        "3. Enter <amount below minimum contribution> into Contribution_Amount field",
-        "4. Select Frequency = <Weekly>",
-        "5. Enter <valid future date> into Start_Date field",
-        "6. Select <funding account> in Funding_Account",
+        "1. Open the Recurring Investment Plan form",
+        "2. Enter a valid Fund Symbol",
+        "3. Enter a valid Contribution Amount that meets the minimum",
+        "4. Select Frequency",
+        "5. Enter <a date in the past> in Start Date",
+        "6. Select a Funding Account",
         "7. Click Create Plan"
       ],
-      "expected_result": "Form does not submit; Contribution_Amount field displays an inline validation error: 'Contribution amount must meet the minimum contribution' and the plan is not created.",
+      "expected_result": "Form does not submit; the Start Date field displays the inline validation error \"Start date must be in the future\"; plan is not created",
       "priority": "high"
     },
     {
       "tc_id": "N-010",
       "wf_ref": "WF-003",
-      "test_case": "Create Plan — funding account lacks adequate balance for initial contribution",
-      "preconditions": ["Logged in customer session with investment privileges", "Selected funding account balance is less than the initial Contribution_Amount"],
+      "test_case": "Create Plan — Contribution Amount below minimum requirement",
+      "preconditions": ["Logged in as a customer with an active account and at least one funding account available."],
       "steps": [
-        "1. Navigate to Investments → Recurring Investment Plan form",
-        "2. Enter <valid fund symbol> into Fund_Symbol field",
-        "3. Enter <valid contribution amount> into Contribution_Amount field",
-        "4. Select Frequency = <Monthly>",
-        "5. Enter <valid future date> into Start_Date field",
-        "6. Select the <funding account with inadequate balance> in Funding_Account",
+        "1. Open the Recurring Investment Plan form",
+        "2. Enter a valid Fund Symbol",
+        "3. Enter <amount below minimum contribution> in Contribution Amount",
+        "4. Select Frequency",
+        "5. Enter a valid future Start Date",
+        "6. Select a Funding Account",
         "7. Click Create Plan"
       ],
-      "expected_result": "Form does not submit; inline validation error is shown on Funding_Account or Contribution_Amount (e.g. 'Funding account does not have adequate balance to cover initial contribution and scheduled transfers'); plan is not created and no schedule is stored.",
+      "expected_result": "Form does not submit; an inline validation error appears on the Contribution Amount field indicating the amount must meet the minimum contribution requirement; plan is not created",
       "priority": "high"
     },
     {
       "tc_id": "N-011",
       "wf_ref": "WF-003",
-      "test_case": "Create Plan — Start Date in the past is rejected",
-      "preconditions": ["Logged in customer session with investment privileges and at least one linked funding account"],
+      "test_case": "Create Plan — funding account has inadequate balance",
+      "preconditions": ["Logged in as a customer with an active account.", "Selected funding account does not have adequate balance for the contribution amount."],
       "steps": [
-        "1. Navigate to Investments → Recurring Investment Plan form",
-        "2. Enter <valid fund symbol> into Fund_Symbol field",
-        "3. Enter <valid contribution amount> into Contribution_Amount field",
-        "4. Select Frequency = <Weekly>",
-        "5. Enter <past date> into Start_Date field",
-        "6. Select <funding account> in Funding_Account",
+        "1. Open the Recurring Investment Plan form",
+        "2. Enter a valid Fund Symbol",
+        "3. Enter a Contribution Amount that would exceed the funding account balance",
+        "4. Select Frequency",
+        "5. Enter a valid future Start Date",
+        "6. Select the underfunded Funding Account",
         "7. Click Create Plan"
       ],
-      "expected_result": "Form does not submit; Start_Date field displays an inline validation error: 'Start date must be in the future'; plan is not created.",
+      "expected_result": "Form does not submit; an inline validation error appears on the Funding Account or Contribution Amount indicating the funding account must have adequate balance; plan is not created",
       "priority": "high"
     },
     {
       "tc_id": "N-012",
       "wf_ref": "WF-001",
-      "test_case": "Execute Trade — submit with Quantity = zero (violates > 0 constraint)",
-      "preconditions": ["Logged in customer session with investment privileges and at least one linked funding/destination account"],
+      "test_case": "Execute Trade — user has no funding/destination accounts available (precondition failure)",
+      "preconditions": ["Logged in as a customer with an active account but with no funding or destination accounts available for trades."],
       "steps": [
-        "1. Navigate to Investments → Trade Funds form",
-        "2. Select Action = <Buy>",
-        "3. Enter <valid fund symbol> into Fund_Symbol field",
-        "4. Enter Quantity = <0> into Quantity field",
-        "5. Select <funding account> in Funding_Or_Destination_Account",
-        "6. Click Execute Trade"
+        "1. Open the Investments page",
+        "2. Open the Trade Funds form",
+        "3. Attempt to select a Funding or Destination Account (none available) or click Execute Trade"
       ],
-      "expected_result": "Form does not submit; Quantity field displays an inline validation error: 'Quantity must be greater than zero'; no order is created.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-013",
-      "wf_ref": "WF-001",
-      "test_case": "Execute Trade — precondition not met: no linked funding/destination account or no investment privileges",
-      "preconditions": ["Logged in customer session exists but user has no linked funding/destination account or lacks investment privileges"],
-      "steps": [
-        "1. Navigate to Investments → Trade Funds form",
-        "2. Fill all visible Trade Funds fields with valid values (Action, Fund_Symbol, Quantity, Funding_Or_Destination_Account if listed)",
-        "3. Click Execute Trade"
-      ],
-      "expected_result": "Action is blocked; the system displays a blocking message explaining the missing precondition (e.g. 'You must link a funding account and have investment privileges to execute trades') and the trade is not executed; no Order ID is returned.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-014",
-      "wf_ref": "WF-003",
-      "test_case": "Create Plan — precondition not met: no linked funding account or no investment privileges",
-      "preconditions": ["Logged in customer session exists but user has no linked funding account or lacks investment privileges"],
-      "steps": [
-        "1. Navigate to Investments → Recurring Investment Plan form",
-        "2. Fill all visible Recurring Investment Plan fields with valid values (Fund_Symbol, Contribution_Amount, Frequency, Start_Date, Funding_Account)",
-        "3. Click Create Plan"
-      ],
-      "expected_result": "Action is blocked; the system displays a blocking message explaining the missing precondition (e.g. 'You must link a funding account and have investment privileges to create a recurring plan') and the plan is not created; no schedule is stored.",
+      "expected_result": "Execute Trade cannot be completed; the Funding or Destination Account control indicates no accounts are available or Execute Trade is disabled; clicking Execute Trade is blocked and no trade is executed",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 14,
-    "high_priority": 13,
+    "total": 12,
+    "high_priority": 11,
     "medium_priority": 1,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:05:04] Test-Negative - PARSED JSON
+[22:24:36] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Investments",
@@ -616,255 +590,222 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Unauthenticated user cannot access Investments page",
+      "test_case": "Unauthenticated user attempts to access Investments page",
       "preconditions": [
-        "User is not authenticated (no active session)"
+        "User is not signed in"
       ],
       "steps": [
-        "1. Open the application and navigate to the Investments page URL"
+        "1. Navigate to the Investments page URL"
       ],
-      "expected_result": "Navigation is blocked: the user is redirected to the login page; Investments page content is not displayed.",
+      "expected_result": "User is redirected to the login page; Investments page is not displayed and no forms are accessible",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Execute Trade \u2014 submit with Fund Symbol left blank",
+      "test_case": "Execute Trade \u2014 submit with all required trade fields empty",
       "preconditions": [
-        "Logged in customer session with investment privileges and at least one linked funding/destination account"
+        "Logged in as a customer with an active account and at least one funding/destination account available for trades."
       ],
       "steps": [
-        "1. Navigate to Investments \u2192 Trade Funds form",
-        "2. Select Action = <Buy>",
-        "3. Leave Fund_Symbol field blank",
-        "4. Enter <valid quantity> into Quantity field",
-        "5. Select <funding account> in Funding_Or_Destination_Account",
+        "1. Open the Trade Funds form on the Investments page",
+        "2. Leave Action blank",
+        "3. Leave Fund Symbol blank",
+        "4. Leave Quantity blank",
+        "5. Leave Funding or Destination Account blank",
         "6. Click Execute Trade"
       ],
-      "expected_result": "Form does not submit; Fund_Symbol field displays an inline validation error indicating it is required (e.g. 'Fund symbol must exist'); no order is created and holdings are not updated.",
+      "expected_result": "Form does not submit; inline validation errors appear on Action, Fund Symbol, Quantity, and Funding or Destination Account indicating they must be provided; no trade is executed",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Execute Trade \u2014 submit with Quantity left blank",
+      "test_case": "Execute Trade \u2014 leave Fund Symbol blank",
       "preconditions": [
-        "Logged in customer session with investment privileges and at least one linked funding/destination account"
+        "Logged in as a customer with an active account and at least one funding/destination account available for trades."
       ],
       "steps": [
-        "1. Navigate to Investments \u2192 Trade Funds form",
-        "2. Select Action = <Buy>",
-        "3. Enter <valid fund symbol> into Fund_Symbol field",
-        "4. Leave Quantity field blank",
-        "5. Select <funding account> in Funding_Or_Destination_Account",
+        "1. Open the Trade Funds form",
+        "2. Select Action = Buy",
+        "3. Leave Fund Symbol blank",
+        "4. Enter a valid Quantity in the Quantity field",
+        "5. Select a Funding or Destination Account",
         "6. Click Execute Trade"
       ],
-      "expected_result": "Form does not submit; Quantity field displays an inline validation error indicating it is required and must be greater than zero (e.g. 'Quantity must be greater than zero'); no order is created.",
+      "expected_result": "Form does not submit; an inline validation error appears on the Fund Symbol field indicating the symbol must exist or be selected; trade is not executed",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-001",
-      "test_case": "Execute Trade \u2014 enter non-numeric input into Quantity",
+      "test_case": "Execute Trade \u2014 leave Quantity blank",
       "preconditions": [
-        "Logged in customer session with investment privileges and at least one linked funding/destination account"
+        "Logged in as a customer with an active account and at least one funding/destination account available for trades."
       ],
       "steps": [
-        "1. Navigate to Investments \u2192 Trade Funds form",
-        "2. Select Action = <Buy>",
-        "3. Enter <valid fund symbol> into Fund_Symbol field",
-        "4. Enter <non-numeric input> into Quantity field",
-        "5. Select <funding account> in Funding_Or_Destination_Account",
+        "1. Open the Trade Funds form",
+        "2. Select Action = Buy",
+        "3. Enter a valid Fund Symbol",
+        "4. Leave Quantity blank",
+        "5. Select a Funding or Destination Account",
         "6. Click Execute Trade"
       ],
-      "expected_result": "Form does not submit; Quantity field displays an inline validation error indicating the value must be numeric (e.g. 'Quantity must be a number'); no order is created.",
-      "priority": "medium"
+      "expected_result": "Form does not submit; an inline validation error appears on the Quantity field indicating it must be greater than 0; trade is not executed",
+      "priority": "high"
     },
     {
       "tc_id": "N-005",
       "wf_ref": "WF-001",
-      "test_case": "Execute Trade \u2014 submit with non-existent Fund Symbol",
+      "test_case": "Execute Trade \u2014 non-numeric input in Quantity (format violation)",
       "preconditions": [
-        "Logged in customer session with investment privileges and at least one linked funding/destination account"
+        "Logged in as a customer with an active account and at least one funding/destination account available for trades."
       ],
       "steps": [
-        "1. Navigate to Investments \u2192 Trade Funds form",
-        "2. Select Action = <Buy>",
-        "3. Enter <non-existent fund symbol> into Fund_Symbol field",
-        "4. Enter <valid quantity> into Quantity field",
-        "5. Select <funding account> in Funding_Or_Destination_Account",
+        "1. Open the Trade Funds form",
+        "2. Select Action = Buy",
+        "3. Enter a valid Fund Symbol",
+        "4. Enter <non-numeric input> in the Quantity field",
+        "5. Select a Funding or Destination Account",
         "6. Click Execute Trade"
       ],
-      "expected_result": "Form does not submit; Fund_Symbol field displays an inline validation error: 'Fund symbol must exist' (symbol not found); no order is created.",
-      "priority": "high"
+      "expected_result": "Form does not submit; an inline validation error appears on the Quantity field indicating Quantity must be a numeric value greater than 0; trade is not executed",
+      "priority": "medium"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Execute Trade (Buy) \u2014 insufficient buying power blocks trade",
+      "test_case": "Execute Buy trade \u2014 insufficient buying power",
       "preconditions": [
-        "Logged in customer session with investment privileges and at least one linked funding/destination account",
-        "Selected funding account has buying power less than required for requested Quantity"
+        "Logged in as a customer with an active account and at least one funding/destination account available for trades.",
+        "Customer does not have sufficient buying power for the requested purchase"
       ],
       "steps": [
-        "1. Navigate to Investments \u2192 Trade Funds form",
-        "2. Select Action = <Buy>",
-        "3. Enter <valid fund symbol> into Fund_Symbol field",
-        "4. Enter <quantity that requires more buying power than available> into Quantity field",
-        "5. Select the <funding account with insufficient buying power> in Funding_Or_Destination_Account",
+        "1. Open the Trade Funds form",
+        "2. Select Action = Buy",
+        "3. Enter a valid Fund Symbol",
+        "4. Enter <quantity resulting in cost greater than available buying power> in Quantity",
+        "5. Select a Funding or Destination Account",
         "6. Click Execute Trade"
       ],
-      "expected_result": "Form does not submit; inline validation error is shown (e.g. 'Insufficient buying power for requested trade') and the trade is not executed; no Order ID is returned; holdings are not updated.",
+      "expected_result": "Form does not submit; an inline validation error is shown indicating insufficient buying power; no trade is executed",
       "priority": "high"
     },
     {
       "tc_id": "N-007",
       "wf_ref": "WF-002",
-      "test_case": "Execute Trade (Sell) \u2014 insufficient share balance blocks trade",
+      "test_case": "Execute Sell trade \u2014 insufficient share balance",
       "preconditions": [
-        "Logged in customer session with investment privileges and at least one linked funding/destination account",
-        "Customer's holdings for <Fund_Symbol> are less than requested Quantity"
+        "Logged in as a customer with an active account and at least one funding/destination account available for trades.",
+        "Customer holds fewer shares than the requested sell quantity"
       ],
       "steps": [
-        "1. Navigate to Investments \u2192 Trade Funds form",
-        "2. Select Action = <Sell>",
-        "3. Enter <valid fund symbol that is held but with insufficient shares> into Fund_Symbol field",
-        "4. Enter <quantity greater than available share balance> into Quantity field",
-        "5. Select <destination account> in Funding_Or_Destination_Account",
+        "1. Open the Trade Funds form",
+        "2. Select Action = Sell",
+        "3. Enter a valid Fund Symbol that the customer holds",
+        "4. Enter <quantity greater than customer's share balance> in Quantity",
+        "5. Select a Funding or Destination Account",
         "6. Click Execute Trade"
       ],
-      "expected_result": "Form does not submit; inline validation error appears on Quantity or Fund_Symbol: 'Insufficient share balance for selected fund' and the sell order is not created; holdings remain unchanged.",
+      "expected_result": "Form does not submit; an inline validation error is shown indicating insufficient share balance to complete the sale; no trade is executed",
       "priority": "high"
     },
     {
       "tc_id": "N-008",
       "wf_ref": "WF-003",
-      "test_case": "Create Plan \u2014 submit with Start Date left blank (violates future-date constraint)",
+      "test_case": "Create Plan \u2014 leave Start Date blank",
       "preconditions": [
-        "Logged in customer session with investment privileges and at least one linked funding account"
+        "Logged in as a customer with an active account and at least one funding account available."
       ],
       "steps": [
-        "1. Navigate to Investments \u2192 Recurring Investment Plan form",
-        "2. Enter <valid fund symbol> into Fund_Symbol field",
-        "3. Enter <valid contribution amount meeting min> into Contribution_Amount field",
-        "4. Select Frequency = <Monthly>",
-        "5. Leave Start_Date field blank",
-        "6. Select <funding account> in Funding_Account",
+        "1. Open the Recurring Investment Plan form",
+        "2. Enter a valid Fund Symbol",
+        "3. Enter a valid Contribution Amount that meets the minimum",
+        "4. Select Frequency",
+        "5. Leave Start Date blank",
+        "6. Select a Funding Account",
         "7. Click Create Plan"
       ],
-      "expected_result": "Form does not submit; Start_Date field displays an inline validation error indicating the start date is required and must be in the future (e.g. 'Start date must be in the future'); plan is not created and no schedule is stored.",
+      "expected_result": "Form does not submit; an inline validation error appears on the Start Date field indicating the start date must be provided and must be in the future (\"Start date must be in the future\"); plan is not created",
       "priority": "high"
     },
     {
       "tc_id": "N-009",
       "wf_ref": "WF-003",
-      "test_case": "Create Plan \u2014 Contribution amount below minimum blocks creation",
+      "test_case": "Create Plan \u2014 Start Date is in the past",
       "preconditions": [
-        "Logged in customer session with investment privileges and at least one linked funding account"
+        "Logged in as a customer with an active account and at least one funding account available."
       ],
       "steps": [
-        "1. Navigate to Investments \u2192 Recurring Investment Plan form",
-        "2. Enter <valid fund symbol> into Fund_Symbol field",
-        "3. Enter <amount below minimum contribution> into Contribution_Amount field",
-        "4. Select Frequency = <Weekly>",
-        "5. Enter <valid future date> into Start_Date field",
-        "6. Select <funding account> in Funding_Account",
+        "1. Open the Recurring Investment Plan form",
+        "2. Enter a valid Fund Symbol",
+        "3. Enter a valid Contribution Amount that meets the minimum",
+        "4. Select Frequency",
+        "5. Enter <a date in the past> in Start Date",
+        "6. Select a Funding Account",
         "7. Click Create Plan"
       ],
-      "expected_result": "Form does not submit; Contribution_Amount field displays an inline validation error: 'Contribution amount must meet the minimum contribution' and the plan is not created.",
+      "expected_result": "Form does not submit; the Start Date field displays the inline validation error \"Start date must be in the future\"; plan is not created",
       "priority": "high"
     },
     {
       "tc_id": "N-010",
       "wf_ref": "WF-003",
-      "test_case": "Create Plan \u2014 funding account lacks adequate balance for initial contribution",
+      "test_case": "Create Plan \u2014 Contribution Amount below minimum requirement",
       "preconditions": [
-        "Logged in customer session with investment privileges",
-        "Selected funding account balance is less than the initial Contribution_Amount"
+        "Logged in as a customer with an active account and at least one funding account available."
       ],
       "steps": [
-        "1. Navigate to Investments \u2192 Recurring Investment Plan form",
-        "2. Enter <valid fund symbol> into Fund_Symbol field",
-        "3. Enter <valid contribution amount> into Contribution_Amount field",
-        "4. Select Frequency = <Monthly>",
-        "5. Enter <valid future date> into Start_Date field",
-        "6. Select the <funding account with inadequate balance> in Funding_Account",
+        "1. Open the Recurring Investment Plan form",
+        "2. Enter a valid Fund Symbol",
+        "3. Enter <amount below minimum contribution> in Contribution Amount",
+        "4. Select Frequency",
+        "5. Enter a valid future Start Date",
+        "6. Select a Funding Account",
         "7. Click Create Plan"
       ],
-      "expected_result": "Form does not submit; inline validation error is shown on Funding_Account or Contribution_Amount (e.g. 'Funding account does not have adequate balance to cover initial contribution and scheduled transfers'); plan is not created and no schedule is stored.",
+      "expected_result": "Form does not submit; an inline validation error appears on the Contribution Amount field indicating the amount must meet the minimum contribution requirement; plan is not created",
       "priority": "high"
     },
     {
       "tc_id": "N-011",
       "wf_ref": "WF-003",
-      "test_case": "Create Plan \u2014 Start Date in the past is rejected",
+      "test_case": "Create Plan \u2014 funding account has inadequate balance",
       "preconditions": [
-        "Logged in customer session with investment privileges and at least one linked funding account"
+        "Logged in as a customer with an active account.",
+        "Selected funding account does not have adequate balance for the contribution amount."
       ],
       "steps": [
-        "1. Navigate to Investments \u2192 Recurring Investment Plan form",
-        "2. Enter <valid fund symbol> into Fund_Symbol field",
-        "3. Enter <valid contribution amount> into Contribution_Amount field",
-        "4. Select Frequency = <Weekly>",
-        "5. Enter <past date> into Start_Date field",
-        "6. Select <funding account> in Funding_Account",
+        "1. Open the Recurring Investment Plan form",
+        "2. Enter a valid Fund Symbol",
+        "3. Enter a Contribution Amount that would exceed the funding account balance",
+        "4. Select Frequency",
+        "5. Enter a valid future Start Date",
+        "6. Select the underfunded Funding Account",
         "7. Click Create Plan"
       ],
-      "expected_result": "Form does not submit; Start_Date field displays an inline validation error: 'Start date must be in the future'; plan is not created.",
+      "expected_result": "Form does not submit; an inline validation error appears on the Funding Account or Contribution Amount indicating the funding account must have adequate balance; plan is not created",
       "priority": "high"
     },
     {
       "tc_id": "N-012",
       "wf_ref": "WF-001",
-      "test_case": "Execute Trade \u2014 submit with Quantity = zero (violates > 0 constraint)",
+      "test_case": "Execute Trade \u2014 user has no funding/destination accounts available (precondition failure)",
       "preconditions": [
-        "Logged in customer session with investment privileges and at least one linked funding/destination account"
+        "Logged in as a customer with an active account but with no funding or destination accounts available for trades."
       ],
       "steps": [
-        "1. Navigate to Investments \u2192 Trade Funds form",
-        "2. Select Action = <Buy>",
-        "3. Enter <valid fund symbol> into Fund_Symbol field",
-        "4. Enter Quantity = <0> into Quantity field",
-        "5. Select <funding account> in Funding_Or_Destination_Account",
-        "6. Click Execute Trade"
+        "1. Open the Investments page",
+        "2. Open the Trade Funds form",
+        "3. Attempt to select a Funding or Destination Account (none available) or click Execute Trade"
       ],
-      "expected_result": "Form does not submit; Quantity field displays an inline validation error: 'Quantity must be greater than zero'; no order is created.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-013",
-      "wf_ref": "WF-001",
-      "test_case": "Execute Trade \u2014 precondition not met: no linked funding/destination account or no investment privileges",
-      "preconditions": [
-        "Logged in customer session exists but user has no linked funding/destination account or lacks investment privileges"
-      ],
-      "steps": [
-        "1. Navigate to Investments \u2192 Trade Funds form",
-        "2. Fill all visible Trade Funds fields with valid values (Action, Fund_Symbol, Quantity, Funding_Or_Destination_Account if listed)",
-        "3. Click Execute Trade"
-      ],
-      "expected_result": "Action is blocked; the system displays a blocking message explaining the missing precondition (e.g. 'You must link a funding account and have investment privileges to execute trades') and the trade is not executed; no Order ID is returned.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-014",
-      "wf_ref": "WF-003",
-      "test_case": "Create Plan \u2014 precondition not met: no linked funding account or no investment privileges",
-      "preconditions": [
-        "Logged in customer session exists but user has no linked funding account or lacks investment privileges"
-      ],
-      "steps": [
-        "1. Navigate to Investments \u2192 Recurring Investment Plan form",
-        "2. Fill all visible Recurring Investment Plan fields with valid values (Fund_Symbol, Contribution_Amount, Frequency, Start_Date, Funding_Account)",
-        "3. Click Create Plan"
-      ],
-      "expected_result": "Action is blocked; the system displays a blocking message explaining the missing precondition (e.g. 'You must link a funding account and have investment privileges to create a recurring plan') and the plan is not created; no schedule is stored.",
+      "expected_result": "Execute Trade cannot be completed; the Funding or Destination Account control indicates no accounts are available or Execute Trade is disabled; clicking Execute Trade is blocked and no trade is executed",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 14,
-    "high_priority": 13,
+    "total": 12,
+    "high_priority": 11,
     "medium_priority": 1,
     "low_priority": 0
   }

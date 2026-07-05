@@ -1,0 +1,732 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:04:00.729942
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:05:06] Workflow-Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Validator. You receive (1) a raw functional description, (2) a Structural Model JSON, and (3) a generated workflow list for one module.
+
+Your single job: decide whether this workflow list is complete and correct, or whether it must be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the workflow list. You DO NOT generate new workflows. You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+<workflows>
+{workflows}
+</workflows>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**WHAT A WORKFLOW IS:**
+
+A workflow is one complete, executable interaction path through the module — from entry to one terminal action. Two workflows are distinct if they require different user actions to reach the terminal (different conditional branch, different state, different terminal button).
+
+MINOR missing
+  A non-critical row action (e.g., "View" on a data table) where omission does not
+  break any downstream state transition or form submission. Flag it; don't auto-retry
+  for it alone.
+
+CRITICAL missing
+  Any of: a form submit_action with no matching workflow, a state × action pair with
+  no workflow, a bulk_action with no workflow, any submit path through a conditional
+  branch with no workflow.
+
+MINOR phantom
+  A workflow whose terminal_action is not literally named in the AST but is so
+  universally implied by the component type that its presence is unsurprising
+  (e.g., a "Search" workflow when the table has `searchable: true`). Flag it;
+  don't auto-retry for it alone.
+
+CRITICAL phantom
+  A workflow whose terminal_action cannot be traced to any AST node's
+  submit_actions[], available_actions[], row_actions[], or bulk_actions[] —
+  and is not an explicit action verb in the description text.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD — Seven Checks
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Check 1 — Missing form workflows.**
+Walk every `form` node in the AST. For each entry in `submit_actions[]`, there must be at least one workflow with a matching `terminal_action`. If the form has `visible_when` or `required_when` fields, there must be one workflow per unique condition combination × submit action. Flag any missing combinations. Classify each as critical or minor.
+
+**Check 2 — Missing state-machine workflows.**
+Walk every `state_bound_action_bar` node. For each state key in `states{}`, for each entry in `available_actions[]`, there must be one workflow with `terminal_action` matching that action and `conditional_branch` containing `entity_state == <state>`. Flag any missing state × action pairs. Classify each as critical.
+If a `<module_context>` block is present, use its `assumed_state_on_entry` to confirm that the entry state named in the context is represented as a workflow's starting condition where applicable.
+
+**Check 3 — Missing data table workflows.**
+Walk every `data_table` node. For each entry in `row_actions[]` and `bulk_actions[]`, there must be one workflow with `terminal_action` matching that action. Flag any missing entries. This includes read-only actions like View/Details. Classify bulk_actions as critical; row_actions as minor if read-only, critical otherwise.
+
+**Check 4 — Phantom workflows.**
+A workflow is a phantom if its `terminal_action` cannot be found in any AST node's `submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`, or as an explicit action verb in the description text. Classify each as critical or minor per the definitions above.
+
+**Check 5 — Wrong conditional branch.**
+If a workflow has a non-null `conditional_branch`, verify the condition references a real field name that appears in the AST under `visible_when`, `required_when`, or a real state key in `state_bound_action_bar`. Flag any condition that references a field or state that does not exist. Classify as structural error.
+
+**Check 6 — Empty or generic on_success.**
+If a workflow's `on_success` is empty, null, "success", "done", or any single-word generic string, and the AST has a concrete `on_success` value for that action, flag it. The `on_success` must reflect what the AST or description says actually happens. Classify as structural error.
+
+**Check 7 — Zero workflows when module clearly has actions.**
+If the workflow list is empty (total = 0) but the AST contains any `form`, `wizard`, `state_bound_action_bar`, or `data_table` component, that is a critical failure — flag it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERDICT RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Check 5, 6)
+                       AND Check 7 passes
+                       → fixes must be []
+
+  retry                Any CRITICAL missing workflow
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any structural error (wrong conditional, generic on_success)
+                       OR Check 7 failure
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       interaction path exists — not a close call, but truly unresolvable
+                       from the text and AST alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "AST path or state×action pair",
+      "severity": "critical | minor",
+      "reason": "<why this workflow is expected from the AST/description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "WF-NNN terminal_action=X",
+      "severity": "critical | minor",
+      "reason": "<why this workflow has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Check 5/6 violation and the affected workflow>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact missing path or phantom to remove>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+
+------------------------------------------------------------
+[23:05:06] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 14,
+  "module_title": "Loan Account",
+  "summary": "Manages creation, approval, disbursement, lifecycle actions, and detailed views of individual loan accounts including repayment schedules, transactions, charges, collateral, and documents.",
+  "where_it_fits": "Accessible from the Institution > Clients flow and via the Clients shortcut in the left sidebar, the Loan Account module is reached when initiating a new loan from a Client Detail page or when opening an existing loan from client listings; it sits in the transaction lifecycle between loan product configuration (Loan Products) and accounting/repayment management (Transactions, Accounting).",
+  "assumed_state_on_entry": "User is authenticated with loan-management permissions and is either viewing a specific Client's Detail page (to start a new application) or selecting an existing Loan Account for inspection or action."
+}
+</module_context>
+
+<description>
+
+A new loan application is initiated from the Client Detail page. The Loan Application form is a multi-step wizard. Step 1 (Details) contains Product Name dropdown (selecting a product auto-populates default values), Loan Officer, Loan Purpose, Fund, Submitted On date, Expected Disbursement Date, Principal (bounded by product min/max), Number of Repayments, Repaid Every frequency and unit, Interest Rate (bounded by product min/max), and External ID. Step 2 (Terms) contains Repayment Strategy, Amortization, Interest Method, and Interest Calculation Period dropdowns (pre-filled from the product but adjustable), plus grace period fields. Step 3 (Charges) lists charges inherited from the product and includes an "Add Charge" button for additional charges. Step 4 (Collateral, optional) allows adding collateral items with Collateral Type, Value, and Description. Clicking "Submit" creates the loan in "Submitted and Pending Approval" status.
+
+The Loan Detail page header displays the loan account number, product name, client name (clickable link), status badge, and loan balance. Status badges are color-coded: Submitted and Pending Approval (yellow), Approved (blue), Active (green), Closed (gray), Overpaid (purple), Written Off (red). Action buttons change based on status: Pending Approval offers Approve (dialog with Approved On Date, Approved Amount, Expected Disbursement Date, and Note), Reject, Withdraw, and Delete; Approved offers Disburse (form with Disbursed On Date, Transaction Amount, Payment Type — Cash, Check, Mobile Money, Bank Transfer — and payment detail fields; a "Disburse to Savings" option deposits directly into the client's linked savings account) and Undo Approval; Active offers Make Repayment (form with Transaction Date, Transaction Amount pre-filled with amount due, and Payment Type — partial repayments are applied per the configured repayment strategy; full settlement changes status to "Closed obligations met"), Waive Interest, Write Off, Close, Reschedule (form with Reschedule From Date, Reason, Adjusted Due Date, grace fields, Extra Terms, and New Interest Rate — creates a pending request requiring separate approval), Prepay Loan, Foreclosure, Charge Off, and Assign Loan Officer.
+
+Tabs on the detail page show Summary (disbursement details, repayment schedule summary, total paid, total outstanding, total overdue, and charges summary), Repayment Schedule (table with Installment Number, Due Date, Principal Due, Interest Due, Fees Due, Penalties Due, Total Due, amounts paid, Total Outstanding, and status indicators), Transactions (table with Date, Type, Amount, Principal/Interest/Fees/Penalties portions, Outstanding Balance, and undo link), Charges (Charge Name, Amount, Due Date, Paid, Waived, Outstanding), Collateral, Notes, and Documents.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Loan Account",
+  "components": {
+    "Loan_Application_Wizard": {
+      "type": "wizard",
+      "preconditions": [
+        "user is authenticated with loan-management permissions"
+      ],
+      "submit_actions": [
+        {
+          "action_name": "Submit",
+          "on_success": "creates loan in Submitted and Pending Approval status",
+          "preconditions": [
+            "user is authenticated with loan-management permissions"
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "step_index": 1,
+          "step_name": "Details",
+          "fields": {
+            "Product_Name": {
+              "type": "dropdown",
+              "on_change": "auto-populate default values from selected product"
+            },
+            "Loan_Officer": {
+              "type": "unspecified"
+            },
+            "Loan_Purpose": {
+              "type": "unspecified"
+            },
+            "Fund": {
+              "type": "unspecified"
+            },
+            "Submitted_On": {
+              "type": "date"
+            },
+            "Expected_Disbursement_Date": {
+              "type": "date"
+            },
+            "Principal": {
+              "type": "number",
+              "constraints": [
+                "must be >= product.minimum_principal",
+                "must be <= product.maximum_principal"
+              ]
+            },
+            "Number_Of_Repayments": {
+              "type": "number"
+            },
+            "Repaid_Every_Number": {
+              "type": "number"
+            },
+            "Repaid_Every_Unit": {
+              "type": "dropdown"
+            },
+            "Interest_Rate": {
+              "type": "number",
+              "constraints": [
+                "must be >= product.minimum_interest_rate",
+                "must be <= product.maximum_interest_rate"
+              ]
+            },
+            "External_ID": {
+              "type": "unspecified"
+            }
+          }
+        },
+        {
+          "step_index": 2,
+          "step_name": "Terms",
+          "fields": {
+            "Repayment_Strategy": {
+              "type": "dropdown",
+              "prefilled_from_product": true
+            },
+            "Amortization": {
+              "type": "dropdown",
+              "prefilled_from_product": true
+            },
+            "Interest_Method": {
+              "type": "dropdown",
+              "prefilled_from_product": true
+            },
+            "Interest_Calculation_Period": {
+              "type": "dropdown",
+              "prefilled_from_product": true
+            },
+            "Grace_Period_Days": {
+              "type": "number"
+            },
+            "Grace_Period_Installments": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "step_index": 3,
+          "step_name": "Charges",
+          "fields": {
+            "Charges": {
+              "type": "repeating_group",
+              "inherited_from_product": true,
+              "item_fields": {
+                "Charge_Name": {
+                  "type": "unspecified"
+                },
+                "Amount": {
+                  "type": "number"
+                },
+                "Due_Date": {
+                  "type": "date"
+                }
+              }
+            },
+            "Add_Charge": {
+              "type": "button",
+              "action_name": "Add Charge"
+            }
+          }
+        },
+        {
+          "step_index": 4,
+          "step_name": "Collateral",
+          "fields": {
+            "Collateral_Items": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Collateral_Type": {
+                  "type": "unspecified"
+                },
+                "Value": {
+                  "type": "number"
+                },
+                "Description": {
+                  "type": "unspecified"
+                }
+              }
+            },
+            "Add_Collateral": {
+              "type": "button",
+              "action_name": "Add Collateral"
+            }
+          }
+        }
+      ]
+    },
+    "Loan_Detail_Header_Links": {
+      "type": "container",
+      "fields": {
+        "Client_Name_Link": {
+          "type": "link"
+        }
+      }
+    },
+    "Loan_Detail_Tabs": {
+      "type": "tab_container",
+      "tabs": [
+        {
+          "tab_name": "Summary",
+          "fields": {}
+        },
+        {
+          "tab_name": "Repayment Schedule",
+          "fields": {
+            "Repayment_Schedule_Table": {
+              "type": "data_table"
+            }
+          }
+        },
+        {
+          "tab_name": "Transactions",
+          "fields": {
+            "Transactions_Table": {
+              "type": "data_table",
+              "row_actions": [
+                {
+                  "action_name": "Undo"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "tab_name": "Charges",
+          "fields": {
+            "Charges_Table": {
+              "type": "data_table"
+            }
+          }
+        },
+        {
+          "tab_name": "Collateral",
+          "fields": {
+            "Collateral_Table": {
+              "type": "data_table"
+            }
+          }
+        },
+        {
+          "tab_name": "Notes",
+          "fields": {}
+        },
+        {
+          "tab_name": "Documents",
+          "fields": {}
+        }
+      ]
+    },
+    "Loan_Detail_Actions": {
+      "type": "state_bound_action_bar",
+      "preconditions": [
+        "user is authenticated with loan-management permissions"
+      ],
+      "states": {
+        "Submitted and Pending Approval": {
+          "available_actions": [
+            {
+              "action_name": "Approve",
+              "fields": {
+                "Approved_On_Date": {
+                  "type": "date"
+                },
+                "Approved_Amount": {
+                  "type": "number"
+                },
+                "Expected_Disbursement_Date": {
+                  "type": "date"
+                },
+                "Note": {
+                  "type": "unspecified"
+                }
+              }
+            },
+            {
+              "action_name": "Reject"
+            },
+            {
+              "action_name": "Withdraw"
+            },
+            {
+              "action_name": "Delete"
+            }
+          ]
+        },
+        "Approved": {
+          "available_actions": [
+            {
+              "action_name": "Disburse",
+              "fields": {
+                "Disbursed_On_Date": {
+                  "type": "date"
+                },
+                "Transaction_Amount": {
+                  "type": "number"
+                },
+                "Payment_Type": {
+                  "type": "dropdown",
+                  "options": [
+                    "Cash",
+                    "Check",
+                    "Mobile Money",
+                    "Bank Transfer"
+                  ]
+                },
+                "Disburse_To_Savings": {
+                  "type": "checkbox"
+                },
+                "Payment_Details": {
+                  "type": "unspecified"
+                }
+              }
+            },
+            {
+              "action_name": "Undo Approval"
+            }
+          ]
+        },
+        "Active": {
+          "available_actions": [
+            {
+              "action_name": "Make Repayment",
+              "fields": {
+                "Transaction_Date": {
+                  "type": "date"
+                },
+                "Transaction_Amount": {
+                  "type": "number",
+                  "prefilled_with": "amount due"
+                },
+                "Payment_Type": {
+                  "type": "dropdown"
+                }
+              },
+              "on_success": "partial repayments are applied per the configured repayment strategy; full settlement changes status to Closed (obligations met)"
+            },
+            {
+              "action_name": "Waive Interest"
+            },
+            {
+              "action_name": "Write Off"
+            },
+            {
+              "action_name": "Close"
+            },
+            {
+              "action_name": "Reschedule",
+              "fields": {
+                "Reschedule_From_Date": {
+                  "type": "date"
+                },
+                "Reason": {
+                  "type": "unspecified"
+                },
+                "Adjusted_Due_Date": {
+                  "type": "date"
+                },
+                "Grace_Period_Days": {
+                  "type": "number"
+                },
+                "Extra_Terms": {
+                  "type": "unspecified"
+                },
+                "New_Interest_Rate": {
+                  "type": "number"
+                }
+              },
+              "on_success": "creates a pending request requiring separate approval"
+            },
+            {
+              "action_name": "Prepay Loan"
+            },
+            {
+              "action_name": "Foreclosure"
+            },
+            {
+              "action_name": "Charge Off"
+            },
+            {
+              "action_name": "Assign Loan Officer",
+              "fields": {
+                "Loan_Officer": {
+                  "type": "unspecified"
+                }
+              }
+            }
+          ]
+        },
+        "Closed": {
+          "available_actions": []
+        },
+        "Overpaid": {
+          "available_actions": []
+        },
+        "Written Off": {
+          "available_actions": []
+        }
+      }
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Create new loan application (wizard) and submit",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Submit",
+    "on_success": "creates loan in Submitted and Pending Approval status"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Undo a transaction from the Transactions table (row action)",
+    "actor": "<role>",
+    "conditional_branch": null,
+    "terminal_action": "Undo",
+    "on_success": "reverses the selected transaction and updates balances"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Approve a Submitted (Pending Approval) loan",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Submitted and Pending Approval",
+    "terminal_action": "Approve",
+    "on_success": "approves the loan and changes status to Approved"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Reject a Submitted (Pending Approval) loan",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Submitted and Pending Approval",
+    "terminal_action": "Reject",
+    "on_success": "rejects the loan application"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Withdraw a Submitted (Pending Approval) loan",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Submitted and Pending Approval",
+    "terminal_action": "Withdraw",
+    "on_success": "withdraws the loan application"
+  },
+  {
+    "wf_id": "WF-006",
+    "name": "Delete a Submitted (Pending Approval) loan",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Submitted and Pending Approval",
+    "terminal_action": "Delete",
+    "on_success": "deletes the loan account"
+  },
+  {
+    "wf_id": "WF-007",
+    "name": "Disburse an Approved loan",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Approved",
+    "terminal_action": "Disburse",
+    "on_success": "disburses funds and changes status to Active"
+  },
+  {
+    "wf_id": "WF-008",
+    "name": "Undo Approval on an Approved loan",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Approved",
+    "terminal_action": "Undo Approval",
+    "on_success": "reverts loan status from Approved to Submitted and Pending Approval"
+  },
+  {
+    "wf_id": "WF-009",
+    "name": "Make a repayment on an Active loan",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Active",
+    "terminal_action": "Make Repayment",
+    "on_success": "partial repayments are applied per the configured repayment strategy; full settlement changes status to Closed (obligations met)"
+  },
+  {
+    "wf_id": "WF-010",
+    "name": "Waive interest on an Active loan",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Active",
+    "terminal_action": "Waive Interest",
+    "on_success": "waives interest charges as specified"
+  },
+  {
+    "wf_id": "WF-011",
+    "name": "Write off an Active loan",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Active",
+    "terminal_action": "Write Off",
+    "on_success": "marks loan as Written Off"
+  },
+  {
+    "wf_id": "WF-012",
+    "name": "Close an Active loan",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Active",
+    "terminal_action": "Close",
+    "on_success": "marks loan as Closed"
+  },
+  {
+    "wf_id": "WF-013",
+    "name": "Reschedule an Active loan (creates pending request)",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Active",
+    "terminal_action": "Reschedule",
+    "on_success": "creates a pending request requiring separate approval"
+  },
+  {
+    "wf_id": "WF-014",
+    "name": "Prepay an Active loan",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Active",
+    "terminal_action": "Prepay Loan",
+    "on_success": "applies prepayment to the loan balance"
+  },
+  {
+    "wf_id": "WF-015",
+    "name": "Foreclose an Active loan",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Active",
+    "terminal_action": "Foreclosure",
+    "on_success": "applies foreclosure action to the loan"
+  },
+  {
+    "wf_id": "WF-016",
+    "name": "Charge off an Active loan",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Active",
+    "terminal_action": "Charge Off",
+    "on_success": "applies charge off action to the loan"
+  },
+  {
+    "wf_id": "WF-017",
+    "name": "Assign a Loan Officer to an Active loan",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Active",
+    "terminal_action": "Assign Loan Officer",
+    "on_success": "assigns selected Loan Officer to the loan"
+  },
+  {
+    "wf_id": "WF-018",
+    "name": "Make repayment-related state change that results in full settlement closing the loan (covered by Make Repayment action)",
+    "actor": "<role>",
+    "conditional_branch": "entity_state == Active",
+    "terminal_action": "Make Repayment",
+    "on_success": "partial repayments are applied per the configured repayment strategy; full settlement changes status to Closed (obligations met)"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:06:22] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 1,
+  "summary": "The provided workflows cover the wizard submit action, every state×action in the state_bound_action_bar, and the data-table row action; there are no missing critical workflows, phantoms, or structural errors.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:06:22] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 1,
+  "summary": "The provided workflows cover the wizard submit action, every state\u00d7action in the state_bound_action_bar, and the data-table row action; there are no missing critical workflows, phantoms, or structural errors.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}

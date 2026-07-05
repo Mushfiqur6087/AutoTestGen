@@ -1,0 +1,912 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:08:30.026559
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:08:30] Test-Negative - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Negative Testing:**
+
+The AST represents every interactive element in the module. Each node type has a corresponding failure category:
+
+| AST node / field | What to test for failure |
+|---|---|
+| `required: true` field | Leave it blank and submit — inline validation error |
+| `constraints: []` on a field or action | One TC per unique constraint: violate it specifically |
+| `preconditions: []` on an action | One TC attempting the action when the precondition is NOT met |
+| `visible_when` / `required_when` conditional field | Trigger the condition, then submit the revealed field blank or invalid |
+| `state_bound_action_bar` states | Attempt an action from the wrong state (e.g., Approve an already-Active entity) |
+| `on_success` with quoted text | The negative expected_result is the *blocking* behavior — the entity stays unchanged |
+| `submit_actions[]` | If any button has `preconditions`, test that button when precondition fails |
+
+> If a module has no `form`, no `wizard`, no `state_bound_action_bar`, and no `constraints` — it is display-only. Generate at most 1–2 tests (unauthenticated access, or a non-implemented link if described). Do not invent validation scenarios.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — Name the field, the violated rule, and the visible error indicator.**
+Never write a vague expected result. Always specify what the tester sees.
+
+- ❌ `"Validation error shown"` — too vague
+- ❌ `"Error is displayed"` — too vague
+- ✅ `"Inline validation error appears on the <Field Name> field indicating it is required"`
+- ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
+- ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
+
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
+- ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
+- ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
+
+**Rule C — Assert the blocking behavior, not just the error.**
+The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
+- ❌ `"Error shown"` (doesn't confirm the action was blocked)
+- ✅ `"Form does not submit; <Entity> is not created; error shown on <Field>"`
+- ✅ `"Status remains <Current State>; no transition occurs"`
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Use generic placeholders in angle brackets.
+
+- ✅ `"Enter <invalid email format> in the Email field"`
+- ✅ `"Enter <amount exceeding available balance> in the Amount field"`
+- ✅ `"Enter <password shorter than minimum length> in the Password field"`
+- ❌ `"Enter 'notanemail' in the Email field"`
+- ❌ `"Enter 'abc123' in the Password field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic user action — one field, one click, one navigation. No grouping.
+
+- ✅ `"1. Leave the <Required Field> blank"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill all fields except <Required Field> and submit"`
+
+---
+
+**SCOPE GATE (run before writing any test):**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact sentence in the description or field/constraint/state in the AST justifies this test? If you cannot point to one → delete it.
+2. **UI-executable:** Can a tester trigger this by clicking, typing, selecting, or navigating in a browser? If verification requires dev tools, DOM inspection, concurrent users, API calls, or server-side error simulation → out of scope.
+3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
+
+Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Required field representatives (deduplicated by field type):**
+
+Group required fields by type: `text/unspecified`, `email`, `password`, `number`, `date`, `dropdown`, `file_upload`. Generate:
+- ONE "leave blank and submit" test per **type group** (not per field) — use the most prominent field as representative
+- ONE "submit with ALL required fields empty" test
+
+Do NOT generate a separate blank-field test for every required field. If 5 text fields are all required, one representative covers them all.
+
+**Action dialog required fields — NOT subject to cross-form deduplication:**
+If a `state_bound_action_bar` action opens a dialog with its own required `fields{}` (e.g., Activate requires Activation Date, Reject requires a Reason, Withdraw requires a Reason, Close requires a Closure Reason), each such dialog is its own testing scope. Generate ONE "leave the required dialog field blank and submit" test per distinct action dialog. These are HIGH priority — they block state transitions and are common defect sites. Do not suppress them because the main wizard already has a blank-field test.
+
+**2. Format violations:**
+
+For fields with type-specific format rules (from AST type or description):
+- `email` → one test with invalid format
+- `number` → one test with non-numeric input
+- `date` → one test with invalid/impossible date
+- `password` → ONE representative test for policy violation (not one per sub-rule — see Deduplication)
+
+Only generate if the spec or AST implies format validation for that field.
+
+**3. Numeric bounds and balance violations:**
+
+If the spec describes minimum/maximum values, amount ranges, or balance checks:
+- One test per distinct bound violation (e.g., amount below minimum, amount above maximum, amount exceeding available balance)
+- Use `<amount below minimum>`, `<amount exceeding available balance>` as placeholders
+
+Examples across the dataset:
+- Transfer amount > available balance → error
+- Loan amount outside product min/max → error
+- Deposit below minimum requirement → error
+
+**4. Constraint violations:**
+
+For each unique `constraints[]` entry in the AST, and for cross-field rules described in the spec:
+- `"must be unique"` → submit with a duplicate value
+- `"must match"` (confirm fields) → enter mismatched values
+- `"must not be same as current"` → select the current value
+- `"cannot perform <action> while <condition>"` → attempt the action when the condition is true
+- `"<date> must be after <other date>"` → enter reversed dates
+
+One test per unique constraint. Do not duplicate the same mechanism.
+
+**Constraint timing tests:** If the spec states an action is blocked by a pre-existing system state (e.g., "cannot close with active accounts", "cannot transfer to the same office"), generate TWO tests:
+1. The standard constraint violation test (user opens the dialog, fills required fields, submits → blocked).
+2. A constraint-timing test: user opens the dialog WITHOUT filling required fields → assert whether the block is shown immediately on dialog open (before the user fills anything) OR only on submit. This distinguishes whether the UI enforces the constraint eagerly or lazily. Steps: open the dialog, observe the state → assert what is visible before any interaction. If the spec is silent on timing, generate only the first test.
+
+**5. Precondition violations (auth, role, and state):**
+
+For each `preconditions[]` entry on any action — and for auth/role/state rules described in the spec or the `<module_context>` block:
+
+- **Global Context constraints:** If the `<module_context>` block's `assumed_state_on_entry` explicitly lists required states (e.g., "Requires an active Client profile"), generate one test attempting the module's core action when that precondition fails (e.g., Client profile is missing or inactive).
+- **Unauthenticated access:** If any page or action requires login, generate one test: an unauthenticated user attempts to access it and is redirected to the login page.
+- **Wrong role:** If the spec explicitly states a feature is restricted to a specific role (e.g., Teacher only, Admin only), generate one test: a user of the wrong role attempts the action and is blocked or the control is not visible.
+- **Precondition not met:** For each AST `preconditions[]` entry, attempt the action when that precondition is not satisfied.
+
+**6. State-machine violations:**
+
+From `state_bound_action_bar` nodes:
+- **Every defined state must have at least one wrong-state test.** For each state, identify at least one action that is NOT in its `available_actions` list and generate a test attempting that action from that state.
+- If a state has an empty `available_actions` array, generate one test verifying no action buttons are visible in that state.
+- **Do not stop after 1–2 representative examples** when the module defines 4+ distinct states. The states Active, Pending, Closed, Rejected, and Withdrawn each have different action sets — each must be independently verified.
+- One test per state is sufficient — pick the most distinct unavailable action for that state. Do not enumerate every action × every state (that would be exponential).
+
+---
+
+**DEDUPLICATION GATE (run before outputting):**
+
+1. **Required field dedup:** Multiple required text fields in the **same form or dialog** → ONE representative test, not one per field.
+2. **Sub-rule dedup:** A field with multiple validation sub-rules (e.g., password: length + uppercase + lowercase + number + special char) → ONE representative violation test, not one per sub-rule.
+3. **Cross-form dedup:** If two **main forms** in the same module share the same validation mechanism → test it on the primary form only. **Exception: action dialogs are never suppressed by cross-form dedup** — each action dialog with a required field gets its own blank-field test regardless.
+4. **Uniqueness check:** Before outputting, ask for each TC: "Does this test catch a bug that NO other test in this module would catch?" If no → remove it.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (standard CRUD form, form with constraints): **4–8 tests**
+- Complex module (state machine, multi-form, wizard with many constraints): **10–16 tests**
+
+For modules with a `state_bound_action_bar` defining 4+ states, the state-machine violation tests alone will produce 4–5 tests. This is expected and correct — do not suppress them to hit a lower target.
+
+If you exceed the upper range, apply the deduplication gate again before outputting.
+
+---
+
+**PRIORITY:**
+
+- **High:** State precondition violations, constraint violations that could corrupt data, unauthenticated access, required field representatives
+- **Medium:** Format violations, cross-field validation, numeric bounds, wrong-role access, wrong-state action attempts
+
+---
+
+**WORKFLOW-AWARE FAILURE INJECTION (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow that contains a form interaction (terminal action is a submit/save/create/approve button):
+  - Identify the most **critical blocking failure** for that workflow's `conditional_branch`.
+  - If that failure mode is NOT already covered by another workflow's negative test, generate one negative TC for it.
+- **Do NOT generate one negative TC per workflow mechanically.** Apply the existing deduplication gate first — only add a TC if it catches a bug that no other test would catch.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a workflow. Set `"wf_ref": null` for generic validation tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "What error/block should occur, naming the field and indicator",
+      "priority": "high | medium"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "high_priority": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[23:08:30] Test-Negative - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 30,
+  "module_title": "System Administration",
+  "summary": "System Administration provides centralized management of scheduled jobs, global feature flags, code lists, custom data tables, and audit trails for the application.",
+  "where_it_fits": "This module is an administrative area exposed via the top navigation (Admin) and appears in the content area with breadcrumbs and icon-based sidebar context; it is used for system-wide configuration and background job lifecycle management across the application. It sits at the platform-level configuration layer, affecting Clients, Accounts, Products and reporting behaviors referenced elsewhere in the app.",
+  "assumed_state_on_entry": "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+}
+</module_context>
+
+<module_name>System Administration</module_name>
+
+<ast>
+{
+  "module_name": "System Administration",
+  "components": {
+    "Manage_Scheduler_Jobs": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Table of batch jobs. Per-row interactive controls provided for toggling active state and editing CRON expression.",
+      "fields": {
+        "Scheduler_Enabled": {
+          "type": "checkbox",
+          "field_label": "Start/Stop Scheduler",
+          "on_change": "enables or disables execution of all scheduled jobs globally",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        "Is_Active": {
+          "type": "checkbox",
+          "field_label": "Is Active",
+          "on_change": "toggles Is_Active for the job",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        "CRON_Expression": {
+          "type": "unspecified",
+          "field_label": "CRON Expression",
+          "on_change": "updates the job's schedule; editable per job (inline or modal)",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "Edit CRON",
+          "fields": {
+            "CRON_Expression": {
+              "type": "unspecified",
+              "field_label": "CRON Expression",
+              "on_change": "persists edited CRON expression for the job"
+            }
+          },
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "Toggle Active",
+          "fields": {
+            "Is_Active": {
+              "type": "checkbox",
+              "field_label": "Is Active",
+              "on_change": "toggles Is_Active for the job"
+            }
+          },
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "Run Now",
+          "on_success": "queues immediate execution of the selected job",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "View Run History",
+          "on_success": "navigates to job run history for the selected job",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "bulk_actions": [],
+      "searchable": false
+    },
+    "Manage_Global_Configuration": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Table of global feature flags and configuration entries (each row interactive).",
+      "fields": {
+        "Enabled": {
+          "type": "checkbox",
+          "field_label": "Enabled",
+          "on_change": "toggles the feature flag or configuration entry for the system",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        "Value": {
+          "type": "unspecified",
+          "field_label": "Value",
+          "on_change": "persists the configuration value for the entry",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "Edit",
+          "fields": {
+            "Enabled": {
+              "type": "checkbox",
+              "field_label": "Enabled"
+            },
+            "Value": {
+              "type": "unspecified",
+              "field_label": "Value"
+            }
+          },
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "bulk_actions": [],
+      "searchable": false,
+      "notes": "Key settings include maker-checker (4-eyes approval), reschedule-future-repayments, allow-transactions-on-non-workingday, reschedule-repayments-on-holidays, savings-interest-posting-current-period-end, financial-year-beginning-month, meetings-mandatory-for-jlg-loans."
+    },
+    "Manage_Codes": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Lists code lists. Clicking a code opens its values for management.",
+      "row_actions": [
+        {
+          "action_name": "Open Code",
+          "on_success": "opens Manage_Code_Values for the selected code list",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "searchable": false,
+      "bulk_actions": []
+    },
+    "Manage_Code_Values": {
+      "type": "form",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Manage values for a single code list. Supports add, edit, reorder, deactivate.",
+      "fields": {
+        "Values": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Value": {
+              "type": "unspecified",
+              "field_label": "Value"
+            },
+            "Code": {
+              "type": "unspecified",
+              "field_label": "Code (optional)"
+            },
+            "Is_Active": {
+              "type": "checkbox",
+              "field_label": "Is Active",
+              "on_change": "toggles active state of this code value"
+            },
+            "Order": {
+              "type": "unspecified",
+              "field_label": "Order (used for dropdown ordering)"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Add Value",
+          "on_success": "adds a new value row to the code list"
+        },
+        {
+          "action_name": "Save Changes",
+          "on_success": "persists edits, order changes, and active state toggles"
+        }
+      ]
+    },
+    "Manage_Data_Tables": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Lists custom data tables that extend core entities. Provides creation form to add new custom tables and their columns.",
+      "row_actions": [
+        {
+          "action_name": "Edit",
+          "on_success": "opens Create_Data_Table_Form in edit mode for the selected custom table",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "bulk_actions": [],
+      "searchable": false,
+      "create_form": {
+        "type": "form",
+        "fields": {
+          "Data_Table_Name": {
+            "type": "unspecified",
+            "field_label": "Data Table Name"
+          },
+          "Application_Table_Name": {
+            "type": "dropdown",
+            "field_label": "Application Table Name",
+            "options": [
+              "m_client",
+              "m_group",
+              "m_loan",
+              "m_office",
+              "m_saving_account",
+              "m_product_loan",
+              "m_savings_product"
+            ]
+          },
+          "Multi_Row": {
+            "type": "checkbox",
+            "field_label": "Multi Row"
+          },
+          "Columns": {
+            "type": "repeating_group",
+            "item_fields": {
+              "Name": {
+                "type": "unspecified",
+                "field_label": "Column Name"
+              },
+              "Type": {
+                "type": "dropdown",
+                "field_label": "Type",
+                "options": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "decimal",
+                  "date",
+                  "datetime",
+                  "text",
+                  "dropdown"
+                ]
+              },
+              "Length": {
+                "type": "unspecified",
+                "field_label": "Length"
+              },
+              "Is_Mandatory": {
+                "type": "checkbox",
+                "field_label": "Is Mandatory"
+              },
+              "Is_Unique": {
+                "type": "checkbox",
+                "field_label": "Is Unique"
+              }
+            }
+          }
+        },
+        "submit_actions": [
+          {
+            "action_name": "Create",
+            "on_success": "creates the custom data table and associated columns",
+            "preconditions": [
+              "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+            ]
+          },
+          {
+            "action_name": "Cancel",
+            "on_success": "cancels creation and returns to Manage Data Tables list"
+          }
+        ]
+      }
+    },
+    "Audit_Trails": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Displays system actions. Filters provided. Pending commands present when maker-checker enabled.",
+      "searchable": true,
+      "filterable_columns": [
+        "Action Name",
+        "Entity Name",
+        "Resource ID",
+        "Maker",
+        "Checker",
+        "Office",
+        "Date Range"
+      ],
+      "filters": {
+        "Action_Name": {
+          "type": "unspecified",
+          "field_label": "Action Name"
+        },
+        "Entity_Name": {
+          "type": "unspecified",
+          "field_label": "Entity Name"
+        },
+        "Resource_ID": {
+          "type": "unspecified",
+          "field_label": "Resource ID"
+        },
+        "Maker_ID": {
+          "type": "unspecified",
+          "field_label": "Maker ID"
+        },
+        "Checker_ID": {
+          "type": "unspecified",
+          "field_label": "Checker ID"
+        },
+        "Office": {
+          "type": "unspecified",
+          "field_label": "Office"
+        },
+        "Date_Range": {
+          "type": "date",
+          "field_label": "Date Range"
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "View Details",
+          "on_success": "opens audit entry details"
+        },
+        {
+          "action_name": "Approve",
+          "on_success": "marks the pending command as Approved and triggers post-approve processing",
+          "preconditions": [
+            "Processing Result == Pending",
+            "maker-checker (4-eyes approval) feature flag enabled",
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "Reject",
+          "fields": {
+            "Reason": {
+              "type": "unspecified",
+              "field_label": "Reason",
+              "required": true
+            }
+          },
+          "on_success": "marks the pending command as Rejected and records the rejection reason",
+          "preconditions": [
+            "Processing Result == Pending",
+            "maker-checker (4-eyes approval) feature flag enabled",
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Manage Scheduler Jobs page displays a table of all batch jobs with columns for Job Name, Is Active (toggle), CRON Expression, Previous Run Status (Success/Failed with start/end times), Next Run Time, Currently Running indicator, and action buttons. Jobs include Apply Annual Fee, Add Accrual Transactions, Apply Penalty to Overdue Loans, Update Loan Summary, Post Interest for Savings, Transfer Fees, and Generate Loan Loss Provisioning. Each job can be toggled active/inactive and its CRON expression edited. A global Start/Stop scheduler toggle controls whether all scheduled jobs execute.
+
+The Global Configuration page displays a table of system-wide feature flags with columns for Configuration Name, Enabled (toggle), Value, and Description. Key settings include maker-checker (4-eyes approval), reschedule-future-repayments, allow-transactions-on-non-workingday, reschedule-repayments-on-holidays, savings-interest-posting-current-period-end, financial-year-beginning-month, and meetings-mandatory-for-jlg-loans.
+
+The Manage Codes page lists all code lists (Client Type, Gender, Address Type, Loan Purpose, etc.) with Name and Is System Defined columns. Clicking a code opens its values for adding, editing, reordering, and deactivating entries that populate dropdown options throughout the system.
+
+The Manage Data Tables page lists custom data tables that extend core entities (m_client, m_group, m_loan, m_office, m_saving_account, m_product_loan, m_savings_product) with custom fields. The Create form includes Data Table Name, Application Table Name dropdown, Multi Row checkbox, and column definitions — each with Name, Type (string, number, boolean, decimal, date, datetime, text, dropdown), Length, Is Mandatory, and Is Unique checkboxes.
+
+The Audit Trails page displays all system actions with columns for Action Name, Entity Name, Resource ID, Maker, Made On Date, Checker, Checked On Date, Processing Result (Pending, Approved, Rejected), Office Name, and Client/Loan/Savings details. Filters allow searching by Action Name, Entity Name, Resource ID, Maker ID, Checker ID, Office, and Date Range. When maker-checker is enabled, pending commands appear with Approve and Reject buttons.
+
+---
+
+
+</description>
+
+<workflows>
+WF-001 | Toggle Scheduler Execution (Start/Stop Scheduler) | actor: Administrator | branch: none | terminal: Scheduler_Enabled | on_success: enables or disables execution of all scheduled jobs globally
+WF-002 | Edit CRON (row action) | actor: Administrator | branch: none | terminal: Edit CRON | on_success: persists edited CRON expression for the job
+WF-003 | Toggle Job Active (row action) | actor: Administrator | branch: none | terminal: Toggle Active | on_success: toggles Is_Active for the job
+WF-004 | Toggle Job Active (inline) | actor: Administrator | branch: none | terminal: Is_Active | on_success: toggles Is_Active for the job
+WF-005 | Update CRON Expression (inline edit) | actor: Administrator | branch: none | terminal: CRON_Expression | on_success: updates the job's schedule; editable per job (inline or modal)
+WF-006 | Run Job Now (row action) | actor: Administrator | branch: none | terminal: Run Now | on_success: queues immediate execution of the selected job
+WF-007 | View Job Run History (row action) | actor: Administrator | branch: none | terminal: View Run History | on_success: navigates to job run history for the selected job
+WF-008 | Toggle Global Configuration Enabled (inline) | actor: Administrator | branch: none | terminal: Enabled | on_success: toggles the feature flag or configuration entry for the system
+WF-009 | Edit Global Configuration (row action) | actor: Administrator | branch: none | terminal: Edit | on_success: persists the configuration value for the entry
+WF-010 | Update Global Configuration Value (inline) | actor: Administrator | branch: none | terminal: Value | on_success: persists the configuration value for the entry
+WF-011 | Open Code List | actor: Administrator | branch: none | terminal: Open Code | on_success: opens Manage_Code_Values for the selected code list
+WF-012 | Add Value to Code List | actor: Administrator | branch: none | terminal: Add Value | on_success: adds a new value row to the code list
+WF-013 | Save Changes to Code List | actor: Administrator | branch: none | terminal: Save Changes | on_success: persists edits, order changes, and active state toggles
+WF-014 | Edit Custom Data Table (row action) | actor: Administrator | branch: none | terminal: Edit | on_success: opens Create_Data_Table_Form in edit mode for the selected custom table
+WF-015 | Create Custom Data Table | actor: Administrator | branch: none | terminal: Create | on_success: creates the custom data table and associated columns
+WF-016 | Cancel Create Custom Data Table | actor: Administrator | branch: none | terminal: Cancel | on_success: cancels creation and returns to Manage Data Tables list
+WF-017 | View Audit Entry Details | actor: Administrator | branch: none | terminal: View Details | on_success: opens audit entry details
+WF-018 | Approve Pending Command | actor: Administrator | branch: Processing Result == Pending AND maker-checker (4-eyes approval) feature flag enabled | terminal: Approve | on_success: marks the pending command as Approved and triggers post-approve processing
+WF-019 | Reject Pending Command with Reason | actor: Administrator | branch: Processing Result == Pending AND maker-checker (4-eyes approval) feature flag enabled | terminal: Reject | on_success: marks the pending command as Rejected and records the rejection reason
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:13:39] Test-Negative - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "System Administration",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user cannot access System Administration page",
+      "preconditions": ["Not logged in (no authenticated session)"],
+      "steps": [
+        "1. In a new browser session with no authenticated user, navigate to the System Administration URL or click Admin > System Administration"
+      ],
+      "expected_result": "User is redirected to the Login page; System Administration content (scheduler table, global configuration table, audit trails) is not displayed and no admin controls are accessible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": null,
+      "test_case": "Authenticated non-admin user is blocked from System Administration controls",
+      "preconditions": ["Logged in as a user WITHOUT administrative privileges"],
+      "steps": [
+        "1. Log in as a user account that does not have administrative privileges",
+        "2. Attempt to open Admin > System Administration"
+      ],
+      "expected_result": "Access to System Administration is blocked: the Admin System Administration content is not displayed and admin controls (Start/Stop Scheduler toggle, job row action buttons, global configuration toggles) are not present; the page displays an authorization/permission indicator and the user remains on a non-admin view",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-018",
+      "test_case": "Approve button is not available for an audit entry whose Processing Result is not Pending (Approved state)",
+      "preconditions": ["Logged in as a user with administrative privileges", "An audit entry exists with Processing Result == Approved"],
+      "steps": [
+        "1. Log in as an administrator",
+        "2. Navigate to Admin > Audit Trails",
+        "3. Locate and open the audit entry whose Processing Result is <Approved>",
+        "4. Attempt to click an Approve action for that entry"
+      ],
+      "expected_result": "The Approve action is not available for the Approved entry (Approve button is not visible or is disabled); attempting the action does not change the entry — Processing Result remains <Approved> and no approval occurs",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-018",
+      "test_case": "Approve/Reject actions are not available when maker-checker (4-eyes) feature flag is disabled",
+      "preconditions": ["Logged in as a user with administrative privileges", "maker-checker (4-eyes approval) feature flag is currently <disabled>"],
+      "steps": [
+        "1. Log in as an administrator",
+        "2. Navigate to Admin > Global Configuration",
+        "3. Ensure the maker-checker feature flag is set to <disabled> (toggle if necessary)",
+        "4. Navigate to Admin > Audit Trails",
+        "5. Open an audit entry whose Processing Result is <Pending>",
+        "6. Observe available row actions for the pending entry"
+      ],
+      "expected_result": "Approve and Reject actions are not shown for the Pending audit entry while maker-checker is disabled; the pending command cannot be approved or rejected from the UI and Processing Result remains <Pending>",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-019",
+      "test_case": "Reject action blocked when required Reason field is left blank",
+      "preconditions": ["Logged in as a user with administrative privileges", "An audit entry exists with Processing Result == Pending"],
+      "steps": [
+        "1. Log in as an administrator",
+        "2. Navigate to Admin > Audit Trails",
+        "3. Open an audit entry whose Processing Result is <Pending>",
+        "4. Click the Reject row action for that entry",
+        "5. Leave the Reason field blank",
+        "6. Click the Submit/Reject button in the Reject dialog"
+      ],
+      "expected_result": "Inline validation error appears on the Reason field indicating it is required; the Reject action is blocked; the audit entry's Processing Result remains <Pending> (no rejection occurs)",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": "WF-018",
+      "test_case": "Approve action unavailable for an audit entry in Rejected state",
+      "preconditions": ["Logged in as a user with administrative privileges", "An audit entry exists with Processing Result == Rejected"],
+      "steps": [
+        "1. Log in as an administrator",
+        "2. Navigate to Admin > Audit Trails",
+        "3. Locate and open the audit entry whose Processing Result is <Rejected>",
+        "4. Attempt to click an Approve action for that entry"
+      ],
+      "expected_result": "The Approve action is not available for the Rejected entry (Approve button not visible or disabled); attempting approval does not change the entry — Processing Result remains <Rejected>",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": null,
+      "test_case": "Invalid date entered into Audit Trails Date Range filter is rejected",
+      "preconditions": ["Logged in as a user with administrative privileges"],
+      "steps": [
+        "1. Log in as an administrator",
+        "2. Navigate to Admin > Audit Trails",
+        "3. Enter <invalid date format or impossible date> into the Date Range filter field",
+        "4. Click the Search / Apply Filters button"
+      ],
+      "expected_result": "Date Range field displays an inline validation error indicating the date is invalid; the filter is not applied and the audit results remain unchanged",
+      "priority": "medium"
+    }
+  ],
+  "summary": {
+    "total": 7,
+    "high_priority": 5,
+    "medium_priority": 2,
+    "low_priority": 0
+  }
+}
+
+------------------------------------------------------------
+[23:13:39] Test-Negative - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "System Administration",
+  "category": "negative",
+  "test_cases": [
+    {
+      "tc_id": "N-001",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user cannot access System Administration page",
+      "preconditions": [
+        "Not logged in (no authenticated session)"
+      ],
+      "steps": [
+        "1. In a new browser session with no authenticated user, navigate to the System Administration URL or click Admin > System Administration"
+      ],
+      "expected_result": "User is redirected to the Login page; System Administration content (scheduler table, global configuration table, audit trails) is not displayed and no admin controls are accessible",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-002",
+      "wf_ref": null,
+      "test_case": "Authenticated non-admin user is blocked from System Administration controls",
+      "preconditions": [
+        "Logged in as a user WITHOUT administrative privileges"
+      ],
+      "steps": [
+        "1. Log in as a user account that does not have administrative privileges",
+        "2. Attempt to open Admin > System Administration"
+      ],
+      "expected_result": "Access to System Administration is blocked: the Admin System Administration content is not displayed and admin controls (Start/Stop Scheduler toggle, job row action buttons, global configuration toggles) are not present; the page displays an authorization/permission indicator and the user remains on a non-admin view",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-018",
+      "test_case": "Approve button is not available for an audit entry whose Processing Result is not Pending (Approved state)",
+      "preconditions": [
+        "Logged in as a user with administrative privileges",
+        "An audit entry exists with Processing Result == Approved"
+      ],
+      "steps": [
+        "1. Log in as an administrator",
+        "2. Navigate to Admin > Audit Trails",
+        "3. Locate and open the audit entry whose Processing Result is <Approved>",
+        "4. Attempt to click an Approve action for that entry"
+      ],
+      "expected_result": "The Approve action is not available for the Approved entry (Approve button is not visible or is disabled); attempting the action does not change the entry \u2014 Processing Result remains <Approved> and no approval occurs",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": "WF-018",
+      "test_case": "Approve/Reject actions are not available when maker-checker (4-eyes) feature flag is disabled",
+      "preconditions": [
+        "Logged in as a user with administrative privileges",
+        "maker-checker (4-eyes approval) feature flag is currently <disabled>"
+      ],
+      "steps": [
+        "1. Log in as an administrator",
+        "2. Navigate to Admin > Global Configuration",
+        "3. Ensure the maker-checker feature flag is set to <disabled> (toggle if necessary)",
+        "4. Navigate to Admin > Audit Trails",
+        "5. Open an audit entry whose Processing Result is <Pending>",
+        "6. Observe available row actions for the pending entry"
+      ],
+      "expected_result": "Approve and Reject actions are not shown for the Pending audit entry while maker-checker is disabled; the pending command cannot be approved or rejected from the UI and Processing Result remains <Pending>",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-005",
+      "wf_ref": "WF-019",
+      "test_case": "Reject action blocked when required Reason field is left blank",
+      "preconditions": [
+        "Logged in as a user with administrative privileges",
+        "An audit entry exists with Processing Result == Pending"
+      ],
+      "steps": [
+        "1. Log in as an administrator",
+        "2. Navigate to Admin > Audit Trails",
+        "3. Open an audit entry whose Processing Result is <Pending>",
+        "4. Click the Reject row action for that entry",
+        "5. Leave the Reason field blank",
+        "6. Click the Submit/Reject button in the Reject dialog"
+      ],
+      "expected_result": "Inline validation error appears on the Reason field indicating it is required; the Reject action is blocked; the audit entry's Processing Result remains <Pending> (no rejection occurs)",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-006",
+      "wf_ref": "WF-018",
+      "test_case": "Approve action unavailable for an audit entry in Rejected state",
+      "preconditions": [
+        "Logged in as a user with administrative privileges",
+        "An audit entry exists with Processing Result == Rejected"
+      ],
+      "steps": [
+        "1. Log in as an administrator",
+        "2. Navigate to Admin > Audit Trails",
+        "3. Locate and open the audit entry whose Processing Result is <Rejected>",
+        "4. Attempt to click an Approve action for that entry"
+      ],
+      "expected_result": "The Approve action is not available for the Rejected entry (Approve button not visible or disabled); attempting approval does not change the entry \u2014 Processing Result remains <Rejected>",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-007",
+      "wf_ref": null,
+      "test_case": "Invalid date entered into Audit Trails Date Range filter is rejected",
+      "preconditions": [
+        "Logged in as a user with administrative privileges"
+      ],
+      "steps": [
+        "1. Log in as an administrator",
+        "2. Navigate to Admin > Audit Trails",
+        "3. Enter <invalid date format or impossible date> into the Date Range filter field",
+        "4. Click the Search / Apply Filters button"
+      ],
+      "expected_result": "Date Range field displays an inline validation error indicating the date is invalid; the filter is not applied and the audit results remain unchanged",
+      "priority": "medium"
+    }
+  ],
+  "summary": {
+    "total": 7,
+    "high_priority": 5,
+    "medium_priority": 2,
+    "low_priority": 0
+  }
+}

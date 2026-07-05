@@ -1,0 +1,1304 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:08:30.022539
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:08:30] Test-Positive - SYSTEM PROMPT
+------------------------------------------------------------
+You are an Expert UI Test Case Generator. You receive (1) a Structural Model JSON for one specific module and (2) the original functional description for that module.
+
+Your job is to produce ONLY positive/functional UI test cases — tests where valid input is provided and the specific module behaves correctly in isolation.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST Input:**
+
+The AST JSON you receive is a structured representation of every **interactive** element in the module. Each top-level key under `"components"` is a named UI component. Learn these node types before generating tests:
+
+| AST `type` | What it represents | What to test |
+|---|---|---|
+| `form` | A flat input form with a submit action | One happy-path TC per distinct `on_success` outcome; one extra TC per `visible_when` conditional field |
+| `wizard` | A multi-step form; `steps[]` = ordered panels | Navigate all steps in sequence; assert the final `on_success` from `submit_actions` |
+| `data_table` | A listing/grid of rows | One TC per entry in `row_actions`; one TC per `bulk_actions` entry; one TC for search/filter |
+| `tab_container` | Tabbed layout; `tabs[]` may nest sub-tabs | One navigation TC across all tabs; if different tabs have different submission forms, one TC per tab |
+| `state_bound_action_bar` | Action buttons that change by entity status; `states{}` map keys are the statuses | One TC per `available_actions` entry per state; precondition = that state |
+| `repeating_group` | "Add Row" pattern for dynamic lists of items | Step: "Click Add Row", then fill `item_fields` for the new row |
+
+Key fields to pay attention to inside any node:
+- **`on_success`** — use its value verbatim as (or as the basis for) your `expected_result`
+- **`visible_when` / `required_when`** — each unique condition = a separate TC
+- **`preconditions`** — translate directly into your TC's `preconditions` array
+- **`constraints`** — use in expected_result or steps when they describe observable UI behavior (e.g., inline validation)
+- **`submit_actions[]`** — if a form has multiple submit buttons, generate one TC per distinct `on_success`
+
+> If the AST is missing an action that the functional description explicitly describes (e.g., an action verb in a state-machine paragraph), trust the description and generate the TC anyway (see Coverage Completeness Gate).
+
+---
+
+**STRICT MODULE BOUNDARY RULE (CRITICAL):**
+You are writing "unit tests" for the UI. You must test ONLY the module provided in the input.
+- DO NOT write End-to-End (E2E) journeys across multiple pages.
+- DO NOT add steps to navigate to other modules to verify backend results.
+- **Cross-Module Redirects:** If clicking a submit button navigates the user to an entirely different module (e.g., from Booking to Payment, or Assignment Creation back to Course Page), the test ENDS with the assertion that the redirect occurred. Do not interact with the next page.
+- **Multi-Actor Flows:** If a downstream action requires a different user (e.g., a Checker approving a Maker's entry), do not include it.
+
+---
+
+**ASSERTION STYLE (CRITICAL — read every rule before writing any expected_result):**
+
+**Rule A — Assert the visible UI change, never the action itself.**
+The `expected_result` must describe exactly what a tester can *see or read on the screen* after the last step. It must NOT restate the action just performed.
+
+Banned patterns — if your expected_result matches any of these, rewrite it:
+- ❌ `"creates [entity]"` → name the row, badge, or notification that appears
+- ❌ `"updates [entity]"` → name the field or value that visibly changed
+- ❌ `"deletes [entity]"` → state that the row is no longer present in the table
+- ❌ `"[system] adjusts automatically"` → that is a backend side effect; assert only what is visible on the current screen immediately after the last step
+- ❌ `"a confirmation email is sent"`, `"a refund is initiated"`, `"the preference is saved to the profile"`, `"the balance is updated"` → these are non-visible backend side effects. Do NOT assert them unless a **visible on-screen confirmation** is named (e.g. `"A 'Booking confirmed' banner with reference number is shown"`). Assert only what appears on the current screen.
+- ❌ `"[field] contains <value>"` after a filter action → assert that the *list/table* is filtered, not that the input field holds a value
+
+Good pattern examples:
+- ✅ `"New row appears in the [Table] with the entered [Field A] and [Field B]"`
+- ✅ `"Status badge updates to '[Status]' ([color]) on the [Entity] Detail page"`
+- ✅ `"[Table] displays only rows matching <filter term>; unrelated rows are no longer visible"`
+- ✅ `"A success notification is displayed; the [Field] on the detail page shows the updated value"`
+- ✅ `"File download is triggered in the browser"` (for export actions)
+
+**Rule B — One TC = one specific outcome. Never combine conditional branches.**
+If a feature has two distinct output paths (e.g., on-screen result vs. file export), generate TWO separate test cases, each with its own expected_result describing only that one path. Never write `"when X, result A; when Y, result B"` inside a single expected_result.
+
+**Rule C — When the description quotes exact success text, use it verbatim.**
+Use the `on_success` value from the AST **only when it is an actual UI string the app displays** (a quoted message like `"Account opened successfully!"`). Otherwise `on_success` is an internal behavior **token** ("navigates to activity page", "persists configuration and returns to course page", "updates results and result count", "opens the Enrol users dialog") — do NOT paste the token as your `expected_result`. Rewrite it into a describable visible screen state: name the page/heading/row/badge/dialog the tester now sees.
+- ❌ `expected_result: "navigates to activity page"` → ✅ `"The <activity name> activity page opens, showing its title and content"`
+- ❌ `expected_result: "persists configuration and returns to course page"` → ✅ `"The Course page is shown; the course heading displays the saved <full name>"`
+- ❌ `expected_result: "updates results and result count"` → ✅ `"The listing shows only items matching <filter>; the result count decreases accordingly"`
+
+**Rule D — If the module performs calculations or updates a status badge, explicitly assert that visual update** (badge color, calculated value, running balance change).
+Additionally: if the spec describes a **running total, summary row, price breakdown, or auto-calculated field** that derives its value from other inputs, the expected_result must assert that the calculated field *updates visibly* after the dependent inputs are filled — e.g., `"The Total field updates to reflect Base Price + Taxes + Fees"` or `"The Course Total row displays the aggregated grade across all weighted items"`.
+
+**Rule E — Quote exact success messages verbatim. Never paraphrase.**
+If the spec provides a quoted success string (e.g., `"Account opened successfully!"`), copy it character-for-character into the expected_result — including punctuation and capitalisation.
+- ❌ `"a success message is shown"` when spec says `"Transfer completed successfully."`
+- ❌ `"a confirmation is displayed"` when spec says `"Payment submitted successfully."`
+- ✅ `"Page shows 'Transfer completed successfully.' with a transaction ID"`
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+Never invent specific data values in steps or preconditions unless the spec mandates a hardcoded system value (e.g., `"Select 'Card' layout"`).
+Always use generic role-based placeholders enclosed in angle brackets.
+
+Examples of CORRECT step wording:
+  - "Enter <valid email> in the Email field"
+  - "Select <account type> from the Account Type dropdown"
+  - "Check the <target participant> checkbox"
+  - "Select 'Cash-based' from the Accounting radio options" (Only if mandated by spec)
+
+Examples of WRONG step wording (never do this):
+  - "Enter 'John' in the First Name field"
+  - "Enter '500.00' in the Amount field"
+
+---
+
+**PRECONDITIONS vs STEPS — BOUNDARY RULE (CRITICAL):**
+
+A **precondition** is a state the tester sets up *before* touching the module under test. A **step** is an action the tester performs *inside* the module.
+
+Apply this checklist to every TC before outputting:
+1. If a step says `"Ensure <X> is open"` or `"Verify <X> shows <Y>"` — it is a precondition, not a step. Move it.
+2. If a precondition says a form, dialog, or page is already open, there **must** be a step that opens it — unless the module's entry point is that page by definition. If the step is missing, add it as step 1.
+3. A TC with only one step that is an observation (`"Observe the page"`) is missing real user actions. Either add the navigation step that brings the user to this state, or fold the observation into the precondition.
+
+When dealing with complex AST components, format steps like this:
+- **Modals/Dialogs:** "1. Click <Button> to open modal", "2. Enter <value> inside modal"
+- **Confirmation Dialogs:** If the spec describes a confirmation dialog appearing after a state-change or destructive action, always add the step `"Click Confirm on the <Action> dialog"`. Never omit it, even if the spec only implies it.
+- **Inline Editing:** "1. Click the edit icon next to <item>", "2. Enter <new value>", "3. Click Save"
+- **Search-and-add (Autocomplete):** "1. Enter <search term> in the autocomplete", "2. Select <matching result> from the dropdown"
+- **Dynamic Rows (`repeating_group`):** "1. Click 'Add Row'", "2. Enter <value> in the new row"
+- **File Uploads:** "1. Click 'Upload'", "2. Select a <valid file type> from the OS dialog"
+- **Dynamic Filters:** Include separate tests to remove individual active filter chips or click "Reset All".
+
+---
+
+**PRECONDITIONS FOR ISOLATED MODULES:**
+Because you are testing a module in isolation, establish the required entry state:
+- **Global Context:** Use the `<module_context>` block's `assumed_state_on_entry` as your primary source for preconditions. If the context states "Requires an active Client profile" or "Loan must be in Approved state", include that verbatim as a precondition.
+- **Roles:** "User logged in as <Teacher / Student / Admin>" (derive from context or description).
+- **State:** "[Entity] is in [Status]" (derive from context or description).
+- **Toggles/Modes:** "Edit mode is enabled" or "Requires active internet connection".
+- **Role-Specific Views:** If the spec explicitly states that a UI element (tab, button, control) is visible to one role but not another, generate a test that asserts the element's presence for the role that should see it. The expected_result must name the specific element — e.g., `"The Settings tab is visible in the course navigation bar"` or `"No Edit mode toggle is present on the Course page"`.
+
+---
+
+**WHAT TO GENERATE (COVERAGE MAPPING TO AST):**
+
+**1. Forms & Wizards (`form`, `wizard`):**
+- Generate ONE happy path per distinct success outcome.
+- *Conditional UI Check:* If a toggle/dropdown reveals new mandatory fields (`visible_when`), generate a separate test for that conditional branch.
+- **Wizard step coverage (CRITICAL):** If a wizard has multiple steps and any step beyond Step 1 contains its own named field group (e.g., "Address Details", "Family Members", "Identifiers"), generate ONE dedicated positive TC per such step. The TC must:
+  - Navigate to that specific step (include the preceding steps as preconditions or brief navigation steps)
+  - Fill the fields described for that step (not just pass through)
+  - Assert the step's content is visible/saved on the detail page after final submission
+  - **Do NOT collapse all wizard steps into one happy-path TC** — if Steps 2, 3, and 4 each have their own named section in the spec, they each need their own TC.
+- **Wizard in-step identifiers/duplicates:** If a wizard step allows adding identifiers, documents, or similar entries that have a uniqueness constraint, include a TC for that wizard step that also verifies the constraint (e.g., attempting to add a duplicate Document Type+Key pair inside the wizard). This is a different code path from adding the same post-creation on the detail page.
+- **Action dialogs:** If a `state_bound_action_bar` action opens a dialog with its own `fields{}` (e.g., Activate requires Activation Date, Reject requires Reason), generate ONE positive TC per such action-dialog — distinct from the state-transition TC. The TC fills the dialog field and completes the action.
+
+**2. State Machines (`state_bound_action_bar`):**
+- For each unique action available in a specific state, generate ONE test performing that action.
+- Do not split bidirectional transitions; test A→B.
+
+**3. Tabs (`tab_container`):**
+- If tabs switch between entirely different forms (e.g., Hotels vs. Flights tabs), generate ONE submission test for EACH tab.
+- Otherwise, generate one test verifying navigation between the tabs.
+
+**4. Data Tables (`data_table`):**
+- Generate ONE test per `row_actions` (e.g., clicking a three-dot menu).
+- Generate ONE test per `bulk_actions` (e.g., selecting multiple checkboxes).
+- Generate ONE test applying a search/filter. The expected_result must describe the **filtered content** (e.g., `"Only results matching <filter criterion> are shown; unrelated items are no longer visible"`) — never just the filter UI state (❌ `"filter is applied"`).
+- If the spec describes **active filter chips/tags with individual remove buttons**, generate ONE test removing a single chip and asserting the results expand back.
+- If the spec describes a **"Reset All" or "Clear Filters" control**, generate ONE test clicking it and asserting all filters are cleared and full unfiltered results are restored.
+
+**5. Empty / Zero-Result States:**
+If the spec explicitly describes an empty state, zero-results display, or "No Data" message (e.g., a filtered list with no matches, a timeline with no upcoming items, a dashboard with no financial data), generate ONE test that reaches that state through a valid user action and asserts the described empty-state message or UI element is visible. This is a valid positive test — the system correctly handles the absence of data.
+
+**6. COVERAGE COMPLETENESS GATE (run before outputting):**
+Enumerate every **action verb** listed in the description for each entity state (e.g., "Approve, Reject, Withdraw, Disburse, Waive Interest, Write Off, Reschedule, Block Debit, Reactivate…"). For each action verb:
+- If a TC already covers it → keep it.
+- If NO TC covers it → add a TC for it. Do not skip spec-described actions just because they lack a clear AST node.
+
+---
+
+**CALIBRATION & LIMITS:**
+Do not drop functionally unique code paths (like a specific state transition) just to hit a limit, but follow these general sizes:
+  - Simple module (login, simple filter): 2–4 tests
+  - Medium module (standard CRUD form, data table): 4–8 tests
+  - Complex module (Massive multi-panel forms, Tabbed Search Engines): 8–15 tests
+
+**Hard step cap — 15 steps per TC:**
+If a TC exceeds **15 steps**, split it at the first sub-feature boundary (e.g., basic form submission vs. adding optional repeating-group items). Each split becomes a separate TC with its own precondition establishing the required starting state. Never merge two distinct sub-features into one TC just to reduce TC count.
+
+---
+
+**ANTI-HALLUCINATION & DEDUPLICATION GATE (run before outputting):**
+1. Does this test trace back to a specific node in the AST or a specific action/state in the description? If no → delete it.
+2. For each pair of tests: Do they reach a DIFFERENT success state, OR take a DIFFERENT conditional branch/form layout to reach the same state?
+   - If two tests share the same code path (e.g., same form, just different optional fields filled) → merge them. Keep the more complete version.
+   - **Filter / sort / layout dedup:** do NOT generate one positive test per filter field or per sort/layout option. A set of filter controls, or a First/Last A–Z alphabetical matrix, or a Card/List/Summary layout switch, is **one representative** filter test (or one navigation test) — not one-per-field/one-per-permutation. Keep separate only where a filter targets a genuinely different result path or form.
+3. Read each `expected_result`. Does it match any **banned pattern** from the ASSERTION STYLE rules?
+   - ❌ `"creates/updates/deletes [entity]"` → rewrite to name the visible row, badge, or notification
+   - ❌ `"[system] adjusts/recalculates automatically"` → rewrite to describe the immediate visible screen state
+   - ❌ **`on_success` token pasted verbatim** (e.g. `"navigates to activity page"`, `"opens the dialog"`, `"updates results and result count"`) → rewrite to name the visible screen state (see Rule C)
+   - ❌ **Hedged / dual outcome** — `"Either X or Y"`, `"when X, result A; when Y, result B"`, `"succeeds … otherwise blocked"`, `"if credentials exist … if not …"` → pick the single most-likely outcome per the spec and assert it definitively; if two genuinely distinct outcomes exist, split into two TCs
+   - ❌ **Fabricated verbatim message string** — a quoted error/success string the spec never provides (e.g. inventing `'Attribute is required.'`) → either describe it generically (`"an inline error indicating the field is required"`) or, if the spec quotes it, copy the spec's exact text. Quotation marks are reserved for spec-sourced text.
+   - ❌ **Backend side effect** — `"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"` → assert only a visible on-screen confirmation, or drop it
+   - ❌ `"[field] contains <value>"` after a filter/search → rewrite to assert the filtered list/table state
+   - ❌ `"a success message is displayed"` when spec quotes exact text → replace with the verbatim quoted string
+   - ❌ `"filter is applied"` → rewrite to describe the filtered content visible in the results
+4. Check every TC: does its step count exceed 15? If yes → split it.
+5. Check every TC: does step 1 say "Ensure…" or "Verify…"? If yes → move it to preconditions and add a real action as step 1.
+6. Does the spec describe any empty/zero-result state? If yes, confirm a TC exists for it.
+
+---
+
+**WORKFLOW COVERAGE OBLIGATION (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- Your test cases must **collectively cover every workflow** listed.
+- For each `wf_id`, at least one TC must:
+  - Activate the `conditional_branch` (if not null) — i.e. the test must set up the condition described.
+  - Assert the `on_success` as its `expected_result` (verbatim or as the primary basis for the expected result).
+- Add `"wf_ref": "WF-NNN"` to each TC to identify which workflow it covers.
+- If one TC naturally covers multiple workflows (e.g., the base path overlaps), pick the most specific `wf_ref`.
+- If a TC does not map to any workflow (e.g., a navigation-only test), set `"wf_ref": null`.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "positive",
+  "test_cases": [
+    {
+      "tc_id": "P-001",
+      "wf_ref": "WF-001",
+      "test_case": "Short descriptive name",
+      "preconditions": ["User logged in as <Role>", "<Prerequisite state>"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "Exact visible outcome on the current screen or redirect confirmation",
+      "priority": "high | medium | low"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "high_priority": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+------------------------------------------------------------
+[23:08:30] Test-Positive - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 30,
+  "module_title": "System Administration",
+  "summary": "System Administration provides centralized management of scheduled jobs, global feature flags, code lists, custom data tables, and audit trails for the application.",
+  "where_it_fits": "This module is an administrative area exposed via the top navigation (Admin) and appears in the content area with breadcrumbs and icon-based sidebar context; it is used for system-wide configuration and background job lifecycle management across the application. It sits at the platform-level configuration layer, affecting Clients, Accounts, Products and reporting behaviors referenced elsewhere in the app.",
+  "assumed_state_on_entry": "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+}
+</module_context>
+
+<module_name>System Administration</module_name>
+
+<ast>
+{
+  "module_name": "System Administration",
+  "components": {
+    "Manage_Scheduler_Jobs": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Table of batch jobs. Per-row interactive controls provided for toggling active state and editing CRON expression.",
+      "fields": {
+        "Scheduler_Enabled": {
+          "type": "checkbox",
+          "field_label": "Start/Stop Scheduler",
+          "on_change": "enables or disables execution of all scheduled jobs globally",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        "Is_Active": {
+          "type": "checkbox",
+          "field_label": "Is Active",
+          "on_change": "toggles Is_Active for the job",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        "CRON_Expression": {
+          "type": "unspecified",
+          "field_label": "CRON Expression",
+          "on_change": "updates the job's schedule; editable per job (inline or modal)",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "Edit CRON",
+          "fields": {
+            "CRON_Expression": {
+              "type": "unspecified",
+              "field_label": "CRON Expression",
+              "on_change": "persists edited CRON expression for the job"
+            }
+          },
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "Toggle Active",
+          "fields": {
+            "Is_Active": {
+              "type": "checkbox",
+              "field_label": "Is Active",
+              "on_change": "toggles Is_Active for the job"
+            }
+          },
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "Run Now",
+          "on_success": "queues immediate execution of the selected job",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "View Run History",
+          "on_success": "navigates to job run history for the selected job",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "bulk_actions": [],
+      "searchable": false
+    },
+    "Manage_Global_Configuration": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Table of global feature flags and configuration entries (each row interactive).",
+      "fields": {
+        "Enabled": {
+          "type": "checkbox",
+          "field_label": "Enabled",
+          "on_change": "toggles the feature flag or configuration entry for the system",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        "Value": {
+          "type": "unspecified",
+          "field_label": "Value",
+          "on_change": "persists the configuration value for the entry",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "Edit",
+          "fields": {
+            "Enabled": {
+              "type": "checkbox",
+              "field_label": "Enabled"
+            },
+            "Value": {
+              "type": "unspecified",
+              "field_label": "Value"
+            }
+          },
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "bulk_actions": [],
+      "searchable": false,
+      "notes": "Key settings include maker-checker (4-eyes approval), reschedule-future-repayments, allow-transactions-on-non-workingday, reschedule-repayments-on-holidays, savings-interest-posting-current-period-end, financial-year-beginning-month, meetings-mandatory-for-jlg-loans."
+    },
+    "Manage_Codes": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Lists code lists. Clicking a code opens its values for management.",
+      "row_actions": [
+        {
+          "action_name": "Open Code",
+          "on_success": "opens Manage_Code_Values for the selected code list",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "searchable": false,
+      "bulk_actions": []
+    },
+    "Manage_Code_Values": {
+      "type": "form",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Manage values for a single code list. Supports add, edit, reorder, deactivate.",
+      "fields": {
+        "Values": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Value": {
+              "type": "unspecified",
+              "field_label": "Value"
+            },
+            "Code": {
+              "type": "unspecified",
+              "field_label": "Code (optional)"
+            },
+            "Is_Active": {
+              "type": "checkbox",
+              "field_label": "Is Active",
+              "on_change": "toggles active state of this code value"
+            },
+            "Order": {
+              "type": "unspecified",
+              "field_label": "Order (used for dropdown ordering)"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Add Value",
+          "on_success": "adds a new value row to the code list"
+        },
+        {
+          "action_name": "Save Changes",
+          "on_success": "persists edits, order changes, and active state toggles"
+        }
+      ]
+    },
+    "Manage_Data_Tables": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Lists custom data tables that extend core entities. Provides creation form to add new custom tables and their columns.",
+      "row_actions": [
+        {
+          "action_name": "Edit",
+          "on_success": "opens Create_Data_Table_Form in edit mode for the selected custom table",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "bulk_actions": [],
+      "searchable": false,
+      "create_form": {
+        "type": "form",
+        "fields": {
+          "Data_Table_Name": {
+            "type": "unspecified",
+            "field_label": "Data Table Name"
+          },
+          "Application_Table_Name": {
+            "type": "dropdown",
+            "field_label": "Application Table Name",
+            "options": [
+              "m_client",
+              "m_group",
+              "m_loan",
+              "m_office",
+              "m_saving_account",
+              "m_product_loan",
+              "m_savings_product"
+            ]
+          },
+          "Multi_Row": {
+            "type": "checkbox",
+            "field_label": "Multi Row"
+          },
+          "Columns": {
+            "type": "repeating_group",
+            "item_fields": {
+              "Name": {
+                "type": "unspecified",
+                "field_label": "Column Name"
+              },
+              "Type": {
+                "type": "dropdown",
+                "field_label": "Type",
+                "options": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "decimal",
+                  "date",
+                  "datetime",
+                  "text",
+                  "dropdown"
+                ]
+              },
+              "Length": {
+                "type": "unspecified",
+                "field_label": "Length"
+              },
+              "Is_Mandatory": {
+                "type": "checkbox",
+                "field_label": "Is Mandatory"
+              },
+              "Is_Unique": {
+                "type": "checkbox",
+                "field_label": "Is Unique"
+              }
+            }
+          }
+        },
+        "submit_actions": [
+          {
+            "action_name": "Create",
+            "on_success": "creates the custom data table and associated columns",
+            "preconditions": [
+              "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+            ]
+          },
+          {
+            "action_name": "Cancel",
+            "on_success": "cancels creation and returns to Manage Data Tables list"
+          }
+        ]
+      }
+    },
+    "Audit_Trails": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Displays system actions. Filters provided. Pending commands present when maker-checker enabled.",
+      "searchable": true,
+      "filterable_columns": [
+        "Action Name",
+        "Entity Name",
+        "Resource ID",
+        "Maker",
+        "Checker",
+        "Office",
+        "Date Range"
+      ],
+      "filters": {
+        "Action_Name": {
+          "type": "unspecified",
+          "field_label": "Action Name"
+        },
+        "Entity_Name": {
+          "type": "unspecified",
+          "field_label": "Entity Name"
+        },
+        "Resource_ID": {
+          "type": "unspecified",
+          "field_label": "Resource ID"
+        },
+        "Maker_ID": {
+          "type": "unspecified",
+          "field_label": "Maker ID"
+        },
+        "Checker_ID": {
+          "type": "unspecified",
+          "field_label": "Checker ID"
+        },
+        "Office": {
+          "type": "unspecified",
+          "field_label": "Office"
+        },
+        "Date_Range": {
+          "type": "date",
+          "field_label": "Date Range"
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "View Details",
+          "on_success": "opens audit entry details"
+        },
+        {
+          "action_name": "Approve",
+          "on_success": "marks the pending command as Approved and triggers post-approve processing",
+          "preconditions": [
+            "Processing Result == Pending",
+            "maker-checker (4-eyes approval) feature flag enabled",
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "Reject",
+          "fields": {
+            "Reason": {
+              "type": "unspecified",
+              "field_label": "Reason",
+              "required": true
+            }
+          },
+          "on_success": "marks the pending command as Rejected and records the rejection reason",
+          "preconditions": [
+            "Processing Result == Pending",
+            "maker-checker (4-eyes approval) feature flag enabled",
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Manage Scheduler Jobs page displays a table of all batch jobs with columns for Job Name, Is Active (toggle), CRON Expression, Previous Run Status (Success/Failed with start/end times), Next Run Time, Currently Running indicator, and action buttons. Jobs include Apply Annual Fee, Add Accrual Transactions, Apply Penalty to Overdue Loans, Update Loan Summary, Post Interest for Savings, Transfer Fees, and Generate Loan Loss Provisioning. Each job can be toggled active/inactive and its CRON expression edited. A global Start/Stop scheduler toggle controls whether all scheduled jobs execute.
+
+The Global Configuration page displays a table of system-wide feature flags with columns for Configuration Name, Enabled (toggle), Value, and Description. Key settings include maker-checker (4-eyes approval), reschedule-future-repayments, allow-transactions-on-non-workingday, reschedule-repayments-on-holidays, savings-interest-posting-current-period-end, financial-year-beginning-month, and meetings-mandatory-for-jlg-loans.
+
+The Manage Codes page lists all code lists (Client Type, Gender, Address Type, Loan Purpose, etc.) with Name and Is System Defined columns. Clicking a code opens its values for adding, editing, reordering, and deactivating entries that populate dropdown options throughout the system.
+
+The Manage Data Tables page lists custom data tables that extend core entities (m_client, m_group, m_loan, m_office, m_saving_account, m_product_loan, m_savings_product) with custom fields. The Create form includes Data Table Name, Application Table Name dropdown, Multi Row checkbox, and column definitions — each with Name, Type (string, number, boolean, decimal, date, datetime, text, dropdown), Length, Is Mandatory, and Is Unique checkboxes.
+
+The Audit Trails page displays all system actions with columns for Action Name, Entity Name, Resource ID, Maker, Made On Date, Checker, Checked On Date, Processing Result (Pending, Approved, Rejected), Office Name, and Client/Loan/Savings details. Filters allow searching by Action Name, Entity Name, Resource ID, Maker ID, Checker ID, Office, and Date Range. When maker-checker is enabled, pending commands appear with Approve and Reject buttons.
+
+---
+
+
+</description>
+
+<workflows>
+WF-001 | Toggle Scheduler Execution (Start/Stop Scheduler) | actor: Administrator | branch: none | terminal: Scheduler_Enabled | on_success: enables or disables execution of all scheduled jobs globally
+WF-002 | Edit CRON (row action) | actor: Administrator | branch: none | terminal: Edit CRON | on_success: persists edited CRON expression for the job
+WF-003 | Toggle Job Active (row action) | actor: Administrator | branch: none | terminal: Toggle Active | on_success: toggles Is_Active for the job
+WF-004 | Toggle Job Active (inline) | actor: Administrator | branch: none | terminal: Is_Active | on_success: toggles Is_Active for the job
+WF-005 | Update CRON Expression (inline edit) | actor: Administrator | branch: none | terminal: CRON_Expression | on_success: updates the job's schedule; editable per job (inline or modal)
+WF-006 | Run Job Now (row action) | actor: Administrator | branch: none | terminal: Run Now | on_success: queues immediate execution of the selected job
+WF-007 | View Job Run History (row action) | actor: Administrator | branch: none | terminal: View Run History | on_success: navigates to job run history for the selected job
+WF-008 | Toggle Global Configuration Enabled (inline) | actor: Administrator | branch: none | terminal: Enabled | on_success: toggles the feature flag or configuration entry for the system
+WF-009 | Edit Global Configuration (row action) | actor: Administrator | branch: none | terminal: Edit | on_success: persists the configuration value for the entry
+WF-010 | Update Global Configuration Value (inline) | actor: Administrator | branch: none | terminal: Value | on_success: persists the configuration value for the entry
+WF-011 | Open Code List | actor: Administrator | branch: none | terminal: Open Code | on_success: opens Manage_Code_Values for the selected code list
+WF-012 | Add Value to Code List | actor: Administrator | branch: none | terminal: Add Value | on_success: adds a new value row to the code list
+WF-013 | Save Changes to Code List | actor: Administrator | branch: none | terminal: Save Changes | on_success: persists edits, order changes, and active state toggles
+WF-014 | Edit Custom Data Table (row action) | actor: Administrator | branch: none | terminal: Edit | on_success: opens Create_Data_Table_Form in edit mode for the selected custom table
+WF-015 | Create Custom Data Table | actor: Administrator | branch: none | terminal: Create | on_success: creates the custom data table and associated columns
+WF-016 | Cancel Create Custom Data Table | actor: Administrator | branch: none | terminal: Cancel | on_success: cancels creation and returns to Manage Data Tables list
+WF-017 | View Audit Entry Details | actor: Administrator | branch: none | terminal: View Details | on_success: opens audit entry details
+WF-018 | Approve Pending Command | actor: Administrator | branch: Processing Result == Pending AND maker-checker (4-eyes approval) feature flag enabled | terminal: Approve | on_success: marks the pending command as Approved and triggers post-approve processing
+WF-019 | Reject Pending Command with Reason | actor: Administrator | branch: Processing Result == Pending AND maker-checker (4-eyes approval) feature flag enabled | terminal: Reject | on_success: marks the pending command as Rejected and records the rejection reason
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:13:29] Test-Positive - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "System Administration",
+  "category": "positive",
+  "test_cases": [
+    {
+      "tc_id": "P-001",
+      "wf_ref": "WF-001",
+      "test_case": "Toggle global Start/Stop Scheduler execution",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Viewing the Admin section in the top navigation"
+      ],
+      "steps": [
+        "1. Navigate to System Administration > Manage Scheduler Jobs",
+        "2. Click the 'Start/Stop Scheduler' toggle to change its state"
+      ],
+      "expected_result": "The 'Start/Stop Scheduler' toggle shows the updated state (On = checked or Off = unchecked) in the Manage Scheduler Jobs header",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-002",
+      "wf_ref": "WF-002",
+      "test_case": "Edit a job's CRON expression via row 'Edit CRON' action",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Scheduler Jobs page is open with <job name> listed"
+      ],
+      "steps": [
+        "1. On the Manage Scheduler Jobs table, click the row action 'Edit CRON' for <job name>",
+        "2. In the Edit CRON dialog, enter <valid CRON expression> into the CRON Expression field",
+        "3. Click Save in the Edit CRON dialog"
+      ],
+      "expected_result": "The CRON Expression cell for <job name> in the Manage Scheduler Jobs table displays the updated <valid CRON expression>",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-003",
+      "wf_ref": "WF-003",
+      "test_case": "Toggle job active/inactive using row action 'Toggle Active'",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Scheduler Jobs page is open with <job name> listed"
+      ],
+      "steps": [
+        "1. On the Manage Scheduler Jobs table, open the row actions for <job name> and click 'Toggle Active'",
+        "2. Wait for the row state to refresh"
+      ],
+      "expected_result": "The Is Active checkbox for <job name> shows the new state (checked if activated, unchecked if deactivated) in the table row",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-004",
+      "wf_ref": "WF-004",
+      "test_case": "Toggle job active/inactive using inline Is Active checkbox",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Scheduler Jobs page is open with <job name> listed"
+      ],
+      "steps": [
+        "1. Click the inline 'Is Active' checkbox in the table row for <job name>",
+        "2. Wait for the table row to reflect the change"
+      ],
+      "expected_result": "The inline 'Is Active' checkbox for <job name> is shown in its updated state (checked or unchecked) in the table row",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-005",
+      "wf_ref": "WF-005",
+      "test_case": "Update a job's CRON expression via inline edit",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Scheduler Jobs page is open with <job name> listed"
+      ],
+      "steps": [
+        "1. Click the CRON Expression cell for <job name> to enable inline editing",
+        "2. Enter <valid CRON expression> and confirm the inline edit (press Enter or click Save)",
+        "3. Wait for the table row to refresh"
+      ],
+      "expected_result": "The CRON Expression cell for <job name> displays the updated <valid CRON expression> inline",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-006",
+      "wf_ref": "WF-006",
+      "test_case": "Run a job immediately using 'Run Now' row action",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Scheduler Jobs page is open with <job name> listed"
+      ],
+      "steps": [
+        "1. On the Manage Scheduler Jobs table, click the row action 'Run Now' for <job name>",
+        "2. Observe the job row for immediate status changes"
+      ],
+      "expected_result": "The table row for <job name> shows the job as currently running (the 'Currently Running' indicator is visible) or an immediate run status indicator is displayed in the row",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-007",
+      "wf_ref": "WF-007",
+      "test_case": "Open a job's Run History from the table",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Scheduler Jobs page is open with <job name> listed"
+      ],
+      "steps": [
+        "1. On the Manage Scheduler Jobs table, click the row action 'View Run History' for <job name>"
+      ],
+      "expected_result": "The Job Run History page or panel opens for <job name>, showing recent runs with their statuses and timestamps",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-008",
+      "wf_ref": "WF-008",
+      "test_case": "Toggle a Global Configuration 'Enabled' flag inline",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Global Configuration page is open with <configuration name> listed"
+      ],
+      "steps": [
+        "1. Click the inline 'Enabled' checkbox for <configuration name> in the Global Configuration table",
+        "2. Wait for the row to reflect the change"
+      ],
+      "expected_result": "The 'Enabled' checkbox for <configuration name> shows the updated state (checked or unchecked) in the table row",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-009",
+      "wf_ref": "WF-009",
+      "test_case": "Edit a Global Configuration entry via row 'Edit' action",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Global Configuration page is open with <configuration name> listed"
+      ],
+      "steps": [
+        "1. On the Global Configuration table, click the row action 'Edit' for <configuration name>",
+        "2. In the Edit dialog, change the Value to <valid value>",
+        "3. Click Save in the Edit dialog"
+      ],
+      "expected_result": "The Global Configuration table row for <configuration name> displays the updated Value = <valid value>",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-010",
+      "wf_ref": "WF-010",
+      "test_case": "Update a Global Configuration Value via inline edit",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Global Configuration page is open with <configuration name> listed"
+      ],
+      "steps": [
+        "1. Click the Value cell for <configuration name> to enable inline editing",
+        "2. Enter <valid value> and confirm the inline edit",
+        "3. Wait for the table row to refresh"
+      ],
+      "expected_result": "The Value cell for <configuration name> displays the updated <valid value> inline",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-011",
+      "wf_ref": "WF-011",
+      "test_case": "Open a code list to manage its values",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Codes page is open with <code list name> listed"
+      ],
+      "steps": [
+        "1. On the Manage Codes table, click the row action 'Open Code' for <code list name>"
+      ],
+      "expected_result": "The Manage Code Values form opens for <code list name> displaying its existing values and controls to add, edit, reorder, and deactivate entries",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-012",
+      "wf_ref": "WF-012",
+      "test_case": "Add a new value to a code list using 'Add Value'",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Code Values form is open for <code list name>"
+      ],
+      "steps": [
+        "1. Click the 'Add Value' button within the Manage Code Values form",
+        "2. In the new value row, enter <value> into Value and optionally <code> into Code",
+        "3. Click 'Add Value' to submit"
+      ],
+      "expected_result": "A new row appears in the code values list for <code list name> showing Value = <value> and Code = <code> (if provided)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-013",
+      "wf_ref": "WF-013",
+      "test_case": "Persist edits, reorder and active toggles for code list values via 'Save Changes'",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Code Values form is open for <code list name> with multiple values listed"
+      ],
+      "steps": [
+        "1. Reorder the listed code values using the provided reorder controls",
+        "2. Toggle Is Active for at least one code value and edit the Value text for another value",
+        "3. Click 'Save Changes'"
+      ],
+      "expected_result": "The code values list for <code list name> displays the new order, the updated Value text, and the changed Is Active checkbox states",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-014",
+      "wf_ref": "WF-014",
+      "test_case": "Open Create Data Table form in edit mode for an existing custom table",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Data Tables page is open with <custom table name> listed"
+      ],
+      "steps": [
+        "1. On the Manage Data Tables list, click the row action 'Edit' for <custom table name>"
+      ],
+      "expected_result": "The Create Data Table form opens in edit mode populated with Data Table Name = <custom table name> and the table's existing column definitions listed",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-015",
+      "wf_ref": "WF-015",
+      "test_case": "Create a new custom data table with one column",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Data Tables page is open"
+      ],
+      "steps": [
+        "1. Click the control to create a new custom data table (opens Create Data Table form)",
+        "2. Enter <data table name> into Data Table Name",
+        "3. Select <application table> from Application Table Name dropdown",
+        "4. Check or leave unchecked the 'Multi Row' checkbox as required",
+        "5. In Columns, click 'Add Row' to add a column",
+        "6. For the new column row, enter <column name> into Column Name, select <type> from Type, optionally enter <length>, and set Is Mandatory and/or Is Unique as required",
+        "7. Click 'Create' to submit the form"
+      ],
+      "expected_result": "The Manage Data Tables list displays a new row for <data table name> with Application Table = <application table> and the defined column visible in the table's details",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-016",
+      "wf_ref": "WF-016",
+      "test_case": "Cancel create custom data table and return to Manage Data Tables list",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Create Data Table form is open"
+      ],
+      "steps": [
+        "1. Click the 'Cancel' button on the Create Data Table form"
+      ],
+      "expected_result": "The Create Data Table form closes and the Manage Data Tables list is shown with no new table created",
+      "priority": "low"
+    },
+    {
+      "tc_id": "P-017",
+      "wf_ref": "WF-017",
+      "test_case": "Open audit entry details from the Audit Trails table",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Audit Trails page is open with at least one audit entry listed"
+      ],
+      "steps": [
+        "1. On the Audit Trails table, click the row action 'View Details' for an audit entry with Processing Result not necessarily Pending"
+      ],
+      "expected_result": "An audit entry details panel or page opens showing the entry's Action Name, Entity Name, Resource ID, Maker, and timestamps",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-018",
+      "wf_ref": "WF-018",
+      "test_case": "Approve a pending command in Audit Trails when maker-checker is enabled",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "maker-checker (4-eyes approval) feature flag enabled",
+        "Audit Trails page is open and contains an audit row where Processing Result == Pending"
+      ],
+      "steps": [
+        "1. In the Audit Trails table, locate the audit row with Processing Result = Pending for <resource identifier>",
+        "2. Click the row action 'Approve' for that pending audit row",
+        "3. Confirm any approval prompt if displayed"
+      ],
+      "expected_result": "The Processing Result column for the selected audit row shows 'Approved' and the Approve action is no longer available for that row",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-019",
+      "wf_ref": "WF-019",
+      "test_case": "Reject a pending command with a reason in Audit Trails when maker-checker is enabled",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "maker-checker (4-eyes approval) feature flag enabled",
+        "Audit Trails page is open and contains an audit row where Processing Result == Pending"
+      ],
+      "steps": [
+        "1. In the Audit Trails table, locate the audit row with Processing Result = Pending for <resource identifier>",
+        "2. Click the row action 'Reject' for that pending audit row",
+        "3. In the Reject dialog, enter <reason> into the Reason field (required)",
+        "4. Click Confirm/Reject to submit the rejection",
+        "5. Open the audit entry details for the same row to verify recorded reason"
+      ],
+      "expected_result": "The Processing Result column for the selected audit row shows 'Rejected' and the rejection reason entered is visible in the audit entry details",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 19,
+    "high_priority": 6,
+    "medium_priority": 11,
+    "low_priority": 2
+  }
+}
+
+------------------------------------------------------------
+[23:13:29] Test-Positive - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "System Administration",
+  "category": "positive",
+  "test_cases": [
+    {
+      "tc_id": "P-001",
+      "wf_ref": "WF-001",
+      "test_case": "Toggle global Start/Stop Scheduler execution",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Viewing the Admin section in the top navigation"
+      ],
+      "steps": [
+        "1. Navigate to System Administration > Manage Scheduler Jobs",
+        "2. Click the 'Start/Stop Scheduler' toggle to change its state"
+      ],
+      "expected_result": "The 'Start/Stop Scheduler' toggle shows the updated state (On = checked or Off = unchecked) in the Manage Scheduler Jobs header",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-002",
+      "wf_ref": "WF-002",
+      "test_case": "Edit a job's CRON expression via row 'Edit CRON' action",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Scheduler Jobs page is open with <job name> listed"
+      ],
+      "steps": [
+        "1. On the Manage Scheduler Jobs table, click the row action 'Edit CRON' for <job name>",
+        "2. In the Edit CRON dialog, enter <valid CRON expression> into the CRON Expression field",
+        "3. Click Save in the Edit CRON dialog"
+      ],
+      "expected_result": "The CRON Expression cell for <job name> in the Manage Scheduler Jobs table displays the updated <valid CRON expression>",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-003",
+      "wf_ref": "WF-003",
+      "test_case": "Toggle job active/inactive using row action 'Toggle Active'",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Scheduler Jobs page is open with <job name> listed"
+      ],
+      "steps": [
+        "1. On the Manage Scheduler Jobs table, open the row actions for <job name> and click 'Toggle Active'",
+        "2. Wait for the row state to refresh"
+      ],
+      "expected_result": "The Is Active checkbox for <job name> shows the new state (checked if activated, unchecked if deactivated) in the table row",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-004",
+      "wf_ref": "WF-004",
+      "test_case": "Toggle job active/inactive using inline Is Active checkbox",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Scheduler Jobs page is open with <job name> listed"
+      ],
+      "steps": [
+        "1. Click the inline 'Is Active' checkbox in the table row for <job name>",
+        "2. Wait for the table row to reflect the change"
+      ],
+      "expected_result": "The inline 'Is Active' checkbox for <job name> is shown in its updated state (checked or unchecked) in the table row",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-005",
+      "wf_ref": "WF-005",
+      "test_case": "Update a job's CRON expression via inline edit",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Scheduler Jobs page is open with <job name> listed"
+      ],
+      "steps": [
+        "1. Click the CRON Expression cell for <job name> to enable inline editing",
+        "2. Enter <valid CRON expression> and confirm the inline edit (press Enter or click Save)",
+        "3. Wait for the table row to refresh"
+      ],
+      "expected_result": "The CRON Expression cell for <job name> displays the updated <valid CRON expression> inline",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-006",
+      "wf_ref": "WF-006",
+      "test_case": "Run a job immediately using 'Run Now' row action",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Scheduler Jobs page is open with <job name> listed"
+      ],
+      "steps": [
+        "1. On the Manage Scheduler Jobs table, click the row action 'Run Now' for <job name>",
+        "2. Observe the job row for immediate status changes"
+      ],
+      "expected_result": "The table row for <job name> shows the job as currently running (the 'Currently Running' indicator is visible) or an immediate run status indicator is displayed in the row",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-007",
+      "wf_ref": "WF-007",
+      "test_case": "Open a job's Run History from the table",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Scheduler Jobs page is open with <job name> listed"
+      ],
+      "steps": [
+        "1. On the Manage Scheduler Jobs table, click the row action 'View Run History' for <job name>"
+      ],
+      "expected_result": "The Job Run History page or panel opens for <job name>, showing recent runs with their statuses and timestamps",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-008",
+      "wf_ref": "WF-008",
+      "test_case": "Toggle a Global Configuration 'Enabled' flag inline",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Global Configuration page is open with <configuration name> listed"
+      ],
+      "steps": [
+        "1. Click the inline 'Enabled' checkbox for <configuration name> in the Global Configuration table",
+        "2. Wait for the row to reflect the change"
+      ],
+      "expected_result": "The 'Enabled' checkbox for <configuration name> shows the updated state (checked or unchecked) in the table row",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-009",
+      "wf_ref": "WF-009",
+      "test_case": "Edit a Global Configuration entry via row 'Edit' action",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Global Configuration page is open with <configuration name> listed"
+      ],
+      "steps": [
+        "1. On the Global Configuration table, click the row action 'Edit' for <configuration name>",
+        "2. In the Edit dialog, change the Value to <valid value>",
+        "3. Click Save in the Edit dialog"
+      ],
+      "expected_result": "The Global Configuration table row for <configuration name> displays the updated Value = <valid value>",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-010",
+      "wf_ref": "WF-010",
+      "test_case": "Update a Global Configuration Value via inline edit",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Global Configuration page is open with <configuration name> listed"
+      ],
+      "steps": [
+        "1. Click the Value cell for <configuration name> to enable inline editing",
+        "2. Enter <valid value> and confirm the inline edit",
+        "3. Wait for the table row to refresh"
+      ],
+      "expected_result": "The Value cell for <configuration name> displays the updated <valid value> inline",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-011",
+      "wf_ref": "WF-011",
+      "test_case": "Open a code list to manage its values",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Codes page is open with <code list name> listed"
+      ],
+      "steps": [
+        "1. On the Manage Codes table, click the row action 'Open Code' for <code list name>"
+      ],
+      "expected_result": "The Manage Code Values form opens for <code list name> displaying its existing values and controls to add, edit, reorder, and deactivate entries",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-012",
+      "wf_ref": "WF-012",
+      "test_case": "Add a new value to a code list using 'Add Value'",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Code Values form is open for <code list name>"
+      ],
+      "steps": [
+        "1. Click the 'Add Value' button within the Manage Code Values form",
+        "2. In the new value row, enter <value> into Value and optionally <code> into Code",
+        "3. Click 'Add Value' to submit"
+      ],
+      "expected_result": "A new row appears in the code values list for <code list name> showing Value = <value> and Code = <code> (if provided)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-013",
+      "wf_ref": "WF-013",
+      "test_case": "Persist edits, reorder and active toggles for code list values via 'Save Changes'",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Code Values form is open for <code list name> with multiple values listed"
+      ],
+      "steps": [
+        "1. Reorder the listed code values using the provided reorder controls",
+        "2. Toggle Is Active for at least one code value and edit the Value text for another value",
+        "3. Click 'Save Changes'"
+      ],
+      "expected_result": "The code values list for <code list name> displays the new order, the updated Value text, and the changed Is Active checkbox states",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-014",
+      "wf_ref": "WF-014",
+      "test_case": "Open Create Data Table form in edit mode for an existing custom table",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Data Tables page is open with <custom table name> listed"
+      ],
+      "steps": [
+        "1. On the Manage Data Tables list, click the row action 'Edit' for <custom table name>"
+      ],
+      "expected_result": "The Create Data Table form opens in edit mode populated with Data Table Name = <custom table name> and the table's existing column definitions listed",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-015",
+      "wf_ref": "WF-015",
+      "test_case": "Create a new custom data table with one column",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Manage Data Tables page is open"
+      ],
+      "steps": [
+        "1. Click the control to create a new custom data table (opens Create Data Table form)",
+        "2. Enter <data table name> into Data Table Name",
+        "3. Select <application table> from Application Table Name dropdown",
+        "4. Check or leave unchecked the 'Multi Row' checkbox as required",
+        "5. In Columns, click 'Add Row' to add a column",
+        "6. For the new column row, enter <column name> into Column Name, select <type> from Type, optionally enter <length>, and set Is Mandatory and/or Is Unique as required",
+        "7. Click 'Create' to submit the form"
+      ],
+      "expected_result": "The Manage Data Tables list displays a new row for <data table name> with Application Table = <application table> and the defined column visible in the table's details",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-016",
+      "wf_ref": "WF-016",
+      "test_case": "Cancel create custom data table and return to Manage Data Tables list",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Create Data Table form is open"
+      ],
+      "steps": [
+        "1. Click the 'Cancel' button on the Create Data Table form"
+      ],
+      "expected_result": "The Create Data Table form closes and the Manage Data Tables list is shown with no new table created",
+      "priority": "low"
+    },
+    {
+      "tc_id": "P-017",
+      "wf_ref": "WF-017",
+      "test_case": "Open audit entry details from the Audit Trails table",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "Audit Trails page is open with at least one audit entry listed"
+      ],
+      "steps": [
+        "1. On the Audit Trails table, click the row action 'View Details' for an audit entry with Processing Result not necessarily Pending"
+      ],
+      "expected_result": "An audit entry details panel or page opens showing the entry's Action Name, Entity Name, Resource ID, Maker, and timestamps",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "P-018",
+      "wf_ref": "WF-018",
+      "test_case": "Approve a pending command in Audit Trails when maker-checker is enabled",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "maker-checker (4-eyes approval) feature flag enabled",
+        "Audit Trails page is open and contains an audit row where Processing Result == Pending"
+      ],
+      "steps": [
+        "1. In the Audit Trails table, locate the audit row with Processing Result = Pending for <resource identifier>",
+        "2. Click the row action 'Approve' for that pending audit row",
+        "3. Confirm any approval prompt if displayed"
+      ],
+      "expected_result": "The Processing Result column for the selected audit row shows 'Approved' and the Approve action is no longer available for that row",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-019",
+      "wf_ref": "WF-019",
+      "test_case": "Reject a pending command with a reason in Audit Trails when maker-checker is enabled",
+      "preconditions": [
+        "User logged in as <Administrator>",
+        "maker-checker (4-eyes approval) feature flag enabled",
+        "Audit Trails page is open and contains an audit row where Processing Result == Pending"
+      ],
+      "steps": [
+        "1. In the Audit Trails table, locate the audit row with Processing Result = Pending for <resource identifier>",
+        "2. Click the row action 'Reject' for that pending audit row",
+        "3. In the Reject dialog, enter <reason> into the Reason field (required)",
+        "4. Click Confirm/Reject to submit the rejection",
+        "5. Open the audit entry details for the same row to verify recorded reason"
+      ],
+      "expected_result": "The Processing Result column for the selected audit row shows 'Rejected' and the rejection reason entered is visible in the audit entry details",
+      "priority": "high"
+    }
+  ],
+  "summary": {
+    "total": 19,
+    "high_priority": 6,
+    "medium_priority": 11,
+    "low_priority": 2
+  }
+}

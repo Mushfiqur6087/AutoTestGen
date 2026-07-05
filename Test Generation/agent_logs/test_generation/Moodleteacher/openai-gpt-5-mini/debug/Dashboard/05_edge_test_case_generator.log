@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.065243
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.812877
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Edge - SYSTEM PROMPT
+[22:49:29] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Edge - USER PROMPT
+[22:49:29] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 2,
   "module_title": "Dashboard",
-  "summary": "Displays a personalized greeting and side-by-side Timeline and Calendar blocks summarizing upcoming teaching actions and month-view events.",
-  "where_it_fits": "Accessible from the top navigation bar via the Dashboard link (alongside Home and My Courses), this module serves as the user\u2019s personal overview/landing area after login and links into the dedicated calendar view and calendar data management pages. It sits before course-specific pages in the user flow, providing aggregated cross-course information that complements the Course Page and Course Index sidebar.",
-  "assumed_state_on_entry": "Authenticated (logged-in) user; user account exists and may have one or more enrolled courses (Timeline will be empty if none)."
+  "summary": "The Dashboard provides a personalized landing page that displays a Timeline of upcoming teaching actions and a Calendar view of events across the user\u2019s courses.",
+  "where_it_fits": "The Dashboard is reachable from the top navigation bar (Home, Dashboard, My Courses) and serves as the user's personalized landing area after login; it aggregates course activity and links into the dedicated calendar view and calendar import/export workflows. Within the course lifecycle it sits at the global level (outside individual Course pages) as an overview and navigation hub to course-specific activity and the full calendar.",
+  "assumed_state_on_entry": "Authenticated user session (logged in); user account exists and may be enrolled in one or more courses to populate Timeline and Calendar."
 }
 </module_context>
 
@@ -243,8 +257,8 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Dashboard",
   "components": {
-    "Dashboard_Timeline_Block": {
-      "type": "container",
+    "Timeline_Block": {
+      "type": "panel",
       "fields": {
         "Time_Range": {
           "type": "dropdown"
@@ -253,49 +267,44 @@ If a `<workflows>` block is present in the input:
           "type": "dropdown"
         },
         "Search": {
-          "type": "search",
-          "placeholder": "Find activities by name or type"
+          "type": "search"
         }
       }
     },
-    "Dashboard_Calendar_Block": {
-      "type": "container",
+    "Calendar_Block": {
+      "type": "panel",
       "fields": {
         "All_Courses": {
-          "type": "dropdown",
-          "default": "All courses"
-        },
-        "Previous_Month": {
-          "type": "button",
-          "action_name": "Previous month"
-        },
-        "Next_Month": {
-          "type": "button",
-          "action_name": "Next month"
+          "type": "dropdown"
         },
         "New_Event": {
           "type": "button",
           "action_name": "New event",
           "preconditions": [
-            "user must be logged in"
-          ],
-          "on_success": "opens calendar event creation flow"
+            "Authenticated user session (logged in); user account exists and may be enrolled in one or more courses to populate Timeline and Calendar."
+          ]
         },
-        "Full_Calendar": {
+        "Previous_Month": {
+          "type": "button",
+          "action_name": "Previous Month"
+        },
+        "Next_Month": {
+          "type": "button",
+          "action_name": "Next Month"
+        },
+        "Full_Calendar_Link": {
           "type": "link",
           "action_name": "Full calendar",
           "preconditions": [
-            "user must be logged in"
-          ],
-          "on_success": "navigates to dedicated calendar view"
+            "Authenticated user session (logged in); user account exists and may be enrolled in one or more courses to populate Timeline and Calendar."
+          ]
         },
         "Import_or_Export_Calendars": {
           "type": "link",
           "action_name": "Import or export calendars",
           "preconditions": [
-            "user must be logged in"
-          ],
-          "on_success": "opens calendar data management"
+            "Authenticated user session (logged in); user account exists and may be enrolled in one or more courses to populate Timeline and Calendar."
+          ]
         }
       }
     }
@@ -313,21 +322,17 @@ The Dashboard displays a personalized greeting at the top. The main content area
 </description>
 
 <workflows>
-WF-001 | Select timeline time range | actor: Authenticated user | branch: none | terminal: Select time range: Next 7 days | on_success: Timeline refreshes to show items within selected range; if no items exist within the selected range, an empty state is shown.
-WF-002 | Change timeline sort order | actor: Authenticated user | branch: none | terminal: Change sort order | on_success: Timeline is reordered according to the selected sort order.
-WF-003 | Search the timeline | actor: Authenticated user | branch: none | terminal: Search timeline | on_success: Search results are shown in the timeline; if no items match the query, an empty-state is shown.
-WF-004 | Filter calendar by course | actor: Authenticated user | branch: none | terminal: Filter by course | on_success: Calendar events are filtered to the selected course (or show all courses when 'All courses' is selected).
-WF-005 | Navigate to previous month in calendar | actor: Authenticated user | branch: none | terminal: Previous month | on_success: Calendar updates to the previous month; event dates and current-date highlighting refresh to reflect the new month.
-WF-006 | Navigate to next month in calendar | actor: Authenticated user | branch: none | terminal: Next month | on_success: Calendar updates to the next month; event dates and current-date highlighting refresh to reflect the new month.
-WF-007 | Create a new calendar event | actor: Authenticated user | branch: user_logged_in == true | terminal: New event | on_success: opens calendar event creation flow
-WF-008 | Open full calendar view | actor: Authenticated user | branch: user_logged_in == true | terminal: Full calendar | on_success: navigates to dedicated calendar view
-WF-009 | Open calendar import/export management | actor: Authenticated user | branch: user_logged_in == true | terminal: Import or export calendars | on_success: opens calendar data management
+WF-001 | Open New Event | actor: <role> | branch: none | terminal: New event | on_success: New event creation interface opened
+WF-002 | Navigate to Previous Month | actor: <role> | branch: none | terminal: Previous Month | on_success: Calendar view updated to the previous month; month/year heading refreshed
+WF-003 | Navigate to Next Month | actor: <role> | branch: none | terminal: Next Month | on_success: Calendar view updated to the next month; month/year heading refreshed
+WF-004 | Open Full Calendar View | actor: <role> | branch: none | terminal: Full calendar | on_success: Full calendar view opened
+WF-005 | Open Import or Export Calendars | actor: <role> | branch: none | terminal: Import or export calendars | on_success: Calendar import/export page opened
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:13:03] Test-Edge - LLM RESPONSE
+[22:49:59] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Dashboard",
@@ -335,84 +340,87 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-003",
+      "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Very-long search query (200+ characters) in Timeline Search",
+      "test_case": "Search with very long input returns empty timeline",
       "preconditions": [
-        "User is authenticated and Dashboard is open",
-        "Timeline block is visible"
+        "Authenticated user session (logged in)",
+        "Dashboard main view is open",
+        "At least one timeline item exists for the user (to differentiate from a global empty dashboard)"
       ],
       "steps": [
-        "1. Click the Timeline Search field",
-        "2. Enter <very long search string> (200+ characters) in the Search field",
-        "3. Press Enter (or click the search action)"
+        "1. Focus the Timeline Search field",
+        "2. Enter a very long string (200+ characters) into the Search field",
+        "3. Press Enter or click the Search icon"
       ],
-      "expected_result": "Either: (a) The Search field retains the full entered string and the Timeline refreshes showing matching results or the empty-state if none match (search executes successfully); OR (b) The UI prevents the query and shows an inline validation message adjacent to the Search field indicating the query is too long (search is blocked). The visible behavior (full text retained vs. validation message) is recorded by the tester.",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-002",
-      "wf_ref": "WF-003",
-      "subcategory": "input_edge",
-      "test_case": "Search query with leading and trailing whitespace is trimmed",
-      "preconditions": [
-        "User is authenticated and Dashboard is open",
-        "Timeline block is visible"
-      ],
-      "steps": [
-        "1. Click the Timeline Search field",
-        "2. Enter <search term> with leading and trailing whitespace (e.g., '  <term>  ') in the Search field",
-        "3. Press Enter (or click the search action)"
-      ],
-      "expected_result": "The Timeline search executes using the trimmed query (leading/trailing whitespace removed). The Search field value shown after submission is the trimmed string (no leading/trailing spaces) and the Timeline refreshes to show matching results or the empty-state. This trim-and-search behavior succeeds.",
+      "expected_result": "Search executes successfully; Timeline displays the empty-state panel with no items visible (no matching activities shown)",
       "priority": "medium"
     },
     {
-      "tc_id": "E-003",
-      "wf_ref": "WF-006",
-      "subcategory": "boundary",
-      "test_case": "Navigate from December to January (year boundary) using Next Month",
+      "tc_id": "E-002",
+      "wf_ref": null,
+      "subcategory": "input_edge",
+      "test_case": "Search with leading/trailing whitespace matches existing item after trim",
       "preconditions": [
-        "User is authenticated and Dashboard is open",
-        "Calendar block is visible and its month heading currently shows 'December <year>'"
+        "Authenticated user session (logged in)",
+        "Dashboard main view is open",
+        "There is a known timeline item with a visible name"
       ],
       "steps": [
-        "1. Click the Next Month button in the Calendar block"
+        "1. Focus the Timeline Search field",
+        "2. Enter the exact name of an existing timeline item with leading and trailing spaces around it (e.g., prepend and append spaces)",
+        "3. Press Enter or click the Search icon"
       ],
-      "expected_result": "Calendar updates to show 'January <year + 1>' in the month/year heading and event highlighting refreshes for the newly displayed month. The month→year rollover navigation succeeds (no UI overlap, heading shows the new year, and dates/events reflect the January view).",
+      "expected_result": "Search input is trimmed; timeline search succeeds and displays the matching item(s) (the matching item appears in the Timeline with its normal name, no leading/trailing spaces displayed)",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-003",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click New event does not open duplicate creation interfaces",
+      "preconditions": [
+        "Authenticated user session (logged in)",
+        "Dashboard main view is open"
+      ],
+      "steps": [
+        "1. Click the Calendar block's New event button",
+        "2. Immediately click the New event button again (second click within a short interval, e.g., 500ms)"
+      ],
+      "expected_result": "Second click is blocked; only one New event creation interface is displayed (no duplicate modal/page instances appear)",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-008",
-      "subcategory": "interaction_edge",
-      "test_case": "Click Full calendar then immediately press browser Back — verify return state",
+      "wf_ref": "WF-002",
+      "subcategory": "data_edge",
+      "test_case": "Navigate to previous month removes current-date highlight when crossing month boundary",
       "preconditions": [
-        "User is authenticated and Dashboard is open",
-        "Calendar block is visible"
+        "Authenticated user session (logged in)",
+        "Dashboard main view is open",
+        "Calendar block initially displays the current month with the current date highlighted"
       ],
       "steps": [
-        "1. Click the 'Full calendar' link in the Calendar block",
-        "2. Immediately press the browser Back button"
+        "1. Click the Calendar block's Previous Month button once"
       ],
-      "expected_result": "After pressing Back, the Dashboard is restored and the Calendar block is visible. The calendar heading matches the month that was shown on the Dashboard immediately before navigating away. The navigation to and back from the Full calendar view succeeds and does not leave the Dashboard in an inconsistent state.",
+      "expected_result": "Navigation to the previous month succeeds; calendar month/year heading updates to the previous month and the current date highlight is no longer shown in the displayed month view",
       "priority": "medium"
     }
   ],
   "summary": {
     "total": 4,
-    "boundary": 1,
+    "boundary": 0,
     "input_edge": 2,
     "interaction_edge": 1,
     "state_edge": 0,
-    "data_edge": 0,
+    "data_edge": 1,
     "medium_priority": 3,
     "low_priority": 1
   }
 }
 
 ------------------------------------------------------------
-[21:13:03] Test-Edge - PARSED JSON
+[22:49:59] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Dashboard",
@@ -420,77 +428,80 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-003",
+      "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Very-long search query (200+ characters) in Timeline Search",
+      "test_case": "Search with very long input returns empty timeline",
       "preconditions": [
-        "User is authenticated and Dashboard is open",
-        "Timeline block is visible"
+        "Authenticated user session (logged in)",
+        "Dashboard main view is open",
+        "At least one timeline item exists for the user (to differentiate from a global empty dashboard)"
       ],
       "steps": [
-        "1. Click the Timeline Search field",
-        "2. Enter <very long search string> (200+ characters) in the Search field",
-        "3. Press Enter (or click the search action)"
+        "1. Focus the Timeline Search field",
+        "2. Enter a very long string (200+ characters) into the Search field",
+        "3. Press Enter or click the Search icon"
       ],
-      "expected_result": "Either: (a) The Search field retains the full entered string and the Timeline refreshes showing matching results or the empty-state if none match (search executes successfully); OR (b) The UI prevents the query and shows an inline validation message adjacent to the Search field indicating the query is too long (search is blocked). The visible behavior (full text retained vs. validation message) is recorded by the tester.",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-002",
-      "wf_ref": "WF-003",
-      "subcategory": "input_edge",
-      "test_case": "Search query with leading and trailing whitespace is trimmed",
-      "preconditions": [
-        "User is authenticated and Dashboard is open",
-        "Timeline block is visible"
-      ],
-      "steps": [
-        "1. Click the Timeline Search field",
-        "2. Enter <search term> with leading and trailing whitespace (e.g., '  <term>  ') in the Search field",
-        "3. Press Enter (or click the search action)"
-      ],
-      "expected_result": "The Timeline search executes using the trimmed query (leading/trailing whitespace removed). The Search field value shown after submission is the trimmed string (no leading/trailing spaces) and the Timeline refreshes to show matching results or the empty-state. This trim-and-search behavior succeeds.",
+      "expected_result": "Search executes successfully; Timeline displays the empty-state panel with no items visible (no matching activities shown)",
       "priority": "medium"
     },
     {
-      "tc_id": "E-003",
-      "wf_ref": "WF-006",
-      "subcategory": "boundary",
-      "test_case": "Navigate from December to January (year boundary) using Next Month",
+      "tc_id": "E-002",
+      "wf_ref": null,
+      "subcategory": "input_edge",
+      "test_case": "Search with leading/trailing whitespace matches existing item after trim",
       "preconditions": [
-        "User is authenticated and Dashboard is open",
-        "Calendar block is visible and its month heading currently shows 'December <year>'"
+        "Authenticated user session (logged in)",
+        "Dashboard main view is open",
+        "There is a known timeline item with a visible name"
       ],
       "steps": [
-        "1. Click the Next Month button in the Calendar block"
+        "1. Focus the Timeline Search field",
+        "2. Enter the exact name of an existing timeline item with leading and trailing spaces around it (e.g., prepend and append spaces)",
+        "3. Press Enter or click the Search icon"
       ],
-      "expected_result": "Calendar updates to show 'January <year + 1>' in the month/year heading and event highlighting refreshes for the newly displayed month. The month\u2192year rollover navigation succeeds (no UI overlap, heading shows the new year, and dates/events reflect the January view).",
+      "expected_result": "Search input is trimmed; timeline search succeeds and displays the matching item(s) (the matching item appears in the Timeline with its normal name, no leading/trailing spaces displayed)",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-003",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click New event does not open duplicate creation interfaces",
+      "preconditions": [
+        "Authenticated user session (logged in)",
+        "Dashboard main view is open"
+      ],
+      "steps": [
+        "1. Click the Calendar block's New event button",
+        "2. Immediately click the New event button again (second click within a short interval, e.g., 500ms)"
+      ],
+      "expected_result": "Second click is blocked; only one New event creation interface is displayed (no duplicate modal/page instances appear)",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-008",
-      "subcategory": "interaction_edge",
-      "test_case": "Click Full calendar then immediately press browser Back \u2014 verify return state",
+      "wf_ref": "WF-002",
+      "subcategory": "data_edge",
+      "test_case": "Navigate to previous month removes current-date highlight when crossing month boundary",
       "preconditions": [
-        "User is authenticated and Dashboard is open",
-        "Calendar block is visible"
+        "Authenticated user session (logged in)",
+        "Dashboard main view is open",
+        "Calendar block initially displays the current month with the current date highlighted"
       ],
       "steps": [
-        "1. Click the 'Full calendar' link in the Calendar block",
-        "2. Immediately press the browser Back button"
+        "1. Click the Calendar block's Previous Month button once"
       ],
-      "expected_result": "After pressing Back, the Dashboard is restored and the Calendar block is visible. The calendar heading matches the month that was shown on the Dashboard immediately before navigating away. The navigation to and back from the Full calendar view succeeds and does not leave the Dashboard in an inconsistent state.",
+      "expected_result": "Navigation to the previous month succeeds; calendar month/year heading updates to the previous month and the current date highlight is no longer shown in the displayed month view",
       "priority": "medium"
     }
   ],
   "summary": {
     "total": 4,
-    "boundary": 1,
+    "boundary": 0,
     "input_edge": 2,
     "interaction_edge": 1,
     "state_edge": 0,
-    "data_edge": 0,
+    "data_edge": 1,
     "medium_priority": 3,
     "low_priority": 1
   }

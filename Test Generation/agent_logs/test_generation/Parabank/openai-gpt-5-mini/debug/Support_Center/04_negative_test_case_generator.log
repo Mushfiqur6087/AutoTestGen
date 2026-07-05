@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:02:39.108312
+DEBUG SESSION STARTED: 2026-07-04T22:22:17.318550
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Negative - SYSTEM PROMPT
+[22:22:17] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Negative - USER PROMPT
+[22:22:17] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 13,
   "module_title": "Support Center",
-  "summary": "Support Center provides authenticated customers with a secure message form (subject, category, rich-text message, optional attachment) and a schedule-callback form (reason, preferred date/time window, phone) with inline validation and success confirmations including ticket IDs and email confirmation.",
-  "where_it_fits": "Available from the left-hand navigation menu after login as the 'Support Center' (item 11), this module is part of post-authentication customer support features accessed from the account dashboard and sits alongside other account management functions like Security Settings and Account Statements.",
-  "assumed_state_on_entry": "User is an authenticated/customer who has successfully logged in and reached the account dashboard"
+  "summary": "Support Center provides secure message and callback-request forms for contacting customer support, with field validation, attachment handling, ticket ID confirmation for messages, and email confirmation for callback requests.",
+  "where_it_fits": "Accessible from the left-hand navigation as 'Support Center' (option \u246a) after successful sign-in and landing on the account dashboard; it serves as the in-app channel for users to report issues or request callbacks within the normal account management flow.",
+  "assumed_state_on_entry": "Authenticated customer on their account dashboard with the left-hand navigation available."
 }
 </module_context>
 
@@ -259,14 +269,20 @@ If a `<workflows>` block is present in the input:
 <ast>
 {
   "module_name": "Support Center",
+  "module_id": 13,
   "components": {
     "Secure_Message_Form": {
       "type": "form",
       "fields": {
         "Subject": {
-          "type": "unspecified",
+          "type": "text",
           "constraints": [
-            "subject length validated"
+            {
+              "type": "length",
+              "min": 1,
+              "max": 250,
+              "message": "Subject must be between 1 and 250 characters."
+            }
           ]
         },
         "Category": {
@@ -279,26 +295,42 @@ If a `<workflows>` block is present in the input:
           ]
         },
         "Message_Body": {
-          "type": "unspecified",
+          "type": "rich_text_editor",
           "required": true,
           "constraints": [
-            "must be present"
+            {
+              "type": "presence",
+              "message": "Message body is required."
+            }
           ]
         },
         "Attachment": {
           "type": "file_upload",
           "constraints": [
-            "attachment file type validated"
+            {
+              "type": "allowed_types",
+              "allowed_types": [
+                "pdf",
+                "png",
+                "jpg",
+                "jpeg",
+                "doc",
+                "docx"
+              ],
+              "message": "Attachment must be an allowed file type."
+            }
           ]
         }
       },
+      "validation_errors_display": "inline",
       "submit_actions": [
         {
           "action_name": "Send Message",
-          "on_success": "Message sent successfully; returns ticket ID",
           "preconditions": [
-            "User is an authenticated/customer who has successfully logged in and reached the account dashboard"
-          ]
+            "user must be authenticated"
+          ],
+          "on_success": "Message sent successfully. Returns ticket ID.",
+          "on_failure": "Validation errors shown inline."
         }
       ]
     },
@@ -311,27 +343,37 @@ If a `<workflows>` block is present in the input:
         "Preferred_Date": {
           "type": "date",
           "constraints": [
-            "must be at least the next business day"
+            {
+              "type": "min_business_date",
+              "offset_days": 1,
+              "message": "Preferred date must be at least the next business day."
+            }
           ]
         },
         "Preferred_Time_Window": {
-          "type": "unspecified"
+          "type": "time_window"
         },
         "Phone_Number": {
-          "type": "unspecified",
+          "type": "phone",
           "prefilled": true,
+          "editable": true,
           "constraints": [
-            "phone number format validated"
+            {
+              "type": "format",
+              "message": "Phone number must be a valid phone format."
+            }
           ]
         }
       },
+      "validation_errors_display": "inline",
       "submit_actions": [
         {
           "action_name": "Request Callback",
-          "on_success": "Callback request submitted; sends email confirmation",
           "preconditions": [
-            "User is an authenticated/customer who has successfully logged in and reached the account dashboard"
-          ]
+            "user must be authenticated"
+          ],
+          "on_success": "Callback request submitted. Sends email confirmation.",
+          "on_failure": "Validation errors shown inline."
         }
       ]
     }
@@ -346,14 +388,14 @@ The Support Center page integrates two communication forms.The secure message fo
 </description>
 
 <workflows>
-WF-001 | Send secure message via Secure_Message_Form | actor: Authenticated customer | branch: none | terminal: Send Message | on_success: Message sent successfully; returns ticket ID
-WF-002 | Submit schedule callback via Schedule_Callback_Form | actor: Authenticated customer | branch: none | terminal: Request Callback | on_success: Callback request submitted; sends email confirmation
+WF-001 | Send secure message | actor: Authenticated customer | branch: none | terminal: Send Message | on_success: Message sent successfully. Returns ticket ID.
+WF-002 | Request callback | actor: Authenticated customer | branch: none | terminal: Request Callback | on_success: Callback request submitted. Sends email confirmation.
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:05:25] Test-Negative - LLM RESPONSE
+[22:24:55] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Support Center",
@@ -364,111 +406,99 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "wf_ref": null,
       "test_case": "Unauthenticated user cannot access Support Center page",
       "preconditions": [
-        "User is not authenticated (logged out)"
+        "User is not authenticated"
       ],
       "steps": [
-        "1. Open the application Support Center page URL or click the 'Support Center' item in the navigation without logging in"
+        "1. Open the application and navigate to the Support Center page URL"
       ],
-      "expected_result": "Access is blocked and the user is redirected to the Login page; Support Center forms (Secure Message and Schedule Callback) are not visible",
+      "expected_result": "User is redirected to the login page; Support Center page and its forms are not accessible or visible to the user",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Send Message blocked when required Message Body is left blank",
+      "test_case": "Send Message blocked when Message Body (required) is left blank",
       "preconditions": [
-        "User is authenticated and on the Support Center page"
+        "Authenticated user on account dashboard with Support Center available"
       ],
       "steps": [
-        "1. Ensure the Message Body field in the Secure Message form is left blank",
-        "2. Click the 'Send Message' button"
+        "1. Leave the Message Body field blank",
+        "2. Click the Send Message button"
       ],
-      "expected_result": "Inline validation error appears on the Message Body field indicating it is required; the form does not submit and no ticket ID is returned or displayed",
+      "expected_result": "Inline validation error appears on the Message Body field: \"Message body is required.\" Form does not submit; no \"Message sent successfully.\" confirmation or ticket ID is shown",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-002",
-      "test_case": "Request Callback blocked when all required callback fields are empty",
+      "wf_ref": "WF-001",
+      "test_case": "Send Message blocked when Subject exceeds maximum length",
       "preconditions": [
-        "User is authenticated and on the Support Center page"
+        "Authenticated user on Support Center page"
       ],
       "steps": [
-        "1. Clear the Preferred Date field in the Schedule Callback form (leave it blank)",
-        "2. Clear the Phone Number field (remove the prefilled value)",
-        "3. Click the 'Request Callback' button"
+        "1. Enter <subject longer than 250 characters> in the Subject field",
+        "2. Enter <valid message text> in the Message Body field",
+        "3. Click the Send Message button"
       ],
-      "expected_result": "Inline validation errors appear on the Preferred Date and Phone Number fields indicating they are required; the callback request is not submitted and no confirmation email is sent",
-      "priority": "high"
+      "expected_result": "Inline validation error appears on the Subject field: \"Subject must be between 1 and 250 characters.\" Form does not submit; no confirmation or ticket ID is shown",
+      "priority": "medium"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-001",
-      "test_case": "Send Message blocked when attachment file type is invalid",
+      "test_case": "Send Message blocked when Attachment is of a disallowed file type",
       "preconditions": [
-        "User is authenticated and on the Support Center page"
+        "Authenticated user on Support Center page"
       ],
       "steps": [
-        "1. Upload a file of <unsupported file type> into the Attachment field of the Secure Message form",
-        "2. Click the 'Send Message' button"
+        "1. Upload <file with disallowed file type> into the Attachment field",
+        "2. Enter <valid message text> in the Message Body field",
+        "3. Click the Send Message button"
       ],
-      "expected_result": "Attachment field displays an inline validation error indicating the file type is invalid; the message is not sent and no ticket ID is returned",
+      "expected_result": "Inline validation error appears on the Attachment field: \"Attachment must be an allowed file type.\" Form does not submit; no \"Message sent successfully.\" confirmation or ticket ID is shown",
       "priority": "medium"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-001",
-      "test_case": "Send Message blocked when Subject violates length validation",
+      "wf_ref": "WF-002",
+      "test_case": "Request Callback blocked when Preferred Date is earlier than the next business day",
       "preconditions": [
-        "User is authenticated and on the Support Center page"
+        "Authenticated user on Support Center page"
       ],
       "steps": [
-        "1. Enter <subject exceeding maximum allowed length> into the Subject field",
-        "2. Enter <valid message body> into the Message Body field",
-        "3. Click the 'Send Message' button"
+        "1. Enter <date earlier than next business day> in the Preferred Date field",
+        "2. Enter <valid phone number> in the Phone Number field",
+        "3. Click the Request Callback button"
       ],
-      "expected_result": "Subject field displays an inline validation error indicating the subject length validation failed; the message is not sent and no ticket ID is returned",
+      "expected_result": "Inline validation error appears on the Preferred Date field: \"Preferred date must be at least the next business day.\" Request does not submit; no \"Callback request submitted.\" confirmation is shown",
       "priority": "medium"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-002",
-      "test_case": "Request Callback blocked when Preferred Date is earlier than next business day",
+      "test_case": "Request Callback blocked when Phone Number is in an invalid format",
       "preconditions": [
-        "User is authenticated and on the Support Center page"
+        "Authenticated user on Support Center page"
       ],
       "steps": [
-        "1. Enter <date earlier than next business day> into the Preferred Date field of the Schedule Callback form",
-        "2. Click the 'Request Callback' button"
+        "1. Edit the Phone Number field and enter <invalid phone format>",
+        "2. Enter <valid next business day date> in the Preferred Date field",
+        "3. Click the Request Callback button"
       ],
-      "expected_result": "Preferred Date field displays an inline validation error stating it 'must be at least the next business day'; the callback request is not submitted and no confirmation email is sent",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": "WF-002",
-      "test_case": "Request Callback blocked when Phone Number format is invalid",
-      "preconditions": [
-        "User is authenticated and on the Support Center page"
-      ],
-      "steps": [
-        "1. Edit the Phone Number field in the Schedule Callback form to <invalid phone number format>",
-        "2. Click the 'Request Callback' button"
-      ],
-      "expected_result": "Phone Number field displays an inline validation error indicating the phone number format is invalid; the callback request is not submitted and no confirmation email is sent",
+      "expected_result": "Inline validation error appears on the Phone Number field: \"Phone number must be a valid phone format.\" Request does not submit; no \"Callback request submitted.\" confirmation is shown",
       "priority": "medium"
     }
   ],
   "summary": {
-    "total": 7,
-    "high_priority": 4,
-    "medium_priority": 3,
+    "total": 6,
+    "high_priority": 2,
+    "medium_priority": 4,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:05:25] Test-Negative - PARSED JSON
+[22:24:55] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Support Center",
@@ -479,105 +509,93 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "wf_ref": null,
       "test_case": "Unauthenticated user cannot access Support Center page",
       "preconditions": [
-        "User is not authenticated (logged out)"
+        "User is not authenticated"
       ],
       "steps": [
-        "1. Open the application Support Center page URL or click the 'Support Center' item in the navigation without logging in"
+        "1. Open the application and navigate to the Support Center page URL"
       ],
-      "expected_result": "Access is blocked and the user is redirected to the Login page; Support Center forms (Secure Message and Schedule Callback) are not visible",
+      "expected_result": "User is redirected to the login page; Support Center page and its forms are not accessible or visible to the user",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Send Message blocked when required Message Body is left blank",
+      "test_case": "Send Message blocked when Message Body (required) is left blank",
       "preconditions": [
-        "User is authenticated and on the Support Center page"
+        "Authenticated user on account dashboard with Support Center available"
       ],
       "steps": [
-        "1. Ensure the Message Body field in the Secure Message form is left blank",
-        "2. Click the 'Send Message' button"
+        "1. Leave the Message Body field blank",
+        "2. Click the Send Message button"
       ],
-      "expected_result": "Inline validation error appears on the Message Body field indicating it is required; the form does not submit and no ticket ID is returned or displayed",
+      "expected_result": "Inline validation error appears on the Message Body field: \"Message body is required.\" Form does not submit; no \"Message sent successfully.\" confirmation or ticket ID is shown",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-002",
-      "test_case": "Request Callback blocked when all required callback fields are empty",
+      "wf_ref": "WF-001",
+      "test_case": "Send Message blocked when Subject exceeds maximum length",
       "preconditions": [
-        "User is authenticated and on the Support Center page"
+        "Authenticated user on Support Center page"
       ],
       "steps": [
-        "1. Clear the Preferred Date field in the Schedule Callback form (leave it blank)",
-        "2. Clear the Phone Number field (remove the prefilled value)",
-        "3. Click the 'Request Callback' button"
+        "1. Enter <subject longer than 250 characters> in the Subject field",
+        "2. Enter <valid message text> in the Message Body field",
+        "3. Click the Send Message button"
       ],
-      "expected_result": "Inline validation errors appear on the Preferred Date and Phone Number fields indicating they are required; the callback request is not submitted and no confirmation email is sent",
-      "priority": "high"
+      "expected_result": "Inline validation error appears on the Subject field: \"Subject must be between 1 and 250 characters.\" Form does not submit; no confirmation or ticket ID is shown",
+      "priority": "medium"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-001",
-      "test_case": "Send Message blocked when attachment file type is invalid",
+      "test_case": "Send Message blocked when Attachment is of a disallowed file type",
       "preconditions": [
-        "User is authenticated and on the Support Center page"
+        "Authenticated user on Support Center page"
       ],
       "steps": [
-        "1. Upload a file of <unsupported file type> into the Attachment field of the Secure Message form",
-        "2. Click the 'Send Message' button"
+        "1. Upload <file with disallowed file type> into the Attachment field",
+        "2. Enter <valid message text> in the Message Body field",
+        "3. Click the Send Message button"
       ],
-      "expected_result": "Attachment field displays an inline validation error indicating the file type is invalid; the message is not sent and no ticket ID is returned",
+      "expected_result": "Inline validation error appears on the Attachment field: \"Attachment must be an allowed file type.\" Form does not submit; no \"Message sent successfully.\" confirmation or ticket ID is shown",
       "priority": "medium"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-001",
-      "test_case": "Send Message blocked when Subject violates length validation",
+      "wf_ref": "WF-002",
+      "test_case": "Request Callback blocked when Preferred Date is earlier than the next business day",
       "preconditions": [
-        "User is authenticated and on the Support Center page"
+        "Authenticated user on Support Center page"
       ],
       "steps": [
-        "1. Enter <subject exceeding maximum allowed length> into the Subject field",
-        "2. Enter <valid message body> into the Message Body field",
-        "3. Click the 'Send Message' button"
+        "1. Enter <date earlier than next business day> in the Preferred Date field",
+        "2. Enter <valid phone number> in the Phone Number field",
+        "3. Click the Request Callback button"
       ],
-      "expected_result": "Subject field displays an inline validation error indicating the subject length validation failed; the message is not sent and no ticket ID is returned",
+      "expected_result": "Inline validation error appears on the Preferred Date field: \"Preferred date must be at least the next business day.\" Request does not submit; no \"Callback request submitted.\" confirmation is shown",
       "priority": "medium"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-002",
-      "test_case": "Request Callback blocked when Preferred Date is earlier than next business day",
+      "test_case": "Request Callback blocked when Phone Number is in an invalid format",
       "preconditions": [
-        "User is authenticated and on the Support Center page"
+        "Authenticated user on Support Center page"
       ],
       "steps": [
-        "1. Enter <date earlier than next business day> into the Preferred Date field of the Schedule Callback form",
-        "2. Click the 'Request Callback' button"
+        "1. Edit the Phone Number field and enter <invalid phone format>",
+        "2. Enter <valid next business day date> in the Preferred Date field",
+        "3. Click the Request Callback button"
       ],
-      "expected_result": "Preferred Date field displays an inline validation error stating it 'must be at least the next business day'; the callback request is not submitted and no confirmation email is sent",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": "WF-002",
-      "test_case": "Request Callback blocked when Phone Number format is invalid",
-      "preconditions": [
-        "User is authenticated and on the Support Center page"
-      ],
-      "steps": [
-        "1. Edit the Phone Number field in the Schedule Callback form to <invalid phone number format>",
-        "2. Click the 'Request Callback' button"
-      ],
-      "expected_result": "Phone Number field displays an inline validation error indicating the phone number format is invalid; the callback request is not submitted and no confirmation email is sent",
+      "expected_result": "Inline validation error appears on the Phone Number field: \"Phone number must be a valid phone format.\" Request does not submit; no \"Callback request submitted.\" confirmation is shown",
       "priority": "medium"
     }
   ],
   "summary": {
-    "total": 7,
-    "high_priority": 4,
-    "medium_priority": 3,
+    "total": 6,
+    "high_priority": 2,
+    "medium_priority": 4,
     "low_priority": 0
   }
 }

@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:04:20.737687
+DEBUG SESSION STARTED: 2026-07-04T22:55:35.962980
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Negative - SYSTEM PROMPT
+[22:55:35] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Negative - USER PROMPT
+[22:55:35] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 5,
   "module_title": "Checkout - Information",
-  "summary": "Collects the customer's first name, last name, and ZIP/postal code and validates required fields before advancing to the checkout overview.",
-  "where_it_fits": "This is the first step of the three-step checkout flow (Information \u2192 Overview \u2192 Confirmation) reached from the Shopping Cart after users proceed with checkout; it precedes the Checkout - Overview module and follows the Shopping Cart in the purchase lifecycle.",
-  "assumed_state_on_entry": "Logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+  "summary": "Collects the buyer's first name, last name, and postal code and validates those required fields before advancing to the checkout overview.",
+  "where_it_fits": "This is the first step of the three-step checkout flow accessed from the Shopping Cart (Checkout - Information) as described in the app navigation; it precedes Checkout - Overview and Checkout - Confirmation. It is reached after adding items to the cart from the Product Inventory and entering the cart to begin checkout.",
+  "assumed_state_on_entry": "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
 }
 </module_context>
 
@@ -263,7 +273,7 @@ If a `<workflows>` block is present in the input:
     "Checkout_Information_Form": {
       "type": "form",
       "preconditions": [
-        "Logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+        "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
       ],
       "fields": {
         "First_Name": {
@@ -292,16 +302,15 @@ If a `<workflows>` block is present in the input:
         {
           "action_name": "Continue",
           "on_success": "navigates to Checkout - Overview",
-          "on_failure": "displays error banner with field-specific messages",
           "preconditions": [
-            "Logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+            "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
           ]
         },
         {
           "action_name": "Cancel",
           "on_success": "returns to Shopping Cart",
           "preconditions": [
-            "Logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+            "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
           ]
         }
       ]
@@ -318,14 +327,14 @@ Checkout starts with a form that collects First Name, Last Name, and Zip/Postal 
 </description>
 
 <workflows>
-WF-001 | Continue (advance to Overview) | actor: <role> | branch: none | terminal: Continue | on_success: navigates to Checkout - Overview
-WF-002 | Cancel (return to Shopping Cart) | actor: <role> | branch: none | terminal: Cancel | on_success: returns to Shopping Cart
+WF-001 | Continue with valid required fields | actor: Buyer | branch: none | terminal: Continue | on_success: navigates to Checkout - Overview
+WF-002 | Cancel and return to cart | actor: Buyer | branch: none | terminal: Cancel | on_success: returns to Shopping Cart
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:05:09] Test-Negative - LLM RESPONSE
+[22:56:33] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Checkout - Information",
@@ -334,66 +343,63 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Submit with a required text field (First Name) left blank",
+      "test_case": "Leave required text field (First Name) blank and submit",
       "preconditions": [
-        "User is logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+        "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
       ],
       "steps": [
-        "1. Navigate to the Checkout - Information page from the Shopping Cart",
-        "2. Leave the First Name field blank",
-        "3. Enter <valid last name> in the Last Name field",
-        "4. Enter <valid postal code> in the Postal Code field",
-        "5. Click the Continue button"
+        "1. Navigate to Checkout - Information as a logged-in user with at least one item in the Shopping Cart.",
+        "2. Leave the First Name field blank.",
+        "3. Enter <valid Last Name> in the Last Name field.",
+        "4. Enter <valid Postal Code> in the Postal Code field.",
+        "5. Click the Continue button."
       ],
-      "expected_result": "Form does not submit; user remains on Checkout - Information; an error banner and/or inline message is displayed indicating the First Name is required: \"Error: First Name is required\" and the First Name field is highlighted. No navigation to Checkout - Overview occurs.",
+      "expected_result": "An error banner is shown on the page: \"Error: First Name is required\"; the form does not navigate to Checkout - Overview and the user remains on the Checkout - Information page.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Submit with ALL required fields empty",
+      "test_case": "Submit with all required fields empty",
       "preconditions": [
-        "User is logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+        "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
       ],
       "steps": [
-        "1. Navigate to the Checkout - Information page from the Shopping Cart",
-        "2. Leave the First Name field blank",
-        "3. Leave the Last Name field blank",
-        "4. Leave the Postal Code field blank",
-        "5. Click the Continue button"
+        "1. Navigate to Checkout - Information as a logged-in user with at least one item in the Shopping Cart.",
+        "2. Leave the First Name field blank.",
+        "3. Leave the Last Name field blank.",
+        "4. Leave the Postal Code field blank.",
+        "5. Click the Continue button."
       ],
-      "expected_result": "Form does not submit; user remains on Checkout - Information; an error banner and/or inline messages are displayed for each missing field with the exact messages: \"Error: First Name is required\", \"Error: Last Name is required\", and \"Error: Postal Code is required\". No navigation to Checkout - Overview occurs.",
+      "expected_result": "Error banners are shown for each missing field: \"Error: First Name is required\", \"Error: Last Name is required\", and \"Error: Postal Code is required\"; the form does not submit and the user remains on the Checkout - Information page.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access Checkout - Information",
+      "test_case": "Access Checkout - Information while unauthenticated",
       "preconditions": [
-        "User is not authenticated"
+        "User is not authenticated (no active session)."
       ],
       "steps": [
-        "1. As an unauthenticated user, navigate directly to the Checkout - Information URL"
+        "1. From a browser with no authenticated session, navigate to the Checkout - Information URL or attempt to start checkout from the Shopping Cart."
       ],
-      "expected_result": "Access is blocked; user is redirected to the authentication/login page (Checkout - Information is not displayed). A login prompt is shown and no Checkout - Overview navigation occurs.",
+      "expected_result": "Access is blocked: the user is redirected to the Login page (Checkout - Information form is not displayed) and cannot proceed to Checkout - Overview without authenticating.",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-001",
-      "test_case": "Attempt Continue when precondition fails (shopping cart is empty / checkout not initiated)",
+      "wf_ref": null,
+      "test_case": "Attempt to open Checkout - Information with an empty Shopping Cart",
       "preconditions": [
-        "User is logged in but has an empty shopping cart (checkout not properly initiated)"
+        "Logged in with an active session and the Shopping Cart contains no items."
       ],
       "steps": [
-        "1. Log in as a user with an empty shopping cart",
-        "2. Navigate to the Checkout - Information page (e.g., via direct URL)",
-        "3. Enter <valid first name> in the First Name field",
-        "4. Enter <valid last name> in the Last Name field",
-        "5. Enter <valid postal code> in the Postal Code field",
-        "6. Click the Continue button"
+        "1. Log in as a Buyer with an active session.",
+        "2. Ensure the Shopping Cart has no items.",
+        "3. From the Shopping Cart, click the control to begin checkout or navigate directly to Checkout - Information."
       ],
-      "expected_result": "Continue action is blocked; user remains on Checkout - Information; an error banner or inline message is displayed stating the checkout cannot proceed because the shopping cart is empty or checkout was not initiated (no navigation to Checkout - Overview occurs). The form is not submitted.",
+      "expected_result": "Access is blocked: the Checkout - Information form is not displayed and the user remains on the Shopping Cart (cannot proceed to Checkout - Overview without at least one item in the cart).",
       "priority": "high"
     }
   ],
@@ -406,7 +412,7 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
 }
 
 ------------------------------------------------------------
-[21:05:09] Test-Negative - PARSED JSON
+[22:56:33] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Checkout - Information",
@@ -415,66 +421,63 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Submit with a required text field (First Name) left blank",
+      "test_case": "Leave required text field (First Name) blank and submit",
       "preconditions": [
-        "User is logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+        "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
       ],
       "steps": [
-        "1. Navigate to the Checkout - Information page from the Shopping Cart",
-        "2. Leave the First Name field blank",
-        "3. Enter <valid last name> in the Last Name field",
-        "4. Enter <valid postal code> in the Postal Code field",
-        "5. Click the Continue button"
+        "1. Navigate to Checkout - Information as a logged-in user with at least one item in the Shopping Cart.",
+        "2. Leave the First Name field blank.",
+        "3. Enter <valid Last Name> in the Last Name field.",
+        "4. Enter <valid Postal Code> in the Postal Code field.",
+        "5. Click the Continue button."
       ],
-      "expected_result": "Form does not submit; user remains on Checkout - Information; an error banner and/or inline message is displayed indicating the First Name is required: \"Error: First Name is required\" and the First Name field is highlighted. No navigation to Checkout - Overview occurs.",
+      "expected_result": "An error banner is shown on the page: \"Error: First Name is required\"; the form does not navigate to Checkout - Overview and the user remains on the Checkout - Information page.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Submit with ALL required fields empty",
+      "test_case": "Submit with all required fields empty",
       "preconditions": [
-        "User is logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+        "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
       ],
       "steps": [
-        "1. Navigate to the Checkout - Information page from the Shopping Cart",
-        "2. Leave the First Name field blank",
-        "3. Leave the Last Name field blank",
-        "4. Leave the Postal Code field blank",
-        "5. Click the Continue button"
+        "1. Navigate to Checkout - Information as a logged-in user with at least one item in the Shopping Cart.",
+        "2. Leave the First Name field blank.",
+        "3. Leave the Last Name field blank.",
+        "4. Leave the Postal Code field blank.",
+        "5. Click the Continue button."
       ],
-      "expected_result": "Form does not submit; user remains on Checkout - Information; an error banner and/or inline messages are displayed for each missing field with the exact messages: \"Error: First Name is required\", \"Error: Last Name is required\", and \"Error: Postal Code is required\". No navigation to Checkout - Overview occurs.",
+      "expected_result": "Error banners are shown for each missing field: \"Error: First Name is required\", \"Error: Last Name is required\", and \"Error: Postal Code is required\"; the form does not submit and the user remains on the Checkout - Information page.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access Checkout - Information",
+      "test_case": "Access Checkout - Information while unauthenticated",
       "preconditions": [
-        "User is not authenticated"
+        "User is not authenticated (no active session)."
       ],
       "steps": [
-        "1. As an unauthenticated user, navigate directly to the Checkout - Information URL"
+        "1. From a browser with no authenticated session, navigate to the Checkout - Information URL or attempt to start checkout from the Shopping Cart."
       ],
-      "expected_result": "Access is blocked; user is redirected to the authentication/login page (Checkout - Information is not displayed). A login prompt is shown and no Checkout - Overview navigation occurs.",
+      "expected_result": "Access is blocked: the user is redirected to the Login page (Checkout - Information form is not displayed) and cannot proceed to Checkout - Overview without authenticating.",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-001",
-      "test_case": "Attempt Continue when precondition fails (shopping cart is empty / checkout not initiated)",
+      "wf_ref": null,
+      "test_case": "Attempt to open Checkout - Information with an empty Shopping Cart",
       "preconditions": [
-        "User is logged in but has an empty shopping cart (checkout not properly initiated)"
+        "Logged in with an active session and the Shopping Cart contains no items."
       ],
       "steps": [
-        "1. Log in as a user with an empty shopping cart",
-        "2. Navigate to the Checkout - Information page (e.g., via direct URL)",
-        "3. Enter <valid first name> in the First Name field",
-        "4. Enter <valid last name> in the Last Name field",
-        "5. Enter <valid postal code> in the Postal Code field",
-        "6. Click the Continue button"
+        "1. Log in as a Buyer with an active session.",
+        "2. Ensure the Shopping Cart has no items.",
+        "3. From the Shopping Cart, click the control to begin checkout or navigate directly to Checkout - Information."
       ],
-      "expected_result": "Continue action is blocked; user remains on Checkout - Information; an error banner or inline message is displayed stating the checkout cannot proceed because the shopping cart is empty or checkout was not initiated (no navigation to Checkout - Overview occurs). The form is not submitted.",
+      "expected_result": "Access is blocked: the Checkout - Information form is not displayed and the user remains on the Shopping Cart (cannot proceed to Checkout - Overview without at least one item in the cart).",
       "priority": "high"
     }
   ],

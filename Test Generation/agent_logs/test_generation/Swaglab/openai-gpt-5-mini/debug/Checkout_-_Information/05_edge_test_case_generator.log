@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:04:20.738443
+DEBUG SESSION STARTED: 2026-07-04T22:55:35.965654
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Edge - SYSTEM PROMPT
+[22:55:35] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Edge - USER PROMPT
+[22:55:35] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 5,
   "module_title": "Checkout - Information",
-  "summary": "Collects the customer's first name, last name, and ZIP/postal code and validates required fields before advancing to the checkout overview.",
-  "where_it_fits": "This is the first step of the three-step checkout flow (Information \u2192 Overview \u2192 Confirmation) reached from the Shopping Cart after users proceed with checkout; it precedes the Checkout - Overview module and follows the Shopping Cart in the purchase lifecycle.",
-  "assumed_state_on_entry": "Logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+  "summary": "Collects the buyer's first name, last name, and postal code and validates those required fields before advancing to the checkout overview.",
+  "where_it_fits": "This is the first step of the three-step checkout flow accessed from the Shopping Cart (Checkout - Information) as described in the app navigation; it precedes Checkout - Overview and Checkout - Confirmation. It is reached after adding items to the cart from the Product Inventory and entering the cart to begin checkout.",
+  "assumed_state_on_entry": "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
 }
 </module_context>
 
@@ -246,7 +260,7 @@ If a `<workflows>` block is present in the input:
     "Checkout_Information_Form": {
       "type": "form",
       "preconditions": [
-        "Logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+        "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
       ],
       "fields": {
         "First_Name": {
@@ -275,16 +289,15 @@ If a `<workflows>` block is present in the input:
         {
           "action_name": "Continue",
           "on_success": "navigates to Checkout - Overview",
-          "on_failure": "displays error banner with field-specific messages",
           "preconditions": [
-            "Logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+            "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
           ]
         },
         {
           "action_name": "Cancel",
           "on_success": "returns to Shopping Cart",
           "preconditions": [
-            "Logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+            "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
           ]
         }
       ]
@@ -301,14 +314,14 @@ Checkout starts with a form that collects First Name, Last Name, and Zip/Postal 
 </description>
 
 <workflows>
-WF-001 | Continue (advance to Overview) | actor: <role> | branch: none | terminal: Continue | on_success: navigates to Checkout - Overview
-WF-002 | Cancel (return to Shopping Cart) | actor: <role> | branch: none | terminal: Cancel | on_success: returns to Shopping Cart
+WF-001 | Continue with valid required fields | actor: Buyer | branch: none | terminal: Continue | on_success: navigates to Checkout - Overview
+WF-002 | Cancel and return to cart | actor: Buyer | branch: none | terminal: Cancel | on_success: returns to Shopping Cart
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:05:15] Test-Edge - LLM RESPONSE
+[22:56:31] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Checkout - Information",
@@ -318,86 +331,85 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Leading/trailing whitespace in name is trimmed and allows continue",
+      "test_case": "Very long First and Last Name accepted and carried to Overview",
       "preconditions": [
-        "Logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+        "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
       ],
       "steps": [
-        "1. Enter leading and trailing spaces around the first name (e.g. \"  <valid First Name>  \") into the First Name field",
-        "2. Enter a valid value into the Last Name field",
-        "3. Enter a valid value into the Postal Code field",
-        "4. Click Continue"
+        "1. Enter <very long string 200+ characters> in the First Name field",
+        "2. Enter <very long string 200+ characters> in the Last Name field",
+        "3. Enter <valid Postal Code> in the Postal Code field",
+        "4. Click the Continue button"
       ],
-      "expected_result": "Continue succeeds; navigates to Checkout - Overview. The First Name is saved/displayed without the leading or trailing whitespace (trimmed) on the subsequent page or form summary.",
+      "expected_result": "Form submit succeeds; navigates to Checkout - Overview and the Checkout - Overview page visibly displays the entered First Name and Last Name (the full long text) without truncation errors",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Whitespace-only input in a required name field is treated as empty and blocked",
+      "test_case": "Names containing special characters and emoji accepted",
       "preconditions": [
-        "Logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+        "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
       ],
       "steps": [
-        "1. Enter only whitespace characters (e.g. \"   \") into the First Name field",
-        "2. Enter a valid value into the Last Name field",
-        "3. Enter a valid value into the Postal Code field",
-        "4. Click Continue"
+        "1. Enter <string containing special characters and emoji> in the First Name field",
+        "2. Enter <string containing special characters and emoji> in the Last Name field",
+        "3. Enter <valid Postal Code> in the Postal Code field",
+        "4. Click the Continue button"
       ],
-      "expected_result": "Submission is blocked; an error banner or inline message is shown with the exact text \"Error: First Name is required\" and the user remains on the Checkout - Information form.",
+      "expected_result": "Form submit succeeds; navigates to Checkout - Overview and the Checkout - Overview page visibly displays the entered First Name and Last Name including the special characters/emoji",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Very long text (200+ chars) in name fields",
+      "test_case": "Leading and trailing whitespace is trimmed before validation",
       "preconditions": [
-        "Logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+        "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
       ],
       "steps": [
-        "1. Enter a very long string (200+ characters) into the First Name field",
-        "2. Enter a very long string (200+ characters) into the Last Name field",
-        "3. Enter a valid value into the Postal Code field",
-        "4. Click Continue"
+        "1. Enter <string with leading and trailing spaces> in the First Name field",
+        "2. Enter <string with leading and trailing spaces> in the Last Name field",
+        "3. Enter <valid Postal Code> in the Postal Code field",
+        "4. Click the Continue button"
       ],
-      "expected_result": "Continue either succeeds or shows a clear inline/truncation indicator; if it succeeds, the app navigates to Checkout - Overview and the Overview displays the full entered First Name and Last Name (no silent data loss). If the UI truncates, a visible truncation indicator or message is shown before navigation.",
-      "priority": "low"
+      "expected_result": "Form submit succeeds; navigates to Checkout - Overview and the Checkout - Overview page visibly displays the First Name and Last Name with leading and trailing whitespace removed (trimmed)",
+      "priority": "medium"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Browser back after successful Continue does not re-submit and the form is blank",
+      "subcategory": "boundary",
+      "test_case": "Whitespace-only First Name is treated as missing and blocks continue",
       "preconditions": [
-        "Logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+        "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
       ],
       "steps": [
-        "1. Enter a valid value into the First Name field",
-        "2. Enter a valid value into the Last Name field",
-        "3. Enter a valid value into the Postal Code field",
-        "4. Click Continue",
-        "5. On the Checkout - Overview page, press the browser Back button"
+        "1. Enter <spaces-only string> in the First Name field",
+        "2. Enter <valid Last Name> in the Last Name field",
+        "3. Enter <valid Postal Code> in the Postal Code field",
+        "4. Click the Continue button"
       ],
-      "expected_result": "After using the browser Back button the Checkout - Information form is shown blank (not pre-filled) and no duplicate navigation or implicit re-submission occurs. The user must explicitly re-enter data and click Continue to navigate again.",
-      "priority": "low"
+      "expected_result": "Continue is blocked; the page displays the error banner 'Error: First Name is required' (visible to the user)",
+      "priority": "medium"
     }
   ],
   "summary": {
     "total": 4,
-    "boundary": 0,
+    "boundary": 1,
     "input_edge": 3,
-    "interaction_edge": 1,
+    "interaction_edge": 0,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 2,
-    "low_priority": 2
+    "medium_priority": 4,
+    "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:05:15] Test-Edge - PARSED JSON
+[22:56:31] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Checkout - Information",
@@ -407,80 +419,79 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Leading/trailing whitespace in name is trimmed and allows continue",
+      "test_case": "Very long First and Last Name accepted and carried to Overview",
       "preconditions": [
-        "Logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+        "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
       ],
       "steps": [
-        "1. Enter leading and trailing spaces around the first name (e.g. \"  <valid First Name>  \") into the First Name field",
-        "2. Enter a valid value into the Last Name field",
-        "3. Enter a valid value into the Postal Code field",
-        "4. Click Continue"
+        "1. Enter <very long string 200+ characters> in the First Name field",
+        "2. Enter <very long string 200+ characters> in the Last Name field",
+        "3. Enter <valid Postal Code> in the Postal Code field",
+        "4. Click the Continue button"
       ],
-      "expected_result": "Continue succeeds; navigates to Checkout - Overview. The First Name is saved/displayed without the leading or trailing whitespace (trimmed) on the subsequent page or form summary.",
+      "expected_result": "Form submit succeeds; navigates to Checkout - Overview and the Checkout - Overview page visibly displays the entered First Name and Last Name (the full long text) without truncation errors",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Whitespace-only input in a required name field is treated as empty and blocked",
+      "test_case": "Names containing special characters and emoji accepted",
       "preconditions": [
-        "Logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+        "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
       ],
       "steps": [
-        "1. Enter only whitespace characters (e.g. \"   \") into the First Name field",
-        "2. Enter a valid value into the Last Name field",
-        "3. Enter a valid value into the Postal Code field",
-        "4. Click Continue"
+        "1. Enter <string containing special characters and emoji> in the First Name field",
+        "2. Enter <string containing special characters and emoji> in the Last Name field",
+        "3. Enter <valid Postal Code> in the Postal Code field",
+        "4. Click the Continue button"
       ],
-      "expected_result": "Submission is blocked; an error banner or inline message is shown with the exact text \"Error: First Name is required\" and the user remains on the Checkout - Information form.",
+      "expected_result": "Form submit succeeds; navigates to Checkout - Overview and the Checkout - Overview page visibly displays the entered First Name and Last Name including the special characters/emoji",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Very long text (200+ chars) in name fields",
+      "test_case": "Leading and trailing whitespace is trimmed before validation",
       "preconditions": [
-        "Logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+        "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
       ],
       "steps": [
-        "1. Enter a very long string (200+ characters) into the First Name field",
-        "2. Enter a very long string (200+ characters) into the Last Name field",
-        "3. Enter a valid value into the Postal Code field",
-        "4. Click Continue"
+        "1. Enter <string with leading and trailing spaces> in the First Name field",
+        "2. Enter <string with leading and trailing spaces> in the Last Name field",
+        "3. Enter <valid Postal Code> in the Postal Code field",
+        "4. Click the Continue button"
       ],
-      "expected_result": "Continue either succeeds or shows a clear inline/truncation indicator; if it succeeds, the app navigates to Checkout - Overview and the Overview displays the full entered First Name and Last Name (no silent data loss). If the UI truncates, a visible truncation indicator or message is shown before navigation.",
-      "priority": "low"
+      "expected_result": "Form submit succeeds; navigates to Checkout - Overview and the Checkout - Overview page visibly displays the First Name and Last Name with leading and trailing whitespace removed (trimmed)",
+      "priority": "medium"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Browser back after successful Continue does not re-submit and the form is blank",
+      "subcategory": "boundary",
+      "test_case": "Whitespace-only First Name is treated as missing and blocks continue",
       "preconditions": [
-        "Logged in with at least one item in the shopping cart and checkout initiated from the Shopping Cart."
+        "Logged in with an active session and at least one item in the Shopping Cart initiating the checkout flow."
       ],
       "steps": [
-        "1. Enter a valid value into the First Name field",
-        "2. Enter a valid value into the Last Name field",
-        "3. Enter a valid value into the Postal Code field",
-        "4. Click Continue",
-        "5. On the Checkout - Overview page, press the browser Back button"
+        "1. Enter <spaces-only string> in the First Name field",
+        "2. Enter <valid Last Name> in the Last Name field",
+        "3. Enter <valid Postal Code> in the Postal Code field",
+        "4. Click the Continue button"
       ],
-      "expected_result": "After using the browser Back button the Checkout - Information form is shown blank (not pre-filled) and no duplicate navigation or implicit re-submission occurs. The user must explicitly re-enter data and click Continue to navigate again.",
-      "priority": "low"
+      "expected_result": "Continue is blocked; the page displays the error banner 'Error: First Name is required' (visible to the user)",
+      "priority": "medium"
     }
   ],
   "summary": {
     "total": 4,
-    "boundary": 0,
+    "boundary": 1,
     "input_edge": 3,
-    "interaction_edge": 1,
+    "interaction_edge": 0,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 2,
-    "low_priority": 2
+    "medium_priority": 4,
+    "low_priority": 0
   }
 }

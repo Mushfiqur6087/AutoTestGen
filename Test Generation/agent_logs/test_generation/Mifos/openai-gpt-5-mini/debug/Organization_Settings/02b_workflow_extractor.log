@@ -1,0 +1,1627 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:04:00.815900
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:04:00] Workflow-Extractor - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Extractor. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to enumerate every distinct, executable interaction path through this module — one entry per workflow.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ATTEMPT CONTEXT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Attempt: 1 of 3
+
+
+
+---
+
+**INPUT:**
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+---
+
+## What is a Workflow?
+
+A **workflow** is one complete, executable interaction path — from the user entering the module to completing **one terminal action** within it.
+
+Two workflows are **distinct** if they require different user actions to reach the terminal — i.e. they activate a different conditional branch, follow a different wizard step set, target a different state, or end on a different terminal action.
+
+### Strict Rules
+
+1. **Strictly intra-module.** A workflow step is an action within this module only. If submitting redirects to another page, the redirect is the **exit** — not a step.
+2. **No invented paths.** Only enumerate paths that are traceable to AST nodes or explicit description text. No UX intuition, no assumed flows.
+3. **Minimal fields.** A workflow carries only what downstream agents actually need: who does it, what makes it distinct, what it ends with, what success looks like.
+4. **No step-by-step instructions.** Workflows do NOT spell out the full step sequence — the agents already have the AST for that. A workflow names the path, not the actions.
+
+---
+
+## What Paths to Enumerate
+
+Enumerate **distinct-outcome** paths — not one-per-type, and **not** the cartesian product of every toggle. The rule: two paths are separate workflows only if the user does something different that leads to a **different terminal outcome** (different `on_success`) **or** exercises a **different revealed required-field group** that needs its own coverage.
+
+| AST node type | What to enumerate |
+|---|---|
+| `form` with no conditionals | One workflow per `submit_actions[]` entry |
+| `form` with `visible_when` / toggle fields | One base workflow per `submit_actions[]` entry, PLUS one workflow for **each conditional branch that reveals a distinct required-field group** (e.g. enabling File submissions reveals max-files/size/types). Do **NOT** multiply independent toggles together. |
+| `wizard` | One workflow per distinct step sequence (if all steps are linear, one workflow per `submit_actions[]`; if any step is conditional, enumerate each branch) |
+| `state_bound_action_bar` | One workflow per `available_actions[]` entry per state (state × action = one workflow) |
+| `data_table` | One workflow per `row_actions[]` entry + one per `bulk_actions[]` entry (include View, Edit, Delete, and all others) |
+| `tab_container` | One workflow per tab that contains a form with a submit action |
+| `repeating_group` | Not a standalone workflow source — it is part of a form workflow that activates it |
+
+**Include all data table row actions** — View, Edit, Delete, and any others. Even read-only row actions (e.g., "View") must be included because they still require a positive test case.
+
+### DO NOT enumerate the cartesian product of toggles (CRITICAL)
+
+A form with independent toggles A, B, C and submit buttons {Save, Save+display, Cancel} must **not** produce 2×2×2×3 = 24 workflows. Independent toggles that do **not** change the terminal outcome are covered **once each**, not in combination:
+- If toggle A (e.g. `File_Submissions`) and toggle B (e.g. `Group_Submissions`) both still reach the same `on_success` ("assignment created"), they are **not** two dimensions to multiply. Emit one workflow that activates A's revealed fields, and one that activates B's revealed fields — not A×B.
+- An `+ Add restriction` / optional-picker step that does not change `on_success` is **not** a separate workflow dimension. Fold it into an existing workflow or add at most one workflow for it.
+
+### Discard / Cancel collapse rule (CRITICAL)
+
+A `Cancel` / `discard` / `abandon` terminal action discards **all** field state, so field/toggle combinations are irrelevant to it. Emit **exactly ONE** Cancel workflow for the module, regardless of how many toggles or revealed-field groups exist. Never produce a Cancel workflow per toggle combination.
+
+**Worked example — Assignment Creation** (toggles: File submissions, Group submissions, Add restriction; buttons: Save and return, Save and display, Cancel):
+- ✅ Correct (~6–8): base Save-and-return, base Save-and-display, one Save covering File-submission revealed fields, one Save covering Group-submission revealed fields, one Save covering an added restriction, one Cancel.
+- ❌ Wrong (24): every `{File}×{Group}×{Restriction}×{Save/Display/Cancel}` combination.
+
+---
+
+## Field Definitions
+
+| Field | Type | Rule |
+|---|---|---|
+| `wf_id` | `"WF-NNN"` | Sequential within this module, starting at WF-001 |
+| `name` | string | Short human name for the path — what makes it distinct |
+| `actor` | string | Role who performs this path — use `<role>` placeholder if spec doesn't specify |
+| `conditional_branch` | string or `null` | The condition(s) that activate this path's unique branch. `null` if no conditionals apply |
+| `terminal_action` | string | Exact name of the button/action that ends this workflow (matches AST `action_name` or `element_name`) |
+| `on_success` | string | Verbatim from AST `on_success` field if available; otherwise derived from description |
+
+**`conditional_branch` format:**
+- Single condition: `"Submission_Type == File_Upload"`
+- Multiple: `"Submission_Type == File_Upload AND Grade_Type == Points"`
+- State condition: `"entity_state == Draft"`
+- `null` if this is the base path with no conditionals
+
+---
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SELF-CHECK — VERIFY EVERY ITEM BEFORE OUTPUTTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Go through these one by one. If any check fails, fix it before outputting.
+
+□ 1. Every `submit_actions[]` entry in every form/wizard has at least one workflow.
+□ 2. Every state × action pair in every `state_bound_action_bar` has exactly one workflow.
+□ 3. Every `row_actions[]` and `bulk_actions[]` entry in every `data_table` has one workflow.
+□ 4. Every tab with a form submission in a `tab_container` has one workflow.
+□ 5. `wf_id` numbering is sequential (WF-001, WF-002, ...) with no gaps.
+□ 6. Every `terminal_action` matches an exact `action_name` or `element_name` from the AST.
+□ 7. No two workflows reach the **same `on_success` via the same code path** — even if their `conditional_branch` strings differ. If they do, merge them (keep the one that activates a distinct revealed required-field group; drop pure toggle-combination duplicates).
+□ 8. There is **at most ONE** `Cancel`/`discard` workflow for the whole module.
+□ 9. No independent toggles are multiplied together — the workflow count is roughly (base submits) + (revealed required-field groups) + 1 Cancel, NOT the product of all toggles × all buttons.
+□ 10. No workflow crosses module boundaries (steps in another module).
+□ 11. Every `on_success` reflects the AST or description — no generic "success" strings.
+
+---
+
+## Anti-Hallucination Gate (run after self-check)
+
+1. Does each workflow trace back to a specific AST node (`submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`) or an explicit action described in the description text? If no → delete it.
+2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
+3. Do two workflows reach the same `on_success` via the same code path (e.g. differing only by an independent toggle that does not change the outcome, or being repeated Cancel variants)? If yes → merge them into one. Keep a separate workflow only when its branch reveals a **distinct required-field group** that needs its own coverage.
+4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
+5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
+
+---
+
+## Calibration
+
+- Simple form module (no conditionals, one submit): 1–3 workflows
+- Form with conditionals/toggles: **(base submit outcomes) + (one per revealed required-field group) + 1 Cancel** — typically 4–8, NOT the product of all toggles × all buttons. A multi-toggle form like Assignment Creation should land near 6–8, never 20+.
+- Module with state machine: add 1 per (state × action) combination
+- Module with data table: add 1 per row_action + 1 per bulk_action
+
+---
+
+## OUTPUT — JSON only, no prose, no markdown fencing:
+
+{
+  "module": "Module Name",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Short human name — what makes this path distinct",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Submit",
+      "on_success": "Verbatim on_success from AST or derived from description"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Submit with File Upload submission type",
+      "actor": "<role>",
+      "conditional_branch": "Submission_Type == File_Upload",
+      "terminal_action": "Submit",
+      "on_success": "Assignment created; success message shown"
+    }
+  ],
+  "total": 2
+}
+
+
+------------------------------------------------------------
+[23:04:00] Workflow-Extractor - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 29,
+  "module_title": "Organization Settings",
+  "summary": "A centralized administration module for configuring organization-wide settings such as holidays, working days, currencies, funds, payment types, and bulk data import.",
+  "where_it_fits": "Located under the top navigation Admin menu as the Organization section (visible via Admin > Organization Settings and reflected in breadcrumbs in the content area); it is part of the application's administrative configuration workflow used during initial setup and ongoing institutional maintenance.",
+  "assumed_state_on_entry": "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+}
+</module_context>
+
+<module_name>Organization Settings</module_name>
+
+<ast>
+{
+  "module_id": 29,
+  "module_name": "Organization Settings",
+  "components": {
+    "Holidays_Table": {
+      "type": "data_table",
+      "top_actions": [
+        {
+          "action_name": "+ Create Holiday",
+          "opens": "Create_Holiday_Form",
+          "preconditions": [
+            "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+          ]
+        }
+      ],
+      "row_actions": [],
+      "bulk_actions": []
+    },
+    "Create_Holiday_Form": {
+      "type": "form",
+      "fields": {
+        "Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "From_Date": {
+          "type": "date",
+          "required": true
+        },
+        "To_Date": {
+          "type": "date",
+          "required": true
+        },
+        "Repayments_Rescheduled_To": {
+          "type": "date"
+        },
+        "Rescheduling_Type": {
+          "type": "dropdown"
+        },
+        "Description": {
+          "type": "unspecified"
+        },
+        "Offices": {
+          "type": "dropdown",
+          "multi_select": true
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Save",
+          "on_success": "creates holiday record"
+        }
+      ],
+      "preconditions": [
+        "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+      ]
+    },
+    "Working_Days": {
+      "type": "form",
+      "fields": {
+        "Monday": {
+          "type": "checkbox"
+        },
+        "Tuesday": {
+          "type": "checkbox"
+        },
+        "Wednesday": {
+          "type": "checkbox"
+        },
+        "Thursday": {
+          "type": "checkbox"
+        },
+        "Friday": {
+          "type": "checkbox"
+        },
+        "Saturday": {
+          "type": "checkbox"
+        },
+        "Sunday": {
+          "type": "checkbox"
+        },
+        "Repayment_Rescheduling": {
+          "type": "dropdown"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Save",
+          "on_success": "updates working days and rescheduling preference"
+        }
+      ],
+      "preconditions": [
+        "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+      ]
+    },
+    "Currencies_Selection": {
+      "type": "form",
+      "fields": {
+        "Active_Currencies": {
+          "type": "dropdown",
+          "multi_select": true
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Save",
+          "on_success": "updates active currencies"
+        }
+      ],
+      "preconditions": [
+        "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+      ]
+    },
+    "Funds_Table": {
+      "type": "data_table",
+      "top_actions": [
+        {
+          "action_name": "Create Fund",
+          "opens": "Create_Fund_Form",
+          "preconditions": [
+            "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+          ]
+        }
+      ],
+      "row_actions": [],
+      "bulk_actions": []
+    },
+    "Create_Fund_Form": {
+      "type": "form",
+      "fields": {
+        "Fund_Name": {
+          "type": "unspecified"
+        },
+        "External_ID": {
+          "type": "unspecified"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Save",
+          "on_success": "creates fund record"
+        }
+      ],
+      "preconditions": [
+        "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+      ]
+    },
+    "Payment_Types_Table": {
+      "type": "data_table",
+      "top_actions": [
+        {
+          "action_name": "+ Create",
+          "opens": "Create_Payment_Type_Form",
+          "preconditions": [
+            "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+          ]
+        }
+      ],
+      "row_actions": [],
+      "bulk_actions": []
+    },
+    "Create_Payment_Type_Form": {
+      "type": "form",
+      "fields": {
+        "Name": {
+          "type": "unspecified"
+        },
+        "Description": {
+          "type": "unspecified"
+        },
+        "Is_Cash_Payment": {
+          "type": "checkbox"
+        },
+        "Position": {
+          "type": "unspecified"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Save",
+          "on_success": "adds new payment type to payment method dropdowns in transaction forms"
+        }
+      ],
+      "preconditions": [
+        "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+      ]
+    },
+    "Bulk_Import": {
+      "type": "form",
+      "fields": {
+        "Clients": {
+          "type": "group",
+          "fields": {
+            "Download_Template": {
+              "type": "button",
+              "action_name": "Download template",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            },
+            "Upload_File": {
+              "type": "file_upload",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            }
+          }
+        },
+        "Groups": {
+          "type": "group",
+          "fields": {
+            "Download_Template": {
+              "type": "button",
+              "action_name": "Download template",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            },
+            "Upload_File": {
+              "type": "file_upload",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            }
+          }
+        },
+        "Centers": {
+          "type": "group",
+          "fields": {
+            "Download_Template": {
+              "type": "button",
+              "action_name": "Download template",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            },
+            "Upload_File": {
+              "type": "file_upload",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            }
+          }
+        },
+        "Offices": {
+          "type": "group",
+          "fields": {
+            "Download_Template": {
+              "type": "button",
+              "action_name": "Download template",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            },
+            "Upload_File": {
+              "type": "file_upload",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            }
+          }
+        },
+        "Staff": {
+          "type": "group",
+          "fields": {
+            "Download_Template": {
+              "type": "button",
+              "action_name": "Download template",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            },
+            "Upload_File": {
+              "type": "file_upload",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            }
+          }
+        },
+        "Users": {
+          "type": "group",
+          "fields": {
+            "Download_Template": {
+              "type": "button",
+              "action_name": "Download template",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            },
+            "Upload_File": {
+              "type": "file_upload",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            }
+          }
+        },
+        "Loans": {
+          "type": "group",
+          "fields": {
+            "Download_Template": {
+              "type": "button",
+              "action_name": "Download template",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            },
+            "Upload_File": {
+              "type": "file_upload",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            }
+          }
+        },
+        "Savings": {
+          "type": "group",
+          "fields": {
+            "Download_Template": {
+              "type": "button",
+              "action_name": "Download template",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            },
+            "Upload_File": {
+              "type": "file_upload",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            }
+          }
+        }
+      },
+      "entities_note": "partial \u2014 other importable entity types exist but are not specified in the description",
+      "preconditions": [
+        "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Organization section under the Admin menu provides access to several configuration pages. The Holidays page displays a table with columns for Name, Start Date, To Date, Status (Active, Pending), and Rescheduling Type. A "+ Create Holiday" button opens the form with Name (required), From Date (required), To Date (required), Repayments Rescheduled To date, Rescheduling Type dropdown, Description, and applicable Offices (multi-select). Holidays affect loan repayment schedules — installments falling on holidays are automatically rescheduled per the configured type.
+
+The Working Days page allows configuring which days of the week are working days using checkboxes for Monday through Sunday, and a Repayment Rescheduling dropdown for handling repayments that fall on non-working days. The Currencies page allows selecting active currencies from a list, each showing Code, Name, and Decimal Places. The Funds page manages funding sources for loans with Fund Name and External ID columns and a Create Fund form. The Payment Types page lists all configured payment methods (Cash, Bank Transfer, Mobile Money, Check, Receipt) with columns for Name, Description, Is Cash Payment, and Position; a "+ Create" button adds new payment types that appear as dropdown options in all transaction forms. The Bulk Import page allows importing data for multiple entity types — Clients, Groups, Centers, Offices, Staff, Users, Loans, Savings, and more — each with a Download template button and an Upload interface.
+
+---
+
+
+</description>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:05:43] Workflow-Extractor - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Organization Settings",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Create Holiday (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "creates holiday record"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Update Working Days (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "updates working days and rescheduling preference"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Update Active Currencies (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "updates active currencies"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Create Fund (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "creates fund record"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Create Payment Type (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "adds new payment type to payment method dropdowns in transaction forms"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Download Clients import template",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Clients",
+      "terminal_action": "Download template",
+      "on_success": "downloads Clients template file"
+    },
+    {
+      "wf_id": "WF-007",
+      "name": "Upload Clients import file",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Clients",
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Clients file and initiates import"
+    },
+    {
+      "wf_id": "WF-008",
+      "name": "Download Groups import template",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Groups",
+      "terminal_action": "Download template",
+      "on_success": "downloads Groups template file"
+    },
+    {
+      "wf_id": "WF-009",
+      "name": "Upload Groups import file",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Groups",
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Groups file and initiates import"
+    },
+    {
+      "wf_id": "WF-010",
+      "name": "Download Centers import template",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Centers",
+      "terminal_action": "Download template",
+      "on_success": "downloads Centers template file"
+    },
+    {
+      "wf_id": "WF-011",
+      "name": "Upload Centers import file",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Centers",
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Centers file and initiates import"
+    },
+    {
+      "wf_id": "WF-012",
+      "name": "Download Offices import template",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Offices",
+      "terminal_action": "Download template",
+      "on_success": "downloads Offices template file"
+    },
+    {
+      "wf_id": "WF-013",
+      "name": "Upload Offices import file",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Offices",
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Offices file and initiates import"
+    },
+    {
+      "wf_id": "WF-014",
+      "name": "Download Staff import template",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Staff",
+      "terminal_action": "Download template",
+      "on_success": "downloads Staff template file"
+    },
+    {
+      "wf_id": "WF-015",
+      "name": "Upload Staff import file",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Staff",
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Staff file and initiates import"
+    },
+    {
+      "wf_id": "WF-016",
+      "name": "Download Users import template",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Users",
+      "terminal_action": "Download template",
+      "on_success": "downloads Users template file"
+    },
+    {
+      "wf_id": "WF-017",
+      "name": "Upload Users import file",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Users",
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Users file and initiates import"
+    },
+    {
+      "wf_id": "WF-018",
+      "name": "Download Loans import template",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Loans",
+      "terminal_action": "Download template",
+      "on_success": "downloads Loans template file"
+    },
+    {
+      "wf_id": "WF-019",
+      "name": "Upload Loans import file",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Loans",
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Loans file and initiates import"
+    },
+    {
+      "wf_id": "WF-020",
+      "name": "Download Savings import template",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Savings",
+      "terminal_action": "Download template",
+      "on_success": "downloads Savings template file"
+    },
+    {
+      "wf_id": "WF-021",
+      "name": "Upload Savings import file",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Savings",
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Savings file and initiates import"
+    }
+  ],
+  "total": 21
+}
+
+------------------------------------------------------------
+[23:05:43] Workflow-Extractor - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Organization Settings",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Create Holiday (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "creates holiday record"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Update Working Days (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "updates working days and rescheduling preference"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Update Active Currencies (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "updates active currencies"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Create Fund (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "creates fund record"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Create Payment Type (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "adds new payment type to payment method dropdowns in transaction forms"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Download Clients import template",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Clients",
+      "terminal_action": "Download template",
+      "on_success": "downloads Clients template file"
+    },
+    {
+      "wf_id": "WF-007",
+      "name": "Upload Clients import file",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Clients",
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Clients file and initiates import"
+    },
+    {
+      "wf_id": "WF-008",
+      "name": "Download Groups import template",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Groups",
+      "terminal_action": "Download template",
+      "on_success": "downloads Groups template file"
+    },
+    {
+      "wf_id": "WF-009",
+      "name": "Upload Groups import file",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Groups",
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Groups file and initiates import"
+    },
+    {
+      "wf_id": "WF-010",
+      "name": "Download Centers import template",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Centers",
+      "terminal_action": "Download template",
+      "on_success": "downloads Centers template file"
+    },
+    {
+      "wf_id": "WF-011",
+      "name": "Upload Centers import file",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Centers",
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Centers file and initiates import"
+    },
+    {
+      "wf_id": "WF-012",
+      "name": "Download Offices import template",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Offices",
+      "terminal_action": "Download template",
+      "on_success": "downloads Offices template file"
+    },
+    {
+      "wf_id": "WF-013",
+      "name": "Upload Offices import file",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Offices",
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Offices file and initiates import"
+    },
+    {
+      "wf_id": "WF-014",
+      "name": "Download Staff import template",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Staff",
+      "terminal_action": "Download template",
+      "on_success": "downloads Staff template file"
+    },
+    {
+      "wf_id": "WF-015",
+      "name": "Upload Staff import file",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Staff",
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Staff file and initiates import"
+    },
+    {
+      "wf_id": "WF-016",
+      "name": "Download Users import template",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Users",
+      "terminal_action": "Download template",
+      "on_success": "downloads Users template file"
+    },
+    {
+      "wf_id": "WF-017",
+      "name": "Upload Users import file",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Users",
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Users file and initiates import"
+    },
+    {
+      "wf_id": "WF-018",
+      "name": "Download Loans import template",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Loans",
+      "terminal_action": "Download template",
+      "on_success": "downloads Loans template file"
+    },
+    {
+      "wf_id": "WF-019",
+      "name": "Upload Loans import file",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Loans",
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Loans file and initiates import"
+    },
+    {
+      "wf_id": "WF-020",
+      "name": "Download Savings import template",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Savings",
+      "terminal_action": "Download template",
+      "on_success": "downloads Savings template file"
+    },
+    {
+      "wf_id": "WF-021",
+      "name": "Upload Savings import file",
+      "actor": "Administrator",
+      "conditional_branch": "Entity == Savings",
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Savings file and initiates import"
+    }
+  ],
+  "total": 21
+}
+
+------------------------------------------------------------
+[23:06:54] Workflow-Extractor - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 29,
+  "module_title": "Organization Settings",
+  "summary": "A centralized administration module for configuring organization-wide settings such as holidays, working days, currencies, funds, payment types, and bulk data import.",
+  "where_it_fits": "Located under the top navigation Admin menu as the Organization section (visible via Admin > Organization Settings and reflected in breadcrumbs in the content area); it is part of the application's administrative configuration workflow used during initial setup and ongoing institutional maintenance.",
+  "assumed_state_on_entry": "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+}
+</module_context>
+
+<module_name>Organization Settings</module_name>
+
+<ast>
+{
+  "module_id": 29,
+  "module_name": "Organization Settings",
+  "components": {
+    "Holidays_Table": {
+      "type": "data_table",
+      "top_actions": [
+        {
+          "action_name": "+ Create Holiday",
+          "opens": "Create_Holiday_Form",
+          "preconditions": [
+            "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+          ]
+        }
+      ],
+      "row_actions": [],
+      "bulk_actions": []
+    },
+    "Create_Holiday_Form": {
+      "type": "form",
+      "fields": {
+        "Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "From_Date": {
+          "type": "date",
+          "required": true
+        },
+        "To_Date": {
+          "type": "date",
+          "required": true
+        },
+        "Repayments_Rescheduled_To": {
+          "type": "date"
+        },
+        "Rescheduling_Type": {
+          "type": "dropdown"
+        },
+        "Description": {
+          "type": "unspecified"
+        },
+        "Offices": {
+          "type": "dropdown",
+          "multi_select": true
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Save",
+          "on_success": "creates holiday record"
+        }
+      ],
+      "preconditions": [
+        "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+      ]
+    },
+    "Working_Days": {
+      "type": "form",
+      "fields": {
+        "Monday": {
+          "type": "checkbox"
+        },
+        "Tuesday": {
+          "type": "checkbox"
+        },
+        "Wednesday": {
+          "type": "checkbox"
+        },
+        "Thursday": {
+          "type": "checkbox"
+        },
+        "Friday": {
+          "type": "checkbox"
+        },
+        "Saturday": {
+          "type": "checkbox"
+        },
+        "Sunday": {
+          "type": "checkbox"
+        },
+        "Repayment_Rescheduling": {
+          "type": "dropdown"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Save",
+          "on_success": "updates working days and rescheduling preference"
+        }
+      ],
+      "preconditions": [
+        "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+      ]
+    },
+    "Currencies_Selection": {
+      "type": "form",
+      "fields": {
+        "Active_Currencies": {
+          "type": "dropdown",
+          "multi_select": true
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Save",
+          "on_success": "updates active currencies"
+        }
+      ],
+      "preconditions": [
+        "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+      ]
+    },
+    "Funds_Table": {
+      "type": "data_table",
+      "top_actions": [
+        {
+          "action_name": "Create Fund",
+          "opens": "Create_Fund_Form",
+          "preconditions": [
+            "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+          ]
+        }
+      ],
+      "row_actions": [],
+      "bulk_actions": []
+    },
+    "Create_Fund_Form": {
+      "type": "form",
+      "fields": {
+        "Fund_Name": {
+          "type": "unspecified"
+        },
+        "External_ID": {
+          "type": "unspecified"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Save",
+          "on_success": "creates fund record"
+        }
+      ],
+      "preconditions": [
+        "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+      ]
+    },
+    "Payment_Types_Table": {
+      "type": "data_table",
+      "top_actions": [
+        {
+          "action_name": "+ Create",
+          "opens": "Create_Payment_Type_Form",
+          "preconditions": [
+            "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+          ]
+        }
+      ],
+      "row_actions": [],
+      "bulk_actions": []
+    },
+    "Create_Payment_Type_Form": {
+      "type": "form",
+      "fields": {
+        "Name": {
+          "type": "unspecified"
+        },
+        "Description": {
+          "type": "unspecified"
+        },
+        "Is_Cash_Payment": {
+          "type": "checkbox"
+        },
+        "Position": {
+          "type": "unspecified"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Save",
+          "on_success": "adds new payment type to payment method dropdowns in transaction forms"
+        }
+      ],
+      "preconditions": [
+        "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+      ]
+    },
+    "Bulk_Import": {
+      "type": "form",
+      "fields": {
+        "Clients": {
+          "type": "group",
+          "fields": {
+            "Download_Template": {
+              "type": "button",
+              "action_name": "Download template",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            },
+            "Upload_File": {
+              "type": "file_upload",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            }
+          }
+        },
+        "Groups": {
+          "type": "group",
+          "fields": {
+            "Download_Template": {
+              "type": "button",
+              "action_name": "Download template",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            },
+            "Upload_File": {
+              "type": "file_upload",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            }
+          }
+        },
+        "Centers": {
+          "type": "group",
+          "fields": {
+            "Download_Template": {
+              "type": "button",
+              "action_name": "Download template",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            },
+            "Upload_File": {
+              "type": "file_upload",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            }
+          }
+        },
+        "Offices": {
+          "type": "group",
+          "fields": {
+            "Download_Template": {
+              "type": "button",
+              "action_name": "Download template",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            },
+            "Upload_File": {
+              "type": "file_upload",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            }
+          }
+        },
+        "Staff": {
+          "type": "group",
+          "fields": {
+            "Download_Template": {
+              "type": "button",
+              "action_name": "Download template",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            },
+            "Upload_File": {
+              "type": "file_upload",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            }
+          }
+        },
+        "Users": {
+          "type": "group",
+          "fields": {
+            "Download_Template": {
+              "type": "button",
+              "action_name": "Download template",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            },
+            "Upload_File": {
+              "type": "file_upload",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            }
+          }
+        },
+        "Loans": {
+          "type": "group",
+          "fields": {
+            "Download_Template": {
+              "type": "button",
+              "action_name": "Download template",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            },
+            "Upload_File": {
+              "type": "file_upload",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            }
+          }
+        },
+        "Savings": {
+          "type": "group",
+          "fields": {
+            "Download_Template": {
+              "type": "button",
+              "action_name": "Download template",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            },
+            "Upload_File": {
+              "type": "file_upload",
+              "preconditions": [
+                "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+              ]
+            }
+          }
+        }
+      },
+      "entities_note": "partial \u2014 other importable entity types exist but are not specified in the description",
+      "preconditions": [
+        "Authenticated user with administrative privileges (access to the Admin menu) and an existing organization context configured in the application."
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Organization section under the Admin menu provides access to several configuration pages. The Holidays page displays a table with columns for Name, Start Date, To Date, Status (Active, Pending), and Rescheduling Type. A "+ Create Holiday" button opens the form with Name (required), From Date (required), To Date (required), Repayments Rescheduled To date, Rescheduling Type dropdown, Description, and applicable Offices (multi-select). Holidays affect loan repayment schedules — installments falling on holidays are automatically rescheduled per the configured type.
+
+The Working Days page allows configuring which days of the week are working days using checkboxes for Monday through Sunday, and a Repayment Rescheduling dropdown for handling repayments that fall on non-working days. The Currencies page allows selecting active currencies from a list, each showing Code, Name, and Decimal Places. The Funds page manages funding sources for loans with Fund Name and External ID columns and a Create Fund form. The Payment Types page lists all configured payment methods (Cash, Bank Transfer, Mobile Money, Check, Receipt) with columns for Name, Description, Is Cash Payment, and Position; a "+ Create" button adds new payment types that appear as dropdown options in all transaction forms. The Bulk Import page allows importing data for multiple entity types — Clients, Groups, Centers, Offices, Staff, Users, Loans, Savings, and more — each with a Download template button and an Upload interface.
+
+---
+
+
+</description>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:07:36] Workflow-Extractor - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Organization Settings",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Create Holiday (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "creates holiday record"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Configure Working Days (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "updates working days and rescheduling preference"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Update Active Currencies (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "updates active currencies"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Create Fund (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "creates fund record"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Create Payment Type (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "adds new payment type to payment method dropdowns in transaction forms"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Bulk Import - Download template for Clients",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Download template",
+      "on_success": "downloads template for Clients"
+    },
+    {
+      "wf_id": "WF-007",
+      "name": "Bulk Import - Upload_File for Clients",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Clients file and starts import"
+    },
+    {
+      "wf_id": "WF-008",
+      "name": "Bulk Import - Download template for Groups",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Download template",
+      "on_success": "downloads template for Groups"
+    },
+    {
+      "wf_id": "WF-009",
+      "name": "Bulk Import - Upload_File for Groups",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Groups file and starts import"
+    },
+    {
+      "wf_id": "WF-010",
+      "name": "Bulk Import - Download template for Centers",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Download template",
+      "on_success": "downloads template for Centers"
+    },
+    {
+      "wf_id": "WF-011",
+      "name": "Bulk Import - Upload_File for Centers",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Centers file and starts import"
+    },
+    {
+      "wf_id": "WF-012",
+      "name": "Bulk Import - Download template for Offices",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Download template",
+      "on_success": "downloads template for Offices"
+    },
+    {
+      "wf_id": "WF-013",
+      "name": "Bulk Import - Upload_File for Offices",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Offices file and starts import"
+    },
+    {
+      "wf_id": "WF-014",
+      "name": "Bulk Import - Download template for Staff",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Download template",
+      "on_success": "downloads template for Staff"
+    },
+    {
+      "wf_id": "WF-015",
+      "name": "Bulk Import - Upload_File for Staff",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Staff file and starts import"
+    },
+    {
+      "wf_id": "WF-016",
+      "name": "Bulk Import - Download template for Users",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Download template",
+      "on_success": "downloads template for Users"
+    },
+    {
+      "wf_id": "WF-017",
+      "name": "Bulk Import - Upload_File for Users",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Users file and starts import"
+    },
+    {
+      "wf_id": "WF-018",
+      "name": "Bulk Import - Download template for Loans",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Download template",
+      "on_success": "downloads template for Loans"
+    },
+    {
+      "wf_id": "WF-019",
+      "name": "Bulk Import - Upload_File for Loans",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Loans file and starts import"
+    },
+    {
+      "wf_id": "WF-020",
+      "name": "Bulk Import - Download template for Savings",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Download template",
+      "on_success": "downloads template for Savings"
+    },
+    {
+      "wf_id": "WF-021",
+      "name": "Bulk Import - Upload_File for Savings",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Savings file and starts import"
+    }
+  ],
+  "total": 21
+}
+
+------------------------------------------------------------
+[23:07:36] Workflow-Extractor - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Organization Settings",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Create Holiday (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "creates holiday record"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Configure Working Days (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "updates working days and rescheduling preference"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Update Active Currencies (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "updates active currencies"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Create Fund (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "creates fund record"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Create Payment Type (Save)",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "adds new payment type to payment method dropdowns in transaction forms"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Bulk Import - Download template for Clients",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Download template",
+      "on_success": "downloads template for Clients"
+    },
+    {
+      "wf_id": "WF-007",
+      "name": "Bulk Import - Upload_File for Clients",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Clients file and starts import"
+    },
+    {
+      "wf_id": "WF-008",
+      "name": "Bulk Import - Download template for Groups",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Download template",
+      "on_success": "downloads template for Groups"
+    },
+    {
+      "wf_id": "WF-009",
+      "name": "Bulk Import - Upload_File for Groups",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Groups file and starts import"
+    },
+    {
+      "wf_id": "WF-010",
+      "name": "Bulk Import - Download template for Centers",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Download template",
+      "on_success": "downloads template for Centers"
+    },
+    {
+      "wf_id": "WF-011",
+      "name": "Bulk Import - Upload_File for Centers",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Centers file and starts import"
+    },
+    {
+      "wf_id": "WF-012",
+      "name": "Bulk Import - Download template for Offices",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Download template",
+      "on_success": "downloads template for Offices"
+    },
+    {
+      "wf_id": "WF-013",
+      "name": "Bulk Import - Upload_File for Offices",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Offices file and starts import"
+    },
+    {
+      "wf_id": "WF-014",
+      "name": "Bulk Import - Download template for Staff",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Download template",
+      "on_success": "downloads template for Staff"
+    },
+    {
+      "wf_id": "WF-015",
+      "name": "Bulk Import - Upload_File for Staff",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Staff file and starts import"
+    },
+    {
+      "wf_id": "WF-016",
+      "name": "Bulk Import - Download template for Users",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Download template",
+      "on_success": "downloads template for Users"
+    },
+    {
+      "wf_id": "WF-017",
+      "name": "Bulk Import - Upload_File for Users",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Users file and starts import"
+    },
+    {
+      "wf_id": "WF-018",
+      "name": "Bulk Import - Download template for Loans",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Download template",
+      "on_success": "downloads template for Loans"
+    },
+    {
+      "wf_id": "WF-019",
+      "name": "Bulk Import - Upload_File for Loans",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Loans file and starts import"
+    },
+    {
+      "wf_id": "WF-020",
+      "name": "Bulk Import - Download template for Savings",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Download template",
+      "on_success": "downloads template for Savings"
+    },
+    {
+      "wf_id": "WF-021",
+      "name": "Bulk Import - Upload_File for Savings",
+      "actor": "Administrator",
+      "conditional_branch": null,
+      "terminal_action": "Upload_File",
+      "on_success": "uploads Savings file and starts import"
+    }
+  ],
+  "total": 21
+}

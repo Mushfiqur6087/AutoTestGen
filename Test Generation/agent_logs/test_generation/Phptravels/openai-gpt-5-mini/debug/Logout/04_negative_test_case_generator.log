@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:14.039356
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.388037
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:14] Test-Negative - SYSTEM PROMPT
+[22:33:07] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:14] Test-Negative - USER PROMPT
+[22:33:07] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 21,
   "module_title": "Logout",
-  "summary": "Ends the authenticated session by clearing sensitive session data and returning the user to the public home page.",
-  "where_it_fits": "Located under the Account/Login area of the main navigation and accessible from the user dashboard; it is used at the end of a user's authenticated session to ensure protected areas require re-authentication. After logout, attempts to access protected pages are routed to the login page.",
-  "assumed_state_on_entry": "User is authenticated with an active session (logged in) and may be on the dashboard or any protected page."
+  "summary": "Ends the current authenticated user session, clears sensitive session data, and returns the user to the home page.",
+  "where_it_fits": "Available from the top navigation Account/Login area and within the User Dashboard, this module is part of the account management lifecycle used when an authenticated user signs out; after logout, attempts to access protected pages route to the Login page.",
+  "assumed_state_on_entry": "An active authenticated user session exists (user is logged in)."
 }
 </module_context>
 
@@ -264,9 +274,9 @@ If a `<workflows>` block is present in the input:
       "type": "button",
       "action_name": "Logout",
       "preconditions": [
-        "User is authenticated with an active session (logged in) and may be on the dashboard or any protected page."
+        "An active authenticated user session exists (user is logged in)."
       ],
-      "on_success": "Terminate current session, clear sensitive session data, redirect the user to the Home page; subsequent attempts to access protected pages redirect to the Login page."
+      "on_success": "Terminates the current session, clears sensitive session data, and redirects the user to the Home page. Subsequent attempts to access protected pages redirect to the Login page."
     }
   }
 }
@@ -279,13 +289,13 @@ Clicking Logout terminates the current session, clears sensitive session data, a
 </description>
 
 <workflows>
-WF-001 | Click Logout button to end session | actor: Authenticated User | branch: none | terminal: Logout | on_success: Terminate current session, clear sensitive session data, redirect the user to the Home page; subsequent attempts to access protected pages redirect to the Login page.
+WF-001 | Click Logout button | actor: Authenticated user | branch: none | terminal: Logout | on_success: Terminates the current session, clears sensitive session data, and redirects the user to the Home page. Subsequent attempts to access protected pages redirect to the Login page.
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:28:45] Test-Negative - LLM RESPONSE
+[22:37:21] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Logout",
@@ -294,58 +304,44 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Unauthenticated user cannot see or use the Logout control (precondition not met)",
+      "test_case": "Attempt Logout when no active authenticated session exists",
       "preconditions": [
-        "User is not authenticated (no active session)"
+        "No active authenticated user session (user is not logged in)"
       ],
       "steps": [
-        "1. Ensure the user is not authenticated (clear cookies / open a new browser session with no login).",
-        "2. Navigate to the site and open the main navigation Account/Login area where Logout would normally appear."
+        "1. Open the application in a new browser session where the user is not logged in",
+        "2. Observe the top navigation Account/Login area for a Logout control",
+        "3. Directly navigate the browser to the Logout endpoint (<Logout endpoint>) and press Enter"
       ],
-      "expected_result": "The Account/Login area does not display a 'Logout' control; the 'Login' / 'Sign in' control is visible instead. The user cannot initiate a logout because there is no active session (no session termination occurs).",
+      "expected_result": "Top navigation Account/Login area does not display a Logout button; navigating to the Logout endpoint redirects the browser to the Login page; no authenticated session is created.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Direct access to the logout endpoint while unauthenticated is blocked and redirects to Login",
+      "test_case": "After logging out, accessing a protected page must be blocked",
       "preconditions": [
-        "User is not authenticated (no active session)"
+        "An active authenticated user session exists (user is logged in)"
       ],
       "steps": [
-        "1. Ensure the user is not authenticated (no active session).",
-        "2. In the browser address bar, navigate directly to the logout endpoint URL: <logout URL>."
+        "1. Ensure the user is authenticated (active session exists)",
+        "2. Click the Logout button in the Account area",
+        "3. After the application redirects to the Home page, enter the URL of a protected page (<protected page URL>) and press Enter"
       ],
-      "expected_result": "Browser is redirected to the Login page (URL becomes '<login URL>'); the Login form is displayed. The logout action does not proceed because there was no active session (no session clearing occurs).",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-003",
-      "wf_ref": "WF-001",
-      "test_case": "After performing Logout, attempts to access a protected page are blocked (postcondition enforced)",
-      "preconditions": [
-        "User is authenticated with an active session"
-      ],
-      "steps": [
-        "1. Authenticate as a user to create an active session (log in).",
-        "2. Click the Logout button.",
-        "3. Wait for redirect to the Home page to complete.",
-        "4. In the browser address bar, navigate to a protected page URL: <protected page URL>."
-      ],
-      "expected_result": "Navigation to the protected page is blocked: browser is redirected to the Login page (URL becomes '<login URL>'); the protected content is not displayed and the Login form is visible. The user's session remains terminated (no access to protected areas).",
+      "expected_result": "Browser redirects to the Login page when attempting to access the protected page; the protected page content is not displayed and the user remains unauthenticated.",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 3,
-    "high_priority": 3,
+    "total": 2,
+    "high_priority": 2,
     "medium_priority": 0,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:28:45] Test-Negative - PARSED JSON
+[22:37:21] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Logout",
@@ -354,51 +350,37 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Unauthenticated user cannot see or use the Logout control (precondition not met)",
+      "test_case": "Attempt Logout when no active authenticated session exists",
       "preconditions": [
-        "User is not authenticated (no active session)"
+        "No active authenticated user session (user is not logged in)"
       ],
       "steps": [
-        "1. Ensure the user is not authenticated (clear cookies / open a new browser session with no login).",
-        "2. Navigate to the site and open the main navigation Account/Login area where Logout would normally appear."
+        "1. Open the application in a new browser session where the user is not logged in",
+        "2. Observe the top navigation Account/Login area for a Logout control",
+        "3. Directly navigate the browser to the Logout endpoint (<Logout endpoint>) and press Enter"
       ],
-      "expected_result": "The Account/Login area does not display a 'Logout' control; the 'Login' / 'Sign in' control is visible instead. The user cannot initiate a logout because there is no active session (no session termination occurs).",
+      "expected_result": "Top navigation Account/Login area does not display a Logout button; navigating to the Logout endpoint redirects the browser to the Login page; no authenticated session is created.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Direct access to the logout endpoint while unauthenticated is blocked and redirects to Login",
+      "test_case": "After logging out, accessing a protected page must be blocked",
       "preconditions": [
-        "User is not authenticated (no active session)"
+        "An active authenticated user session exists (user is logged in)"
       ],
       "steps": [
-        "1. Ensure the user is not authenticated (no active session).",
-        "2. In the browser address bar, navigate directly to the logout endpoint URL: <logout URL>."
+        "1. Ensure the user is authenticated (active session exists)",
+        "2. Click the Logout button in the Account area",
+        "3. After the application redirects to the Home page, enter the URL of a protected page (<protected page URL>) and press Enter"
       ],
-      "expected_result": "Browser is redirected to the Login page (URL becomes '<login URL>'); the Login form is displayed. The logout action does not proceed because there was no active session (no session clearing occurs).",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-003",
-      "wf_ref": "WF-001",
-      "test_case": "After performing Logout, attempts to access a protected page are blocked (postcondition enforced)",
-      "preconditions": [
-        "User is authenticated with an active session"
-      ],
-      "steps": [
-        "1. Authenticate as a user to create an active session (log in).",
-        "2. Click the Logout button.",
-        "3. Wait for redirect to the Home page to complete.",
-        "4. In the browser address bar, navigate to a protected page URL: <protected page URL>."
-      ],
-      "expected_result": "Navigation to the protected page is blocked: browser is redirected to the Login page (URL becomes '<login URL>'); the protected content is not displayed and the Login form is visible. The user's session remains terminated (no access to protected areas).",
+      "expected_result": "Browser redirects to the Login page when attempting to access the protected page; the protected page content is not displayed and the user remains unauthenticated.",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 3,
-    "high_priority": 3,
+    "total": 2,
+    "high_priority": 2,
     "medium_priority": 0,
     "low_priority": 0
   }

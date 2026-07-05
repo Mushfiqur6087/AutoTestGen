@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:13.852084
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.061550
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Edge - SYSTEM PROMPT
+[22:33:07] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Edge - USER PROMPT
+[22:33:07] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 8,
   "module_title": "Flight Booking",
-  "summary": "Presents a full flight itinerary and fare breakdown while collecting validated passenger and lead contact details (including passports, DOB, optional meal and seat preferences) prior to payment.",
-  "where_it_fits": "Reached from the top navigation Flights option or from the Flights Search & Listing results, this module is the booking-step that follows flight selection and precedes Payment Processing within the booking flow.",
-  "assumed_state_on_entry": "A specific flight has been selected from Flights Search & Listing and the session contains the chosen itinerary, passenger count, cabin class, and calculated fares; user session is active (logged-in or guest)."
+  "summary": "Displays the selected flight itinerary, passenger and cabin details with a fare breakdown, and collects validated traveler and lead contact information required for completing the booking.",
+  "where_it_fits": "This module is part of the Flights section and is reached after Flights Search & Listing/Flight Booking in the main navigation; it constitutes the final booking information step that precedes Payment Processing in the booking lifecycle.",
+  "assumed_state_on_entry": "A specific flight itinerary and passenger count have been selected (user may be logged in or proceeding as guest) and the booking flow has advanced from Flights Search & Listing."
 }
 </module_context>
 
@@ -245,15 +259,8 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Flight_Booking_Form": {
       "type": "form",
-      "preconditions": [
-        "session must contain selected itinerary, passenger count, cabin class, and calculated fares",
-        "user session must be active (logged-in or guest)"
-      ],
-      "constraints": [
-        "required fields must be completed and pass validation; invalid or incomplete fields display inline errors and block progression"
-      ],
       "fields": {
-        "Passengers": {
+        "Travelers": {
           "type": "repeating_group",
           "item_fields": {
             "Title": {
@@ -276,10 +283,7 @@ If a `<workflows>` block is present in the input:
             },
             "Date_Of_Birth": {
               "type": "date",
-              "required": true,
-              "constraints": [
-                "must be a valid date"
-              ]
+              "required": true
             },
             "Passport_Number": {
               "type": "unspecified",
@@ -287,12 +291,9 @@ If a `<workflows>` block is present in the input:
             },
             "Passport_Expiry": {
               "type": "date",
-              "required": true,
-              "constraints": [
-                "must be a valid date"
-              ]
+              "required": true
             },
-            "Meal_Preference": {
+            "Meal_Preferences": {
               "type": "unspecified"
             },
             "Seat_Selection": {
@@ -303,11 +304,11 @@ If a `<workflows>` block is present in the input:
         "Lead_Contact": {
           "type": "group",
           "fields": {
-            "Lead_Email": {
-              "type": "unspecified",
+            "Email": {
+              "type": "email",
               "required": true
             },
-            "Lead_Phone": {
+            "Phone": {
               "type": "unspecified",
               "required": true
             }
@@ -317,13 +318,14 @@ If a `<workflows>` block is present in the input:
       "submit_actions": [
         {
           "action_name": "Continue",
-          "on_success": "navigates to Payment Processing page",
+          "on_success": "navigates to Payment Processing",
           "preconditions": [
-            "session must contain selected itinerary, passenger count, cabin class, and calculated fares",
-            "user session must be active (logged-in or guest)"
+            "A specific flight itinerary and passenger count have been selected (user may be logged in or proceeding as guest) and the booking flow has advanced from Flights Search & Listing.",
+            "all required fields valid"
           ],
           "constraints": [
-            "blocks progression if any required or invalid fields are present"
+            "blocks progression if required or invalid fields present",
+            "inline validation errors shown for incomplete or invalid fields"
           ]
         }
       ]
@@ -342,13 +344,13 @@ The flight booking page displays a full itinerary summary, passenger count, cabi
 </description>
 
 <workflows>
-WF-001 | Complete passenger and lead contact details then Continue | actor: <role> | branch: none | terminal: Continue | on_success: navigates to Payment Processing page
+WF-001 | Fill required traveler and lead contact details and continue to payment | actor: <traveler> | branch: none | terminal: Continue | on_success: navigates to Payment Processing
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:26:25] Test-Edge - LLM RESPONSE
+[22:34:53] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Flight Booking",
@@ -357,199 +359,107 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "E-001",
       "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Date of Birth = Feb 29 on a leap year (accepted)",
+      "subcategory": "input_edge",
+      "test_case": "Very long first name (200+ chars) is entered for traveler",
       "preconditions": [
-        "Session contains the selected itinerary, passenger count, cabin class, and calculated fares",
-        "Booking form is open with at least one passenger entry visible"
+        "A specific flight itinerary and passenger count have been selected and the booking flow is on the Flight Booking page"
       ],
       "steps": [
-        "1. In the first passenger item, open the Title dropdown",
-        "2. Select Title = <any valid option>",
-        "3. Enter First_Name = <valid short name>",
-        "4. Enter Last_Name = <valid short name>",
-        "5. Enter Date_Of_Birth = <Feb 29 on a leap year (year is a leap year)>",
-        "6. Enter Passport_Number = <valid passport number>",
-        "7. Enter Passport_Expiry = <valid future date>",
-        "8. Enter Lead_Email = <valid email address>",
-        "9. Enter Lead_Phone = <valid phone number>",
-        "10. Click Continue"
+        "1. Select Title = Mr for Traveler 1",
+        "2. Enter <very long string (200+ characters)> in Traveler 1 First_Name",
+        "3. Enter <valid last name> in Traveler 1 Last_Name",
+        "4. Enter <valid date of birth> in Traveler 1 Date_Of_Birth",
+        "5. Enter <valid passport number> in Traveler 1 Passport_Number",
+        "6. Enter <valid passport expiry date> in Traveler 1 Passport_Expiry",
+        "7. Enter <valid email> in Lead_Contact.Email",
+        "8. Enter <valid phone> in Lead_Contact.Phone",
+        "9. Click Continue"
       ],
-      "expected_result": "Form submits successfully and navigates to the Payment Processing page; the passenger's Date_Of_Birth value of Feb 29 (leap year) is saved and displayed on the booking summary (succeeds).",
+      "expected_result": "First_Name displays an inline validation error (visible next to the First_Name field) indicating the value is not accepted and progression to Payment Processing is blocked",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Date of Birth = Feb 29 on a non-leap year (invalid date)",
+      "subcategory": "input_edge",
+      "test_case": "Passport number contains emoji and control characters",
       "preconditions": [
-        "Session contains the selected itinerary, passenger count, cabin class, and calculated fares",
-        "Booking form is open with at least one passenger entry visible"
+        "A specific flight itinerary and passenger count have been selected and the booking flow is on the Flight Booking page"
       ],
       "steps": [
-        "1. In the first passenger item, open the Title dropdown",
-        "2. Select Title = <any valid option>",
-        "3. Enter First_Name = <valid short name>",
-        "4. Enter Last_Name = <valid short name>",
-        "5. Enter Date_Of_Birth = <Feb 29 on a non-leap year>",
-        "6. Enter Passport_Number = <valid passport number>",
-        "7. Enter Passport_Expiry = <valid future date>",
-        "8. Enter Lead_Email = <valid email address>",
-        "9. Enter Lead_Phone = <valid phone number>",
-        "10. Click Continue"
+        "1. Select Title = Ms for Traveler 1",
+        "2. Enter <valid first name> in Traveler 1 First_Name",
+        "3. Enter <valid last name> in Traveler 1 Last_Name",
+        "4. Enter <valid date of birth> in Traveler 1 Date_Of_Birth",
+        "5. Enter <string containing emoji and control characters> in Traveler 1 Passport_Number",
+        "6. Enter <valid passport expiry date> in Traveler 1 Passport_Expiry",
+        "7. Enter <valid email> in Lead_Contact.Email",
+        "8. Enter <valid phone> in Lead_Contact.Phone",
+        "9. Click Continue"
       ],
-      "expected_result": "Date_Of_Birth displays an inline error indicating the date is invalid and progression is blocked; user remains on the booking form (is blocked / error shown).",
+      "expected_result": "Passport_Number displays an inline validation error (visible next to the Passport_Number field) indicating invalid characters and progression to Payment Processing is blocked",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Passport expiry entered as a past date (yesterday) — expired passport",
+      "subcategory": "input_edge",
+      "test_case": "Lead contact email entered with leading and trailing whitespace is trimmed",
       "preconditions": [
-        "Session contains the selected itinerary, passenger count, cabin class, and calculated fares",
-        "Booking form is open with at least one passenger entry visible"
+        "A specific flight itinerary and passenger count have been selected and the booking flow is on the Flight Booking page"
       ],
       "steps": [
-        "1. In the first passenger item, open the Title dropdown",
-        "2. Select Title = <any valid option>",
-        "3. Enter First_Name = <valid short name>",
-        "4. Enter Last_Name = <valid short name>",
-        "5. Enter Date_Of_Birth = <valid DOB>",
-        "6. Enter Passport_Number = <valid passport number>",
-        "7. Enter Passport_Expiry = <yesterday's date>",
-        "8. Enter Lead_Email = <valid email address>",
-        "9. Enter Lead_Phone = <valid phone number>",
-        "10. Click Continue"
+        "1. Select Title = Dr for Traveler 1",
+        "2. Enter <valid first name> in Traveler 1 First_Name",
+        "3. Enter <valid last name> in Traveler 1 Last_Name",
+        "4. Enter <valid date of birth> in Traveler 1 Date_Of_Birth",
+        "5. Enter <valid passport number> in Traveler 1 Passport_Number",
+        "6. Enter <valid passport expiry date> in Traveler 1 Passport_Expiry",
+        "7. Enter <email with leading and trailing spaces> in Lead_Contact.Email",
+        "8. Enter <valid phone> in Lead_Contact.Phone",
+        "9. Click Continue"
       ],
-      "expected_result": "Passport_Expiry displays an inline error indicating the passport expiry is not acceptable (expired) and progression is blocked; the user remains on the booking form (is blocked / error shown).",
+      "expected_result": "Continue succeeds; Payment Processing page is displayed and the Lead Contact Email shown on the next page has no leading or trailing whitespace (the entered whitespace is trimmed in the visible UI)",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": null,
-      "subcategory": "input_edge",
-      "test_case": "Very long First_Name (200+ characters)",
-      "preconditions": [
-        "Booking form is open with at least one passenger entry visible"
-      ],
-      "steps": [
-        "1. In the first passenger item, open the Title dropdown",
-        "2. Select Title = <any valid option>",
-        "3. Enter First_Name = <very long string of 200+ characters>",
-        "4. Enter Last_Name = <valid short name>",
-        "5. Enter Date_Of_Birth = <valid DOB>",
-        "6. Enter Passport_Number = <valid passport number>",
-        "7. Enter Passport_Expiry = <valid future date>",
-        "8. Enter Lead_Email = <valid email address>",
-        "9. Enter Lead_Phone = <valid phone number>",
-        "10. Click Continue"
-      ],
-      "expected_result": "Either: the form submits successfully and the passenger is created with the full long First_Name displayed on the booking summary (succeeds); OR First_Name displays an inline error indicating the value exceeds maximum length and progression is blocked (is blocked / error shown).",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-005",
-      "wf_ref": null,
-      "subcategory": "input_edge",
-      "test_case": "Last_Name contains emoji / non-Latin unicode characters",
-      "preconditions": [
-        "Booking form is open with at least one passenger entry visible"
-      ],
-      "steps": [
-        "1. In the first passenger item, open the Title dropdown",
-        "2. Select Title = <any valid option>",
-        "3. Enter First_Name = <valid short name>",
-        "4. Enter Last_Name = <string containing emoji or non-Latin Unicode>",
-        "5. Enter Date_Of_Birth = <valid DOB>",
-        "6. Enter Passport_Number = <valid passport number>",
-        "7. Enter Passport_Expiry = <valid future date>",
-        "8. Enter Lead_Email = <valid email address>",
-        "9. Enter Lead_Phone = <valid phone number>",
-        "10. Click Continue"
-      ],
-      "expected_result": "Either: Last_Name is accepted and the booking form submits successfully; saved passenger shows the Unicode/emoji characters in the Last_Name (succeeds); OR Last_Name displays an inline validation error preventing progression (is blocked / error shown).",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-006",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid back-button after successful Continue (prevent double progression)",
+      "test_case": "Double-click Continue immediately after filling valid required fields",
       "preconditions": [
-        "Session contains the selected itinerary, passenger count, cabin class, and calculated fares",
-        "Booking form is open with at least one passenger entry visible"
+        "A specific flight itinerary and passenger count have been selected and the booking flow is on the Flight Booking page"
       ],
       "steps": [
-        "1. Fill the first passenger Title = <any valid option>",
-        "2. Enter First_Name = <valid short name>",
-        "3. Enter Last_Name = <valid short name>",
-        "4. Enter Date_Of_Birth = <valid DOB>",
-        "5. Enter Passport_Number = <valid passport number>",
-        "6. Enter Passport_Expiry = <valid future date>",
-        "7. Enter Lead_Email = <valid email address>",
-        "8. Enter Lead_Phone = <valid phone number>",
+        "1. Select Title = Mr for Traveler 1",
+        "2. Enter <valid first name> in Traveler 1 First_Name",
+        "3. Enter <valid last name> in Traveler 1 Last_Name",
+        "4. Enter <valid date of birth> in Traveler 1 Date_Of_Birth",
+        "5. Enter <valid passport number> in Traveler 1 Passport_Number",
+        "6. Enter <valid passport expiry date> in Traveler 1 Passport_Expiry",
+        "7. Enter <valid email> in Lead_Contact.Email",
+        "8. Enter <valid phone> in Lead_Contact.Phone",
         "9. Click Continue",
-        "10. On the Payment Processing page, press the browser Back button immediately",
-        "11. On the booking form page returned to, click Continue again without changing anything"
+        "10. Immediately click Continue a second time (double-click)"
       ],
-      "expected_result": "After returning with the browser Back button, the booking form is shown blank or with required passenger fields empty (not pre-filled); attempting to Continue without re-entering required details is blocked with inline validation and does not create a duplicate progression to Payment Processing (is blocked / error shown).",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-007",
-      "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Remove all passenger entries from repeating group then submit (no passengers)",
-      "preconditions": [
-        "Booking form is open with the repeating Passengers group showing the session passenger entries"
-      ],
-      "steps": [
-        "1. In the Passengers repeating group, for each passenger item click the remove/delete control until zero passenger items remain",
-        "2. Click Continue"
-      ],
-      "expected_result": "The Passengers area displays an inline error indicating required passenger details are missing (e.g., 'At least one passenger required') and progression to Payment Processing is blocked (is blocked / error shown).",
+      "expected_result": "After the first click the UI navigates to the Payment Processing page (Payment Processing page is displayed); the Continue control becomes disabled or shows loading and the second click produces no additional visible effect (no second navigation or additional page displayed)",
       "priority": "medium"
-    },
-    {
-      "tc_id": "E-008",
-      "wf_ref": "WF-001",
-      "subcategory": "input_edge",
-      "test_case": "Lead_Email entered with leading and trailing whitespace (trim behavior)",
-      "preconditions": [
-        "Booking form is open with at least one passenger entry visible"
-      ],
-      "steps": [
-        "1. In the first passenger item, open the Title dropdown",
-        "2. Select Title = <any valid option>",
-        "3. Enter First_Name = <valid short name>",
-        "4. Enter Last_Name = <valid short name>",
-        "5. Enter Date_Of_Birth = <valid DOB>",
-        "6. Enter Passport_Number = <valid passport number>",
-        "7. Enter Passport_Expiry = <valid future date>",
-        "8. Enter Lead_Email = <valid email address with leading and trailing spaces>",
-        "9. Enter Lead_Phone = <valid phone number>",
-        "10. Click Continue"
-      ],
-      "expected_result": "Leading and trailing whitespace in Lead_Email is trimmed and the form submits successfully; on the booking summary or Payment Processing page the Lead_Email is displayed without leading/trailing spaces (succeeds).",
-      "priority": "low"
     }
   ],
   "summary": {
-    "total": 8,
-    "boundary": 4,
+    "total": 4,
+    "boundary": 0,
     "input_edge": 3,
     "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
     "medium_priority": 4,
-    "low_priority": 4
+    "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:26:25] Test-Edge - PARSED JSON
+[22:34:53] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Flight Booking",
@@ -558,193 +468,101 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "E-001",
       "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Date of Birth = Feb 29 on a leap year (accepted)",
+      "subcategory": "input_edge",
+      "test_case": "Very long first name (200+ chars) is entered for traveler",
       "preconditions": [
-        "Session contains the selected itinerary, passenger count, cabin class, and calculated fares",
-        "Booking form is open with at least one passenger entry visible"
+        "A specific flight itinerary and passenger count have been selected and the booking flow is on the Flight Booking page"
       ],
       "steps": [
-        "1. In the first passenger item, open the Title dropdown",
-        "2. Select Title = <any valid option>",
-        "3. Enter First_Name = <valid short name>",
-        "4. Enter Last_Name = <valid short name>",
-        "5. Enter Date_Of_Birth = <Feb 29 on a leap year (year is a leap year)>",
-        "6. Enter Passport_Number = <valid passport number>",
-        "7. Enter Passport_Expiry = <valid future date>",
-        "8. Enter Lead_Email = <valid email address>",
-        "9. Enter Lead_Phone = <valid phone number>",
-        "10. Click Continue"
+        "1. Select Title = Mr for Traveler 1",
+        "2. Enter <very long string (200+ characters)> in Traveler 1 First_Name",
+        "3. Enter <valid last name> in Traveler 1 Last_Name",
+        "4. Enter <valid date of birth> in Traveler 1 Date_Of_Birth",
+        "5. Enter <valid passport number> in Traveler 1 Passport_Number",
+        "6. Enter <valid passport expiry date> in Traveler 1 Passport_Expiry",
+        "7. Enter <valid email> in Lead_Contact.Email",
+        "8. Enter <valid phone> in Lead_Contact.Phone",
+        "9. Click Continue"
       ],
-      "expected_result": "Form submits successfully and navigates to the Payment Processing page; the passenger's Date_Of_Birth value of Feb 29 (leap year) is saved and displayed on the booking summary (succeeds).",
+      "expected_result": "First_Name displays an inline validation error (visible next to the First_Name field) indicating the value is not accepted and progression to Payment Processing is blocked",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Date of Birth = Feb 29 on a non-leap year (invalid date)",
+      "subcategory": "input_edge",
+      "test_case": "Passport number contains emoji and control characters",
       "preconditions": [
-        "Session contains the selected itinerary, passenger count, cabin class, and calculated fares",
-        "Booking form is open with at least one passenger entry visible"
+        "A specific flight itinerary and passenger count have been selected and the booking flow is on the Flight Booking page"
       ],
       "steps": [
-        "1. In the first passenger item, open the Title dropdown",
-        "2. Select Title = <any valid option>",
-        "3. Enter First_Name = <valid short name>",
-        "4. Enter Last_Name = <valid short name>",
-        "5. Enter Date_Of_Birth = <Feb 29 on a non-leap year>",
-        "6. Enter Passport_Number = <valid passport number>",
-        "7. Enter Passport_Expiry = <valid future date>",
-        "8. Enter Lead_Email = <valid email address>",
-        "9. Enter Lead_Phone = <valid phone number>",
-        "10. Click Continue"
+        "1. Select Title = Ms for Traveler 1",
+        "2. Enter <valid first name> in Traveler 1 First_Name",
+        "3. Enter <valid last name> in Traveler 1 Last_Name",
+        "4. Enter <valid date of birth> in Traveler 1 Date_Of_Birth",
+        "5. Enter <string containing emoji and control characters> in Traveler 1 Passport_Number",
+        "6. Enter <valid passport expiry date> in Traveler 1 Passport_Expiry",
+        "7. Enter <valid email> in Lead_Contact.Email",
+        "8. Enter <valid phone> in Lead_Contact.Phone",
+        "9. Click Continue"
       ],
-      "expected_result": "Date_Of_Birth displays an inline error indicating the date is invalid and progression is blocked; user remains on the booking form (is blocked / error shown).",
+      "expected_result": "Passport_Number displays an inline validation error (visible next to the Passport_Number field) indicating invalid characters and progression to Payment Processing is blocked",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Passport expiry entered as a past date (yesterday) \u2014 expired passport",
+      "subcategory": "input_edge",
+      "test_case": "Lead contact email entered with leading and trailing whitespace is trimmed",
       "preconditions": [
-        "Session contains the selected itinerary, passenger count, cabin class, and calculated fares",
-        "Booking form is open with at least one passenger entry visible"
+        "A specific flight itinerary and passenger count have been selected and the booking flow is on the Flight Booking page"
       ],
       "steps": [
-        "1. In the first passenger item, open the Title dropdown",
-        "2. Select Title = <any valid option>",
-        "3. Enter First_Name = <valid short name>",
-        "4. Enter Last_Name = <valid short name>",
-        "5. Enter Date_Of_Birth = <valid DOB>",
-        "6. Enter Passport_Number = <valid passport number>",
-        "7. Enter Passport_Expiry = <yesterday's date>",
-        "8. Enter Lead_Email = <valid email address>",
-        "9. Enter Lead_Phone = <valid phone number>",
-        "10. Click Continue"
+        "1. Select Title = Dr for Traveler 1",
+        "2. Enter <valid first name> in Traveler 1 First_Name",
+        "3. Enter <valid last name> in Traveler 1 Last_Name",
+        "4. Enter <valid date of birth> in Traveler 1 Date_Of_Birth",
+        "5. Enter <valid passport number> in Traveler 1 Passport_Number",
+        "6. Enter <valid passport expiry date> in Traveler 1 Passport_Expiry",
+        "7. Enter <email with leading and trailing spaces> in Lead_Contact.Email",
+        "8. Enter <valid phone> in Lead_Contact.Phone",
+        "9. Click Continue"
       ],
-      "expected_result": "Passport_Expiry displays an inline error indicating the passport expiry is not acceptable (expired) and progression is blocked; the user remains on the booking form (is blocked / error shown).",
+      "expected_result": "Continue succeeds; Payment Processing page is displayed and the Lead Contact Email shown on the next page has no leading or trailing whitespace (the entered whitespace is trimmed in the visible UI)",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": null,
-      "subcategory": "input_edge",
-      "test_case": "Very long First_Name (200+ characters)",
-      "preconditions": [
-        "Booking form is open with at least one passenger entry visible"
-      ],
-      "steps": [
-        "1. In the first passenger item, open the Title dropdown",
-        "2. Select Title = <any valid option>",
-        "3. Enter First_Name = <very long string of 200+ characters>",
-        "4. Enter Last_Name = <valid short name>",
-        "5. Enter Date_Of_Birth = <valid DOB>",
-        "6. Enter Passport_Number = <valid passport number>",
-        "7. Enter Passport_Expiry = <valid future date>",
-        "8. Enter Lead_Email = <valid email address>",
-        "9. Enter Lead_Phone = <valid phone number>",
-        "10. Click Continue"
-      ],
-      "expected_result": "Either: the form submits successfully and the passenger is created with the full long First_Name displayed on the booking summary (succeeds); OR First_Name displays an inline error indicating the value exceeds maximum length and progression is blocked (is blocked / error shown).",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-005",
-      "wf_ref": null,
-      "subcategory": "input_edge",
-      "test_case": "Last_Name contains emoji / non-Latin unicode characters",
-      "preconditions": [
-        "Booking form is open with at least one passenger entry visible"
-      ],
-      "steps": [
-        "1. In the first passenger item, open the Title dropdown",
-        "2. Select Title = <any valid option>",
-        "3. Enter First_Name = <valid short name>",
-        "4. Enter Last_Name = <string containing emoji or non-Latin Unicode>",
-        "5. Enter Date_Of_Birth = <valid DOB>",
-        "6. Enter Passport_Number = <valid passport number>",
-        "7. Enter Passport_Expiry = <valid future date>",
-        "8. Enter Lead_Email = <valid email address>",
-        "9. Enter Lead_Phone = <valid phone number>",
-        "10. Click Continue"
-      ],
-      "expected_result": "Either: Last_Name is accepted and the booking form submits successfully; saved passenger shows the Unicode/emoji characters in the Last_Name (succeeds); OR Last_Name displays an inline validation error preventing progression (is blocked / error shown).",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-006",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid back-button after successful Continue (prevent double progression)",
+      "test_case": "Double-click Continue immediately after filling valid required fields",
       "preconditions": [
-        "Session contains the selected itinerary, passenger count, cabin class, and calculated fares",
-        "Booking form is open with at least one passenger entry visible"
+        "A specific flight itinerary and passenger count have been selected and the booking flow is on the Flight Booking page"
       ],
       "steps": [
-        "1. Fill the first passenger Title = <any valid option>",
-        "2. Enter First_Name = <valid short name>",
-        "3. Enter Last_Name = <valid short name>",
-        "4. Enter Date_Of_Birth = <valid DOB>",
-        "5. Enter Passport_Number = <valid passport number>",
-        "6. Enter Passport_Expiry = <valid future date>",
-        "7. Enter Lead_Email = <valid email address>",
-        "8. Enter Lead_Phone = <valid phone number>",
+        "1. Select Title = Mr for Traveler 1",
+        "2. Enter <valid first name> in Traveler 1 First_Name",
+        "3. Enter <valid last name> in Traveler 1 Last_Name",
+        "4. Enter <valid date of birth> in Traveler 1 Date_Of_Birth",
+        "5. Enter <valid passport number> in Traveler 1 Passport_Number",
+        "6. Enter <valid passport expiry date> in Traveler 1 Passport_Expiry",
+        "7. Enter <valid email> in Lead_Contact.Email",
+        "8. Enter <valid phone> in Lead_Contact.Phone",
         "9. Click Continue",
-        "10. On the Payment Processing page, press the browser Back button immediately",
-        "11. On the booking form page returned to, click Continue again without changing anything"
+        "10. Immediately click Continue a second time (double-click)"
       ],
-      "expected_result": "After returning with the browser Back button, the booking form is shown blank or with required passenger fields empty (not pre-filled); attempting to Continue without re-entering required details is blocked with inline validation and does not create a duplicate progression to Payment Processing (is blocked / error shown).",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-007",
-      "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Remove all passenger entries from repeating group then submit (no passengers)",
-      "preconditions": [
-        "Booking form is open with the repeating Passengers group showing the session passenger entries"
-      ],
-      "steps": [
-        "1. In the Passengers repeating group, for each passenger item click the remove/delete control until zero passenger items remain",
-        "2. Click Continue"
-      ],
-      "expected_result": "The Passengers area displays an inline error indicating required passenger details are missing (e.g., 'At least one passenger required') and progression to Payment Processing is blocked (is blocked / error shown).",
+      "expected_result": "After the first click the UI navigates to the Payment Processing page (Payment Processing page is displayed); the Continue control becomes disabled or shows loading and the second click produces no additional visible effect (no second navigation or additional page displayed)",
       "priority": "medium"
-    },
-    {
-      "tc_id": "E-008",
-      "wf_ref": "WF-001",
-      "subcategory": "input_edge",
-      "test_case": "Lead_Email entered with leading and trailing whitespace (trim behavior)",
-      "preconditions": [
-        "Booking form is open with at least one passenger entry visible"
-      ],
-      "steps": [
-        "1. In the first passenger item, open the Title dropdown",
-        "2. Select Title = <any valid option>",
-        "3. Enter First_Name = <valid short name>",
-        "4. Enter Last_Name = <valid short name>",
-        "5. Enter Date_Of_Birth = <valid DOB>",
-        "6. Enter Passport_Number = <valid passport number>",
-        "7. Enter Passport_Expiry = <valid future date>",
-        "8. Enter Lead_Email = <valid email address with leading and trailing spaces>",
-        "9. Enter Lead_Phone = <valid phone number>",
-        "10. Click Continue"
-      ],
-      "expected_result": "Leading and trailing whitespace in Lead_Email is trimmed and the form submits successfully; on the booking summary or Payment Processing page the Lead_Email is displayed without leading/trailing spaces (succeeds).",
-      "priority": "low"
     }
   ],
   "summary": {
-    "total": 8,
-    "boundary": 4,
+    "total": 4,
+    "boundary": 0,
     "input_edge": 3,
     "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
     "medium_priority": 4,
-    "low_priority": 4
+    "low_priority": 0
   }
 }

@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:02:39.088718
+DEBUG SESSION STARTED: 2026-07-04T22:22:17.230041
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Negative - SYSTEM PROMPT
+[22:22:17] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Negative - USER PROMPT
+[22:22:17] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 5,
   "module_title": "Transfer Funds",
-  "summary": "Module for initiating fund transfers either between the user's ParaBank accounts or to an external account, including validation of amounts and account numbers and displaying success or error messages.",
-  "where_it_fits": "Accessible from the left-hand navigation under 'Transfer Funds' after successful sign-in and arrival at the Accounts Overview/dashboard; it is used during regular account operations to move money within the user's accounts or to external accounts and occurs after account selection in the session lifecycle.",
-  "assumed_state_on_entry": "User is logged in and has at least one active Checking or Savings account available to select as a source; for external transfers the user may provide an external account number to confirm."
+  "summary": "Allows a logged-in customer to move money between their own Parabank accounts or to/from an external account with validation and transaction confirmation.",
+  "where_it_fits": "This module is accessed from the authenticated user's left-hand navigation as option \u2462 Transfer Funds and is part of post-login account management workflows, typically used after viewing the Accounts Overview dashboard. It operates alongside other account actions like Open New Account, Payments, and Account Statements.",
+  "assumed_state_on_entry": "User is logged in as a customer and has at least one Checking or Savings account available as a source; for external transfers the user has the external account details to enter and confirm."
 }
 </module_context>
 
@@ -260,7 +270,7 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Transfer Funds",
   "components": {
-    "Transfer_Funds_Form": {
+    "Transfer_Form": {
       "type": "form",
       "fields": {
         "Transfer_Type": {
@@ -271,25 +281,27 @@ If a `<workflows>` block is present in the input:
           ]
         },
         "Transfer_Amount": {
-          "type": "number",
+          "type": "unspecified",
           "constraints": [
-            "must be greater than 0",
-            "sufficient funds validated against selected Source_Account"
+            "must be a positive value",
+            "sufficient funds must be available in the selected Source_Account (system will validate)"
           ]
         },
         "Source_Account": {
           "type": "dropdown",
           "constraints": [
-            "only Checking and Savings accounts are shown to select as source"
+            "source account must be a Checking or Savings account"
           ]
         },
         "Destination_Account": {
           "type": "dropdown",
-          "visible_when": "Transfer_Type == My ParaBank Account"
+          "visible_when": "Transfer_Type == My ParaBank Account",
+          "required_when": "Transfer_Type == My ParaBank Account"
         },
         "External_Account_Number": {
           "type": "unspecified",
           "visible_when": "Transfer_Type == External Account",
+          "required_when": "Transfer_Type == External Account",
           "constraints": [
             "account number format validated by system"
           ]
@@ -297,6 +309,7 @@ If a `<workflows>` block is present in the input:
         "Confirm_External_Account_Number": {
           "type": "unspecified",
           "visible_when": "Transfer_Type == External Account",
+          "required_when": "Transfer_Type == External Account",
           "constraints": [
             "must match External_Account_Number"
           ]
@@ -304,14 +317,17 @@ If a `<workflows>` block is present in the input:
       },
       "submit_actions": [
         {
-          "action_name": "Submit",
+          "action_name": "Transfer",
           "preconditions": [
-            "User is logged in and has at least one active Checking or Savings account available to select as a source"
+            "User is logged in as a customer",
+            "User has at least one Checking or Savings account available as a source",
+            "For external transfers the user has external account details to enter and confirm"
           ],
-          "on_success": "Transfer completed successfully. Returns transaction ID.",
+          "on_success": "Shows \"Transfer completed successfully.\" and returns a transaction ID",
           "on_failure": [
             "Insufficient funds",
-            "Account numbers do not match"
+            "Account numbers do not match",
+            "Validation errors"
           ]
         }
       ]
@@ -327,14 +343,15 @@ The transfer page presents a form with radio buttons to select transfer type (My
 </description>
 
 <workflows>
-WF-001 | Internal transfer between ParaBank accounts | actor: User | branch: Transfer_Type == My ParaBank Account | terminal: Submit | on_success: Transfer completed successfully. Returns transaction ID.
-WF-002 | External transfer to an external account | actor: User | branch: Transfer_Type == External Account | terminal: Submit | on_success: Transfer completed successfully. Returns transaction ID.
+WF-001 | Submit transfer (base) | actor: Customer | branch: none | terminal: Transfer | on_success: Shows "Transfer completed successfully." and returns a transaction ID
+WF-002 | Internal transfer between ParaBank accounts | actor: Customer | branch: Transfer_Type == My ParaBank Account | terminal: Transfer | on_success: Shows "Transfer completed successfully." and returns a transaction ID
+WF-003 | External transfer to an external account (with account number confirmation) | actor: Customer | branch: Transfer_Type == External Account | terminal: Transfer | on_success: Shows "Transfer completed successfully." and returns a transaction ID
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:04:13] Test-Negative - LLM RESPONSE
+[22:23:53] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Transfer Funds",
@@ -343,153 +360,209 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Leave Transfer Amount blank and submit (number field representative)",
+      "test_case": "Unauthenticated user cannot access Transfer Funds page",
       "preconditions": [
-        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+        "User is not logged in"
       ],
       "steps": [
-        "1. Navigate to the Transfer Funds page",
-        "2. Select 'My ParaBank Account' for Transfer Type",
-        "3. Select a valid Source Account from the dropdown",
-        "4. Select a valid Destination Account from the Destination_Account dropdown",
-        "5. Leave the Transfer Amount field blank",
-        "6. Click the Submit button"
+        "1. Navigate to the Transfer Funds page URL / click the Transfer Funds link from left-hand navigation"
       ],
-      "expected_result": "Transfer Amount field displays an inline validation error indicating it is required; the form does not submit and no transaction is created",
-      "priority": "medium"
+      "expected_result": "Access is blocked; the user is redirected to the Login page and the Transfer form is not shown",
+      "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "test_case": "Submit with all required fields empty",
       "preconditions": [
-        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+        "User is logged in as a customer",
+        "User has at least one Checking or Savings account available as a source"
       ],
       "steps": [
         "1. Navigate to the Transfer Funds page",
         "2. Do not select a Transfer Type (leave radio unselected)",
-        "3. Do not select a Source Account (leave dropdown unselected)",
-        "4. Leave the Transfer Amount field blank",
-        "5. Click the Submit button"
+        "3. Leave Transfer Amount blank",
+        "4. Leave Source Account unselected",
+        "5. Click the Transfer button"
       ],
-      "expected_result": "Form does not submit; inline validation errors appear on the Transfer Type control, Transfer Amount field, and Source Account field indicating they are required; no transaction is created",
+      "expected_result": "Form does not submit; inline validation errors appear on the Transfer Amount field and the Source Account field (and on Transfer Type if applicable) indicating they are required; no transfer is created",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-001",
-      "test_case": "Internal transfer with amount exceeding available balance (Insufficient funds)",
+      "wf_ref": "WF-002",
+      "test_case": "Internal transfer: Destination account revealed but left blank",
       "preconditions": [
-        "User is logged in and has at least one active Checking or Savings account available to select as a source",
-        "Selected Source Account has a balance lower than the amount to be entered"
+        "User is logged in as a customer",
+        "User has at least two ParaBank accounts including at least one Checking or Savings to use as Source"
       ],
       "steps": [
         "1. Navigate to the Transfer Funds page",
-        "2. Select 'My ParaBank Account' for Transfer Type",
-        "3. Select the Source Account that has the low balance",
-        "4. Select a Destination Account different from the source",
-        "5. Enter <amount exceeding available balance> in the Transfer Amount field",
-        "6. Click the Submit button"
+        "2. Select Transfer Type = My ParaBank Account",
+        "3. Select a valid Source Account that is a Checking or Savings account",
+        "4. Do not select a Destination Account (leave Destination Account blank)",
+        "5. Enter <a valid positive amount within typical range>",
+        "6. Click the Transfer button"
       ],
-      "expected_result": "Submission is blocked; the page displays the contextual error 'Insufficient funds' (inline or banner); no transaction is created and the Source Account balance remains unchanged",
+      "expected_result": "Form does not submit; Destination Account field displays an inline validation error indicating it is required for internal transfers; no transfer is created",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-001",
-      "test_case": "Transfer amount violates 'must be greater than 0' (zero or negative)",
+      "wf_ref": "WF-003",
+      "test_case": "External transfer: External account number required but left blank",
       "preconditions": [
-        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+        "User is logged in as a customer",
+        "User has at least one Checking or Savings account available as a source"
       ],
       "steps": [
         "1. Navigate to the Transfer Funds page",
-        "2. Select 'My ParaBank Account' for Transfer Type",
-        "3. Select a valid Source Account and Destination Account",
-        "4. Enter <amount equal to 0> (or <negative amount>) in the Transfer Amount field",
-        "5. Click the Submit button"
+        "2. Select Transfer Type = External Account",
+        "3. Select a valid Source Account that is a Checking or Savings account",
+        "4. Enter <a valid positive amount>",
+        "5. Leave External Account Number blank",
+        "6. Leave Confirm External Account Number blank",
+        "7. Click the Transfer button"
       ],
-      "expected_result": "Transfer Amount field displays an inline validation error indicating the amount must be greater than 0; the form does not submit and no transaction is created",
-      "priority": "medium"
+      "expected_result": "Form does not submit; External Account Number field displays an inline validation error indicating it is required for external transfers (Confirm External Account Number may also show a required error); no transfer is created",
+      "priority": "high"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-002",
-      "test_case": "External Account Number format validation fails",
+      "wf_ref": "WF-003",
+      "test_case": "External transfer: Account number and confirmation do not match",
       "preconditions": [
-        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+        "User is logged in as a customer",
+        "User has at least one Checking or Savings account available as a source"
       ],
       "steps": [
         "1. Navigate to the Transfer Funds page",
-        "2. Select 'External Account' for Transfer Type",
-        "3. Select a valid Source Account from the dropdown",
-        "4. Enter <invalid external account format> in the External_Account_Number field",
-        "5. Enter the same value in Confirm_External_Account_Number (to isolate format error)",
-        "6. Enter a valid amount in Transfer Amount",
-        "7. Click the Submit button"
+        "2. Select Transfer Type = External Account",
+        "3. Select a valid Source Account that is a Checking or Savings account",
+        "4. Enter <a valid positive amount>",
+        "5. Enter <external account number A> in External Account Number",
+        "6. Enter <a different external account number B> in Confirm External Account Number",
+        "7. Click the Transfer button"
       ],
-      "expected_result": "External Account Number field displays an inline validation error indicating the account number format is invalid; the form does not submit and no transaction is created",
-      "priority": "medium"
+      "expected_result": "Form does not submit; page displays the error 'Account numbers do not match' (or an inline validation error on the Confirm External Account Number field indicating the numbers must match); no transfer is created",
+      "priority": "high"
     },
     {
       "tc_id": "N-006",
-      "wf_ref": "WF-002",
-      "test_case": "External transfer blocked when confirmation account number does not match",
+      "wf_ref": "WF-003",
+      "test_case": "External transfer: External account number in invalid format",
       "preconditions": [
-        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+        "User is logged in as a customer",
+        "User has at least one Checking or Savings account available as a source"
       ],
       "steps": [
         "1. Navigate to the Transfer Funds page",
-        "2. Select 'External Account' for Transfer Type",
-        "3. Select a valid Source Account from the dropdown",
-        "4. Enter <valid external account number> in External_Account_Number",
-        "5. Enter a different value <different external account number> in Confirm_External_Account_Number",
-        "6. Enter a valid amount in Transfer Amount",
-        "7. Click the Submit button"
+        "2. Select Transfer Type = External Account",
+        "3. Select a valid Source Account that is a Checking or Savings account",
+        "4. Enter <a valid positive amount>",
+        "5. Enter <an invalid-format external account number> in External Account Number",
+        "6. Enter the same value in Confirm External Account Number",
+        "7. Click the Transfer button"
       ],
-      "expected_result": "Confirm External Account Number field displays the inline error 'Account numbers do not match'; submission is blocked and no transaction is created",
-      "priority": "high"
+      "expected_result": "Form does not submit; External Account Number field displays an inline validation error indicating the account number format is invalid; no transfer is created",
+      "priority": "medium"
     },
     {
       "tc_id": "N-007",
-      "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access Transfer Funds page",
+      "wf_ref": "WF-001",
+      "test_case": "Transfer Amount accepts non-numeric input",
       "preconditions": [
-        "User is not authenticated (not logged in)"
+        "User is logged in as a customer",
+        "User has at least one Checking or Savings account available as a source"
       ],
       "steps": [
-        "1. Navigate to the Transfer Funds page URL without signing in",
-        "2. Observe the resulting page or redirect"
+        "1. Navigate to the Transfer Funds page",
+        "2. Select a Transfer Type and Source/Destination appropriate to the branch being tested",
+        "3. Enter <a non-numeric value> into the Transfer Amount field",
+        "4. Fill any other required fields with valid values",
+        "5. Click the Transfer button"
       ],
-      "expected_result": "User is redirected to the login page / presented with the login prompt; Transfer Funds page is not accessible while unauthenticated",
-      "priority": "high"
+      "expected_result": "Form does not submit; Transfer Amount field displays an inline validation error indicating the amount must be numeric (and positive); no transfer is created",
+      "priority": "medium"
     },
     {
       "tc_id": "N-008",
-      "wf_ref": null,
-      "test_case": "Submit blocked when user has no active Checking or Savings account (Submit precondition fails)",
+      "wf_ref": "WF-001",
+      "test_case": "Transfer Amount is zero or negative (must be positive)",
       "preconditions": [
-        "User is logged in but has no active Checking or Savings accounts available to select as a source"
+        "User is logged in as a customer",
+        "User has at least one Checking or Savings account available as a source"
       ],
       "steps": [
-        "1. Log in as a user with no active Checking or Savings accounts",
-        "2. Navigate to the Transfer Funds page",
-        "3. Observe the Source Account dropdown (contains no eligible accounts)",
-        "4. Attempt to click the Submit button"
+        "1. Navigate to the Transfer Funds page",
+        "2. Select a Transfer Type and valid Source/Destination",
+        "3. Enter <zero or negative amount> in the Transfer Amount field",
+        "4. Fill any other required fields with valid values",
+        "5. Click the Transfer button"
       ],
-      "expected_result": "Submit is blocked; Source Account field displays an inline error indicating no active Checking or Savings accounts are available to select as the source; no transfer attempt is made",
+      "expected_result": "Form does not submit; Transfer Amount field displays an inline validation error indicating the amount must be a positive value; no transfer is created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-009",
+      "wf_ref": "WF-001",
+      "test_case": "Transfer blocked when amount exceeds available balance (Insufficient funds)",
+      "preconditions": [
+        "User is logged in as a customer",
+        "User has at least one Checking or Savings account available as a source with a known balance"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page",
+        "2. Select a valid Source Account whose available balance is known",
+        "3. Enter <an amount exceeding the selected Source Account's available balance> in Transfer Amount",
+        "4. Fill other required fields with valid values",
+        "5. Click the Transfer button"
+      ],
+      "expected_result": "Transfer is blocked; the page displays the error 'Insufficient funds' (or an inline validation error associated with the Transfer Amount / Source Account) and the transaction is not created",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-010",
+      "wf_ref": "WF-001",
+      "test_case": "Source Account of an unsupported type cannot be used as source",
+      "preconditions": [
+        "User is logged in as a customer",
+        "User has at least one account that is not a Checking or Savings account (e.g., Credit/Loan) and also has at least one valid destination if needed"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page",
+        "2. Attempt to select <a non-Checking/Savings account selected in Source Account dropdown> as the Source Account",
+        "3. Enter <a valid positive amount> and other required fields for the chosen transfer type",
+        "4. Click the Transfer button"
+      ],
+      "expected_result": "Form does not submit; Source Account field displays an inline validation error indicating the source account must be a Checking or Savings account; no transfer is created",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-011",
+      "wf_ref": "WF-001",
+      "test_case": "Logged-in user with no Checking/Savings accounts cannot submit a transfer (precondition failure)",
+      "preconditions": [
+        "User is logged in as a customer",
+        "User has no Checking or Savings accounts in their profile"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page"
+      ],
+      "expected_result": "Transfer action is blocked; the page displays an inline or page-level validation message indicating a Checking or Savings source account is required and the Transfer button is disabled or, if clicked, the form does not submit; no transfer is created",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 8,
-    "high_priority": 5,
+    "total": 11,
+    "high_priority": 8,
     "medium_priority": 3,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:04:13] Test-Negative - PARSED JSON
+[22:23:53] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Transfer Funds",
@@ -498,146 +571,202 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Leave Transfer Amount blank and submit (number field representative)",
+      "test_case": "Unauthenticated user cannot access Transfer Funds page",
       "preconditions": [
-        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+        "User is not logged in"
       ],
       "steps": [
-        "1. Navigate to the Transfer Funds page",
-        "2. Select 'My ParaBank Account' for Transfer Type",
-        "3. Select a valid Source Account from the dropdown",
-        "4. Select a valid Destination Account from the Destination_Account dropdown",
-        "5. Leave the Transfer Amount field blank",
-        "6. Click the Submit button"
+        "1. Navigate to the Transfer Funds page URL / click the Transfer Funds link from left-hand navigation"
       ],
-      "expected_result": "Transfer Amount field displays an inline validation error indicating it is required; the form does not submit and no transaction is created",
-      "priority": "medium"
+      "expected_result": "Access is blocked; the user is redirected to the Login page and the Transfer form is not shown",
+      "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "test_case": "Submit with all required fields empty",
       "preconditions": [
-        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+        "User is logged in as a customer",
+        "User has at least one Checking or Savings account available as a source"
       ],
       "steps": [
         "1. Navigate to the Transfer Funds page",
         "2. Do not select a Transfer Type (leave radio unselected)",
-        "3. Do not select a Source Account (leave dropdown unselected)",
-        "4. Leave the Transfer Amount field blank",
-        "5. Click the Submit button"
+        "3. Leave Transfer Amount blank",
+        "4. Leave Source Account unselected",
+        "5. Click the Transfer button"
       ],
-      "expected_result": "Form does not submit; inline validation errors appear on the Transfer Type control, Transfer Amount field, and Source Account field indicating they are required; no transaction is created",
+      "expected_result": "Form does not submit; inline validation errors appear on the Transfer Amount field and the Source Account field (and on Transfer Type if applicable) indicating they are required; no transfer is created",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-001",
-      "test_case": "Internal transfer with amount exceeding available balance (Insufficient funds)",
+      "wf_ref": "WF-002",
+      "test_case": "Internal transfer: Destination account revealed but left blank",
       "preconditions": [
-        "User is logged in and has at least one active Checking or Savings account available to select as a source",
-        "Selected Source Account has a balance lower than the amount to be entered"
+        "User is logged in as a customer",
+        "User has at least two ParaBank accounts including at least one Checking or Savings to use as Source"
       ],
       "steps": [
         "1. Navigate to the Transfer Funds page",
-        "2. Select 'My ParaBank Account' for Transfer Type",
-        "3. Select the Source Account that has the low balance",
-        "4. Select a Destination Account different from the source",
-        "5. Enter <amount exceeding available balance> in the Transfer Amount field",
-        "6. Click the Submit button"
+        "2. Select Transfer Type = My ParaBank Account",
+        "3. Select a valid Source Account that is a Checking or Savings account",
+        "4. Do not select a Destination Account (leave Destination Account blank)",
+        "5. Enter <a valid positive amount within typical range>",
+        "6. Click the Transfer button"
       ],
-      "expected_result": "Submission is blocked; the page displays the contextual error 'Insufficient funds' (inline or banner); no transaction is created and the Source Account balance remains unchanged",
+      "expected_result": "Form does not submit; Destination Account field displays an inline validation error indicating it is required for internal transfers; no transfer is created",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-001",
-      "test_case": "Transfer amount violates 'must be greater than 0' (zero or negative)",
+      "wf_ref": "WF-003",
+      "test_case": "External transfer: External account number required but left blank",
       "preconditions": [
-        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+        "User is logged in as a customer",
+        "User has at least one Checking or Savings account available as a source"
       ],
       "steps": [
         "1. Navigate to the Transfer Funds page",
-        "2. Select 'My ParaBank Account' for Transfer Type",
-        "3. Select a valid Source Account and Destination Account",
-        "4. Enter <amount equal to 0> (or <negative amount>) in the Transfer Amount field",
-        "5. Click the Submit button"
+        "2. Select Transfer Type = External Account",
+        "3. Select a valid Source Account that is a Checking or Savings account",
+        "4. Enter <a valid positive amount>",
+        "5. Leave External Account Number blank",
+        "6. Leave Confirm External Account Number blank",
+        "7. Click the Transfer button"
       ],
-      "expected_result": "Transfer Amount field displays an inline validation error indicating the amount must be greater than 0; the form does not submit and no transaction is created",
-      "priority": "medium"
+      "expected_result": "Form does not submit; External Account Number field displays an inline validation error indicating it is required for external transfers (Confirm External Account Number may also show a required error); no transfer is created",
+      "priority": "high"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-002",
-      "test_case": "External Account Number format validation fails",
+      "wf_ref": "WF-003",
+      "test_case": "External transfer: Account number and confirmation do not match",
       "preconditions": [
-        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+        "User is logged in as a customer",
+        "User has at least one Checking or Savings account available as a source"
       ],
       "steps": [
         "1. Navigate to the Transfer Funds page",
-        "2. Select 'External Account' for Transfer Type",
-        "3. Select a valid Source Account from the dropdown",
-        "4. Enter <invalid external account format> in the External_Account_Number field",
-        "5. Enter the same value in Confirm_External_Account_Number (to isolate format error)",
-        "6. Enter a valid amount in Transfer Amount",
-        "7. Click the Submit button"
+        "2. Select Transfer Type = External Account",
+        "3. Select a valid Source Account that is a Checking or Savings account",
+        "4. Enter <a valid positive amount>",
+        "5. Enter <external account number A> in External Account Number",
+        "6. Enter <a different external account number B> in Confirm External Account Number",
+        "7. Click the Transfer button"
       ],
-      "expected_result": "External Account Number field displays an inline validation error indicating the account number format is invalid; the form does not submit and no transaction is created",
-      "priority": "medium"
+      "expected_result": "Form does not submit; page displays the error 'Account numbers do not match' (or an inline validation error on the Confirm External Account Number field indicating the numbers must match); no transfer is created",
+      "priority": "high"
     },
     {
       "tc_id": "N-006",
-      "wf_ref": "WF-002",
-      "test_case": "External transfer blocked when confirmation account number does not match",
+      "wf_ref": "WF-003",
+      "test_case": "External transfer: External account number in invalid format",
       "preconditions": [
-        "User is logged in and has at least one active Checking or Savings account available to select as a source"
+        "User is logged in as a customer",
+        "User has at least one Checking or Savings account available as a source"
       ],
       "steps": [
         "1. Navigate to the Transfer Funds page",
-        "2. Select 'External Account' for Transfer Type",
-        "3. Select a valid Source Account from the dropdown",
-        "4. Enter <valid external account number> in External_Account_Number",
-        "5. Enter a different value <different external account number> in Confirm_External_Account_Number",
-        "6. Enter a valid amount in Transfer Amount",
-        "7. Click the Submit button"
+        "2. Select Transfer Type = External Account",
+        "3. Select a valid Source Account that is a Checking or Savings account",
+        "4. Enter <a valid positive amount>",
+        "5. Enter <an invalid-format external account number> in External Account Number",
+        "6. Enter the same value in Confirm External Account Number",
+        "7. Click the Transfer button"
       ],
-      "expected_result": "Confirm External Account Number field displays the inline error 'Account numbers do not match'; submission is blocked and no transaction is created",
-      "priority": "high"
+      "expected_result": "Form does not submit; External Account Number field displays an inline validation error indicating the account number format is invalid; no transfer is created",
+      "priority": "medium"
     },
     {
       "tc_id": "N-007",
-      "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access Transfer Funds page",
+      "wf_ref": "WF-001",
+      "test_case": "Transfer Amount accepts non-numeric input",
       "preconditions": [
-        "User is not authenticated (not logged in)"
+        "User is logged in as a customer",
+        "User has at least one Checking or Savings account available as a source"
       ],
       "steps": [
-        "1. Navigate to the Transfer Funds page URL without signing in",
-        "2. Observe the resulting page or redirect"
+        "1. Navigate to the Transfer Funds page",
+        "2. Select a Transfer Type and Source/Destination appropriate to the branch being tested",
+        "3. Enter <a non-numeric value> into the Transfer Amount field",
+        "4. Fill any other required fields with valid values",
+        "5. Click the Transfer button"
       ],
-      "expected_result": "User is redirected to the login page / presented with the login prompt; Transfer Funds page is not accessible while unauthenticated",
-      "priority": "high"
+      "expected_result": "Form does not submit; Transfer Amount field displays an inline validation error indicating the amount must be numeric (and positive); no transfer is created",
+      "priority": "medium"
     },
     {
       "tc_id": "N-008",
-      "wf_ref": null,
-      "test_case": "Submit blocked when user has no active Checking or Savings account (Submit precondition fails)",
+      "wf_ref": "WF-001",
+      "test_case": "Transfer Amount is zero or negative (must be positive)",
       "preconditions": [
-        "User is logged in but has no active Checking or Savings accounts available to select as a source"
+        "User is logged in as a customer",
+        "User has at least one Checking or Savings account available as a source"
       ],
       "steps": [
-        "1. Log in as a user with no active Checking or Savings accounts",
-        "2. Navigate to the Transfer Funds page",
-        "3. Observe the Source Account dropdown (contains no eligible accounts)",
-        "4. Attempt to click the Submit button"
+        "1. Navigate to the Transfer Funds page",
+        "2. Select a Transfer Type and valid Source/Destination",
+        "3. Enter <zero or negative amount> in the Transfer Amount field",
+        "4. Fill any other required fields with valid values",
+        "5. Click the Transfer button"
       ],
-      "expected_result": "Submit is blocked; Source Account field displays an inline error indicating no active Checking or Savings accounts are available to select as the source; no transfer attempt is made",
+      "expected_result": "Form does not submit; Transfer Amount field displays an inline validation error indicating the amount must be a positive value; no transfer is created",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "N-009",
+      "wf_ref": "WF-001",
+      "test_case": "Transfer blocked when amount exceeds available balance (Insufficient funds)",
+      "preconditions": [
+        "User is logged in as a customer",
+        "User has at least one Checking or Savings account available as a source with a known balance"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page",
+        "2. Select a valid Source Account whose available balance is known",
+        "3. Enter <an amount exceeding the selected Source Account's available balance> in Transfer Amount",
+        "4. Fill other required fields with valid values",
+        "5. Click the Transfer button"
+      ],
+      "expected_result": "Transfer is blocked; the page displays the error 'Insufficient funds' (or an inline validation error associated with the Transfer Amount / Source Account) and the transaction is not created",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-010",
+      "wf_ref": "WF-001",
+      "test_case": "Source Account of an unsupported type cannot be used as source",
+      "preconditions": [
+        "User is logged in as a customer",
+        "User has at least one account that is not a Checking or Savings account (e.g., Credit/Loan) and also has at least one valid destination if needed"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page",
+        "2. Attempt to select <a non-Checking/Savings account selected in Source Account dropdown> as the Source Account",
+        "3. Enter <a valid positive amount> and other required fields for the chosen transfer type",
+        "4. Click the Transfer button"
+      ],
+      "expected_result": "Form does not submit; Source Account field displays an inline validation error indicating the source account must be a Checking or Savings account; no transfer is created",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-011",
+      "wf_ref": "WF-001",
+      "test_case": "Logged-in user with no Checking/Savings accounts cannot submit a transfer (precondition failure)",
+      "preconditions": [
+        "User is logged in as a customer",
+        "User has no Checking or Savings accounts in their profile"
+      ],
+      "steps": [
+        "1. Navigate to the Transfer Funds page"
+      ],
+      "expected_result": "Transfer action is blocked; the page displays an inline or page-level validation message indicating a Checking or Savings source account is required and the Transfer button is disabled or, if clicked, the form does not submit; no transfer is created",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 8,
-    "high_priority": 5,
+    "total": 11,
+    "high_priority": 8,
     "medium_priority": 3,
     "low_priority": 0
   }

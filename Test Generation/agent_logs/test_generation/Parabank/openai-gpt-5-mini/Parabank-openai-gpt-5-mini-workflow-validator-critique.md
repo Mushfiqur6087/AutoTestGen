@@ -1,13 +1,13 @@
 # Workflow Critique — Parabank
 
-Generated: 2026-07-04T15:05:28.347146Z
+Generated: 2026-07-04T16:25:15.081852Z
 
 ## Login
 
 **Verdict:** yes  
 **Forced ship:** no  
 
-The provided workflow covers the required Sign In submit_action and matches the AST on_success; no required workflows or structural errors are missing.
+The workflows cover the form submit action 'Sign In' and the 'Forgot Password?' link; no missing or phantom workflows or structural errors were found.
 
 **Missing workflows:** none
 
@@ -20,7 +20,7 @@ The provided workflow covers the required Sign In submit_action and matches the 
 **Verdict:** yes  
 **Forced ship:** no  
 
-The single workflow covers the form's sole submit action and matches the AST's on_success; no missing or phantom workflows or structural errors detected.
+The single workflow covers the form's 'Register' submit action and matches the AST's on_success behavior; no required workflows or structural errors are missing.
 
 **Missing workflows:** none
 
@@ -33,7 +33,7 @@ The single workflow covers the form's sole submit action and matches the AST's o
 **Verdict:** yes  
 **Forced ship:** no  
 
-Workflow list is complete and correct: the data_table row action 'Account Number' is represented and there are no forms, state-bound actions, or bulk actions requiring additional workflows.
+All required workflows for the data_table row action and action_bar available actions are present and correctly mapped to the AST; no structural errors found.
 
 **Missing workflows:** none
 
@@ -46,7 +46,7 @@ Workflow list is complete and correct: the data_table row action 'Account Number
 **Verdict:** yes  
 **Forced ship:** no  
 
-Workflows correctly cover the form's submit action for both Account_Type options and match the AST on_success behavior; no missing or phantom workflows detected.
+The single workflow covers the form's submit_action 'Open Account' and matches the AST's on_success behavior; no missing or phantom workflows or structural errors were detected.
 
 **Missing workflows:** none
 
@@ -59,7 +59,7 @@ Workflows correctly cover the form's submit action for both Account_Type options
 **Verdict:** yes  
 **Forced ship:** no  
 
-Workflows cover each submit action for both conditional branches (internal and external transfers); no missing or phantom workflows or structural errors found.
+Workflows cover the form submit action and both conditional branches for internal and external transfers; no missing or phantom workflows or structural errors detected.
 
 **Missing workflows:** none
 
@@ -72,7 +72,7 @@ Workflows cover each submit action for both conditional branches (internal and e
 **Verdict:** yes  
 **Forced ship:** no  
 
-The single workflow covers the form's sole submit action 'Pay' with matching on_success and no conditional branches or state/table actions missing, so the workflow list is complete and correct.
+The provided workflows cover the form's submit action (successful submission and the two explicit failure modes from the AST) and there are no missing or phantom workflows or structural errors.
 
 **Missing workflows:** none
 
@@ -85,7 +85,7 @@ The single workflow covers the form's sole submit action 'Pay' with matching on_
 **Verdict:** yes  
 **Forced ship:** no  
 
-All required workflows present: each Submit Application path for the three Loan_Type conditions is represented, with no missing or phantom workflows or structural errors.
+Workflows cover the form's Apply submit action including Loan_Type-specific branches and match the AST's on_success text; no critical or structural issues found.
 
 **Missing workflows:** none
 
@@ -98,7 +98,7 @@ All required workflows present: each Submit Application path for the three Loan_
 **Verdict:** yes  
 **Forced ship:** no  
 
-The workflow list includes the required submit workflow for the form's 'Update Profile' action with matching on_success; no missing or phantom workflows or structural errors were found.
+The single workflow covers the form's submit_action with matching on_success text and there are no missing, phantom, or structural errors.
 
 **Missing workflows:** none
 
@@ -111,7 +111,7 @@ The workflow list includes the required submit workflow for the form's 'Update P
 **Verdict:** yes  
 **Forced ship:** no  
 
-Workflows cover each form submit action and conditional variants present in the AST; no missing or phantom workflows or structural errors were found.
+Workflows cover each form submit action and there are no missing, phantom, or structural errors.
 
 **Missing workflows:** none
 
@@ -124,7 +124,7 @@ Workflows cover each form submit action and conditional variants present in the 
 **Verdict:** yes  
 **Forced ship:** no  
 
-Workflows cover the Trade Funds form (both Buy and Sell branches) and the Recurring Investment Plan form submit action; no missing or phantom workflows or structural errors found.
+The provided workflows cover all submit actions and conditional branches in the AST and contain no structural errors.
 
 **Missing workflows:** none
 
@@ -137,7 +137,7 @@ Workflows cover the Trade Funds form (both Buy and Sell branches) and the Recurr
 **Verdict:** yes  
 **Forced ship:** no  
 
-All form submit actions and conditional branches in the AST are covered by corresponding workflows; no missing or phantom workflows or structural errors detected.
+All form submit actions and conditional combinations in the AST are covered by workflows; no missing or phantom workflows or structural errors were found.
 
 **Missing workflows:** none
 
@@ -150,7 +150,7 @@ All form submit actions and conditional branches in the AST are covered by corre
 **Verdict:** yes  
 **Forced ship:** no  
 
-The single workflow covers the form's submit action and matches the AST's on_success; no missing or phantom workflows or structural errors found.
+The provided workflow covers the form's submit action with the correct success path and on_success text; no required workflows or phantoms were found.
 
 **Missing workflows:** none
 
@@ -163,7 +163,7 @@ The single workflow covers the form's submit action and matches the AST's on_suc
 **Verdict:** yes  
 **Forced ship:** no  
 
-Both form submit actions are represented with matching on_success texts; no missing or phantom workflows detected.
+All form submit actions in the AST are covered by workflows and there are no missing, phantom, or structural errors.
 
 **Missing workflows:** none
 

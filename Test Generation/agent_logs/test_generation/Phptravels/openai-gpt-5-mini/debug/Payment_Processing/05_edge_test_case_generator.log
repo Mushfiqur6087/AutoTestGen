@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:13.991008
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.162423
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Edge - SYSTEM PROMPT
+[22:33:07] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Edge - USER PROMPT
+[22:33:07] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 16,
   "module_title": "Payment Processing",
-  "summary": "Handles collection and processing of payment for a prepared booking, presenting a detailed price breakdown, multiple payment methods, and post-payment confirmation or error handling.",
-  "where_it_fits": "Located at the end of the booking flow after a user selects and reviews a Hotel, Flight, Tour, or Car (accessed from the Home search widget or respective section in the top navigation), it serves as the checkout/transaction step before the booking confirmation page and invoice delivery. The module is reachable from any booking path (Hotels, Flights, Tours, Cars) and integrates with the User Dashboard/Booking Management for saved payment methods and booking records.",
-  "assumed_state_on_entry": "A prepared booking exists with a finalized price summary (base price, taxes, fees, discounts) and the user has an active session or guest booking session allowing checkout."
+  "summary": "Processes customer payments for completed bookings by presenting a detailed price breakdown, collecting payment details across multiple methods, and handling success or failure outcomes.",
+  "where_it_fits": "Accessible from booking flows initiated via the Home search widget or section-specific flows (Hotels, Flights, Tours, Cars) after selecting items and proceeding to book; it sits between the booking review stage and the booking confirmation page in the checkout lifecycle. The main navigation (Home, Hotels, Flights, Tours, Cars) leads users into searches and listings that ultimately route to this Payment Processing module when a reservation is being finalized.",
+  "assumed_state_on_entry": "A completed booking/reservation with traveler details and total price is present; payment intent is initiated and the user is authenticated or has provided guest booking information."
 }
 </module_context>
 
@@ -243,8 +257,11 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Payment Processing",
   "components": {
-    "Payment_Page_Form": {
+    "Payment_Page": {
       "type": "form",
+      "preconditions": [
+        "A completed booking/reservation with traveler details and total price is present; payment intent is initiated and the user is authenticated or has provided guest booking information."
+      ],
       "fields": {
         "Payment_Method": {
           "type": "dropdown",
@@ -271,7 +288,7 @@ If a `<workflows>` block is present in the input:
           "type": "unspecified",
           "visible_when": "Payment_Method == Credit/Debit Card"
         },
-        "Save_Card": {
+        "Save_Card_For_Future_Use": {
           "type": "checkbox",
           "visible_when": "Payment_Method == Credit/Debit Card"
         }
@@ -279,38 +296,31 @@ If a `<workflows>` block is present in the input:
       "submit_actions": [
         {
           "action_name": "Pay Now",
-          "on_success": "redirect to Booking_Confirmation_Page; provide reference number; send confirmation email",
-          "on_failure": "show error message (e.g., \"Card declined\", \"Insufficient funds\") and preserve booking details so user can retry",
           "preconditions": [
-            "A prepared booking exists with a finalized price summary (base price, taxes, fees, discounts) and the user has an active session or guest booking session allowing checkout."
-          ]
+            "A completed booking/reservation with traveler details and total price is present; payment intent is initiated and the user is authenticated or has provided guest booking information."
+          ],
+          "on_success": "redirects to booking confirmation page with reference number; confirmation email sent",
+          "on_failure": "displays an error message describing the issue (e.g., \"Card declined\", \"Insufficient funds\") and preserves booking details allowing the user to retry"
         },
         {
           "action_name": "Retry Payment",
-          "visible_when": "Payment_Result == Failed",
-          "on_success": "redirect to Booking_Confirmation_Page; provide reference number; send confirmation email",
-          "on_failure": "show error message and allow additional retries",
+          "visible_when": "Payment_Last_Attempt == Failed",
           "preconditions": [
-            "A prepared booking exists with a finalized price summary (base price, taxes, fees, discounts) and the user has an active session or guest booking session allowing checkout."
-          ]
+            "A completed booking/reservation with traveler details and total price is present; payment intent is initiated and the user is authenticated or has provided guest booking information."
+          ],
+          "on_success": "redirects to booking confirmation page with reference number; confirmation email sent",
+          "on_failure": "displays an error message and allows further retries without losing booking details"
         }
       ]
     },
-    "Booking_Confirmation_Page": {
-      "type": "page",
-      "preconditions": [
-        "payment must be successful"
-      ],
-      "actions": [
+    "Booking_Confirmation_Actions": {
+      "type": "action_bar",
+      "submit_actions": [
         {
-          "action_name": "Download Invoice",
-          "action_type": "download",
-          "on_trigger": "download invoice PDF for the completed booking"
+          "action_name": "Download Invoice"
         },
         {
-          "action_name": "Download Voucher",
-          "action_type": "download",
-          "on_trigger": "download voucher PDF for the completed booking"
+          "action_name": "Download Voucher"
         }
       ]
     }
@@ -328,19 +338,18 @@ The payment page displays a full booking summary with a price breakdown (base pr
 </description>
 
 <workflows>
-WF-001 | Pay Now — Credit/Debit Card | actor: User | branch: Payment_Method == Credit/Debit Card | terminal: Pay Now | on_success: redirect to Booking_Confirmation_Page; provide reference number; send confirmation email
-WF-002 | Pay Now — PayPal | actor: User | branch: Payment_Method == PayPal | terminal: Pay Now | on_success: redirect to Booking_Confirmation_Page; provide reference number; send confirmation email
-WF-003 | Pay Now — Bank Transfer | actor: User | branch: Payment_Method == Bank Transfer | terminal: Pay Now | on_success: redirect to Booking_Confirmation_Page; provide reference number; send confirmation email
-WF-004 | Pay Now — Wallet/Credits | actor: User | branch: Payment_Method == Wallet/Credits | terminal: Pay Now | on_success: redirect to Booking_Confirmation_Page; provide reference number; send confirmation email
-WF-005 | Retry Payment after failure | actor: User | branch: Payment_Result == Failed | terminal: Retry Payment | on_success: redirect to Booking_Confirmation_Page; provide reference number; send confirmation email
-WF-006 | Download Invoice from Confirmation Page | actor: User | branch: Payment_Result == Success | terminal: Download Invoice | on_success: download invoice PDF for the completed booking
-WF-007 | Download Voucher from Confirmation Page | actor: User | branch: Payment_Result == Success | terminal: Download Voucher | on_success: download voucher PDF for the completed booking
+WF-001 | Pay Now (base) | actor: <role> | branch: none | terminal: Pay Now | on_success: redirects to booking confirmation page with reference number; confirmation email sent
+WF-002 | Pay Now using Credit/Debit Card (card fields revealed) | actor: <role> | branch: Payment_Method == Credit/Debit Card | terminal: Pay Now | on_success: redirects to booking confirmation page with reference number; confirmation email sent
+WF-003 | Retry Payment after failure (base) | actor: <role> | branch: Payment_Last_Attempt == Failed | terminal: Retry Payment | on_success: redirects to booking confirmation page with reference number; confirmation email sent
+WF-004 | Retry Payment using Credit/Debit Card after failure (card fields revealed) | actor: <role> | branch: Payment_Last_Attempt == Failed AND Payment_Method == Credit/Debit Card | terminal: Retry Payment | on_success: redirects to booking confirmation page with reference number; confirmation email sent
+WF-005 | Download Invoice from confirmation | actor: <role> | branch: none | terminal: Download Invoice | on_success: Initiates download of the booking invoice (file downloaded)
+WF-006 | Download Voucher from confirmation | actor: <role> | branch: none | terminal: Download Voucher | on_success: Initiates download of the booking voucher (file downloaded)
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:28:09] Test-Edge - LLM RESPONSE
+[22:36:49] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Payment Processing",
@@ -348,153 +357,128 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Expiration date = today (card payment)",
+      "wf_ref": "WF-002",
+      "subcategory": "input_edge",
+      "test_case": "Very long Cardholder Name accepted when paying by card",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary and user has an active session",
-        "Payment_Method is not yet selected"
+        "User is on the Payment Page with a completed booking and payment intent initiated"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
-        "2. Select Payment_Method = Credit/Debit Card",
-        "3. Enter a valid Cardholder_Name",
-        "4. Enter a syntactically valid Card_Number",
-        "5. Set Expiration_Date = <today>",
-        "6. Enter a valid CVV",
-        "7. Click Pay Now"
+        "1. Select 'Credit/Debit Card' in the Payment_Method dropdown",
+        "2. Enter a very long string (200+ characters) into the Cardholder_Name field",
+        "3. Enter valid values for Card_Number (a value that should be accepted by the card validator)",
+        "4. Enter an Expiration_Date that is in the future",
+        "5. Enter a valid CVV",
+        "6. Click the 'Pay Now' button"
       ],
-      "expected_result": "Payment submission succeeds; Booking_Confirmation_Page is displayed with a reference number and confirmation email is sent",
+      "expected_result": "Form submission succeeds; user is redirected to the booking confirmation page with a reference number (booking confirmation page visible)",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Expiration date = one day before today (expired card)",
+      "wf_ref": "WF-002",
+      "subcategory": "input_edge",
+      "test_case": "Cardholder Name with emoji and extended Unicode characters is accepted",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary and user has an active session",
-        "Payment_Method is not yet selected"
+        "User is on the Payment Page with a completed booking and payment intent initiated"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
-        "2. Select Payment_Method = Credit/Debit Card",
-        "3. Enter a valid Cardholder_Name",
-        "4. Enter a syntactically valid Card_Number",
-        "5. Set Expiration_Date = <one day before today>",
-        "6. Enter a valid CVV",
-        "7. Click Pay Now"
+        "1. Select 'Credit/Debit Card' in the Payment_Method dropdown",
+        "2. Enter a name containing emoji and extended Unicode characters into the Cardholder_Name field",
+        "3. Enter valid values for Card_Number",
+        "4. Enter an Expiration_Date that is in the future",
+        "5. Enter a valid CVV",
+        "6. Click the 'Pay Now' button"
       ],
-      "expected_result": "Expiration_Date field displays an error indicating the card is expired and Pay Now is blocked; no booking is created",
+      "expected_result": "Form submission succeeds; user is redirected to the booking confirmation page with a reference number (booking confirmation page visible)",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Expiration date = far future (very long validity)",
+      "wf_ref": "WF-002",
+      "subcategory": "input_edge",
+      "test_case": "Leading and trailing whitespace in Card Number is handled before submission",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary and user has an active session",
-        "Payment_Method is not yet selected"
+        "User is on the Payment Page with a completed booking and payment intent initiated"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
-        "2. Select Payment_Method = Credit/Debit Card",
+        "1. Select 'Credit/Debit Card' in the Payment_Method dropdown",
+        "2. Enter a Card_Number value with leading and trailing whitespace",
         "3. Enter a valid Cardholder_Name",
-        "4. Enter a syntactically valid Card_Number",
-        "5. Set Expiration_Date = <far future date>",
-        "6. Enter a valid CVV",
-        "7. Click Pay Now"
+        "4. Enter an Expiration_Date that is in the future",
+        "5. Enter a valid CVV",
+        "6. Click the 'Pay Now' button"
       ],
-      "expected_result": "Payment submission succeeds; Booking_Confirmation_Page is displayed with a reference number and confirmation email is sent",
+      "expected_result": "Leading/trailing whitespace is trimmed before validation and submission; form submission succeeds and the user is redirected to the booking confirmation page with a reference number (booking confirmation page visible)",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-001",
+      "wf_ref": "WF-004",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click of Pay Now (prevent duplicate charge)",
+      "test_case": "Rapid duplicate clicks on 'Retry Payment' after a failed attempt are blocked",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary and user has an active session",
-        "Payment_Method = Credit/Debit Card and all card fields contain valid values"
+        "User reached the Payment Page and a prior payment attempt has failed (Payment_Last_Attempt == Failed) and the Retry Payment action is visible"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
-        "2. Ensure Payment_Method = Credit/Debit Card and fields are filled with valid values",
-        "3. Click Pay Now",
-        "4. Immediately click Pay Now again within one second of the first click"
+        "1. On the Payment Page, confirm an error message from the prior failed attempt is visible",
+        "2. Click the visible 'Retry Payment' button once",
+        "3. Immediately click the 'Retry Payment' button a second time (rapid duplicate click)"
       ],
-      "expected_result": "First submission proceeds; second click is blocked/ignored (Pay Now is disabled or shows in-progress state); exactly one booking confirmation is created and only one confirmation email is sent",
+      "expected_result": "Second click is blocked; the Retry Payment button becomes disabled after the first click and shows a loading indicator (only a single retry attempt is initiated from the UI)",
       "priority": "medium"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Browser Back after successful payment then attempt to resubmit (prevent duplicate booking)",
+      "wf_ref": "WF-003",
+      "subcategory": "data_edge",
+      "test_case": "Booking summary and price breakdown remain visible and unchanged after card payment failure and switching payment method",
       "preconditions": [
-        "User has completed a successful Pay Now and is on the Booking_Confirmation_Page for that booking"
+        "User is on the Payment Page with a completed booking and payment intent initiated"
       ],
       "steps": [
-        "1. On the Booking_Confirmation_Page after a successful payment, click the browser Back button",
-        "2. On the Payment Page shown after Back, click Pay Now"
+        "1. Select 'Credit/Debit Card' in the Payment_Method dropdown",
+        "2. Enter card details that trigger a card decline (cause a failed payment attempt)",
+        "3. Click the 'Pay Now' button",
+        "4. Observe the error message describing the issue (e.g., card declined)",
+        "5. Select 'PayPal' in the Payment_Method dropdown after the failure"
       ],
-      "expected_result": "Second submission is blocked; system prevents duplicate booking creation (no second booking appears in Booking Management) and user remains informed that the booking has already been processed; no duplicate confirmation email is sent",
+      "expected_result": "An error message describing the payment failure is displayed (failure state visible) and the booking summary/price breakdown remains visible and unchanged (preservation succeeds); switching to PayPal reveals the PayPal payment option/form while the booking details remain present",
       "priority": "medium"
     },
     {
       "tc_id": "E-006",
-      "wf_ref": "WF-001",
+      "wf_ref": "WF-002",
       "subcategory": "input_edge",
-      "test_case": "Cardholder name with leading and trailing whitespace is trimmed on save",
+      "test_case": "CVV field rejects non-digit characters",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary and user has an active session",
-        "Payment_Method is not yet selected"
+        "User is on the Payment Page with a completed booking and payment intent initiated"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
-        "2. Select Payment_Method = Credit/Debit Card",
-        "3. Enter Cardholder_Name = <value with leading and trailing whitespace>",
-        "4. Enter a valid Card_Number",
-        "5. Set Expiration_Date = <valid future date>",
-        "6. Enter a valid CVV",
-        "7. Click Pay Now"
+        "1. Select 'Credit/Debit Card' in the Payment_Method dropdown",
+        "2. Enter valid Cardholder_Name and Card_Number",
+        "3. Enter an Expiration_Date that is in the future",
+        "4. Enter non-digit characters into the CVV field",
+        "5. Click the 'Pay Now' button"
       ],
-      "expected_result": "Payment submission succeeds; Booking_Confirmation_Page displays the saved Cardholder_Name with leading and trailing whitespace removed (trimmed)",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-007",
-      "wf_ref": "WF-005",
-      "subcategory": "state_edge",
-      "test_case": "Rapid consecutive Retry Payment clicks after a failure (prevent concurrent retries)",
-      "preconditions": [
-        "A prepared booking exists with a finalized price summary and user has an active session",
-        "A prior payment attempt for the booking has failed and Payment_Result == Failed (Retry Payment button is visible)"
-      ],
-      "steps": [
-        "1. On the Payment Page where Retry Payment is visible, ensure card fields are filled with valid values",
-        "2. Click Retry Payment",
-        "3. Immediately click Retry Payment again while the first retry is in progress"
-      ],
-      "expected_result": "First retry request is processed; the immediate second click is blocked/ignored while the first is in progress; only one retry request is executed at a time (no concurrent duplicate retry attempts processed)",
+      "expected_result": "CVV field displays an inline validation error indicating invalid characters and submission is blocked (Pay Now is blocked / error shown)",
       "priority": "medium"
     }
   ],
   "summary": {
-    "total": 7,
-    "boundary": 3,
-    "input_edge": 1,
-    "interaction_edge": 2,
-    "state_edge": 1,
-    "data_edge": 0,
-    "medium_priority": 5,
-    "low_priority": 1
+    "total": 6,
+    "boundary": 0,
+    "input_edge": 4,
+    "interaction_edge": 1,
+    "state_edge": 0,
+    "data_edge": 1,
+    "medium_priority": 6,
+    "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:28:09] Test-Edge - PARSED JSON
+[22:36:49] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Payment Processing",
@@ -502,147 +486,122 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Expiration date = today (card payment)",
+      "wf_ref": "WF-002",
+      "subcategory": "input_edge",
+      "test_case": "Very long Cardholder Name accepted when paying by card",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary and user has an active session",
-        "Payment_Method is not yet selected"
+        "User is on the Payment Page with a completed booking and payment intent initiated"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
-        "2. Select Payment_Method = Credit/Debit Card",
-        "3. Enter a valid Cardholder_Name",
-        "4. Enter a syntactically valid Card_Number",
-        "5. Set Expiration_Date = <today>",
-        "6. Enter a valid CVV",
-        "7. Click Pay Now"
+        "1. Select 'Credit/Debit Card' in the Payment_Method dropdown",
+        "2. Enter a very long string (200+ characters) into the Cardholder_Name field",
+        "3. Enter valid values for Card_Number (a value that should be accepted by the card validator)",
+        "4. Enter an Expiration_Date that is in the future",
+        "5. Enter a valid CVV",
+        "6. Click the 'Pay Now' button"
       ],
-      "expected_result": "Payment submission succeeds; Booking_Confirmation_Page is displayed with a reference number and confirmation email is sent",
+      "expected_result": "Form submission succeeds; user is redirected to the booking confirmation page with a reference number (booking confirmation page visible)",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Expiration date = one day before today (expired card)",
+      "wf_ref": "WF-002",
+      "subcategory": "input_edge",
+      "test_case": "Cardholder Name with emoji and extended Unicode characters is accepted",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary and user has an active session",
-        "Payment_Method is not yet selected"
+        "User is on the Payment Page with a completed booking and payment intent initiated"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
-        "2. Select Payment_Method = Credit/Debit Card",
-        "3. Enter a valid Cardholder_Name",
-        "4. Enter a syntactically valid Card_Number",
-        "5. Set Expiration_Date = <one day before today>",
-        "6. Enter a valid CVV",
-        "7. Click Pay Now"
+        "1. Select 'Credit/Debit Card' in the Payment_Method dropdown",
+        "2. Enter a name containing emoji and extended Unicode characters into the Cardholder_Name field",
+        "3. Enter valid values for Card_Number",
+        "4. Enter an Expiration_Date that is in the future",
+        "5. Enter a valid CVV",
+        "6. Click the 'Pay Now' button"
       ],
-      "expected_result": "Expiration_Date field displays an error indicating the card is expired and Pay Now is blocked; no booking is created",
+      "expected_result": "Form submission succeeds; user is redirected to the booking confirmation page with a reference number (booking confirmation page visible)",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Expiration date = far future (very long validity)",
+      "wf_ref": "WF-002",
+      "subcategory": "input_edge",
+      "test_case": "Leading and trailing whitespace in Card Number is handled before submission",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary and user has an active session",
-        "Payment_Method is not yet selected"
+        "User is on the Payment Page with a completed booking and payment intent initiated"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
-        "2. Select Payment_Method = Credit/Debit Card",
+        "1. Select 'Credit/Debit Card' in the Payment_Method dropdown",
+        "2. Enter a Card_Number value with leading and trailing whitespace",
         "3. Enter a valid Cardholder_Name",
-        "4. Enter a syntactically valid Card_Number",
-        "5. Set Expiration_Date = <far future date>",
-        "6. Enter a valid CVV",
-        "7. Click Pay Now"
+        "4. Enter an Expiration_Date that is in the future",
+        "5. Enter a valid CVV",
+        "6. Click the 'Pay Now' button"
       ],
-      "expected_result": "Payment submission succeeds; Booking_Confirmation_Page is displayed with a reference number and confirmation email is sent",
+      "expected_result": "Leading/trailing whitespace is trimmed before validation and submission; form submission succeeds and the user is redirected to the booking confirmation page with a reference number (booking confirmation page visible)",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-001",
+      "wf_ref": "WF-004",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click of Pay Now (prevent duplicate charge)",
+      "test_case": "Rapid duplicate clicks on 'Retry Payment' after a failed attempt are blocked",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary and user has an active session",
-        "Payment_Method = Credit/Debit Card and all card fields contain valid values"
+        "User reached the Payment Page and a prior payment attempt has failed (Payment_Last_Attempt == Failed) and the Retry Payment action is visible"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
-        "2. Ensure Payment_Method = Credit/Debit Card and fields are filled with valid values",
-        "3. Click Pay Now",
-        "4. Immediately click Pay Now again within one second of the first click"
+        "1. On the Payment Page, confirm an error message from the prior failed attempt is visible",
+        "2. Click the visible 'Retry Payment' button once",
+        "3. Immediately click the 'Retry Payment' button a second time (rapid duplicate click)"
       ],
-      "expected_result": "First submission proceeds; second click is blocked/ignored (Pay Now is disabled or shows in-progress state); exactly one booking confirmation is created and only one confirmation email is sent",
+      "expected_result": "Second click is blocked; the Retry Payment button becomes disabled after the first click and shows a loading indicator (only a single retry attempt is initiated from the UI)",
       "priority": "medium"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Browser Back after successful payment then attempt to resubmit (prevent duplicate booking)",
+      "wf_ref": "WF-003",
+      "subcategory": "data_edge",
+      "test_case": "Booking summary and price breakdown remain visible and unchanged after card payment failure and switching payment method",
       "preconditions": [
-        "User has completed a successful Pay Now and is on the Booking_Confirmation_Page for that booking"
+        "User is on the Payment Page with a completed booking and payment intent initiated"
       ],
       "steps": [
-        "1. On the Booking_Confirmation_Page after a successful payment, click the browser Back button",
-        "2. On the Payment Page shown after Back, click Pay Now"
+        "1. Select 'Credit/Debit Card' in the Payment_Method dropdown",
+        "2. Enter card details that trigger a card decline (cause a failed payment attempt)",
+        "3. Click the 'Pay Now' button",
+        "4. Observe the error message describing the issue (e.g., card declined)",
+        "5. Select 'PayPal' in the Payment_Method dropdown after the failure"
       ],
-      "expected_result": "Second submission is blocked; system prevents duplicate booking creation (no second booking appears in Booking Management) and user remains informed that the booking has already been processed; no duplicate confirmation email is sent",
+      "expected_result": "An error message describing the payment failure is displayed (failure state visible) and the booking summary/price breakdown remains visible and unchanged (preservation succeeds); switching to PayPal reveals the PayPal payment option/form while the booking details remain present",
       "priority": "medium"
     },
     {
       "tc_id": "E-006",
-      "wf_ref": "WF-001",
+      "wf_ref": "WF-002",
       "subcategory": "input_edge",
-      "test_case": "Cardholder name with leading and trailing whitespace is trimmed on save",
+      "test_case": "CVV field rejects non-digit characters",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary and user has an active session",
-        "Payment_Method is not yet selected"
+        "User is on the Payment Page with a completed booking and payment intent initiated"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
-        "2. Select Payment_Method = Credit/Debit Card",
-        "3. Enter Cardholder_Name = <value with leading and trailing whitespace>",
-        "4. Enter a valid Card_Number",
-        "5. Set Expiration_Date = <valid future date>",
-        "6. Enter a valid CVV",
-        "7. Click Pay Now"
+        "1. Select 'Credit/Debit Card' in the Payment_Method dropdown",
+        "2. Enter valid Cardholder_Name and Card_Number",
+        "3. Enter an Expiration_Date that is in the future",
+        "4. Enter non-digit characters into the CVV field",
+        "5. Click the 'Pay Now' button"
       ],
-      "expected_result": "Payment submission succeeds; Booking_Confirmation_Page displays the saved Cardholder_Name with leading and trailing whitespace removed (trimmed)",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-007",
-      "wf_ref": "WF-005",
-      "subcategory": "state_edge",
-      "test_case": "Rapid consecutive Retry Payment clicks after a failure (prevent concurrent retries)",
-      "preconditions": [
-        "A prepared booking exists with a finalized price summary and user has an active session",
-        "A prior payment attempt for the booking has failed and Payment_Result == Failed (Retry Payment button is visible)"
-      ],
-      "steps": [
-        "1. On the Payment Page where Retry Payment is visible, ensure card fields are filled with valid values",
-        "2. Click Retry Payment",
-        "3. Immediately click Retry Payment again while the first retry is in progress"
-      ],
-      "expected_result": "First retry request is processed; the immediate second click is blocked/ignored while the first is in progress; only one retry request is executed at a time (no concurrent duplicate retry attempts processed)",
+      "expected_result": "CVV field displays an inline validation error indicating invalid characters and submission is blocked (Pay Now is blocked / error shown)",
       "priority": "medium"
     }
   ],
   "summary": {
-    "total": 7,
-    "boundary": 3,
-    "input_edge": 1,
-    "interaction_edge": 2,
-    "state_edge": 1,
-    "data_edge": 0,
-    "medium_priority": 5,
-    "low_priority": 1
+    "total": 6,
+    "boundary": 0,
+    "input_edge": 4,
+    "interaction_edge": 1,
+    "state_edge": 0,
+    "data_edge": 1,
+    "medium_priority": 6,
+    "low_priority": 0
   }
 }

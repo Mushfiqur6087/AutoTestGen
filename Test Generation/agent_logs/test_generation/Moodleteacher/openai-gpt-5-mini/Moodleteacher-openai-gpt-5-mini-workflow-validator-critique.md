@@ -1,17 +1,15 @@
 # Workflow Critique — Moodleteacher
 
-Generated: 2026-07-04T15:16:13.004569Z
+Generated: 2026-07-04T16:52:18.727894Z
 
 ## Login
 
 **Verdict:** yes  
 **Forced ship:** no  
 
-Workflows cover all required submit and action button paths; one minor non-critical UI link (disabled 'Lost password?') is not represented as a workflow.
+The provided workflows cover all required submit and action/button actions in the AST (Log in, Access as a guest, Cookies notice); no missing or phantom workflows or structural errors were found.
 
-**Missing workflows:**
-
-- {'path': "components.Login_Form.fields.Lost_Password (link 'Lost password?')", 'severity': 'minor', 'reason': "The AST defines a 'Lost password?' link in the login form (disabled on this test site) but there is no workflow covering the user clicking this link; omission is non-critical since it does not affect form submission or state transitions."}
+**Missing workflows:** none
 
 **Phantom workflows:** none
 
@@ -19,20 +17,14 @@ Workflows cover all required submit and action button paths; one minor non-criti
 
 ## Dashboard
 
-**Verdict:** retry (forced ship)  
-**Forced ship:** yes  
+**Verdict:** yes  
+**Forced ship:** no  
 
-Workflows mostly match the AST, but several workflows use a conditional_branch that references a non-existent state/field (structural errors) and must be fixed.
+Workflows cover all actionable AST items (buttons and links) and there are no missing or phantom critical workflows.
 
 **Missing workflows:** none
 
 **Phantom workflows:** none
-
-**Fixes applied:**
-
-- For WF-007 (Create a new calendar event): either remove the conditional_branch 'user_logged_in == true' (since actor is already 'Authenticated user'), or add a corresponding state key to the AST (e.g., a state_bound_action_bar state 'user_logged_in') and reference that exact state name in the workflow conditional_branch.
-- For WF-008 (Open full calendar view): either remove the conditional_branch 'user_logged_in == true' (actor already 'Authenticated user'), or add a corresponding state key to the AST (e.g., 'user_logged_in') and update the workflow to use that state name.
-- For WF-009 (Open calendar import/export management): either remove the conditional_branch 'user_logged_in == true' (actor already 'Authenticated user'), or add a corresponding state key to the AST (e.g., 'user_logged_in') and update the workflow to use that state name.
 
 ---
 
@@ -41,7 +33,7 @@ Workflows mostly match the AST, but several workflows use a conditional_branch t
 **Verdict:** yes  
 **Forced ship:** no  
 
-The provided workflows cover all actions and conditional branches expressed in the AST; no missing or phantom workflows or structural errors were found.
+The provided workflows cover all submit_actions and row_actions in the AST, conditional branches reference the existing Edit_Mode field, and there are no missing or phantom workflows or structural errors.
 
 **Missing workflows:** none
 
@@ -54,7 +46,7 @@ The provided workflows cover all actions and conditional branches expressed in t
 **Verdict:** yes  
 **Forced ship:** no  
 
-Workflows cover all actionable items defined in the AST (card click, course-name link, and both card item actions); no missing or phantom workflows detected.
+The workflows cover the card link and both card row actions declared in the AST; no missing or phantom workflows or structural errors were found.
 
 **Missing workflows:** none
 
@@ -67,7 +59,7 @@ Workflows cover all actionable items defined in the AST (card click, course-name
 **Verdict:** yes  
 **Forced ship:** no  
 
-The provided workflows cover all actionable AST nodes (index link, section toggle, collapse-all, activity and resource links) and no structural errors or phantoms were detected.
+The provided workflows cover all actionable elements defined in the AST (Collapse_All, Toggle_Section, Activity_Name) with correct conditional handling and on_success behavior.
 
 **Missing workflows:** none
 
@@ -80,7 +72,7 @@ The provided workflows cover all actionable AST nodes (index link, section toggl
 **Verdict:** yes  
 **Forced ship:** no  
 
-Workflows cover all AST actions (section/activity menus, quick rename, bulk actions, activity chooser Add per tile, and favorite toggle); no critical or structural issues found.
+The workflow list fully and correctly covers all actionable items declared in the AST (section/activity menus, bulk actions, add buttons, and the Activity Chooser), with no missing or phantom workflows and no structural errors.
 
 **Missing workflows:** none
 
@@ -90,14 +82,22 @@ Workflows cover all AST actions (section/activity menus, quick rename, bulk acti
 
 ## Assignment Creation
 
-**Verdict:** yes  
-**Forced ship:** no  
+**Verdict:** retry (forced ship)  
+**Forced ship:** yes  
 
-The workflow list correctly covers all form submit actions across the visible_when condition combinations (File_Submissions, Group_Submissions, Add_Restriction_Button_Clicked), with no missing or phantom workflows and no structural errors.
+The workflow list omits required submit-action workflows for some conditional visibility combinations (Save and display is missing for File-only and Group-only conditions).
 
-**Missing workflows:** none
+**Missing workflows:**
+
+- {'path': "Assignment_Creation_Form: visible_when combination File_Submissions == true × submit_action 'Save and display'", 'severity': 'critical', 'reason': "The form has fields visible_when File_Submissions == true; the submit_action 'Save and display' must have a workflow covering the condition where File_Submissions is true but Group_Submissions is not."}
+- {'path': "Assignment_Creation_Form: visible_when combination Group_Submissions == true × submit_action 'Save and display'", 'severity': 'critical', 'reason': "The form has fields visible_when Group_Submissions == true; the submit_action 'Save and display' must have a workflow covering the condition where Group_Submissions is true but File_Submissions is not."}
 
 **Phantom workflows:** none
+
+**Fixes applied:**
+
+- Add a workflow for Assignment_Creation_Form with conditional_branch 'File_Submissions == true && Group_Submissions == false' (or 'File_Submissions == true' if mutually exclusive branches aren't modeled) and terminal_action 'Save and display' with the matching on_success 'creates the assignment and opens the new assignment page'.
+- Add a workflow for Assignment_Creation_Form with conditional_branch 'Group_Submissions == true && File_Submissions == false' (or 'Group_Submissions == true') and terminal_action 'Save and display' with the matching on_success 'creates the assignment and opens the new assignment page'.
 
 ---
 
@@ -106,7 +106,7 @@ The workflow list correctly covers all form submit actions across the visible_wh
 **Verdict:** yes  
 **Forced ship:** no  
 
-The provided workflows cover the form's submit actions across the conditional combinations implied by Course_End_Date_Enable and Course_Format; no missing or phantom workflows or structural errors were found.
+Workflows cover the form's submit actions and the visible_when condition for Course_Format; no missing or phantom workflows or structural errors detected.
 
 **Missing workflows:** none
 
@@ -119,7 +119,7 @@ The provided workflows cover the form's submit actions across the conditional co
 **Verdict:** yes  
 **Forced ship:** no  
 
-Workflows comprehensively cover all submit_actions, data_table row and bulk actions, and dialog submissions in the AST; no critical or structural issues found.
+The workflow list covers all required form submit actions, data table row and bulk actions, and dialog submit actions in the AST; no critical or structural issues found.
 
 **Missing workflows:** none
 
@@ -132,7 +132,7 @@ Workflows comprehensively cover all submit_actions, data_table row and bulk acti
 **Verdict:** yes  
 **Forced ship:** no  
 
-The workflow list includes the Grade button path required by the AST; no required workflows are missing and there are no structural errors.
+The single workflow matches the action_bar's 'Grade' action and there are no forms, state-bound actions, or data tables requiring additional workflows.
 
 **Missing workflows:** none
 
@@ -145,7 +145,7 @@ The workflow list includes the Grade button path required by the AST; no require
 **Verdict:** yes  
 **Forced ship:** no  
 
-Workflows cover all actionable fields, table row actions, and the conditional quick-grading path; no critical or structural issues found.
+The workflow list covers all row actions and the Quick Grading toggle referenced in the AST and description; no critical or structural issues found.
 
 **Missing workflows:** none
 
@@ -158,7 +158,7 @@ Workflows cover all actionable fields, table row actions, and the conditional qu
 **Verdict:** yes  
 **Forced ship:** no  
 
-The provided workflows cover the data_table submit action and the listed column and cell actions in the AST, with no missing critical paths or structural errors.
+Workflows cover the data table's submit action and the listed cell/column actions; no critical gaps or structural errors found.
 
 **Missing workflows:** none
 
@@ -171,7 +171,7 @@ The provided workflows cover the data_table submit action and the listed column 
 **Verdict:** yes  
 **Forced ship:** no  
 
-All actionable elements in the AST (links and buttons) have corresponding workflows; no missing or phantom workflows detected and no structural errors found.
+All actionable AST nodes have matching workflows and there are no structural errors or phantoms.
 
 **Missing workflows:** none
 
@@ -184,7 +184,7 @@ All actionable elements in the AST (links and buttons) have corresponding workfl
 **Verdict:** yes  
 **Forced ship:** no  
 
-Workflows cover all required form submit actions (Update profile, Cancel); no missing or phantom critical paths detected.
+Workflows correctly cover all form submit actions (Update profile, Cancel) with matching on_success values; no missing or phantom workflows detected.
 
 **Missing workflows:** none
 
@@ -197,7 +197,7 @@ Workflows cover all required form submit actions (Update profile, Cancel); no mi
 **Verdict:** yes  
 **Forced ship:** no  
 
-The single workflow covers the Logout action defined in the AST; no missing or phantom workflows or structural errors were found.
+The provided workflow covers the single Log out action from the top navigation menu and matches the AST and module context; no missing or phantom workflows or structural errors were found.
 
 **Missing workflows:** none
 

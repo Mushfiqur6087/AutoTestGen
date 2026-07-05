@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.251398
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.944457
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - SYSTEM PROMPT
+[22:49:29] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - USER PROMPT
+[22:49:29] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 14,
   "module_title": "Profile Edit",
-  "summary": "Allows a logged-in user to modify their personal information, avatar, optional names, interests, and site-defined custom fields via a validated, collapsible form with upload support.",
-  "where_it_fits": "Accessible from the top navigation user menu (User initials \u2192 Profile \u2192 Edit) and part of account management within the global navigation; it is used after profile viewing and before returning to the refreshed profile page or other user-related areas like Private Files or Preferences. The module is independent of course-level navigation and appears in the global user settings flow reached from the header.",
-  "assumed_state_on_entry": "User is authenticated (logged in) and has an existing profile record; the user has navigated to their Profile Edit screen via the top-right user menu."
+  "summary": "Allows a user to edit their personal profile information, upload or change their user picture, and modify optional/custom fields via a multi-section form with validation.",
+  "where_it_fits": "Accessible from the top navigation user menu under Profile, this module is part of the user account management flow and is reached from the global site header; after successful updates it returns the user to their Profile page. It sits alongside other account-related screens like Profile, Profile Edit, and Preferences in the user settings lifecycle.",
+  "assumed_state_on_entry": "Logged in user who has opened their Profile page and has permission to edit their profile"
 }
 </module_context>
 
@@ -262,16 +272,13 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Profile_Edit_Form": {
       "type": "form",
-      "actions": [
-        {
-          "action_name": "Expand all",
-          "type": "link",
-          "on_success": "expands all collapsible sections"
-        }
-      ],
       "fields": {
-        "General": {
-          "type": "form_section",
+        "Expand_All": {
+          "type": "link",
+          "action_name": "Expand all"
+        },
+        "General_Section": {
+          "type": "section",
           "collapsible": true,
           "fields": {
             "First_Name": {
@@ -303,19 +310,19 @@ If a `<workflows>` block is present in the input:
             },
             "Description": {
               "type": "unspecified",
-              "widget": "rich_text_editor"
+              "widget": "rich_text"
             }
           }
         },
-        "User_Picture": {
-          "type": "form_section",
+        "User_Picture_Section": {
+          "type": "section",
           "collapsible": true,
           "fields": {
-            "New_Picture_Upload": {
+            "New_Picture": {
               "type": "file_upload",
               "supports_drag_and_drop": true,
               "constraints": [
-                "must meet site-defined upload constraints (file type, size)"
+                "must meet site upload constraints"
               ]
             },
             "Picture_Description": {
@@ -323,47 +330,47 @@ If a `<workflows>` block is present in the input:
             }
           }
         },
-        "Additional_Names": {
-          "type": "form_section",
+        "Additional_Names_Section": {
+          "type": "section",
           "collapsible": true,
           "fields": {
-            "Alternative_Name": {
-              "type": "unspecified"
+            "Additional_Names": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Additional_Name": {
+                  "type": "unspecified"
+                }
+              }
             }
           }
         },
-        "Interests": {
-          "type": "form_section",
+        "Interests_Section": {
+          "type": "section",
           "collapsible": true,
           "fields": {
-            "Interests_Tags": {
+            "Interests": {
               "type": "unspecified",
               "widget": "tag_input"
             }
           }
         },
-        "Optional_Fields": {
-          "type": "form_section",
+        "Optional_Fields_Section": {
+          "type": "section",
           "collapsible": true,
-          "fields": {
-            "Site_Defined_Custom_Fields": {
-              "type": "unspecified",
-              "note": "dynamic set of custom fields defined by the site"
-            }
-          }
+          "fields": {}
         }
       },
       "submit_actions": [
         {
           "action_name": "Update profile",
-          "on_success": "refreshes the profile page",
           "preconditions": [
-            "User is authenticated (logged in)",
-            "User has an existing profile record"
+            "Logged in user who has opened their Profile page and has permission to edit their profile"
           ],
           "constraints": [
-            "validates all required fields and upload constraints before saving"
-          ]
+            "validates required fields before saving",
+            "validates upload constraints before saving"
+          ],
+          "on_success": "refreshes the profile page"
         },
         {
           "action_name": "Cancel",
@@ -385,14 +392,14 @@ The Edit profile form contains collapsible sections with an "Expand all" link at
 </description>
 
 <workflows>
-WF-001 | Update profile (save changes) | actor: Authenticated user | branch: none | terminal: Update profile | on_success: refreshes the profile page
-WF-002 | Cancel edit (discard changes) | actor: Authenticated user | branch: none | terminal: Cancel | on_success: exits without making changes
+WF-001 | Update profile (save changes) | actor: Logged in user | branch: none | terminal: Update profile | on_success: refreshes the profile page
+WF-002 | Cancel edit (exit without saving) | actor: Logged in user | branch: none | terminal: Cancel | on_success: exits without making changes
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:15:32] Test-Negative - LLM RESPONSE
+[22:52:06] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Profile Edit",
@@ -401,101 +408,117 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Leave required text field (First_Name) blank and attempt Update profile",
-      "preconditions": ["User is authenticated", "User has an existing profile record", "On Profile Edit screen"],
-      "steps": [
-        "1. Clear the First_Name field so it is empty",
-        "2. Enter valid values into Last_Name and Email_Address",
-        "3. Click the 'Update profile' button"
+      "test_case": "Submit with all required fields empty",
+      "preconditions": [
+        "Logged in user on Profile Edit page with permission to edit profile"
       ],
-      "expected_result": "Inline validation error appears on the First_Name field indicating it is required; the form does not submit; the profile is not updated; First_Name remains highlighted with the required-field error.",
+      "steps": [
+        "1. Clear the First Name field so it is empty",
+        "2. Clear the Last Name field so it is empty",
+        "3. Clear the Email Address field so it is empty",
+        "4. Click the 'Update profile' button"
+      ],
+      "expected_result": "Form does not submit; inline validation errors appear on First Name, Last Name and Email Address indicating they are required; the profile page is not refreshed and no changes are saved",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Leave Email_Address blank and attempt Update profile",
-      "preconditions": ["User is authenticated", "User has an existing profile record", "On Profile Edit screen"],
+      "test_case": "Leave required text field blank (representative for First/Last name)",
+      "preconditions": [
+        "Logged in user on Profile Edit page with permission to edit profile"
+      ],
       "steps": [
-        "1. Clear the Email_Address field so it is empty",
-        "2. Enter valid values into First_Name and Last_Name",
+        "1. Ensure Last Name and Email Address contain valid values",
+        "2. Leave the First Name field blank",
         "3. Click the 'Update profile' button"
       ],
-      "expected_result": "Inline validation error appears on the Email_Address field indicating it is required; the form does not submit; the profile is not updated; Email_Address field remains highlighted with the required-field error.",
+      "expected_result": "Form does not submit; an inline validation error appears on the First Name field indicating it is required; the profile is not updated",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Submit form with ALL required fields empty",
-      "preconditions": ["User is authenticated", "User has an existing profile record", "On Profile Edit screen"],
-      "steps": [
-        "1. Clear First_Name, Last_Name and Email_Address so all three are empty",
-        "2. Click the 'Update profile' button"
+      "test_case": "Leave required email field blank",
+      "preconditions": [
+        "Logged in user on Profile Edit page with permission to edit profile"
       ],
-      "expected_result": "Inline validation errors appear on First_Name, Last_Name and Email_Address indicating they are required; the form does not submit; the profile is not updated; the page remains on the edit form with the three fields highlighted.",
+      "steps": [
+        "1. Ensure First Name and Last Name contain valid values",
+        "2. Clear the Email Address field so it is empty",
+        "3. Click the 'Update profile' button"
+      ],
+      "expected_result": "Form does not submit; an inline validation error appears on the Email Address field indicating it is required; the profile is not updated",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-001",
-      "test_case": "Enter invalid email format in Email_Address and attempt Update profile",
-      "preconditions": ["User is authenticated", "User has an existing profile record", "On Profile Edit screen"],
+      "test_case": "Enter invalid email format in Email Address",
+      "preconditions": [
+        "Logged in user on Profile Edit page with permission to edit profile"
+      ],
       "steps": [
-        "1. Enter <invalid email format> into the Email_Address field",
-        "2. Enter valid values into First_Name and Last_Name",
+        "1. Enter <invalid email format> into the Email Address field",
+        "2. Ensure First Name and Last Name contain valid values",
         "3. Click the 'Update profile' button"
       ],
-      "expected_result": "Email_Address field displays an inline validation error indicating the value is not a valid email address; the form does not submit; the profile is not updated.",
+      "expected_result": "Form does not submit; the Email Address field displays an inline validation error indicating the value is not a valid email format; the profile is not updated",
       "priority": "medium"
     },
     {
       "tc_id": "N-005",
       "wf_ref": "WF-001",
-      "test_case": "Upload a file with a disallowed file type to New_Picture_Upload and attempt Update profile",
-      "preconditions": ["User is authenticated", "User has an existing profile record", "On Profile Edit screen"],
-      "steps": [
-        "1. In the New_Picture_Upload drag-and-drop area, attempt to upload <file with disallowed type>",
-        "2. Ensure required text/email fields are valid",
-        "3. Click the 'Update profile' button"
+      "test_case": "Upload new picture that violates site upload constraints (exceeds size limit)",
+      "preconditions": [
+        "Logged in user on Profile Edit page with permission to edit profile"
       ],
-      "expected_result": "New_Picture_Upload control displays an inline error indicating the uploaded file type is not allowed per site upload constraints; the form does not submit; the profile (including current picture) is not updated or replaced.",
+      "steps": [
+        "1. In the User Picture section, attempt to upload <file exceeding site maximum upload size> via drag-and-drop or file selector",
+        "2. Click the 'Update profile' button"
+      ],
+      "expected_result": "Upload area shows an inline error indicating the file does not meet site upload constraints; form does not submit; profile picture remains unchanged and the profile page is not refreshed",
       "priority": "high"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Upload a file exceeding site maximum size to New_Picture_Upload and attempt Update profile",
-      "preconditions": ["User is authenticated", "User has an existing profile record", "On Profile Edit screen"],
-      "steps": [
-        "1. In the New_Picture_Upload drag-and-drop area, attempt to upload <file exceeding site max upload size>",
-        "2. Ensure required text/email fields are valid",
-        "3. Click the 'Update profile' button"
+      "test_case": "Upload new picture that violates site upload constraints (unsupported file type)",
+      "preconditions": [
+        "Logged in user on Profile Edit page with permission to edit profile"
       ],
-      "expected_result": "New_Picture_Upload control displays an inline error indicating the uploaded file exceeds the maximum allowed size per site upload constraints; the form does not submit; the profile (including current picture) is not updated.",
+      "steps": [
+        "1. In the User Picture section, attempt to upload <file with unsupported file type> via drag-and-drop or file selector",
+        "2. Click the 'Update profile' button"
+      ],
+      "expected_result": "Upload area shows an inline error indicating the file does not meet site upload constraints (unsupported file type); form does not submit; profile picture remains unchanged and the profile page is not refreshed",
       "priority": "high"
     },
     {
       "tc_id": "N-007",
-      "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access Profile Edit page",
-      "preconditions": ["User is not authenticated"],
-      "steps": [
-        "1. From a logged-out browser session, navigate to the Profile Edit URL or select Profile -> Edit from the header menu"
+      "wf_ref": "WF-001",
+      "test_case": "Unauthenticated user cannot access Profile Edit",
+      "preconditions": [
+        "User is not authenticated (not logged in)"
       ],
-      "expected_result": "User is redirected to the login page (or shown an authentication-required screen); the Profile Edit form is not displayed and no profile editing controls are accessible.",
+      "steps": [
+        "1. Navigate directly to the Profile Edit page URL or select Profile > Edit from the site header while not logged in"
+      ],
+      "expected_result": "User is redirected to the login page; the Profile Edit form is not displayed or accessible and no edit controls are available",
       "priority": "high"
     },
     {
       "tc_id": "N-008",
       "wf_ref": "WF-001",
-      "test_case": "Authenticated user without an existing profile record attempts to Update profile",
-      "preconditions": ["User is authenticated", "User does NOT have an existing profile record", "On Profile Edit screen (if accessible)"],
-      "steps": [
-        "1. Enter valid values into First_Name, Last_Name and Email_Address",
-        "2. Click the 'Update profile' button"
+      "test_case": "Logged-in user without edit permission is blocked from editing",
+      "preconditions": [
+        "Logged in user who does NOT have permission to edit profile"
       ],
-      "expected_result": "A blocking error is shown indicating the profile cannot be updated because no existing profile record exists (error banner or inline error); the form does not submit; no new profile is created and no changes are saved.",
+      "steps": [
+        "1. Log in as a user account that lacks profile edit permission",
+        "2. Navigate to Profile > Edit"
+      ],
+      "expected_result": "Profile Edit form is not editable: the Update profile button is not visible or is disabled and the form fields are read-only; an authorization/access denied notice is shown and no changes can be submitted",
       "priority": "high"
     }
   ],
@@ -508,7 +531,7 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
 }
 
 ------------------------------------------------------------
-[21:15:32] Test-Negative - PARSED JSON
+[22:52:06] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Profile Edit",
@@ -517,131 +540,117 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Leave required text field (First_Name) blank and attempt Update profile",
+      "test_case": "Submit with all required fields empty",
       "preconditions": [
-        "User is authenticated",
-        "User has an existing profile record",
-        "On Profile Edit screen"
+        "Logged in user on Profile Edit page with permission to edit profile"
       ],
       "steps": [
-        "1. Clear the First_Name field so it is empty",
-        "2. Enter valid values into Last_Name and Email_Address",
-        "3. Click the 'Update profile' button"
+        "1. Clear the First Name field so it is empty",
+        "2. Clear the Last Name field so it is empty",
+        "3. Clear the Email Address field so it is empty",
+        "4. Click the 'Update profile' button"
       ],
-      "expected_result": "Inline validation error appears on the First_Name field indicating it is required; the form does not submit; the profile is not updated; First_Name remains highlighted with the required-field error.",
+      "expected_result": "Form does not submit; inline validation errors appear on First Name, Last Name and Email Address indicating they are required; the profile page is not refreshed and no changes are saved",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Leave Email_Address blank and attempt Update profile",
+      "test_case": "Leave required text field blank (representative for First/Last name)",
       "preconditions": [
-        "User is authenticated",
-        "User has an existing profile record",
-        "On Profile Edit screen"
+        "Logged in user on Profile Edit page with permission to edit profile"
       ],
       "steps": [
-        "1. Clear the Email_Address field so it is empty",
-        "2. Enter valid values into First_Name and Last_Name",
+        "1. Ensure Last Name and Email Address contain valid values",
+        "2. Leave the First Name field blank",
         "3. Click the 'Update profile' button"
       ],
-      "expected_result": "Inline validation error appears on the Email_Address field indicating it is required; the form does not submit; the profile is not updated; Email_Address field remains highlighted with the required-field error.",
+      "expected_result": "Form does not submit; an inline validation error appears on the First Name field indicating it is required; the profile is not updated",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Submit form with ALL required fields empty",
+      "test_case": "Leave required email field blank",
       "preconditions": [
-        "User is authenticated",
-        "User has an existing profile record",
-        "On Profile Edit screen"
+        "Logged in user on Profile Edit page with permission to edit profile"
       ],
       "steps": [
-        "1. Clear First_Name, Last_Name and Email_Address so all three are empty",
-        "2. Click the 'Update profile' button"
+        "1. Ensure First Name and Last Name contain valid values",
+        "2. Clear the Email Address field so it is empty",
+        "3. Click the 'Update profile' button"
       ],
-      "expected_result": "Inline validation errors appear on First_Name, Last_Name and Email_Address indicating they are required; the form does not submit; the profile is not updated; the page remains on the edit form with the three fields highlighted.",
+      "expected_result": "Form does not submit; an inline validation error appears on the Email Address field indicating it is required; the profile is not updated",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-001",
-      "test_case": "Enter invalid email format in Email_Address and attempt Update profile",
+      "test_case": "Enter invalid email format in Email Address",
       "preconditions": [
-        "User is authenticated",
-        "User has an existing profile record",
-        "On Profile Edit screen"
+        "Logged in user on Profile Edit page with permission to edit profile"
       ],
       "steps": [
-        "1. Enter <invalid email format> into the Email_Address field",
-        "2. Enter valid values into First_Name and Last_Name",
+        "1. Enter <invalid email format> into the Email Address field",
+        "2. Ensure First Name and Last Name contain valid values",
         "3. Click the 'Update profile' button"
       ],
-      "expected_result": "Email_Address field displays an inline validation error indicating the value is not a valid email address; the form does not submit; the profile is not updated.",
+      "expected_result": "Form does not submit; the Email Address field displays an inline validation error indicating the value is not a valid email format; the profile is not updated",
       "priority": "medium"
     },
     {
       "tc_id": "N-005",
       "wf_ref": "WF-001",
-      "test_case": "Upload a file with a disallowed file type to New_Picture_Upload and attempt Update profile",
+      "test_case": "Upload new picture that violates site upload constraints (exceeds size limit)",
       "preconditions": [
-        "User is authenticated",
-        "User has an existing profile record",
-        "On Profile Edit screen"
+        "Logged in user on Profile Edit page with permission to edit profile"
       ],
       "steps": [
-        "1. In the New_Picture_Upload drag-and-drop area, attempt to upload <file with disallowed type>",
-        "2. Ensure required text/email fields are valid",
-        "3. Click the 'Update profile' button"
+        "1. In the User Picture section, attempt to upload <file exceeding site maximum upload size> via drag-and-drop or file selector",
+        "2. Click the 'Update profile' button"
       ],
-      "expected_result": "New_Picture_Upload control displays an inline error indicating the uploaded file type is not allowed per site upload constraints; the form does not submit; the profile (including current picture) is not updated or replaced.",
+      "expected_result": "Upload area shows an inline error indicating the file does not meet site upload constraints; form does not submit; profile picture remains unchanged and the profile page is not refreshed",
       "priority": "high"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Upload a file exceeding site maximum size to New_Picture_Upload and attempt Update profile",
+      "test_case": "Upload new picture that violates site upload constraints (unsupported file type)",
       "preconditions": [
-        "User is authenticated",
-        "User has an existing profile record",
-        "On Profile Edit screen"
+        "Logged in user on Profile Edit page with permission to edit profile"
       ],
       "steps": [
-        "1. In the New_Picture_Upload drag-and-drop area, attempt to upload <file exceeding site max upload size>",
-        "2. Ensure required text/email fields are valid",
-        "3. Click the 'Update profile' button"
+        "1. In the User Picture section, attempt to upload <file with unsupported file type> via drag-and-drop or file selector",
+        "2. Click the 'Update profile' button"
       ],
-      "expected_result": "New_Picture_Upload control displays an inline error indicating the uploaded file exceeds the maximum allowed size per site upload constraints; the form does not submit; the profile (including current picture) is not updated.",
+      "expected_result": "Upload area shows an inline error indicating the file does not meet site upload constraints (unsupported file type); form does not submit; profile picture remains unchanged and the profile page is not refreshed",
       "priority": "high"
     },
     {
       "tc_id": "N-007",
-      "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access Profile Edit page",
+      "wf_ref": "WF-001",
+      "test_case": "Unauthenticated user cannot access Profile Edit",
       "preconditions": [
-        "User is not authenticated"
+        "User is not authenticated (not logged in)"
       ],
       "steps": [
-        "1. From a logged-out browser session, navigate to the Profile Edit URL or select Profile -> Edit from the header menu"
+        "1. Navigate directly to the Profile Edit page URL or select Profile > Edit from the site header while not logged in"
       ],
-      "expected_result": "User is redirected to the login page (or shown an authentication-required screen); the Profile Edit form is not displayed and no profile editing controls are accessible.",
+      "expected_result": "User is redirected to the login page; the Profile Edit form is not displayed or accessible and no edit controls are available",
       "priority": "high"
     },
     {
       "tc_id": "N-008",
       "wf_ref": "WF-001",
-      "test_case": "Authenticated user without an existing profile record attempts to Update profile",
+      "test_case": "Logged-in user without edit permission is blocked from editing",
       "preconditions": [
-        "User is authenticated",
-        "User does NOT have an existing profile record",
-        "On Profile Edit screen (if accessible)"
+        "Logged in user who does NOT have permission to edit profile"
       ],
       "steps": [
-        "1. Enter valid values into First_Name, Last_Name and Email_Address",
-        "2. Click the 'Update profile' button"
+        "1. Log in as a user account that lacks profile edit permission",
+        "2. Navigate to Profile > Edit"
       ],
-      "expected_result": "A blocking error is shown indicating the profile cannot be updated because no existing profile record exists (error banner or inline error); the form does not submit; no new profile is created and no changes are saved.",
+      "expected_result": "Profile Edit form is not editable: the Update profile button is not visible or is disabled and the form fields are read-only; an authorization/access denied notice is shown and no changes can be submitted",
       "priority": "high"
     }
   ],

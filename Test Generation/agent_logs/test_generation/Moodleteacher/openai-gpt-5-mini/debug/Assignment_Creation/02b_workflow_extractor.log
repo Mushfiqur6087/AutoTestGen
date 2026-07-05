@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:10:14.002316
+DEBUG SESSION STARTED: 2026-07-04T22:46:26.193085
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:10:14] Workflow-Extractor - SYSTEM PROMPT
+[22:46:26] Workflow-Extractor - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Workflow Extractor. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to enumerate every distinct, executable interaction path through this module — one entry per workflow.
 
@@ -54,12 +54,12 @@ Two workflows are **distinct** if they require different user actions to reach t
 
 ## What Paths to Enumerate
 
-Enumerate **all** distinct paths — not one-per-type. The rule: if two paths require the user to do something different to reach the terminal action, they are separate workflows.
+Enumerate **distinct-outcome** paths — not one-per-type, and **not** the cartesian product of every toggle. The rule: two paths are separate workflows only if the user does something different that leads to a **different terminal outcome** (different `on_success`) **or** exercises a **different revealed required-field group** that needs its own coverage.
 
 | AST node type | What to enumerate |
 |---|---|
 | `form` with no conditionals | One workflow per `submit_actions[]` entry |
-| `form` with `visible_when` fields | One workflow per unique combination of conditional branches activated, times each `submit_actions[]` entry |
+| `form` with `visible_when` / toggle fields | One base workflow per `submit_actions[]` entry, PLUS one workflow for **each conditional branch that reveals a distinct required-field group** (e.g. enabling File submissions reveals max-files/size/types). Do **NOT** multiply independent toggles together. |
 | `wizard` | One workflow per distinct step sequence (if all steps are linear, one workflow per `submit_actions[]`; if any step is conditional, enumerate each branch) |
 | `state_bound_action_bar` | One workflow per `available_actions[]` entry per state (state × action = one workflow) |
 | `data_table` | One workflow per `row_actions[]` entry + one per `bulk_actions[]` entry (include View, Edit, Delete, and all others) |
@@ -67,6 +67,20 @@ Enumerate **all** distinct paths — not one-per-type. The rule: if two paths re
 | `repeating_group` | Not a standalone workflow source — it is part of a form workflow that activates it |
 
 **Include all data table row actions** — View, Edit, Delete, and any others. Even read-only row actions (e.g., "View") must be included because they still require a positive test case.
+
+### DO NOT enumerate the cartesian product of toggles (CRITICAL)
+
+A form with independent toggles A, B, C and submit buttons {Save, Save+display, Cancel} must **not** produce 2×2×2×3 = 24 workflows. Independent toggles that do **not** change the terminal outcome are covered **once each**, not in combination:
+- If toggle A (e.g. `File_Submissions`) and toggle B (e.g. `Group_Submissions`) both still reach the same `on_success` ("assignment created"), they are **not** two dimensions to multiply. Emit one workflow that activates A's revealed fields, and one that activates B's revealed fields — not A×B.
+- An `+ Add restriction` / optional-picker step that does not change `on_success` is **not** a separate workflow dimension. Fold it into an existing workflow or add at most one workflow for it.
+
+### Discard / Cancel collapse rule (CRITICAL)
+
+A `Cancel` / `discard` / `abandon` terminal action discards **all** field state, so field/toggle combinations are irrelevant to it. Emit **exactly ONE** Cancel workflow for the module, regardless of how many toggles or revealed-field groups exist. Never produce a Cancel workflow per toggle combination.
+
+**Worked example — Assignment Creation** (toggles: File submissions, Group submissions, Add restriction; buttons: Save and return, Save and display, Cancel):
+- ✅ Correct (~6–8): base Save-and-return, base Save-and-display, one Save covering File-submission revealed fields, one Save covering Group-submission revealed fields, one Save covering an added restriction, one Cancel.
+- ❌ Wrong (24): every `{File}×{Group}×{Restriction}×{Save/Display/Cancel}` combination.
 
 ---
 
@@ -101,9 +115,11 @@ Go through these one by one. If any check fails, fix it before outputting.
 □ 4. Every tab with a form submission in a `tab_container` has one workflow.
 □ 5. `wf_id` numbering is sequential (WF-001, WF-002, ...) with no gaps.
 □ 6. Every `terminal_action` matches an exact `action_name` or `element_name` from the AST.
-□ 7. No two workflows share the same `conditional_branch` AND `terminal_action`.
-□ 8. No workflow crosses module boundaries (steps in another module).
-□ 9. Every `on_success` reflects the AST or description — no generic "success" strings.
+□ 7. No two workflows reach the **same `on_success` via the same code path** — even if their `conditional_branch` strings differ. If they do, merge them (keep the one that activates a distinct revealed required-field group; drop pure toggle-combination duplicates).
+□ 8. There is **at most ONE** `Cancel`/`discard` workflow for the whole module.
+□ 9. No independent toggles are multiplied together — the workflow count is roughly (base submits) + (revealed required-field groups) + 1 Cancel, NOT the product of all toggles × all buttons.
+□ 10. No workflow crosses module boundaries (steps in another module).
+□ 11. Every `on_success` reflects the AST or description — no generic "success" strings.
 
 ---
 
@@ -111,7 +127,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 1. Does each workflow trace back to a specific AST node (`submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`) or an explicit action described in the description text? If no → delete it.
 2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
-3. Are two workflows identical in `conditional_branch` AND `terminal_action`? If yes → merge them into one.
+3. Do two workflows reach the same `on_success` via the same code path (e.g. differing only by an independent toggle that does not change the outcome, or being repeated Cancel variants)? If yes → merge them into one. Keep a separate workflow only when its branch reveals a **distinct required-field group** that needs its own coverage.
 4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
 5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
 
@@ -120,7 +136,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 ## Calibration
 
 - Simple form module (no conditionals, one submit): 1–3 workflows
-- Form with conditionals: 3–8 workflows
+- Form with conditionals/toggles: **(base submit outcomes) + (one per revealed required-field group) + 1 Cancel** — typically 4–8, NOT the product of all toggles × all buttons. A multi-toggle form like Assignment Creation should land near 6–8, never 20+.
 - Module with state machine: add 1 per (state × action) combination
 - Module with data table: add 1 per row_action + 1 per bulk_action
 
@@ -153,15 +169,15 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 
 ------------------------------------------------------------
-[21:10:14] Workflow-Extractor - USER PROMPT
+[22:46:26] Workflow-Extractor - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 7,
   "module_title": "Assignment Creation",
-  "summary": "Form for configuring and creating an Assignment activity, including settings for availability, submission and feedback types, grading, completion, access restrictions, and notifications.",
-  "where_it_fits": "Accessible from the Course Edit Mode via the Activity Chooser when managing a course (reachable from My Courses or a Course Page); after saving it returns to the course page or opens the new assignment's page. It complements course-level navigation such as the Course tab and Course Index sidebar for adding activities to a course.",
-  "assumed_state_on_entry": "User with course editing permissions viewing a specific course with Course Edit Mode enabled and the Activity Chooser open."
+  "summary": "A multi-panel form for configuring all settings of a course assignment including availability, submission and feedback types, grading, access restrictions, completion, and notifications.",
+  "where_it_fits": "Accessed from the Activity Chooser while in a course (typically via Course Edit Mode) and used during course authoring; upon save it creates the assignment and returns to or opens the assignment page within the Course Page where it appears in the Course Index and activity breadcrumbs. It is part of the course content creation flow reachable from the course interface (Course tab, Course Index sidebar, and edit controls).",
+  "assumed_state_on_entry": "User is in a specific Course with editing enabled and has permission to add activities (e.g., logged in as a Teacher) and the Activity Chooser has been opened."
 }
 </module_context>
 
@@ -173,68 +189,54 @@ Go through these one by one. If any check fails, fix it before outputting.
   "components": {
     "Assignment_Creation_Form": {
       "type": "form",
-      "preconditions": [
-        "User with course editing permissions viewing a specific course with Course Edit Mode enabled and the Activity Chooser open."
-      ],
-      "validation": {
-        "inline": true
-      },
-      "fields": {
-        "General": {
-          "type": "collapsible_panel",
+      "validation": "inline",
+      "panels": [
+        {
+          "panel_name": "General",
+          "collapsible": true,
           "fields": {
             "Assignment_Name": {
-              "type": "text",
+              "type": "unspecified",
               "required": true
             },
             "Description": {
-              "type": "rich_text_editor"
+              "type": "unspecified"
             },
-            "Additional_Files_Upload": {
+            "Additional_Files": {
               "type": "file_upload"
             }
           }
         },
-        "Availability": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Availability",
+          "collapsible": true,
           "fields": {
-            "Allow_Submissions_From": {
-              "type": "group",
-              "fields": {
-                "Enabled": {
-                  "type": "checkbox"
-                },
-                "Date": {
-                  "type": "date_time"
-                }
-              }
+            "Allow_Submissions_From_Enable": {
+              "type": "checkbox"
+            },
+            "Allow_Submissions_From_Date": {
+              "type": "date",
+              "enabled_when": "Allow_Submissions_From_Enable == true"
+            },
+            "Due_Date_Enable": {
+              "type": "checkbox"
             },
             "Due_Date": {
-              "type": "group",
-              "fields": {
-                "Enabled": {
-                  "type": "checkbox"
-                },
-                "Date": {
-                  "type": "date_time"
-                }
-              }
+              "type": "date",
+              "enabled_when": "Due_Date_Enable == true"
             },
-            "Cut_Off_Date": {
-              "type": "group",
-              "fields": {
-                "Enabled": {
-                  "type": "checkbox"
-                },
-                "Date": {
-                  "type": "date_time"
-                }
-              }
+            "Cutoff_Date_Enable": {
+              "type": "checkbox"
+            },
+            "Cutoff_Date": {
+              "type": "date",
+              "enabled_when": "Cutoff_Date_Enable == true"
             }
           }
         },
-        "Submission_Types": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Submission_Types",
+          "collapsible": true,
           "fields": {
             "Online_Text": {
               "type": "checkbox"
@@ -242,22 +244,23 @@ Go through these one by one. If any check fails, fix it before outputting.
             "File_Submissions": {
               "type": "checkbox"
             },
-            "Max_Number_Of_Uploaded_Files": {
+            "File_Max_Number": {
               "type": "number",
               "visible_when": "File_Submissions == true"
             },
-            "Max_Submission_Size": {
+            "File_Max_Submission_Size": {
               "type": "number",
               "visible_when": "File_Submissions == true"
             },
             "Accepted_File_Types": {
-              "type": "list_of_strings",
+              "type": "unspecified",
               "visible_when": "File_Submissions == true"
             }
           }
         },
-        "Feedback_Types": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Feedback_Types",
+          "collapsible": true,
           "fields": {
             "Feedback_Comments": {
               "type": "checkbox"
@@ -270,8 +273,9 @@ Go through these one by one. If any check fails, fix it before outputting.
             }
           }
         },
-        "Submission_Settings": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Submission_Settings",
+          "collapsible": true,
           "fields": {
             "Require_Submit_Button_Click": {
               "type": "checkbox"
@@ -287,8 +291,9 @@ Go through these one by one. If any check fails, fix it before outputting.
             }
           }
         },
-        "Group_Submission_Settings": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Group_Submission_Settings",
+          "collapsible": true,
           "fields": {
             "Group_Submissions": {
               "type": "checkbox"
@@ -303,19 +308,21 @@ Go through these one by one. If any check fails, fix it before outputting.
             }
           }
         },
-        "Notifications": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Notifications",
+          "collapsible": true,
           "fields": {
-            "Notify_Graders_New_Submissions": {
+            "Notify_Graders_On_New_Submission": {
               "type": "checkbox"
             },
-            "Notify_Graders_Late_Submissions": {
+            "Notify_Graders_On_Late_Submission": {
               "type": "checkbox"
             }
           }
         },
-        "Grade": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Grade",
+          "collapsible": true,
           "fields": {
             "Grade_Type": {
               "type": "unspecified"
@@ -334,66 +341,78 @@ Go through these one by one. If any check fails, fix it before outputting.
             }
           }
         },
-        "Access_Restrictions": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Access_Restrictions",
+          "collapsible": true,
           "fields": {
-            "Add_Restriction_Button": {
+            "Add_Restriction": {
               "type": "button",
-              "action_name": "Add restriction",
-              "on_click_opens": "Restriction_Type_Picker"
-            },
-            "Restriction_Type_Picker": {
-              "type": "dropdown",
-              "visible_when": "Add_Restriction_Button_Clicked == true"
+              "action_name": "+ Add restriction",
+              "fields": {
+                "Restriction_Type": {
+                  "type": "unspecified"
+                }
+              }
             }
           }
         },
-        "Activity_Completion": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Activity_Completion",
+          "collapsible": true,
           "fields": {
-            "Completion_Tracking_Options": {
+            "Completion_Tracking": {
               "type": "unspecified"
             },
             "Required_Conditions": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Condition_Type": {
+                  "type": "unspecified"
+                },
+                "Condition_Value": {
+                  "type": "unspecified"
+                }
+              }
+            }
+          }
+        },
+        {
+          "panel_name": "Tags",
+          "collapsible": true,
+          "fields": {
+            "Tags": {
               "type": "unspecified"
             }
           }
         },
-        "Tags": {
-          "type": "collapsible_panel",
-          "fields": {
-            "Tags_Input": {
-              "type": "list_of_strings"
-            }
-          }
-        },
-        "Competencies": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Competencies",
+          "collapsible": true,
           "fields": {
             "Competency_Links": {
               "type": "unspecified"
             }
           }
         }
-      },
+      ],
       "submit_actions": [
         {
           "action_name": "Save and return to course",
-          "on_success": "creates the assignment and redirects to the course page",
+          "on_success": "creates the assignment and returns to course page",
           "preconditions": [
-            "User with course editing permissions viewing a specific course with Course Edit Mode enabled and the Activity Chooser open."
+            "User is in a specific Course with editing enabled and has permission to add activities (e.g., logged in as a Teacher) and the Activity Chooser has been opened."
           ]
         },
         {
           "action_name": "Save and display",
-          "on_success": "creates the assignment and opens the new assignment's page",
+          "on_success": "creates the assignment and opens the new assignment page",
           "preconditions": [
-            "User with course editing permissions viewing a specific course with Course Edit Mode enabled and the Activity Chooser open."
+            "User is in a specific Course with editing enabled and has permission to add activities (e.g., logged in as a Teacher) and the Activity Chooser has been opened."
           ]
         },
         {
           "action_name": "Cancel",
-          "on_success": "discards all changes"
+          "on_success": "discards changes and closes the creation form"
         }
       ]
     }
@@ -413,405 +432,939 @@ The assignment creation form opens after selecting Assignment from the Activity 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:10:46] Workflow-Extractor - LLM RESPONSE
+[22:46:56] Workflow-Extractor - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Assignment Creation",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Save and return — File_Submissions=false; Group_Submissions=false; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == false AND Add_Restriction_Button_Clicked == false",
+      "name": "Save and return to course (base)",
+      "actor": "Teacher",
+      "conditional_branch": null,
       "terminal_action": "Save and return to course",
-      "on_success": "creates the assignment and redirects to the course page"
+      "on_success": "creates the assignment and returns to course page"
     },
     {
       "wf_id": "WF-002",
-      "name": "Save and display — File_Submissions=false; Group_Submissions=false; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == false AND Add_Restriction_Button_Clicked == false",
+      "name": "Save and display (base)",
+      "actor": "Teacher",
+      "conditional_branch": null,
       "terminal_action": "Save and display",
-      "on_success": "creates the assignment and opens the new assignment's page"
+      "on_success": "creates the assignment and opens the new assignment page"
     },
     {
       "wf_id": "WF-003",
-      "name": "Cancel — File_Submissions=false; Group_Submissions=false; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == false AND Add_Restriction_Button_Clicked == false",
+      "name": "Cancel (discard changes)",
+      "actor": "Teacher",
+      "conditional_branch": null,
       "terminal_action": "Cancel",
-      "on_success": "discards all changes"
+      "on_success": "discards changes and closes the creation form"
     },
     {
       "wf_id": "WF-004",
-      "name": "Save and return — File_Submissions=true; Group_Submissions=false; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == false AND Add_Restriction_Button_Clicked == false",
+      "name": "Save with File submissions enabled",
+      "actor": "Teacher",
+      "conditional_branch": "File_Submissions == true",
       "terminal_action": "Save and return to course",
-      "on_success": "creates the assignment and redirects to the course page"
+      "on_success": "creates the assignment and returns to course page"
     },
     {
       "wf_id": "WF-005",
-      "name": "Save and display — File_Submissions=true; Group_Submissions=false; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == false AND Add_Restriction_Button_Clicked == false",
-      "terminal_action": "Save and display",
-      "on_success": "creates the assignment and opens the new assignment's page"
+      "name": "Save with Group submissions enabled",
+      "actor": "Teacher",
+      "conditional_branch": "Group_Submissions == true",
+      "terminal_action": "Save and return to course",
+      "on_success": "creates the assignment and returns to course page"
     },
     {
       "wf_id": "WF-006",
-      "name": "Cancel — File_Submissions=true; Group_Submissions=false; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == false AND Add_Restriction_Button_Clicked == false",
-      "terminal_action": "Cancel",
-      "on_success": "discards all changes"
-    },
-    {
-      "wf_id": "WF-007",
-      "name": "Save and return — File_Submissions=false; Group_Submissions=true; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == true AND Add_Restriction_Button_Clicked == false",
+      "name": "Save after adding an access restriction",
+      "actor": "Teacher",
+      "conditional_branch": "Add_Restriction == clicked",
       "terminal_action": "Save and return to course",
-      "on_success": "creates the assignment and redirects to the course page"
-    },
-    {
-      "wf_id": "WF-008",
-      "name": "Save and display — File_Submissions=false; Group_Submissions=true; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == true AND Add_Restriction_Button_Clicked == false",
-      "terminal_action": "Save and display",
-      "on_success": "creates the assignment and opens the new assignment's page"
-    },
-    {
-      "wf_id": "WF-009",
-      "name": "Cancel — File_Submissions=false; Group_Submissions=true; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == true AND Add_Restriction_Button_Clicked == false",
-      "terminal_action": "Cancel",
-      "on_success": "discards all changes"
-    },
-    {
-      "wf_id": "WF-010",
-      "name": "Save and return — File_Submissions=true; Group_Submissions=true; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == true AND Add_Restriction_Button_Clicked == false",
-      "terminal_action": "Save and return to course",
-      "on_success": "creates the assignment and redirects to the course page"
-    },
-    {
-      "wf_id": "WF-011",
-      "name": "Save and display — File_Submissions=true; Group_Submissions=true; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == true AND Add_Restriction_Button_Clicked == false",
-      "terminal_action": "Save and display",
-      "on_success": "creates the assignment and opens the new assignment's page"
-    },
-    {
-      "wf_id": "WF-012",
-      "name": "Cancel — File_Submissions=true; Group_Submissions=true; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == true AND Add_Restriction_Button_Clicked == false",
-      "terminal_action": "Cancel",
-      "on_success": "discards all changes"
-    },
-    {
-      "wf_id": "WF-013",
-      "name": "Save and return — File_Submissions=false; Group_Submissions=false; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == false AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Save and return to course",
-      "on_success": "creates the assignment and redirects to the course page"
-    },
-    {
-      "wf_id": "WF-014",
-      "name": "Save and display — File_Submissions=false; Group_Submissions=false; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == false AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Save and display",
-      "on_success": "creates the assignment and opens the new assignment's page"
-    },
-    {
-      "wf_id": "WF-015",
-      "name": "Cancel — File_Submissions=false; Group_Submissions=false; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == false AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Cancel",
-      "on_success": "discards all changes"
-    },
-    {
-      "wf_id": "WF-016",
-      "name": "Save and return — File_Submissions=true; Group_Submissions=false; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == false AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Save and return to course",
-      "on_success": "creates the assignment and redirects to the course page"
-    },
-    {
-      "wf_id": "WF-017",
-      "name": "Save and display — File_Submissions=true; Group_Submissions=false; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == false AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Save and display",
-      "on_success": "creates the assignment and opens the new assignment's page"
-    },
-    {
-      "wf_id": "WF-018",
-      "name": "Cancel — File_Submissions=true; Group_Submissions=false; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == false AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Cancel",
-      "on_success": "discards all changes"
-    },
-    {
-      "wf_id": "WF-019",
-      "name": "Save and return — File_Submissions=false; Group_Submissions=true; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == true AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Save and return to course",
-      "on_success": "creates the assignment and redirects to the course page"
-    },
-    {
-      "wf_id": "WF-020",
-      "name": "Save and display — File_Submissions=false; Group_Submissions=true; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == true AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Save and display",
-      "on_success": "creates the assignment and opens the new assignment's page"
-    },
-    {
-      "wf_id": "WF-021",
-      "name": "Cancel — File_Submissions=false; Group_Submissions=true; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == true AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Cancel",
-      "on_success": "discards all changes"
-    },
-    {
-      "wf_id": "WF-022",
-      "name": "Save and return — File_Submissions=true; Group_Submissions=true; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == true AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Save and return to course",
-      "on_success": "creates the assignment and redirects to the course page"
-    },
-    {
-      "wf_id": "WF-023",
-      "name": "Save and display — File_Submissions=true; Group_Submissions=true; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == true AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Save and display",
-      "on_success": "creates the assignment and opens the new assignment's page"
-    },
-    {
-      "wf_id": "WF-024",
-      "name": "Cancel — File_Submissions=true; Group_Submissions=true; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == true AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Cancel",
-      "on_success": "discards all changes"
+      "on_success": "creates the assignment and returns to course page"
     }
   ],
-  "total": 24
+  "total": 6
 }
 
 ------------------------------------------------------------
-[21:10:46] Workflow-Extractor - PARSED JSON
+[22:46:56] Workflow-Extractor - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Assignment Creation",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Save and return \u2014 File_Submissions=false; Group_Submissions=false; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == false AND Add_Restriction_Button_Clicked == false",
+      "name": "Save and return to course (base)",
+      "actor": "Teacher",
+      "conditional_branch": null,
       "terminal_action": "Save and return to course",
-      "on_success": "creates the assignment and redirects to the course page"
+      "on_success": "creates the assignment and returns to course page"
     },
     {
       "wf_id": "WF-002",
-      "name": "Save and display \u2014 File_Submissions=false; Group_Submissions=false; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == false AND Add_Restriction_Button_Clicked == false",
+      "name": "Save and display (base)",
+      "actor": "Teacher",
+      "conditional_branch": null,
       "terminal_action": "Save and display",
-      "on_success": "creates the assignment and opens the new assignment's page"
+      "on_success": "creates the assignment and opens the new assignment page"
     },
     {
       "wf_id": "WF-003",
-      "name": "Cancel \u2014 File_Submissions=false; Group_Submissions=false; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == false AND Add_Restriction_Button_Clicked == false",
+      "name": "Cancel (discard changes)",
+      "actor": "Teacher",
+      "conditional_branch": null,
       "terminal_action": "Cancel",
-      "on_success": "discards all changes"
+      "on_success": "discards changes and closes the creation form"
     },
     {
       "wf_id": "WF-004",
-      "name": "Save and return \u2014 File_Submissions=true; Group_Submissions=false; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == false AND Add_Restriction_Button_Clicked == false",
+      "name": "Save with File submissions enabled",
+      "actor": "Teacher",
+      "conditional_branch": "File_Submissions == true",
       "terminal_action": "Save and return to course",
-      "on_success": "creates the assignment and redirects to the course page"
+      "on_success": "creates the assignment and returns to course page"
     },
     {
       "wf_id": "WF-005",
-      "name": "Save and display \u2014 File_Submissions=true; Group_Submissions=false; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == false AND Add_Restriction_Button_Clicked == false",
-      "terminal_action": "Save and display",
-      "on_success": "creates the assignment and opens the new assignment's page"
+      "name": "Save with Group submissions enabled",
+      "actor": "Teacher",
+      "conditional_branch": "Group_Submissions == true",
+      "terminal_action": "Save and return to course",
+      "on_success": "creates the assignment and returns to course page"
     },
     {
       "wf_id": "WF-006",
-      "name": "Cancel \u2014 File_Submissions=true; Group_Submissions=false; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == false AND Add_Restriction_Button_Clicked == false",
+      "name": "Save after adding an access restriction",
+      "actor": "Teacher",
+      "conditional_branch": "Add_Restriction == clicked",
+      "terminal_action": "Save and return to course",
+      "on_success": "creates the assignment and returns to course page"
+    }
+  ],
+  "total": 6
+}
+
+------------------------------------------------------------
+[22:47:31] Workflow-Extractor - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 7,
+  "module_title": "Assignment Creation",
+  "summary": "A multi-panel form for configuring all settings of a course assignment including availability, submission and feedback types, grading, access restrictions, completion, and notifications.",
+  "where_it_fits": "Accessed from the Activity Chooser while in a course (typically via Course Edit Mode) and used during course authoring; upon save it creates the assignment and returns to or opens the assignment page within the Course Page where it appears in the Course Index and activity breadcrumbs. It is part of the course content creation flow reachable from the course interface (Course tab, Course Index sidebar, and edit controls).",
+  "assumed_state_on_entry": "User is in a specific Course with editing enabled and has permission to add activities (e.g., logged in as a Teacher) and the Activity Chooser has been opened."
+}
+</module_context>
+
+<module_name>Assignment Creation</module_name>
+
+<ast>
+{
+  "module_name": "Assignment Creation",
+  "components": {
+    "Assignment_Creation_Form": {
+      "type": "form",
+      "validation": "inline",
+      "panels": [
+        {
+          "panel_name": "General",
+          "collapsible": true,
+          "fields": {
+            "Assignment_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Description": {
+              "type": "unspecified"
+            },
+            "Additional_Files": {
+              "type": "file_upload"
+            }
+          }
+        },
+        {
+          "panel_name": "Availability",
+          "collapsible": true,
+          "fields": {
+            "Allow_Submissions_From_Enable": {
+              "type": "checkbox"
+            },
+            "Allow_Submissions_From_Date": {
+              "type": "date",
+              "enabled_when": "Allow_Submissions_From_Enable == true"
+            },
+            "Due_Date_Enable": {
+              "type": "checkbox"
+            },
+            "Due_Date": {
+              "type": "date",
+              "enabled_when": "Due_Date_Enable == true"
+            },
+            "Cutoff_Date_Enable": {
+              "type": "checkbox"
+            },
+            "Cutoff_Date": {
+              "type": "date",
+              "enabled_when": "Cutoff_Date_Enable == true"
+            }
+          }
+        },
+        {
+          "panel_name": "Submission_Types",
+          "collapsible": true,
+          "fields": {
+            "Online_Text": {
+              "type": "checkbox"
+            },
+            "File_Submissions": {
+              "type": "checkbox"
+            },
+            "File_Max_Number": {
+              "type": "number",
+              "visible_when": "File_Submissions == true"
+            },
+            "File_Max_Submission_Size": {
+              "type": "number",
+              "visible_when": "File_Submissions == true"
+            },
+            "Accepted_File_Types": {
+              "type": "unspecified",
+              "visible_when": "File_Submissions == true"
+            }
+          }
+        },
+        {
+          "panel_name": "Feedback_Types",
+          "collapsible": true,
+          "fields": {
+            "Feedback_Comments": {
+              "type": "checkbox"
+            },
+            "Feedback_Files": {
+              "type": "checkbox"
+            },
+            "Offline_Grading_Worksheet": {
+              "type": "checkbox"
+            }
+          }
+        },
+        {
+          "panel_name": "Submission_Settings",
+          "collapsible": true,
+          "fields": {
+            "Require_Submit_Button_Click": {
+              "type": "checkbox"
+            },
+            "Require_Submission_Statement": {
+              "type": "checkbox"
+            },
+            "Attempts_Reopened_Settings": {
+              "type": "unspecified"
+            },
+            "Maximum_Attempts": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "panel_name": "Group_Submission_Settings",
+          "collapsible": true,
+          "fields": {
+            "Group_Submissions": {
+              "type": "checkbox"
+            },
+            "Require_All_Group_Members_To_Submit": {
+              "type": "checkbox",
+              "visible_when": "Group_Submissions == true"
+            },
+            "Grouping_Selection": {
+              "type": "unspecified",
+              "visible_when": "Group_Submissions == true"
+            }
+          }
+        },
+        {
+          "panel_name": "Notifications",
+          "collapsible": true,
+          "fields": {
+            "Notify_Graders_On_New_Submission": {
+              "type": "checkbox"
+            },
+            "Notify_Graders_On_Late_Submission": {
+              "type": "checkbox"
+            }
+          }
+        },
+        {
+          "panel_name": "Grade",
+          "collapsible": true,
+          "fields": {
+            "Grade_Type": {
+              "type": "unspecified"
+            },
+            "Maximum_Points": {
+              "type": "number"
+            },
+            "Grading_Method": {
+              "type": "unspecified"
+            },
+            "Grade_Category": {
+              "type": "unspecified"
+            },
+            "Grade_To_Pass": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "panel_name": "Access_Restrictions",
+          "collapsible": true,
+          "fields": {
+            "Add_Restriction": {
+              "type": "button",
+              "action_name": "+ Add restriction",
+              "fields": {
+                "Restriction_Type": {
+                  "type": "unspecified"
+                }
+              }
+            }
+          }
+        },
+        {
+          "panel_name": "Activity_Completion",
+          "collapsible": true,
+          "fields": {
+            "Completion_Tracking": {
+              "type": "unspecified"
+            },
+            "Required_Conditions": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Condition_Type": {
+                  "type": "unspecified"
+                },
+                "Condition_Value": {
+                  "type": "unspecified"
+                }
+              }
+            }
+          }
+        },
+        {
+          "panel_name": "Tags",
+          "collapsible": true,
+          "fields": {
+            "Tags": {
+              "type": "unspecified"
+            }
+          }
+        },
+        {
+          "panel_name": "Competencies",
+          "collapsible": true,
+          "fields": {
+            "Competency_Links": {
+              "type": "unspecified"
+            }
+          }
+        }
+      ],
+      "submit_actions": [
+        {
+          "action_name": "Save and return to course",
+          "on_success": "creates the assignment and returns to course page",
+          "preconditions": [
+            "User is in a specific Course with editing enabled and has permission to add activities (e.g., logged in as a Teacher) and the Activity Chooser has been opened."
+          ]
+        },
+        {
+          "action_name": "Save and display",
+          "on_success": "creates the assignment and opens the new assignment page",
+          "preconditions": [
+            "User is in a specific Course with editing enabled and has permission to add activities (e.g., logged in as a Teacher) and the Activity Chooser has been opened."
+          ]
+        },
+        {
+          "action_name": "Cancel",
+          "on_success": "discards changes and closes the creation form"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The assignment creation form opens after selecting Assignment from the Activity Chooser. Assignment name is a required text field at the top. The form is organized into collapsible panels. General contains the required Assignment name field, a Description rich text editor, and an optional Additional files upload area. Availability contains Allow submissions from, Due date, and Cut-off date, each with a date/time picker and an Enable toggle; disabled toggles exclude that date from enforcement. Submission types contains checkboxes for Online text and File submissions; enabling File submissions reveals additional controls for maximum number of uploaded files, maximum submission size, and accepted file types. Feedback types contains options for feedback comments, feedback files, and offline grading worksheet. Submission settings contains options for requiring a submit button click, requiring submission statements, attempts reopened settings, and maximum attempts. Group submission settings contains controls for group submissions, requiring all group members to submit, and grouping selection. Notifications contains toggles for notifying graders of new and late submissions. Grade contains the grade type and maximum points, grading method selector, and grade category and grade to pass fields. Access restrictions contains an "+ Add restriction" button that opens a restriction-type picker. Activity completion contains completion tracking options and required conditions. Tags contains a tag entry field, and Competencies contains course competency linking controls. At the bottom, "Save and return to course" creates the assignment and redirects to the course page, "Save and display" creates it and opens the new assignment's page, and "Cancel" discards all changes. Required fields and constraints are validated inline before saving.
+
+---
+
+
+</description>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[22:48:11] Workflow-Extractor - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Assignment Creation",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Save and return to course (base)",
+      "actor": "Teacher",
+      "conditional_branch": null,
+      "terminal_action": "Save and return to course",
+      "on_success": "creates the assignment and returns to course page"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Save and display (base)",
+      "actor": "Teacher",
+      "conditional_branch": null,
+      "terminal_action": "Save and display",
+      "on_success": "creates the assignment and opens the new assignment page"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Cancel creation (discard changes)",
+      "actor": "Teacher",
+      "conditional_branch": null,
       "terminal_action": "Cancel",
-      "on_success": "discards all changes"
+      "on_success": "discards changes and closes the creation form"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Save and display when file submissions are enabled",
+      "actor": "Teacher",
+      "conditional_branch": "File_Submissions == true",
+      "terminal_action": "Save and display",
+      "on_success": "creates the assignment and opens the new assignment page"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Save and display when group submissions are enabled",
+      "actor": "Teacher",
+      "conditional_branch": "Group_Submissions == true",
+      "terminal_action": "Save and display",
+      "on_success": "creates the assignment and opens the new assignment page"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Save and display after adding an access restriction",
+      "actor": "Teacher",
+      "conditional_branch": "Add_Restriction == clicked",
+      "terminal_action": "Save and display",
+      "on_success": "creates the assignment and opens the new assignment page"
+    }
+  ],
+  "total": 6
+}
+
+------------------------------------------------------------
+[22:48:11] Workflow-Extractor - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Assignment Creation",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Save and return to course (base)",
+      "actor": "Teacher",
+      "conditional_branch": null,
+      "terminal_action": "Save and return to course",
+      "on_success": "creates the assignment and returns to course page"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Save and display (base)",
+      "actor": "Teacher",
+      "conditional_branch": null,
+      "terminal_action": "Save and display",
+      "on_success": "creates the assignment and opens the new assignment page"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Cancel creation (discard changes)",
+      "actor": "Teacher",
+      "conditional_branch": null,
+      "terminal_action": "Cancel",
+      "on_success": "discards changes and closes the creation form"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Save and display when file submissions are enabled",
+      "actor": "Teacher",
+      "conditional_branch": "File_Submissions == true",
+      "terminal_action": "Save and display",
+      "on_success": "creates the assignment and opens the new assignment page"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Save and display when group submissions are enabled",
+      "actor": "Teacher",
+      "conditional_branch": "Group_Submissions == true",
+      "terminal_action": "Save and display",
+      "on_success": "creates the assignment and opens the new assignment page"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Save and display after adding an access restriction",
+      "actor": "Teacher",
+      "conditional_branch": "Add_Restriction == clicked",
+      "terminal_action": "Save and display",
+      "on_success": "creates the assignment and opens the new assignment page"
+    }
+  ],
+  "total": 6
+}
+
+------------------------------------------------------------
+[22:48:46] Workflow-Extractor - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 7,
+  "module_title": "Assignment Creation",
+  "summary": "A multi-panel form for configuring all settings of a course assignment including availability, submission and feedback types, grading, access restrictions, completion, and notifications.",
+  "where_it_fits": "Accessed from the Activity Chooser while in a course (typically via Course Edit Mode) and used during course authoring; upon save it creates the assignment and returns to or opens the assignment page within the Course Page where it appears in the Course Index and activity breadcrumbs. It is part of the course content creation flow reachable from the course interface (Course tab, Course Index sidebar, and edit controls).",
+  "assumed_state_on_entry": "User is in a specific Course with editing enabled and has permission to add activities (e.g., logged in as a Teacher) and the Activity Chooser has been opened."
+}
+</module_context>
+
+<module_name>Assignment Creation</module_name>
+
+<ast>
+{
+  "module_name": "Assignment Creation",
+  "components": {
+    "Assignment_Creation_Form": {
+      "type": "form",
+      "validation": "inline",
+      "panels": [
+        {
+          "panel_name": "General",
+          "collapsible": true,
+          "fields": {
+            "Assignment_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Description": {
+              "type": "unspecified"
+            },
+            "Additional_Files": {
+              "type": "file_upload"
+            }
+          }
+        },
+        {
+          "panel_name": "Availability",
+          "collapsible": true,
+          "fields": {
+            "Allow_Submissions_From_Enable": {
+              "type": "checkbox"
+            },
+            "Allow_Submissions_From_Date": {
+              "type": "date",
+              "enabled_when": "Allow_Submissions_From_Enable == true"
+            },
+            "Due_Date_Enable": {
+              "type": "checkbox"
+            },
+            "Due_Date": {
+              "type": "date",
+              "enabled_when": "Due_Date_Enable == true"
+            },
+            "Cutoff_Date_Enable": {
+              "type": "checkbox"
+            },
+            "Cutoff_Date": {
+              "type": "date",
+              "enabled_when": "Cutoff_Date_Enable == true"
+            }
+          }
+        },
+        {
+          "panel_name": "Submission_Types",
+          "collapsible": true,
+          "fields": {
+            "Online_Text": {
+              "type": "checkbox"
+            },
+            "File_Submissions": {
+              "type": "checkbox"
+            },
+            "File_Max_Number": {
+              "type": "number",
+              "visible_when": "File_Submissions == true"
+            },
+            "File_Max_Submission_Size": {
+              "type": "number",
+              "visible_when": "File_Submissions == true"
+            },
+            "Accepted_File_Types": {
+              "type": "unspecified",
+              "visible_when": "File_Submissions == true"
+            }
+          }
+        },
+        {
+          "panel_name": "Feedback_Types",
+          "collapsible": true,
+          "fields": {
+            "Feedback_Comments": {
+              "type": "checkbox"
+            },
+            "Feedback_Files": {
+              "type": "checkbox"
+            },
+            "Offline_Grading_Worksheet": {
+              "type": "checkbox"
+            }
+          }
+        },
+        {
+          "panel_name": "Submission_Settings",
+          "collapsible": true,
+          "fields": {
+            "Require_Submit_Button_Click": {
+              "type": "checkbox"
+            },
+            "Require_Submission_Statement": {
+              "type": "checkbox"
+            },
+            "Attempts_Reopened_Settings": {
+              "type": "unspecified"
+            },
+            "Maximum_Attempts": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "panel_name": "Group_Submission_Settings",
+          "collapsible": true,
+          "fields": {
+            "Group_Submissions": {
+              "type": "checkbox"
+            },
+            "Require_All_Group_Members_To_Submit": {
+              "type": "checkbox",
+              "visible_when": "Group_Submissions == true"
+            },
+            "Grouping_Selection": {
+              "type": "unspecified",
+              "visible_when": "Group_Submissions == true"
+            }
+          }
+        },
+        {
+          "panel_name": "Notifications",
+          "collapsible": true,
+          "fields": {
+            "Notify_Graders_On_New_Submission": {
+              "type": "checkbox"
+            },
+            "Notify_Graders_On_Late_Submission": {
+              "type": "checkbox"
+            }
+          }
+        },
+        {
+          "panel_name": "Grade",
+          "collapsible": true,
+          "fields": {
+            "Grade_Type": {
+              "type": "unspecified"
+            },
+            "Maximum_Points": {
+              "type": "number"
+            },
+            "Grading_Method": {
+              "type": "unspecified"
+            },
+            "Grade_Category": {
+              "type": "unspecified"
+            },
+            "Grade_To_Pass": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "panel_name": "Access_Restrictions",
+          "collapsible": true,
+          "fields": {
+            "Add_Restriction": {
+              "type": "button",
+              "action_name": "+ Add restriction",
+              "fields": {
+                "Restriction_Type": {
+                  "type": "unspecified"
+                }
+              }
+            }
+          }
+        },
+        {
+          "panel_name": "Activity_Completion",
+          "collapsible": true,
+          "fields": {
+            "Completion_Tracking": {
+              "type": "unspecified"
+            },
+            "Required_Conditions": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Condition_Type": {
+                  "type": "unspecified"
+                },
+                "Condition_Value": {
+                  "type": "unspecified"
+                }
+              }
+            }
+          }
+        },
+        {
+          "panel_name": "Tags",
+          "collapsible": true,
+          "fields": {
+            "Tags": {
+              "type": "unspecified"
+            }
+          }
+        },
+        {
+          "panel_name": "Competencies",
+          "collapsible": true,
+          "fields": {
+            "Competency_Links": {
+              "type": "unspecified"
+            }
+          }
+        }
+      ],
+      "submit_actions": [
+        {
+          "action_name": "Save and return to course",
+          "on_success": "creates the assignment and returns to course page",
+          "preconditions": [
+            "User is in a specific Course with editing enabled and has permission to add activities (e.g., logged in as a Teacher) and the Activity Chooser has been opened."
+          ]
+        },
+        {
+          "action_name": "Save and display",
+          "on_success": "creates the assignment and opens the new assignment page",
+          "preconditions": [
+            "User is in a specific Course with editing enabled and has permission to add activities (e.g., logged in as a Teacher) and the Activity Chooser has been opened."
+          ]
+        },
+        {
+          "action_name": "Cancel",
+          "on_success": "discards changes and closes the creation form"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The assignment creation form opens after selecting Assignment from the Activity Chooser. Assignment name is a required text field at the top. The form is organized into collapsible panels. General contains the required Assignment name field, a Description rich text editor, and an optional Additional files upload area. Availability contains Allow submissions from, Due date, and Cut-off date, each with a date/time picker and an Enable toggle; disabled toggles exclude that date from enforcement. Submission types contains checkboxes for Online text and File submissions; enabling File submissions reveals additional controls for maximum number of uploaded files, maximum submission size, and accepted file types. Feedback types contains options for feedback comments, feedback files, and offline grading worksheet. Submission settings contains options for requiring a submit button click, requiring submission statements, attempts reopened settings, and maximum attempts. Group submission settings contains controls for group submissions, requiring all group members to submit, and grouping selection. Notifications contains toggles for notifying graders of new and late submissions. Grade contains the grade type and maximum points, grading method selector, and grade category and grade to pass fields. Access restrictions contains an "+ Add restriction" button that opens a restriction-type picker. Activity completion contains completion tracking options and required conditions. Tags contains a tag entry field, and Competencies contains course competency linking controls. At the bottom, "Save and return to course" creates the assignment and redirects to the course page, "Save and display" creates it and opens the new assignment's page, and "Cancel" discards all changes. Required fields and constraints are validated inline before saving.
+
+---
+
+
+</description>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[22:49:10] Workflow-Extractor - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Assignment Creation",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Save and return (base)",
+      "actor": "Teacher",
+      "conditional_branch": null,
+      "terminal_action": "Save and return to course",
+      "on_success": "creates the assignment and returns to course page"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Save and display (base)",
+      "actor": "Teacher",
+      "conditional_branch": null,
+      "terminal_action": "Save and display",
+      "on_success": "creates the assignment and opens the new assignment page"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Cancel (base)",
+      "actor": "Teacher",
+      "conditional_branch": null,
+      "terminal_action": "Cancel",
+      "on_success": "discards changes and closes the creation form"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Save and return with File submissions enabled",
+      "actor": "Teacher",
+      "conditional_branch": "File_Submissions == true",
+      "terminal_action": "Save and return to course",
+      "on_success": "creates the assignment and returns to course page"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Cancel with File submissions enabled",
+      "actor": "Teacher",
+      "conditional_branch": "File_Submissions == true",
+      "terminal_action": "Cancel",
+      "on_success": "discards changes and closes the creation form"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Save and return with Group submissions enabled",
+      "actor": "Teacher",
+      "conditional_branch": "Group_Submissions == true",
+      "terminal_action": "Save and return to course",
+      "on_success": "creates the assignment and returns to course page"
     },
     {
       "wf_id": "WF-007",
-      "name": "Save and return \u2014 File_Submissions=false; Group_Submissions=true; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == true AND Add_Restriction_Button_Clicked == false",
-      "terminal_action": "Save and return to course",
-      "on_success": "creates the assignment and redirects to the course page"
+      "name": "Cancel with Group submissions enabled",
+      "actor": "Teacher",
+      "conditional_branch": "Group_Submissions == true",
+      "terminal_action": "Cancel",
+      "on_success": "discards changes and closes the creation form"
     },
     {
       "wf_id": "WF-008",
-      "name": "Save and display \u2014 File_Submissions=false; Group_Submissions=true; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == true AND Add_Restriction_Button_Clicked == false",
-      "terminal_action": "Save and display",
-      "on_success": "creates the assignment and opens the new assignment's page"
+      "name": "Save and return with File and Group submissions enabled",
+      "actor": "Teacher",
+      "conditional_branch": "File_Submissions == true && Group_Submissions == true",
+      "terminal_action": "Save and return to course",
+      "on_success": "creates the assignment and returns to course page"
     },
     {
       "wf_id": "WF-009",
-      "name": "Cancel \u2014 File_Submissions=false; Group_Submissions=true; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == true AND Add_Restriction_Button_Clicked == false",
-      "terminal_action": "Cancel",
-      "on_success": "discards all changes"
+      "name": "Save and display with File and Group submissions enabled",
+      "actor": "Teacher",
+      "conditional_branch": "File_Submissions == true && Group_Submissions == true",
+      "terminal_action": "Save and display",
+      "on_success": "creates the assignment and opens the new assignment page"
     },
     {
       "wf_id": "WF-010",
-      "name": "Save and return \u2014 File_Submissions=true; Group_Submissions=true; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == true AND Add_Restriction_Button_Clicked == false",
-      "terminal_action": "Save and return to course",
-      "on_success": "creates the assignment and redirects to the course page"
-    },
-    {
-      "wf_id": "WF-011",
-      "name": "Save and display \u2014 File_Submissions=true; Group_Submissions=true; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == true AND Add_Restriction_Button_Clicked == false",
-      "terminal_action": "Save and display",
-      "on_success": "creates the assignment and opens the new assignment's page"
-    },
-    {
-      "wf_id": "WF-012",
-      "name": "Cancel \u2014 File_Submissions=true; Group_Submissions=true; Add_Restriction_Button_Clicked=false",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == true AND Add_Restriction_Button_Clicked == false",
+      "name": "Cancel with File and Group submissions enabled",
+      "actor": "Teacher",
+      "conditional_branch": "File_Submissions == true && Group_Submissions == true",
       "terminal_action": "Cancel",
-      "on_success": "discards all changes"
-    },
-    {
-      "wf_id": "WF-013",
-      "name": "Save and return \u2014 File_Submissions=false; Group_Submissions=false; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == false AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Save and return to course",
-      "on_success": "creates the assignment and redirects to the course page"
-    },
-    {
-      "wf_id": "WF-014",
-      "name": "Save and display \u2014 File_Submissions=false; Group_Submissions=false; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == false AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Save and display",
-      "on_success": "creates the assignment and opens the new assignment's page"
-    },
-    {
-      "wf_id": "WF-015",
-      "name": "Cancel \u2014 File_Submissions=false; Group_Submissions=false; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == false AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Cancel",
-      "on_success": "discards all changes"
-    },
-    {
-      "wf_id": "WF-016",
-      "name": "Save and return \u2014 File_Submissions=true; Group_Submissions=false; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == false AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Save and return to course",
-      "on_success": "creates the assignment and redirects to the course page"
-    },
-    {
-      "wf_id": "WF-017",
-      "name": "Save and display \u2014 File_Submissions=true; Group_Submissions=false; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == false AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Save and display",
-      "on_success": "creates the assignment and opens the new assignment's page"
-    },
-    {
-      "wf_id": "WF-018",
-      "name": "Cancel \u2014 File_Submissions=true; Group_Submissions=false; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == false AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Cancel",
-      "on_success": "discards all changes"
-    },
-    {
-      "wf_id": "WF-019",
-      "name": "Save and return \u2014 File_Submissions=false; Group_Submissions=true; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == true AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Save and return to course",
-      "on_success": "creates the assignment and redirects to the course page"
-    },
-    {
-      "wf_id": "WF-020",
-      "name": "Save and display \u2014 File_Submissions=false; Group_Submissions=true; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == true AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Save and display",
-      "on_success": "creates the assignment and opens the new assignment's page"
-    },
-    {
-      "wf_id": "WF-021",
-      "name": "Cancel \u2014 File_Submissions=false; Group_Submissions=true; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == false AND Group_Submissions == true AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Cancel",
-      "on_success": "discards all changes"
-    },
-    {
-      "wf_id": "WF-022",
-      "name": "Save and return \u2014 File_Submissions=true; Group_Submissions=true; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == true AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Save and return to course",
-      "on_success": "creates the assignment and redirects to the course page"
-    },
-    {
-      "wf_id": "WF-023",
-      "name": "Save and display \u2014 File_Submissions=true; Group_Submissions=true; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == true AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Save and display",
-      "on_success": "creates the assignment and opens the new assignment's page"
-    },
-    {
-      "wf_id": "WF-024",
-      "name": "Cancel \u2014 File_Submissions=true; Group_Submissions=true; Add_Restriction_Button_Clicked=true",
-      "actor": "User with course editing permissions",
-      "conditional_branch": "File_Submissions == true AND Group_Submissions == true AND Add_Restriction_Button_Clicked == true",
-      "terminal_action": "Cancel",
-      "on_success": "discards all changes"
+      "on_success": "discards changes and closes the creation form"
     }
   ],
-  "total": 24
+  "total": 10
+}
+
+------------------------------------------------------------
+[22:49:10] Workflow-Extractor - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Assignment Creation",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Save and return (base)",
+      "actor": "Teacher",
+      "conditional_branch": null,
+      "terminal_action": "Save and return to course",
+      "on_success": "creates the assignment and returns to course page"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Save and display (base)",
+      "actor": "Teacher",
+      "conditional_branch": null,
+      "terminal_action": "Save and display",
+      "on_success": "creates the assignment and opens the new assignment page"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Cancel (base)",
+      "actor": "Teacher",
+      "conditional_branch": null,
+      "terminal_action": "Cancel",
+      "on_success": "discards changes and closes the creation form"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Save and return with File submissions enabled",
+      "actor": "Teacher",
+      "conditional_branch": "File_Submissions == true",
+      "terminal_action": "Save and return to course",
+      "on_success": "creates the assignment and returns to course page"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Cancel with File submissions enabled",
+      "actor": "Teacher",
+      "conditional_branch": "File_Submissions == true",
+      "terminal_action": "Cancel",
+      "on_success": "discards changes and closes the creation form"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Save and return with Group submissions enabled",
+      "actor": "Teacher",
+      "conditional_branch": "Group_Submissions == true",
+      "terminal_action": "Save and return to course",
+      "on_success": "creates the assignment and returns to course page"
+    },
+    {
+      "wf_id": "WF-007",
+      "name": "Cancel with Group submissions enabled",
+      "actor": "Teacher",
+      "conditional_branch": "Group_Submissions == true",
+      "terminal_action": "Cancel",
+      "on_success": "discards changes and closes the creation form"
+    },
+    {
+      "wf_id": "WF-008",
+      "name": "Save and return with File and Group submissions enabled",
+      "actor": "Teacher",
+      "conditional_branch": "File_Submissions == true && Group_Submissions == true",
+      "terminal_action": "Save and return to course",
+      "on_success": "creates the assignment and returns to course page"
+    },
+    {
+      "wf_id": "WF-009",
+      "name": "Save and display with File and Group submissions enabled",
+      "actor": "Teacher",
+      "conditional_branch": "File_Submissions == true && Group_Submissions == true",
+      "terminal_action": "Save and display",
+      "on_success": "creates the assignment and opens the new assignment page"
+    },
+    {
+      "wf_id": "WF-010",
+      "name": "Cancel with File and Group submissions enabled",
+      "actor": "Teacher",
+      "conditional_branch": "File_Submissions == true && Group_Submissions == true",
+      "terminal_action": "Cancel",
+      "on_success": "discards changes and closes the creation form"
+    }
+  ],
+  "total": 10
 }

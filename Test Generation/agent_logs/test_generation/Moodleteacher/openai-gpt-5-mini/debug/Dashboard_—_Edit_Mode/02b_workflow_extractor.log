@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:10:13.955452
+DEBUG SESSION STARTED: 2026-07-04T22:46:26.164913
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:10:13] Workflow-Extractor - SYSTEM PROMPT
+[22:46:26] Workflow-Extractor - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Workflow Extractor. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to enumerate every distinct, executable interaction path through this module — one entry per workflow.
 
@@ -54,12 +54,12 @@ Two workflows are **distinct** if they require different user actions to reach t
 
 ## What Paths to Enumerate
 
-Enumerate **all** distinct paths — not one-per-type. The rule: if two paths require the user to do something different to reach the terminal action, they are separate workflows.
+Enumerate **distinct-outcome** paths — not one-per-type, and **not** the cartesian product of every toggle. The rule: two paths are separate workflows only if the user does something different that leads to a **different terminal outcome** (different `on_success`) **or** exercises a **different revealed required-field group** that needs its own coverage.
 
 | AST node type | What to enumerate |
 |---|---|
 | `form` with no conditionals | One workflow per `submit_actions[]` entry |
-| `form` with `visible_when` fields | One workflow per unique combination of conditional branches activated, times each `submit_actions[]` entry |
+| `form` with `visible_when` / toggle fields | One base workflow per `submit_actions[]` entry, PLUS one workflow for **each conditional branch that reveals a distinct required-field group** (e.g. enabling File submissions reveals max-files/size/types). Do **NOT** multiply independent toggles together. |
 | `wizard` | One workflow per distinct step sequence (if all steps are linear, one workflow per `submit_actions[]`; if any step is conditional, enumerate each branch) |
 | `state_bound_action_bar` | One workflow per `available_actions[]` entry per state (state × action = one workflow) |
 | `data_table` | One workflow per `row_actions[]` entry + one per `bulk_actions[]` entry (include View, Edit, Delete, and all others) |
@@ -67,6 +67,20 @@ Enumerate **all** distinct paths — not one-per-type. The rule: if two paths re
 | `repeating_group` | Not a standalone workflow source — it is part of a form workflow that activates it |
 
 **Include all data table row actions** — View, Edit, Delete, and any others. Even read-only row actions (e.g., "View") must be included because they still require a positive test case.
+
+### DO NOT enumerate the cartesian product of toggles (CRITICAL)
+
+A form with independent toggles A, B, C and submit buttons {Save, Save+display, Cancel} must **not** produce 2×2×2×3 = 24 workflows. Independent toggles that do **not** change the terminal outcome are covered **once each**, not in combination:
+- If toggle A (e.g. `File_Submissions`) and toggle B (e.g. `Group_Submissions`) both still reach the same `on_success` ("assignment created"), they are **not** two dimensions to multiply. Emit one workflow that activates A's revealed fields, and one that activates B's revealed fields — not A×B.
+- An `+ Add restriction` / optional-picker step that does not change `on_success` is **not** a separate workflow dimension. Fold it into an existing workflow or add at most one workflow for it.
+
+### Discard / Cancel collapse rule (CRITICAL)
+
+A `Cancel` / `discard` / `abandon` terminal action discards **all** field state, so field/toggle combinations are irrelevant to it. Emit **exactly ONE** Cancel workflow for the module, regardless of how many toggles or revealed-field groups exist. Never produce a Cancel workflow per toggle combination.
+
+**Worked example — Assignment Creation** (toggles: File submissions, Group submissions, Add restriction; buttons: Save and return, Save and display, Cancel):
+- ✅ Correct (~6–8): base Save-and-return, base Save-and-display, one Save covering File-submission revealed fields, one Save covering Group-submission revealed fields, one Save covering an added restriction, one Cancel.
+- ❌ Wrong (24): every `{File}×{Group}×{Restriction}×{Save/Display/Cancel}` combination.
 
 ---
 
@@ -101,9 +115,11 @@ Go through these one by one. If any check fails, fix it before outputting.
 □ 4. Every tab with a form submission in a `tab_container` has one workflow.
 □ 5. `wf_id` numbering is sequential (WF-001, WF-002, ...) with no gaps.
 □ 6. Every `terminal_action` matches an exact `action_name` or `element_name` from the AST.
-□ 7. No two workflows share the same `conditional_branch` AND `terminal_action`.
-□ 8. No workflow crosses module boundaries (steps in another module).
-□ 9. Every `on_success` reflects the AST or description — no generic "success" strings.
+□ 7. No two workflows reach the **same `on_success` via the same code path** — even if their `conditional_branch` strings differ. If they do, merge them (keep the one that activates a distinct revealed required-field group; drop pure toggle-combination duplicates).
+□ 8. There is **at most ONE** `Cancel`/`discard` workflow for the whole module.
+□ 9. No independent toggles are multiplied together — the workflow count is roughly (base submits) + (revealed required-field groups) + 1 Cancel, NOT the product of all toggles × all buttons.
+□ 10. No workflow crosses module boundaries (steps in another module).
+□ 11. Every `on_success` reflects the AST or description — no generic "success" strings.
 
 ---
 
@@ -111,7 +127,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 1. Does each workflow trace back to a specific AST node (`submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`) or an explicit action described in the description text? If no → delete it.
 2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
-3. Are two workflows identical in `conditional_branch` AND `terminal_action`? If yes → merge them into one.
+3. Do two workflows reach the same `on_success` via the same code path (e.g. differing only by an independent toggle that does not change the outcome, or being repeated Cancel variants)? If yes → merge them into one. Keep a separate workflow only when its branch reveals a **distinct required-field group** that needs its own coverage.
 4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
 5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
 
@@ -120,7 +136,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 ## Calibration
 
 - Simple form module (no conditionals, one submit): 1–3 workflows
-- Form with conditionals: 3–8 workflows
+- Form with conditionals/toggles: **(base submit outcomes) + (one per revealed required-field group) + 1 Cancel** — typically 4–8, NOT the product of all toggles × all buttons. A multi-toggle form like Assignment Creation should land near 6–8, never 20+.
 - Module with state machine: add 1 per (state × action) combination
 - Module with data table: add 1 per row_action + 1 per bulk_action
 
@@ -153,15 +169,15 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 
 ------------------------------------------------------------
-[21:10:13] Workflow-Extractor - USER PROMPT
+[22:46:26] Workflow-Extractor - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 3,
   "module_title": "Dashboard \u2014 Edit Mode",
-  "summary": "Provides an interface for customizing the Dashboard layout by adding, configuring, moving, and removing blocks, with an option to reset the page to the default layout.",
-  "where_it_fits": "Accessible from the top navigation via the Dashboard link, this mode is the Dashboard-specific editing state where block management controls (add block, move, configure, delete) and layout persistence are exposed; it complements the regular Dashboard viewing path and sits alongside other course/activity edit modes in the app's navigation structure.",
-  "assumed_state_on_entry": "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
+  "summary": "A mode for the Dashboard that enables adding, configuring, moving, and deleting page blocks with layout changes persisted per user and an option to reset the page to default.",
+  "where_it_fits": "This module is reached from the top navigation via the Dashboard link and activates while viewing the Dashboard page; it is part of the user-facing customization workflow that lets users personalize their Dashboard layout within the application's main navigation. It complements other course- and activity-level editing areas but specifically controls the Dashboard's block layout and content.",
+  "assumed_state_on_entry": "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
 }
 </module_context>
 
@@ -171,61 +187,40 @@ Go through these one by one. If any check fails, fix it before outputting.
 {
   "module_name": "Dashboard \u2014 Edit Mode",
   "components": {
-    "Dashboard_Edit_Mode": {
-      "type": "page",
-      "preconditions": [
-        "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
-      ],
+    "Dashboard_Edit_Mode_Control": {
+      "type": "form",
       "fields": {
-        "Reset_Page_To_Default": {
-          "type": "button",
-          "action_name": "Reset page to default",
-          "visible_when": "Edit_Mode == on",
-          "preconditions": [
-            "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
-          ],
-          "on_success": "reverts layout to default for the user"
-        },
-        "Add_A_Block_Button": {
-          "type": "button",
-          "action_name": "+ Add a block",
-          "visible_when": "Edit_Mode == on",
-          "preconditions": [
-            "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
-          ],
-          "opens": "Add_A_Block_Page"
-        },
-        "Blocks": {
-          "type": "repeating_group",
-          "visible_when": "Edit_Mode == on",
-          "item_fields": {
-            "Move_Icon": {
-              "type": "button",
-              "action_name": "Move"
-            },
-            "Options_Menu": {
-              "type": "menu",
-              "row_actions": [
-                {
-                  "action_name": "Configure"
-                },
-                {
-                  "action_name": "Move"
-                },
-                {
-                  "action_name": "Delete"
-                }
-              ]
-            }
-          }
+        "Edit_Mode": {
+          "type": "checkbox"
         }
       }
+    },
+    "Dashboard_Edit_Action_Bar": {
+      "type": "action_bar",
+      "actions": [
+        {
+          "action_name": "Reset page to default",
+          "visible_when": "Edit_Mode == true",
+          "preconditions": [
+            "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
+          ],
+          "on_success": "Reverts user's dashboard layout to the default and persists the change for the user"
+        },
+        {
+          "action_name": "+ Add a block",
+          "visible_when": "Edit_Mode == true",
+          "preconditions": [
+            "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
+          ],
+          "on_success": "Opens the Add a block page"
+        }
+      ]
     },
     "Add_A_Block_Page": {
       "type": "form",
       "fields": {
         "Block_Type": {
-          "type": "unspecified",
+          "type": "dropdown",
           "options": [
             "Comments",
             "Course overview",
@@ -243,11 +238,52 @@ Go through these one by one. If any check fails, fix it before outputting.
             "Text",
             "Upcoming events"
           ]
-        },
-        "Cancel_Link": {
-          "type": "link",
+        }
+      },
+      "submit_actions": [
+        {
           "action_name": "Cancel",
-          "on_success": "returns to the Dashboard without adding a block"
+          "action_type": "link",
+          "preconditions": [
+            "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
+          ],
+          "on_success": "Returns to the Dashboard without adding a block"
+        }
+      ]
+    },
+    "Dashboard_Blocks": {
+      "type": "repeating_group",
+      "item_fields": {
+        "Move_Handle": {
+          "type": "unspecified",
+          "visible_when": "Edit_Mode == true",
+          "description": "Drag handle shown when Edit mode is on to move the block"
+        },
+        "Options_Menu": {
+          "type": "unspecified",
+          "visible_when": "Edit_Mode == true",
+          "row_actions": [
+            {
+              "action_name": "Configure",
+              "preconditions": [
+                "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
+              ]
+            },
+            {
+              "action_name": "Move",
+              "preconditions": [
+                "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
+              ],
+              "on_success": "Updates block position and persists layout changes for the user"
+            },
+            {
+              "action_name": "Delete",
+              "preconditions": [
+                "Logged in user on the Dashboard page with permission to edit the Dashboard (Edit mode available)"
+              ],
+              "on_success": "Removes the block and persists layout changes for the user"
+            }
+          ]
         }
       }
     }
@@ -267,379 +303,117 @@ When Edit mode is toggled on, a "Reset page to default" button appears at the to
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:10:33] Workflow-Extractor - LLM RESPONSE
+[22:46:55] Workflow-Extractor - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Dashboard — Edit Mode",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Reset page to default",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on",
+      "name": "Reset page to default (Edit mode on)",
+      "actor": "Logged in user with permission to edit the Dashboard",
+      "conditional_branch": "Edit_Mode == true",
       "terminal_action": "Reset page to default",
-      "on_success": "reverts layout to default for the user"
+      "on_success": "Reverts user's dashboard layout to the default and persists the change for the user"
     },
     {
       "wf_id": "WF-002",
-      "name": "Open Add a block page",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on",
+      "name": "Open Add a block page (Edit mode on)",
+      "actor": "Logged in user with permission to edit the Dashboard",
+      "conditional_branch": "Edit_Mode == true",
       "terminal_action": "+ Add a block",
-      "on_success": "opens an Add a block page listing all available block types"
+      "on_success": "Opens the Add a block page"
     },
     {
       "wf_id": "WF-003",
       "name": "Cancel from Add a block page",
-      "actor": "<role>",
-      "conditional_branch": null,
+      "actor": "Logged in user with permission to edit the Dashboard",
+      "conditional_branch": "Edit_Mode == true",
       "terminal_action": "Cancel",
-      "on_success": "returns to the Dashboard without adding a block"
+      "on_success": "Returns to the Dashboard without adding a block"
     },
     {
       "wf_id": "WF-004",
-      "name": "Move block via move icon",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on AND Activation == Move_Icon",
-      "terminal_action": "Move",
-      "on_success": "enters move mode to reposition the block; layout changes are persisted per user"
+      "name": "Configure a block (Edit mode on)",
+      "actor": "Logged in user with permission to edit the Dashboard",
+      "conditional_branch": "Edit_Mode == true",
+      "terminal_action": "Configure",
+      "on_success": "Opens the block configuration UI"
     },
     {
       "wf_id": "WF-005",
-      "name": "Configure block from options menu",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on AND Options_Menu_action == Configure",
-      "terminal_action": "Configure",
-      "on_success": "opens configuration UI for the selected block"
+      "name": "Move a block (Edit mode on)",
+      "actor": "Logged in user with permission to edit the Dashboard",
+      "conditional_branch": "Edit_Mode == true",
+      "terminal_action": "Move",
+      "on_success": "Updates block position and persists layout changes for the user"
     },
     {
       "wf_id": "WF-006",
-      "name": "Move block from options menu",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on AND Options_Menu_action == Move",
-      "terminal_action": "Move",
-      "on_success": "enters move mode to reposition the block; layout changes are persisted per user"
-    },
-    {
-      "wf_id": "WF-007",
-      "name": "Delete block from options menu",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on AND Options_Menu_action == Delete",
+      "name": "Delete a block (Edit mode on)",
+      "actor": "Logged in user with permission to edit the Dashboard",
+      "conditional_branch": "Edit_Mode == true",
       "terminal_action": "Delete",
-      "on_success": "removes the block from the dashboard; layout changes are persisted per user"
+      "on_success": "Removes the block and persists layout changes for the user"
     }
   ],
-  "total": 7
+  "total": 6
 }
 
 ------------------------------------------------------------
-[21:10:33] Workflow-Extractor - PARSED JSON
+[22:46:55] Workflow-Extractor - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Dashboard \u2014 Edit Mode",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Reset page to default",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on",
+      "name": "Reset page to default (Edit mode on)",
+      "actor": "Logged in user with permission to edit the Dashboard",
+      "conditional_branch": "Edit_Mode == true",
       "terminal_action": "Reset page to default",
-      "on_success": "reverts layout to default for the user"
+      "on_success": "Reverts user's dashboard layout to the default and persists the change for the user"
     },
     {
       "wf_id": "WF-002",
-      "name": "Open Add a block page",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on",
+      "name": "Open Add a block page (Edit mode on)",
+      "actor": "Logged in user with permission to edit the Dashboard",
+      "conditional_branch": "Edit_Mode == true",
       "terminal_action": "+ Add a block",
-      "on_success": "opens an Add a block page listing all available block types"
+      "on_success": "Opens the Add a block page"
     },
     {
       "wf_id": "WF-003",
       "name": "Cancel from Add a block page",
-      "actor": "<role>",
-      "conditional_branch": null,
+      "actor": "Logged in user with permission to edit the Dashboard",
+      "conditional_branch": "Edit_Mode == true",
       "terminal_action": "Cancel",
-      "on_success": "returns to the Dashboard without adding a block"
+      "on_success": "Returns to the Dashboard without adding a block"
     },
     {
       "wf_id": "WF-004",
-      "name": "Move block via move icon",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on AND Activation == Move_Icon",
-      "terminal_action": "Move",
-      "on_success": "enters move mode to reposition the block; layout changes are persisted per user"
+      "name": "Configure a block (Edit mode on)",
+      "actor": "Logged in user with permission to edit the Dashboard",
+      "conditional_branch": "Edit_Mode == true",
+      "terminal_action": "Configure",
+      "on_success": "Opens the block configuration UI"
     },
     {
       "wf_id": "WF-005",
-      "name": "Configure block from options menu",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on AND Options_Menu_action == Configure",
-      "terminal_action": "Configure",
-      "on_success": "opens configuration UI for the selected block"
+      "name": "Move a block (Edit mode on)",
+      "actor": "Logged in user with permission to edit the Dashboard",
+      "conditional_branch": "Edit_Mode == true",
+      "terminal_action": "Move",
+      "on_success": "Updates block position and persists layout changes for the user"
     },
     {
       "wf_id": "WF-006",
-      "name": "Move block from options menu",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on AND Options_Menu_action == Move",
-      "terminal_action": "Move",
-      "on_success": "enters move mode to reposition the block; layout changes are persisted per user"
-    },
-    {
-      "wf_id": "WF-007",
-      "name": "Delete block from options menu",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on AND Options_Menu_action == Delete",
+      "name": "Delete a block (Edit mode on)",
+      "actor": "Logged in user with permission to edit the Dashboard",
+      "conditional_branch": "Edit_Mode == true",
       "terminal_action": "Delete",
-      "on_success": "removes the block from the dashboard; layout changes are persisted per user"
+      "on_success": "Removes the block and persists layout changes for the user"
     }
   ],
-  "total": 7
-}
-
-------------------------------------------------------------
-[21:11:13] Workflow-Extractor - USER PROMPT
-------------------------------------------------------------
-<module_context>
-{
-  "module_id": 3,
-  "module_title": "Dashboard \u2014 Edit Mode",
-  "summary": "Provides an interface for customizing the Dashboard layout by adding, configuring, moving, and removing blocks, with an option to reset the page to the default layout.",
-  "where_it_fits": "Accessible from the top navigation via the Dashboard link, this mode is the Dashboard-specific editing state where block management controls (add block, move, configure, delete) and layout persistence are exposed; it complements the regular Dashboard viewing path and sits alongside other course/activity edit modes in the app's navigation structure.",
-  "assumed_state_on_entry": "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
-}
-</module_context>
-
-<module_name>Dashboard — Edit Mode</module_name>
-
-<ast>
-{
-  "module_name": "Dashboard \u2014 Edit Mode",
-  "components": {
-    "Dashboard_Edit_Mode": {
-      "type": "page",
-      "preconditions": [
-        "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
-      ],
-      "fields": {
-        "Reset_Page_To_Default": {
-          "type": "button",
-          "action_name": "Reset page to default",
-          "visible_when": "Edit_Mode == on",
-          "preconditions": [
-            "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
-          ],
-          "on_success": "reverts layout to default for the user"
-        },
-        "Add_A_Block_Button": {
-          "type": "button",
-          "action_name": "+ Add a block",
-          "visible_when": "Edit_Mode == on",
-          "preconditions": [
-            "User is authenticated and viewing the Dashboard page, with Dashboard edit capability enabled (Edit mode toggled on)."
-          ],
-          "opens": "Add_A_Block_Page"
-        },
-        "Blocks": {
-          "type": "repeating_group",
-          "visible_when": "Edit_Mode == on",
-          "item_fields": {
-            "Move_Icon": {
-              "type": "button",
-              "action_name": "Move"
-            },
-            "Options_Menu": {
-              "type": "menu",
-              "row_actions": [
-                {
-                  "action_name": "Configure"
-                },
-                {
-                  "action_name": "Move"
-                },
-                {
-                  "action_name": "Delete"
-                }
-              ]
-            }
-          }
-        }
-      }
-    },
-    "Add_A_Block_Page": {
-      "type": "form",
-      "fields": {
-        "Block_Type": {
-          "type": "unspecified",
-          "options": [
-            "Comments",
-            "Course overview",
-            "Latest announcements",
-            "Latest badges",
-            "Learning plans",
-            "Logged in user",
-            "Mentees",
-            "Online users",
-            "Private files",
-            "Random glossary entry",
-            "Recently accessed courses",
-            "Starred courses",
-            "Tags",
-            "Text",
-            "Upcoming events"
-          ]
-        },
-        "Cancel_Link": {
-          "type": "link",
-          "action_name": "Cancel",
-          "on_success": "returns to the Dashboard without adding a block"
-        }
-      }
-    }
-  }
-}
-</ast>
-
-<description>
-
-When Edit mode is toggled on, a "Reset page to default" button appears at the top right and a "+ Add a block" button appears below the Dashboard heading. Clicking it opens an Add a block page listing all available block types: Comments, Course overview, Latest announcements, Latest badges, Learning plans, Logged in user, Mentees, Online users, Private files, Random glossary entry, Recently accessed courses, Starred courses, Tags, Text, and Upcoming events. A "Cancel" link at the bottom returns to the Dashboard without adding a block. In Edit mode, each existing block shows a move icon and a three-dot options menu for configure, move, and delete actions. Layout changes are persisted per user and can be fully reverted with "Reset page to default."
-
----
-
-
-</description>
-
-IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
-
-------------------------------------------------------------
-[21:11:54] Workflow-Extractor - LLM RESPONSE
-------------------------------------------------------------
-{
-  "module": "Dashboard — Edit Mode",
-  "workflows": [
-    {
-      "wf_id": "WF-001",
-      "name": "Reset page to default (while in Edit mode)",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on",
-      "terminal_action": "Reset page to default",
-      "on_success": "reverts layout to default for the user"
-    },
-    {
-      "wf_id": "WF-002",
-      "name": "Open Add a block page (while in Edit mode)",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on",
-      "terminal_action": "+ Add a block",
-      "on_success": "opens Add_A_Block_Page"
-    },
-    {
-      "wf_id": "WF-003",
-      "name": "Cancel from Add a block page",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Cancel",
-      "on_success": "returns to the Dashboard without adding a block"
-    },
-    {
-      "wf_id": "WF-004",
-      "name": "Move a block using the move icon (row-level)",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on AND Blocks.Move_Icon",
-      "terminal_action": "Move",
-      "on_success": "initiates block repositioning; layout changes persisted for the user"
-    },
-    {
-      "wf_id": "WF-005",
-      "name": "Configure a block via options menu (row-level)",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on AND Blocks.Options_Menu.Configure",
-      "terminal_action": "Configure",
-      "on_success": "opens configuration controls for the selected block"
-    },
-    {
-      "wf_id": "WF-006",
-      "name": "Move a block via options menu (row-level)",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on AND Blocks.Options_Menu.Move",
-      "terminal_action": "Move",
-      "on_success": "initiates block repositioning; layout changes persisted for the user"
-    },
-    {
-      "wf_id": "WF-007",
-      "name": "Delete a block via options menu (row-level)",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on AND Blocks.Options_Menu.Delete",
-      "terminal_action": "Delete",
-      "on_success": "removes the block from the dashboard; layout changes persisted for the user"
-    }
-  ],
-  "total": 7
-}
-
-------------------------------------------------------------
-[21:11:54] Workflow-Extractor - PARSED JSON
-------------------------------------------------------------
-{
-  "module": "Dashboard \u2014 Edit Mode",
-  "workflows": [
-    {
-      "wf_id": "WF-001",
-      "name": "Reset page to default (while in Edit mode)",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on",
-      "terminal_action": "Reset page to default",
-      "on_success": "reverts layout to default for the user"
-    },
-    {
-      "wf_id": "WF-002",
-      "name": "Open Add a block page (while in Edit mode)",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on",
-      "terminal_action": "+ Add a block",
-      "on_success": "opens Add_A_Block_Page"
-    },
-    {
-      "wf_id": "WF-003",
-      "name": "Cancel from Add a block page",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Cancel",
-      "on_success": "returns to the Dashboard without adding a block"
-    },
-    {
-      "wf_id": "WF-004",
-      "name": "Move a block using the move icon (row-level)",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on AND Blocks.Move_Icon",
-      "terminal_action": "Move",
-      "on_success": "initiates block repositioning; layout changes persisted for the user"
-    },
-    {
-      "wf_id": "WF-005",
-      "name": "Configure a block via options menu (row-level)",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on AND Blocks.Options_Menu.Configure",
-      "terminal_action": "Configure",
-      "on_success": "opens configuration controls for the selected block"
-    },
-    {
-      "wf_id": "WF-006",
-      "name": "Move a block via options menu (row-level)",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on AND Blocks.Options_Menu.Move",
-      "terminal_action": "Move",
-      "on_success": "initiates block repositioning; layout changes persisted for the user"
-    },
-    {
-      "wf_id": "WF-007",
-      "name": "Delete a block via options menu (row-level)",
-      "actor": "<role>",
-      "conditional_branch": "Edit_Mode == on AND Blocks.Options_Menu.Delete",
-      "terminal_action": "Delete",
-      "on_success": "removes the block from the dashboard; layout changes persisted for the user"
-    }
-  ],
-  "total": 7
+  "total": 6
 }

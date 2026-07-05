@@ -1,0 +1,1877 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T22:57:38.788202
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:01:21] Structural Model Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Structural Model Validator. You receive (1) a raw functional description and
+(2) a generated Structural Model JSON.
+
+Your single job: decide whether this AST is good enough to use, or whether it should
+be regenerated.
+
+You DO NOT modify the JSON.
+You DO NOT generate a new JSON.
+You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CANONICAL SCOPE — IDENTICAL TO THE GENERATOR'S SCOPE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+IN SCOPE — an element qualifies if a user can:
+  (a) Input or edit a value: form fields, checkboxes, file uploads, search inputs, toggles
+  (b) Trigger an action: buttons, links, row actions, bulk actions, submit actions
+  (c) Navigate: tabs, sub-tabs, wizard steps
+  (d) Action metadata on interactive elements: on_success, preconditions, state
+      transitions, validation constraints
+
+OUT OF SCOPE — do NOT expect these in the AST:
+  - Passive display labels: "the page shows client name, account number, status badge"
+    → 0 expected items. The AST is correct to omit them.
+  - Chip colors, badge styles, decorative icons, visual styling
+  - Read-only info panels with no interactive element
+  - Display-formatting or rendering rules applied to a passive (non-interactive) value —
+    e.g. masking ("showing only last 4 digits"), truncation, currency/number formatting,
+    default sort order of a read-only column → 0 expected items. These are NOT validation
+    constraints. Do not expect a field/column AST node, a "constraints" entry, or a
+    "columns" block created solely to house one of these rules.
+
+STATE (Pending / Active / Closed) is a routing key in state_bound_action_bar.states{},
+NOT a display field. Do not expect it anywhere else.
+
+"Constraint" (as used everywhere below) means a rule that governs INPUT or ACTION
+behavior — required-ness, format, bounds, uniqueness, cross-field ordering, state
+preconditions. A rule that only describes how an already-displayed, non-interactive
+value is rendered (masked, truncated, formatted, sorted) is a display-formatting rule,
+not a constraint, even if the description uses words like "must" or states a concrete
+detail (e.g. "must show only last 4 digits"). Do not upgrade a display-formatting rule
+to CRITICAL missing just because it is stated precisely.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MINOR missing
+  An optional field (no "required": true, no required_when) with no business logic,
+  state transition, or action consequence attached. Losing it doesn't break any flow.
+  Example: an unlabeled optional "Notes" textarea on a secondary form.
+
+MINOR phantom
+  An element not named in the description but so universally implied by the component
+  type that its presence is unsurprising — e.g., a "Cancel" button on a modal the
+  description never explicitly names. Flag it; don't auto-retry for it alone.
+
+CRITICAL missing
+  Any of: a required field, any state key in a state_bound_action_bar, any submit
+  action, any named tab or wizard step, any element with a stated precondition or
+  on_success consequence, any INTERACTIVE field with a stated constraint (see the
+  constraint definition above — a display-formatting rule on a passive field does
+  NOT qualify and must never be flagged as critical missing).
+
+CRITICAL phantom
+  Any of: a field invented inside a generic-name tab (Add_Note in a Notes tab,
+  Upload_Document in a Documents tab) when the description only names the tab;
+  a passive display field appearing as an AST node — including a "columns" block,
+  or any field/column entry, added only to carry a masking/truncation/formatting rule
+  for a non-interactive value; a constraint with no textual anchor; a display_fields
+  block anywhere in the output; "required": false anywhere.
+
+WORKED EXAMPLE — display-formatting rule, NOT a critical missing:
+
+Description: "Each row shows Account Number (clickable but not implemented yet),
+Account Type, Current Balance, Account Status, and Open Date. Account numbers are
+masked for security (showing only last 4 digits as ****5001)."
+
+AST under review:
+{
+  "Accounts_Table": {
+    "type": "data_table",
+    "row_actions": [
+      { "action_name": "Account Number", "constraints": ["clickable but not implemented yet"] }
+    ]
+  }
+}
+
+CORRECT verdict: the masking rule and the other four listed fields (Account Type,
+Current Balance, Account Status, Open Date) are passive display labels — 0 expected
+AST items for them, per the OUT OF SCOPE rule above. The only interactive element is
+the Account Number click, and it is already present. Do NOT flag
+"components.Accounts_Table.columns.Account_Number" (or any columns block) as a
+CRITICAL missing item. Do NOT instruct the generator to add a "columns" block with
+typed entries (e.g. "Open_Date": {"type": "date"}) — that fabricates interactive
+field types for read-only data and will cause downstream test generators to invent
+boundary/date tests against a page that has none.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Step 1 — Walk the description. List every expected interactive element.
+Apply the canonical scope above. A sentence that only displays data produces 0 expected
+items. For each tab or step named with no described fields, expected output is
+"fields": {} — do NOT expect fields there.
+
+Step 2 — Walk the AST. Check for MISSING elements.
+For each expected element from Step 1, confirm it exists at the correct path.
+Classify each missing item as critical or minor using the definitions above.
+
+Step 3 — Walk the AST. Check for PHANTOMS.
+Flag any AST element with no textual anchor in the description.
+Classify each phantom as critical or minor using the definitions above.
+
+Step 4 — Check conditional logic.
+Count a conditional as EXPECTED only if the description contains an explicit trigger
+phrase. Both affirmative and negative phrasings qualify:
+
+  Affirmative: "when X is selected/checked/chosen", "if X then Y", "Y appears when X",
+               "selecting X reveals Y", "required if X", "enabled when X", "only if X",
+               "Y is shown for X"
+  Negative:    "unless X", "except when X", "disabled if X", "not shown when X",
+               "hidden when X", "required for non-X", "only for X users"
+  Abbreviated: "required for minors", "admin only", "international trips only"
+               → treat as conditional even without explicit trigger syntax
+
+If a visible_when / required_when / enabled_when appears in the AST but no trigger
+phrase (affirmative or negative) exists in the description: flag as critical phantom.
+If a trigger phrase exists in the description but no conditional appears in the AST:
+flag as critical missing.
+
+Step 5 — Check structural integrity. Flag any of these as STRUCTURAL ERRORS:
+  - A constraint floating at form/component level when the description attached it to
+    a specific field or action
+  - Sub-tabs or sub-steps described as nested but flattened in the AST
+  - State keys in state_bound_action_bar that don't match exact status names in the
+    description
+  - A display_fields block anywhere in the AST
+  - "required": false appearing anywhere in the AST
+  - Component or field names not in Pascal_Snake_Case
+
+Step 6 — Decide the verdict.
+
+Precondition note: If a `<module_context>` block is present, cross-check any
+`preconditions[]` in the AST against the `assumed_state_on_entry` value. A precondition
+that directly contradicts or wildly exceeds the described entry state is a CRITICAL phantom.
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Step 5)
+                       → fixes must be []
+
+  retry                Any CRITICAL missing element
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any Step 5 structural error
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       element is interactive — not a close call, but truly unresolvable
+                       from the text alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "Component.path.to.element",
+      "severity": "critical | minor",
+      "reason": "<why this element is expected from the description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "Component.path.to.element",
+      "severity": "critical | minor",
+      "reason": "<why this element has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Step 5 violation and its AST path>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact JSON path and required change>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+------------------------------------------------------------
+[23:01:21] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 9,
+  "module_title": "Savings Products",
+  "summary": "Manages creation, configuration, and listing of savings, fixed deposit, and recurring deposit product definitions via a multi-step wizard and searchable product table.",
+  "where_it_fits": "Located under the Products section (accessible from the left sidebar shortcuts and within the Institution/Product area), this module is part of product lifecycle configuration used by administrators to define interest, fees, accounting mappings, and operational rules before deposit accounts are opened from the main account workflows. Breadcrumbs and Material Design tables situate it among other product and accounting configuration pages.",
+  "assumed_state_on_entry": "User is authenticated with product-management permissions and has navigated to the Products area (Savings Products page) in the application; no specific client or account is required."
+}
+</module_context>
+
+<description>
+
+The Savings Products page displays a filter bar and a data table with columns for Name (clickable link) and Short Name. A "+ Create Savings Product" button opens a stepper wizard. Step 1 (Details) contains Product Name (required), Short Name (required), Description, and External Id. Step 2 (Currency) contains Currency, Decimal Places, and Currency In Multiples Of. Step 3 (Terms) contains Nominal Annual Interest Rate, Interest Compounding Period (Daily, Monthly, Quarterly, Semi-Annual, Annually), Interest Posting Period (Monthly, Quarterly, Biannually, Annually), Interest Calculated Using (Daily Balance, Average Daily Balance), and Days in Year (360, 365, Actual). Step 4 (Settings) contains Minimum Opening Balance, Lock-in Period, Apply Withdrawal Fee for Transfers checkbox, Minimum Balance for Interest Calculation, Enforce Minimum Required Balance checkbox with Minimum Required Balance field, Is Overdraft Allowed checkbox with Maximum Overdraft Amount and Overdraft Interest Rate fields, Enable Withhold Tax checkbox with Tax Group dropdown, and Enable Dormancy Tracking checkbox with Days to Inactive, Days to Dormancy, and Days to Escheat fields. Step 5 (Charges) is a search-and-add interface for predefined charges. Step 6 (Accounting) contains a radio button for None or Cash-based; selecting Cash-based reveals GL account mappings for Savings Reference, Savings Control, Transfers in Suspense, Interest on Savings, Income from Fees, Income from Penalties, and Escheat Liability.
+
+Fixed Deposit Products and Recurring Deposit Products follow the same stepper structure with additional steps. Fixed Deposit Products add a Pre-Closure step (Pre-Mature Closure Applicable checkbox, Pre-Closure Penal Interest, Pre-Closure Penal Interest On dropdown), a Deposit Term step (Minimum and Maximum Deposit Term with units, In Multiples Of, Minimum/Maximum/Default Deposit Amount), and an Interest Rate Chart step (tiered rates with Period From, Period To, Period Type, Interest Rate, and optional Amount Range slabs). Recurring Deposit Products additionally include Mandatory Recommended Deposit Amount, Is Mandatory Deposit checkbox, Allow Withdrawal checkbox, Adjust Advance Towards Future Payments checkbox, and Recurring Frequency with unit dropdown.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Savings Products",
+  "components": {
+    "Savings_Products_Filter_Bar": {
+      "type": "filter_bar",
+      "fields": {}
+    },
+    "Savings_Products_Table": {
+      "type": "data_table",
+      "searchable": false,
+      "sortable_columns": [],
+      "filterable_columns": [],
+      "row_actions": [
+        {
+          "action_name": "Open",
+          "description": "triggered by clicking the Name link"
+        }
+      ],
+      "bulk_actions": []
+    },
+    "Create_Savings_Product_Button": {
+      "type": "button",
+      "action_name": "+ Create Savings Product",
+      "on_click_opens": "Savings_Product_Wizard",
+      "preconditions": [
+        "User is authenticated with product-management permissions and has navigated to the Products area (Savings Products page) in the application; no specific client or account is required."
+      ]
+    },
+    "Savings_Product_Wizard": {
+      "type": "wizard",
+      "steps": [
+        {
+          "step_index": 1,
+          "step_name": "Details",
+          "fields": {
+            "Product_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Short_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Description": {
+              "type": "unspecified"
+            },
+            "External_Id": {
+              "type": "unspecified"
+            }
+          }
+        },
+        {
+          "step_index": 2,
+          "step_name": "Currency",
+          "fields": {
+            "Currency": {
+              "type": "unspecified"
+            },
+            "Decimal_Places": {
+              "type": "number"
+            },
+            "Currency_In_Multiples_Of": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "step_index": 3,
+          "step_name": "Terms",
+          "fields": {
+            "Nominal_Annual_Interest_Rate": {
+              "type": "unspecified"
+            },
+            "Interest_Compounding_Period": {
+              "type": "dropdown",
+              "options": [
+                "Daily",
+                "Monthly",
+                "Quarterly",
+                "Semi-Annual",
+                "Annually"
+              ]
+            },
+            "Interest_Posting_Period": {
+              "type": "dropdown",
+              "options": [
+                "Monthly",
+                "Quarterly",
+                "Biannually",
+                "Annually"
+              ]
+            },
+            "Interest_Calculated_Using": {
+              "type": "dropdown",
+              "options": [
+                "Daily Balance",
+                "Average Daily Balance"
+              ]
+            },
+            "Days_In_Year": {
+              "type": "dropdown",
+              "options": [
+                "360",
+                "365",
+                "Actual"
+              ]
+            }
+          }
+        },
+        {
+          "step_index": 4,
+          "step_name": "Settings",
+          "fields": {
+            "Minimum_Opening_Balance": {
+              "type": "unspecified"
+            },
+            "Lock_in_Period": {
+              "type": "unspecified"
+            },
+            "Apply_Withdrawal_Fee_For_Transfers": {
+              "type": "checkbox"
+            },
+            "Minimum_Balance_For_Interest_Calculation": {
+              "type": "unspecified"
+            },
+            "Enforce_Minimum_Required_Balance": {
+              "type": "checkbox"
+            },
+            "Minimum_Required_Balance": {
+              "type": "unspecified",
+              "visible_when": "Enforce_Minimum_Required_Balance == true"
+            },
+            "Is_Overdraft_Allowed": {
+              "type": "checkbox"
+            },
+            "Maximum_Overdraft_Amount": {
+              "type": "unspecified",
+              "visible_when": "Is_Overdraft_Allowed == true"
+            },
+            "Overdraft_Interest_Rate": {
+              "type": "unspecified",
+              "visible_when": "Is_Overdraft_Allowed == true"
+            },
+            "Enable_Withhold_Tax": {
+              "type": "checkbox"
+            },
+            "Tax_Group": {
+              "type": "dropdown",
+              "visible_when": "Enable_Withhold_Tax == true"
+            },
+            "Enable_Dormancy_Tracking": {
+              "type": "checkbox"
+            },
+            "Days_To_Inactive": {
+              "type": "number",
+              "visible_when": "Enable_Dormancy_Tracking == true"
+            },
+            "Days_To_Dormancy": {
+              "type": "number",
+              "visible_when": "Enable_Dormancy_Tracking == true"
+            },
+            "Days_To_Escheat": {
+              "type": "number",
+              "visible_when": "Enable_Dormancy_Tracking == true"
+            }
+          }
+        },
+        {
+          "step_index": 5,
+          "step_name": "Charges",
+          "fields": {
+            "Charges": {
+              "type": "search_and_add",
+              "searchable": true,
+              "description": "search predefined charges and add to product"
+            }
+          }
+        },
+        {
+          "step_index": 6,
+          "step_name": "Accounting",
+          "fields": {
+            "Accounting_Method": {
+              "type": "radio",
+              "options": [
+                "None",
+                "Cash-based"
+              ]
+            },
+            "Savings_Reference_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            },
+            "Savings_Control_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            },
+            "Transfers_In_Suspense_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            },
+            "Interest_On_Savings_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            },
+            "Income_From_Fees_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            },
+            "Income_From_Penalties_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            },
+            "Escheat_Liability_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            }
+          }
+        }
+      ]
+    },
+    "Fixed_Deposit_Product_Wizard": {
+      "type": "wizard",
+      "steps": [
+        {
+          "step_index": 1,
+          "step_name": "Details",
+          "fields": {
+            "Product_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Short_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Description": {
+              "type": "unspecified"
+            },
+            "External_Id": {
+              "type": "unspecified"
+            }
+          }
+        },
+        {
+          "step_index": 2,
+          "step_name": "Currency",
+          "fields": {
+            "Currency": {
+              "type": "unspecified"
+            },
+            "Decimal_Places": {
+              "type": "number"
+            },
+            "Currency_In_Multiples_Of": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "step_index": 3,
+          "step_name": "Terms",
+          "fields": {
+            "Nominal_Annual_Interest_Rate": {
+              "type": "unspecified"
+            },
+            "Interest_Compounding_Period": {
+              "type": "dropdown",
+              "options": [
+                "Daily",
+                "Monthly",
+                "Quarterly",
+                "Semi-Annual",
+                "Annually"
+              ]
+            },
+            "Interest_Posting_Period": {
+              "type": "dropdown",
+              "options": [
+                "Monthly",
+                "Quarterly",
+                "Biannually",
+                "Annually"
+              ]
+            },
+            "Interest_Calculated_Using": {
+              "type": "dropdown",
+              "options": [
+                "Daily Balance",
+                "Average Daily Balance"
+              ]
+            },
+            "Days_In_Year": {
+              "type": "dropdown",
+              "options": [
+                "360",
+                "365",
+                "Actual"
+              ]
+            }
+          }
+        },
+        {
+          "step_index": 4,
+          "step_name": "Settings",
+          "fields": {
+            "Minimum_Opening_Balance": {
+              "type": "unspecified"
+            },
+            "Lock_in_Period": {
+              "type": "unspecified"
+            },
+            "Apply_Withdrawal_Fee_For_Transfers": {
+              "type": "checkbox"
+            },
+            "Minimum_Balance_For_Interest_Calculation": {
+              "type": "unspecified"
+            },
+            "Enforce_Minimum_Required_Balance": {
+              "type": "checkbox"
+            },
+            "Minimum_Required_Balance": {
+              "type": "unspecified",
+              "visible_when": "Enforce_Minimum_Required_Balance == true"
+            },
+            "Is_Overdraft_Allowed": {
+              "type": "checkbox"
+            },
+            "Maximum_Overdraft_Amount": {
+              "type": "unspecified",
+              "visible_when": "Is_Overdraft_Allowed == true"
+            },
+            "Overdraft_Interest_Rate": {
+              "type": "unspecified",
+              "visible_when": "Is_Overdraft_Allowed == true"
+            },
+            "Enable_Withhold_Tax": {
+              "type": "checkbox"
+            },
+            "Tax_Group": {
+              "type": "dropdown",
+              "visible_when": "Enable_Withhold_Tax == true"
+            },
+            "Enable_Dormancy_Tracking": {
+              "type": "checkbox"
+            },
+            "Days_To_Inactive": {
+              "type": "number",
+              "visible_when": "Enable_Dormancy_Tracking == true"
+            },
+            "Days_To_Dormancy": {
+              "type": "number",
+              "visible_when": "Enable_Dormancy_Tracking == true"
+            },
+            "Days_To_Escheat": {
+              "type": "number",
+              "visible_when": "Enable_Dormancy_Tracking == true"
+            }
+          }
+        },
+        {
+          "step_index": 5,
+          "step_name": "Charges",
+          "fields": {
+            "Charges": {
+              "type": "search_and_add",
+              "searchable": true,
+              "description": "search predefined charges and add to product"
+            }
+          }
+        },
+        {
+          "step_index": 6,
+          "step_name": "Accounting",
+          "fields": {
+            "Accounting_Method": {
+              "type": "radio",
+              "options": [
+                "None",
+                "Cash-based"
+              ]
+            },
+            "Savings_Reference_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            },
+            "Savings_Control_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            },
+            "Transfers_In_Suspense_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            },
+            "Interest_On_Savings_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            },
+            "Income_From_Fees_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            },
+            "Income_From_Penalties_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            },
+            "Escheat_Liability_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            }
+          }
+        },
+        {
+          "step_index": 7,
+          "step_name": "Pre-Closure",
+          "fields": {
+            "Pre_Mature_Closure_Applicable": {
+              "type": "checkbox"
+            },
+            "Pre_Closure_Penal_Interest": {
+              "type": "unspecified",
+              "visible_when": "Pre_Mature_Closure_Applicable == true"
+            },
+            "Pre_Closure_Penal_Interest_On": {
+              "type": "dropdown",
+              "visible_when": "Pre_Mature_Closure_Applicable == true"
+            }
+          }
+        },
+        {
+          "step_index": 8,
+          "step_name": "Deposit Term",
+          "fields": {
+            "Minimum_Deposit_Term": {
+              "type": "number"
+            },
+            "Minimum_Deposit_Term_Unit": {
+              "type": "unspecified"
+            },
+            "Maximum_Deposit_Term": {
+              "type": "number"
+            },
+            "Maximum_Deposit_Term_Unit": {
+              "type": "unspecified"
+            },
+            "In_Multiples_Of": {
+              "type": "number"
+            },
+            "Minimum_Deposit_Amount": {
+              "type": "unspecified"
+            },
+            "Maximum_Deposit_Amount": {
+              "type": "unspecified"
+            },
+            "Default_Deposit_Amount": {
+              "type": "unspecified"
+            }
+          }
+        },
+        {
+          "step_index": 9,
+          "step_name": "Interest Rate Chart",
+          "fields": {
+            "Interest_Rate_Chart": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Period_From": {
+                  "type": "number"
+                },
+                "Period_To": {
+                  "type": "number"
+                },
+                "Period_Type": {
+                  "type": "unspecified"
+                },
+                "Interest_Rate": {
+                  "type": "unspecified"
+                },
+                "Amount_Range_Slabs": {
+                  "type": "repeating_group",
+                  "item_fields": {
+                    "Amount_From": {
+                      "type": "unspecified"
+                    },
+                    "Amount_To": {
+                      "type": "unspecified"
+                    },
+                    "Interest_Rate": {
+                      "type": "unspecified"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Recurring_Deposit_Product_Wizard": {
+      "type": "wizard",
+      "steps": [
+        {
+          "step_index": 1,
+          "step_name": "Details",
+          "fields": {
+            "Product_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Short_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Description": {
+              "type": "unspecified"
+            },
+            "External_Id": {
+              "type": "unspecified"
+            }
+          }
+        },
+        {
+          "step_index": 2,
+          "step_name": "Currency",
+          "fields": {
+            "Currency": {
+              "type": "unspecified"
+            },
+            "Decimal_Places": {
+              "type": "number"
+            },
+            "Currency_In_Multiples_Of": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "step_index": 3,
+          "step_name": "Terms",
+          "fields": {
+            "Nominal_Annual_Interest_Rate": {
+              "type": "unspecified"
+            },
+            "Interest_Compounding_Period": {
+              "type": "dropdown",
+              "options": [
+                "Daily",
+                "Monthly",
+                "Quarterly",
+                "Semi-Annual",
+                "Annually"
+              ]
+            },
+            "Interest_Posting_Period": {
+              "type": "dropdown",
+              "options": [
+                "Monthly",
+                "Quarterly",
+                "Biannually",
+                "Annually"
+              ]
+            },
+            "Interest_Calculated_Using": {
+              "type": "dropdown",
+              "options": [
+                "Daily Balance",
+                "Average Daily Balance"
+              ]
+            },
+            "Days_In_Year": {
+              "type": "dropdown",
+              "options": [
+                "360",
+                "365",
+                "Actual"
+              ]
+            }
+          }
+        },
+        {
+          "step_index": 4,
+          "step_name": "Settings",
+          "fields": {
+            "Minimum_Opening_Balance": {
+              "type": "unspecified"
+            },
+            "Lock_in_Period": {
+              "type": "unspecified"
+            },
+            "Apply_Withdrawal_Fee_For_Transfers": {
+              "type": "checkbox"
+            },
+            "Minimum_Balance_For_Interest_Calculation": {
+              "type": "unspecified"
+            },
+            "Enforce_Minimum_Required_Balance": {
+              "type": "checkbox"
+            },
+            "Minimum_Required_Balance": {
+              "type": "unspecified",
+              "visible_when": "Enforce_Minimum_Required_Balance == true"
+            },
+            "Is_Overdraft_Allowed": {
+              "type": "checkbox"
+            },
+            "Maximum_Overdraft_Amount": {
+              "type": "unspecified",
+              "visible_when": "Is_Overdraft_Allowed == true"
+            },
+            "Overdraft_Interest_Rate": {
+              "type": "unspecified",
+              "visible_when": "Is_Overdraft_Allowed == true"
+            },
+            "Enable_Withhold_Tax": {
+              "type": "checkbox"
+            },
+            "Tax_Group": {
+              "type": "dropdown",
+              "visible_when": "Enable_Withhold_Tax == true"
+            },
+            "Enable_Dormancy_Tracking": {
+              "type": "checkbox"
+            },
+            "Days_To_Inactive": {
+              "type": "number",
+              "visible_when": "Enable_Dormancy_Tracking == true"
+            },
+            "Days_To_Dormancy": {
+              "type": "number",
+              "visible_when": "Enable_Dormancy_Tracking == true"
+            },
+            "Days_To_Escheat": {
+              "type": "number",
+              "visible_when": "Enable_Dormancy_Tracking == true"
+            }
+          }
+        },
+        {
+          "step_index": 5,
+          "step_name": "Charges",
+          "fields": {
+            "Charges": {
+              "type": "search_and_add",
+              "searchable": true,
+              "description": "search predefined charges and add to product"
+            }
+          }
+        },
+        {
+          "step_index": 6,
+          "step_name": "Accounting",
+          "fields": {
+            "Accounting_Method": {
+              "type": "radio",
+              "options": [
+                "None",
+                "Cash-based"
+              ]
+            },
+            "Savings_Reference_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            },
+            "Savings_Control_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            },
+            "Transfers_In_Suspense_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            },
+            "Interest_On_Savings_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            },
+            "Income_From_Fees_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            },
+            "Income_From_Penalties_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            },
+            "Escheat_Liability_GL_Account": {
+              "type": "unspecified",
+              "visible_when": "Accounting_Method == Cash-based"
+            }
+          }
+        },
+        {
+          "step_index": 7,
+          "step_name": "Recurring Settings",
+          "fields": {
+            "Mandatory_Recommended_Deposit_Amount": {
+              "type": "unspecified"
+            },
+            "Is_Mandatory_Deposit": {
+              "type": "checkbox"
+            },
+            "Allow_Withdrawal": {
+              "type": "checkbox"
+            },
+            "Adjust_Advance_Towards_Future_Payments": {
+              "type": "checkbox"
+            },
+            "Recurring_Frequency": {
+              "type": "unspecified"
+            },
+            "Recurring_Frequency_Unit": {
+              "type": "dropdown"
+            }
+          }
+        },
+        {
+          "step_index": 8,
+          "step_name": "Interest Rate Chart",
+          "fields": {
+            "Interest_Rate_Chart": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Period_From": {
+                  "type": "number"
+                },
+                "Period_To": {
+                  "type": "number"
+                },
+                "Period_Type": {
+                  "type": "unspecified"
+                },
+                "Interest_Rate": {
+                  "type": "unspecified"
+                },
+                "Amount_Range_Slabs": {
+                  "type": "repeating_group",
+                  "item_fields": {
+                    "Amount_From": {
+                      "type": "unspecified"
+                    },
+                    "Amount_To": {
+                      "type": "unspecified"
+                    },
+                    "Interest_Rate": {
+                      "type": "unspecified"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:01:56] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "The AST omits the searchable capability for the product table which the module context/description explicitly requires.",
+  "missing": [
+    {
+      "path": "components.Savings_Products_Table.searchable",
+      "severity": "critical",
+      "reason": "The module summary and description state this is a searchable product table; a search input / searchable=true is an expected interactive element."
+    }
+  ],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [
+    "Set components.Savings_Products_Table.searchable to true (or add a search input field under components.Savings_Products_Table.fields like 'Search' with type 'search')"
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:01:56] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "The AST omits the searchable capability for the product table which the module context/description explicitly requires.",
+  "missing": [
+    {
+      "path": "components.Savings_Products_Table.searchable",
+      "severity": "critical",
+      "reason": "The module summary and description state this is a searchable product table; a search input / searchable=true is an expected interactive element."
+    }
+  ],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [
+    "Set components.Savings_Products_Table.searchable to true (or add a search input field under components.Savings_Products_Table.fields like 'Search' with type 'search')"
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:03:19] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 9,
+  "module_title": "Savings Products",
+  "summary": "Manages creation, configuration, and listing of savings, fixed deposit, and recurring deposit product definitions via a multi-step wizard and searchable product table.",
+  "where_it_fits": "Located under the Products section (accessible from the left sidebar shortcuts and within the Institution/Product area), this module is part of product lifecycle configuration used by administrators to define interest, fees, accounting mappings, and operational rules before deposit accounts are opened from the main account workflows. Breadcrumbs and Material Design tables situate it among other product and accounting configuration pages.",
+  "assumed_state_on_entry": "User is authenticated with product-management permissions and has navigated to the Products area (Savings Products page) in the application; no specific client or account is required."
+}
+</module_context>
+
+<description>
+
+The Savings Products page displays a filter bar and a data table with columns for Name (clickable link) and Short Name. A "+ Create Savings Product" button opens a stepper wizard. Step 1 (Details) contains Product Name (required), Short Name (required), Description, and External Id. Step 2 (Currency) contains Currency, Decimal Places, and Currency In Multiples Of. Step 3 (Terms) contains Nominal Annual Interest Rate, Interest Compounding Period (Daily, Monthly, Quarterly, Semi-Annual, Annually), Interest Posting Period (Monthly, Quarterly, Biannually, Annually), Interest Calculated Using (Daily Balance, Average Daily Balance), and Days in Year (360, 365, Actual). Step 4 (Settings) contains Minimum Opening Balance, Lock-in Period, Apply Withdrawal Fee for Transfers checkbox, Minimum Balance for Interest Calculation, Enforce Minimum Required Balance checkbox with Minimum Required Balance field, Is Overdraft Allowed checkbox with Maximum Overdraft Amount and Overdraft Interest Rate fields, Enable Withhold Tax checkbox with Tax Group dropdown, and Enable Dormancy Tracking checkbox with Days to Inactive, Days to Dormancy, and Days to Escheat fields. Step 5 (Charges) is a search-and-add interface for predefined charges. Step 6 (Accounting) contains a radio button for None or Cash-based; selecting Cash-based reveals GL account mappings for Savings Reference, Savings Control, Transfers in Suspense, Interest on Savings, Income from Fees, Income from Penalties, and Escheat Liability.
+
+Fixed Deposit Products and Recurring Deposit Products follow the same stepper structure with additional steps. Fixed Deposit Products add a Pre-Closure step (Pre-Mature Closure Applicable checkbox, Pre-Closure Penal Interest, Pre-Closure Penal Interest On dropdown), a Deposit Term step (Minimum and Maximum Deposit Term with units, In Multiples Of, Minimum/Maximum/Default Deposit Amount), and an Interest Rate Chart step (tiered rates with Period From, Period To, Period Type, Interest Rate, and optional Amount Range slabs). Recurring Deposit Products additionally include Mandatory Recommended Deposit Amount, Is Mandatory Deposit checkbox, Allow Withdrawal checkbox, Adjust Advance Towards Future Payments checkbox, and Recurring Frequency with unit dropdown.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Savings Products",
+  "components": {
+    "Savings_Products_Filter_Bar": {
+      "type": "form",
+      "fields": {
+        "Search": {
+          "type": "search"
+        }
+      }
+    },
+    "Create_Savings_Product_Button": {
+      "type": "button",
+      "action_name": "+ Create Savings Product",
+      "opens": "Create_Savings_Product_Wizard",
+      "preconditions": [
+        "user must be authenticated with product-management permissions"
+      ]
+    },
+    "Savings_Products_Table": {
+      "type": "data_table",
+      "searchable": true,
+      "row_actions": [
+        {
+          "action_name": "Open Product",
+          "action_type": "link"
+        }
+      ],
+      "bulk_actions": []
+    },
+    "Create_Savings_Product_Wizard": {
+      "type": "wizard",
+      "submit_actions": [
+        {
+          "action_name": "Save",
+          "on_success": "creates savings product definition",
+          "preconditions": [
+            "user must be authenticated with product-management permissions"
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "step_index": 1,
+          "step_name": "Details",
+          "fields": {
+            "Product_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Short_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Description": {
+              "type": "unspecified"
+            },
+            "External_Id": {
+              "type": "unspecified"
+            }
+          }
+        },
+        {
+          "step_index": 2,
+          "step_name": "Currency",
+          "fields": {
+            "Currency": {
+              "type": "unspecified"
+            },
+            "Decimal_Places": {
+              "type": "unspecified"
+            },
+            "Currency_In_Multiples_Of": {
+              "type": "unspecified"
+            }
+          }
+        },
+        {
+          "step_index": 3,
+          "step_name": "Terms",
+          "fields": {
+            "Nominal_Annual_Interest_Rate": {
+              "type": "unspecified"
+            },
+            "Interest_Compounding_Period": {
+              "type": "dropdown",
+              "options": [
+                "Daily",
+                "Monthly",
+                "Quarterly",
+                "Semi-Annual",
+                "Annually"
+              ]
+            },
+            "Interest_Posting_Period": {
+              "type": "dropdown",
+              "options": [
+                "Monthly",
+                "Quarterly",
+                "Biannually",
+                "Annually"
+              ]
+            },
+            "Interest_Calculated_Using": {
+              "type": "dropdown",
+              "options": [
+                "Daily Balance",
+                "Average Daily Balance"
+              ]
+            },
+            "Days_In_Year": {
+              "type": "dropdown",
+              "options": [
+                "360",
+                "365",
+                "Actual"
+              ]
+            }
+          }
+        },
+        {
+          "step_index": 4,
+          "step_name": "Settings",
+          "fields": {
+            "Minimum_Opening_Balance": {
+              "type": "unspecified"
+            },
+            "Lock_in_Period": {
+              "type": "unspecified"
+            },
+            "Apply_Withdrawal_Fee_For_Transfers": {
+              "type": "checkbox"
+            },
+            "Minimum_Balance_For_Interest_Calculation": {
+              "type": "unspecified"
+            },
+            "Enforce_Minimum_Required_Balance": {
+              "type": "checkbox"
+            },
+            "Minimum_Required_Balance": {
+              "type": "unspecified",
+              "visible_when": "Enforce_Minimum_Required_Balance == true"
+            },
+            "Is_Overdraft_Allowed": {
+              "type": "checkbox"
+            },
+            "Maximum_Overdraft_Amount": {
+              "type": "unspecified",
+              "visible_when": "Is_Overdraft_Allowed == true"
+            },
+            "Overdraft_Interest_Rate": {
+              "type": "unspecified",
+              "visible_when": "Is_Overdraft_Allowed == true"
+            },
+            "Enable_Withhold_Tax": {
+              "type": "checkbox"
+            },
+            "Tax_Group": {
+              "type": "dropdown",
+              "visible_when": "Enable_Withhold_Tax == true"
+            },
+            "Enable_Dormancy_Tracking": {
+              "type": "checkbox"
+            },
+            "Days_To_Inactive": {
+              "type": "unspecified",
+              "visible_when": "Enable_Dormancy_Tracking == true"
+            },
+            "Days_To_Dormancy": {
+              "type": "unspecified",
+              "visible_when": "Enable_Dormancy_Tracking == true"
+            },
+            "Days_To_Escheat": {
+              "type": "unspecified",
+              "visible_when": "Enable_Dormancy_Tracking == true"
+            }
+          }
+        },
+        {
+          "step_index": 5,
+          "step_name": "Charges",
+          "fields": {
+            "Charges_Search": {
+              "type": "search"
+            },
+            "Charges_List": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Charge": {
+                  "type": "unspecified"
+                }
+              }
+            }
+          }
+        },
+        {
+          "step_index": 6,
+          "step_name": "Accounting",
+          "fields": {
+            "Accounting": {
+              "type": "radio",
+              "options": [
+                "None",
+                "Cash-based"
+              ]
+            },
+            "Savings_Reference_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            },
+            "Savings_Control_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            },
+            "Transfers_In_Suspense_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            },
+            "Interest_On_Savings_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            },
+            "Income_From_Fees_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            },
+            "Income_From_Penalties_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            },
+            "Escheat_Liability_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            }
+          }
+        }
+      ]
+    },
+    "Create_Fixed_Deposit_Product_Wizard": {
+      "type": "wizard",
+      "submit_actions": [
+        {
+          "action_name": "Save",
+          "on_success": "creates fixed deposit product definition",
+          "preconditions": [
+            "user must be authenticated with product-management permissions"
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "step_index": 1,
+          "step_name": "Details",
+          "fields": {
+            "Product_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Short_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Description": {
+              "type": "unspecified"
+            },
+            "External_Id": {
+              "type": "unspecified"
+            }
+          }
+        },
+        {
+          "step_index": 2,
+          "step_name": "Currency",
+          "fields": {
+            "Currency": {
+              "type": "unspecified"
+            },
+            "Decimal_Places": {
+              "type": "unspecified"
+            },
+            "Currency_In_Multiples_Of": {
+              "type": "unspecified"
+            }
+          }
+        },
+        {
+          "step_index": 3,
+          "step_name": "Terms",
+          "fields": {
+            "Nominal_Annual_Interest_Rate": {
+              "type": "unspecified"
+            },
+            "Interest_Compounding_Period": {
+              "type": "dropdown",
+              "options": [
+                "Daily",
+                "Monthly",
+                "Quarterly",
+                "Semi-Annual",
+                "Annually"
+              ]
+            },
+            "Interest_Posting_Period": {
+              "type": "dropdown",
+              "options": [
+                "Monthly",
+                "Quarterly",
+                "Biannually",
+                "Annually"
+              ]
+            },
+            "Interest_Calculated_Using": {
+              "type": "dropdown",
+              "options": [
+                "Daily Balance",
+                "Average Daily Balance"
+              ]
+            },
+            "Days_In_Year": {
+              "type": "dropdown",
+              "options": [
+                "360",
+                "365",
+                "Actual"
+              ]
+            }
+          }
+        },
+        {
+          "step_index": 4,
+          "step_name": "Settings",
+          "fields": {
+            "Minimum_Opening_Balance": {
+              "type": "unspecified"
+            },
+            "Lock_in_Period": {
+              "type": "unspecified"
+            },
+            "Apply_Withdrawal_Fee_For_Transfers": {
+              "type": "checkbox"
+            },
+            "Minimum_Balance_For_Interest_Calculation": {
+              "type": "unspecified"
+            },
+            "Enforce_Minimum_Required_Balance": {
+              "type": "checkbox"
+            },
+            "Minimum_Required_Balance": {
+              "type": "unspecified",
+              "visible_when": "Enforce_Minimum_Required_Balance == true"
+            },
+            "Is_Overdraft_Allowed": {
+              "type": "checkbox"
+            },
+            "Maximum_Overdraft_Amount": {
+              "type": "unspecified",
+              "visible_when": "Is_Overdraft_Allowed == true"
+            },
+            "Overdraft_Interest_Rate": {
+              "type": "unspecified",
+              "visible_when": "Is_Overdraft_Allowed == true"
+            },
+            "Enable_Withhold_Tax": {
+              "type": "checkbox"
+            },
+            "Tax_Group": {
+              "type": "dropdown",
+              "visible_when": "Enable_Withhold_Tax == true"
+            },
+            "Enable_Dormancy_Tracking": {
+              "type": "checkbox"
+            },
+            "Days_To_Inactive": {
+              "type": "unspecified",
+              "visible_when": "Enable_Dormancy_Tracking == true"
+            },
+            "Days_To_Dormancy": {
+              "type": "unspecified",
+              "visible_when": "Enable_Dormancy_Tracking == true"
+            },
+            "Days_To_Escheat": {
+              "type": "unspecified",
+              "visible_when": "Enable_Dormancy_Tracking == true"
+            }
+          }
+        },
+        {
+          "step_index": 5,
+          "step_name": "Charges",
+          "fields": {
+            "Charges_Search": {
+              "type": "search"
+            },
+            "Charges_List": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Charge": {
+                  "type": "unspecified"
+                }
+              }
+            }
+          }
+        },
+        {
+          "step_index": 6,
+          "step_name": "Pre-Closure",
+          "fields": {
+            "Pre_Mature_Closure_Applicable": {
+              "type": "checkbox"
+            },
+            "Pre_Closure_Penal_Interest": {
+              "type": "unspecified",
+              "visible_when": "Pre_Mature_Closure_Applicable == true"
+            },
+            "Pre_Closure_Penal_Interest_On": {
+              "type": "dropdown",
+              "visible_when": "Pre_Mature_Closure_Applicable == true"
+            }
+          }
+        },
+        {
+          "step_index": 7,
+          "step_name": "Deposit Term",
+          "fields": {
+            "Minimum_Deposit_Term": {
+              "type": "unspecified"
+            },
+            "Maximum_Deposit_Term": {
+              "type": "unspecified"
+            },
+            "Deposit_Term_Unit": {
+              "type": "unspecified"
+            },
+            "In_Multiples_Of": {
+              "type": "unspecified"
+            },
+            "Minimum_Deposit_Amount": {
+              "type": "unspecified"
+            },
+            "Maximum_Deposit_Amount": {
+              "type": "unspecified"
+            },
+            "Default_Deposit_Amount": {
+              "type": "unspecified"
+            }
+          }
+        },
+        {
+          "step_index": 8,
+          "step_name": "Interest Rate Chart",
+          "fields": {
+            "Interest_Rate_Tiers": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Period_From": {
+                  "type": "unspecified"
+                },
+                "Period_To": {
+                  "type": "unspecified"
+                },
+                "Period_Type": {
+                  "type": "unspecified"
+                },
+                "Interest_Rate": {
+                  "type": "unspecified"
+                },
+                "Amount_Range_Slabs": {
+                  "type": "repeating_group",
+                  "item_fields": {
+                    "Amount_From": {
+                      "type": "unspecified"
+                    },
+                    "Amount_To": {
+                      "type": "unspecified"
+                    },
+                    "Interest_Rate": {
+                      "type": "unspecified"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "step_index": 9,
+          "step_name": "Accounting",
+          "fields": {
+            "Accounting": {
+              "type": "radio",
+              "options": [
+                "None",
+                "Cash-based"
+              ]
+            },
+            "Savings_Reference_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            },
+            "Savings_Control_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            },
+            "Transfers_In_Suspense_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            },
+            "Interest_On_Savings_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            },
+            "Income_From_Fees_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            },
+            "Income_From_Penalties_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            },
+            "Escheat_Liability_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            }
+          }
+        }
+      ]
+    },
+    "Create_Recurring_Deposit_Product_Wizard": {
+      "type": "wizard",
+      "submit_actions": [
+        {
+          "action_name": "Save",
+          "on_success": "creates recurring deposit product definition",
+          "preconditions": [
+            "user must be authenticated with product-management permissions"
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "step_index": 1,
+          "step_name": "Details",
+          "fields": {
+            "Product_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Short_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Description": {
+              "type": "unspecified"
+            },
+            "External_Id": {
+              "type": "unspecified"
+            }
+          }
+        },
+        {
+          "step_index": 2,
+          "step_name": "Currency",
+          "fields": {
+            "Currency": {
+              "type": "unspecified"
+            },
+            "Decimal_Places": {
+              "type": "unspecified"
+            },
+            "Currency_In_Multiples_Of": {
+              "type": "unspecified"
+            }
+          }
+        },
+        {
+          "step_index": 3,
+          "step_name": "Terms",
+          "fields": {
+            "Nominal_Annual_Interest_Rate": {
+              "type": "unspecified"
+            },
+            "Interest_Compounding_Period": {
+              "type": "dropdown",
+              "options": [
+                "Daily",
+                "Monthly",
+                "Quarterly",
+                "Semi-Annual",
+                "Annually"
+              ]
+            },
+            "Interest_Posting_Period": {
+              "type": "dropdown",
+              "options": [
+                "Monthly",
+                "Quarterly",
+                "Biannually",
+                "Annually"
+              ]
+            },
+            "Interest_Calculated_Using": {
+              "type": "dropdown",
+              "options": [
+                "Daily Balance",
+                "Average Daily Balance"
+              ]
+            },
+            "Days_In_Year": {
+              "type": "dropdown",
+              "options": [
+                "360",
+                "365",
+                "Actual"
+              ]
+            }
+          }
+        },
+        {
+          "step_index": 4,
+          "step_name": "Settings",
+          "fields": {
+            "Mandatory_Recommended_Deposit_Amount": {
+              "type": "unspecified"
+            },
+            "Is_Mandatory_Deposit": {
+              "type": "checkbox"
+            },
+            "Allow_Withdrawal": {
+              "type": "checkbox"
+            },
+            "Adjust_Advance_Towards_Future_Payments": {
+              "type": "checkbox"
+            },
+            "Recurring_Frequency": {
+              "type": "unspecified"
+            },
+            "Recurring_Frequency_Unit": {
+              "type": "dropdown"
+            },
+            "Minimum_Opening_Balance": {
+              "type": "unspecified"
+            },
+            "Lock_in_Period": {
+              "type": "unspecified"
+            },
+            "Apply_Withdrawal_Fee_For_Transfers": {
+              "type": "checkbox"
+            },
+            "Minimum_Balance_For_Interest_Calculation": {
+              "type": "unspecified"
+            },
+            "Enforce_Minimum_Required_Balance": {
+              "type": "checkbox"
+            },
+            "Minimum_Required_Balance": {
+              "type": "unspecified",
+              "visible_when": "Enforce_Minimum_Required_Balance == true"
+            },
+            "Is_Overdraft_Allowed": {
+              "type": "checkbox"
+            },
+            "Maximum_Overdraft_Amount": {
+              "type": "unspecified",
+              "visible_when": "Is_Overdraft_Allowed == true"
+            },
+            "Overdraft_Interest_Rate": {
+              "type": "unspecified",
+              "visible_when": "Is_Overdraft_Allowed == true"
+            },
+            "Enable_Withhold_Tax": {
+              "type": "checkbox"
+            },
+            "Tax_Group": {
+              "type": "dropdown",
+              "visible_when": "Enable_Withhold_Tax == true"
+            },
+            "Enable_Dormancy_Tracking": {
+              "type": "checkbox"
+            },
+            "Days_To_Inactive": {
+              "type": "unspecified",
+              "visible_when": "Enable_Dormancy_Tracking == true"
+            },
+            "Days_To_Dormancy": {
+              "type": "unspecified",
+              "visible_when": "Enable_Dormancy_Tracking == true"
+            },
+            "Days_To_Escheat": {
+              "type": "unspecified",
+              "visible_when": "Enable_Dormancy_Tracking == true"
+            }
+          }
+        },
+        {
+          "step_index": 5,
+          "step_name": "Charges",
+          "fields": {
+            "Charges_Search": {
+              "type": "search"
+            },
+            "Charges_List": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Charge": {
+                  "type": "unspecified"
+                }
+              }
+            }
+          }
+        },
+        {
+          "step_index": 6,
+          "step_name": "Accounting",
+          "fields": {
+            "Accounting": {
+              "type": "radio",
+              "options": [
+                "None",
+                "Cash-based"
+              ]
+            },
+            "Savings_Reference_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            },
+            "Savings_Control_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            },
+            "Transfers_In_Suspense_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            },
+            "Interest_On_Savings_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            },
+            "Income_From_Fees_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            },
+            "Income_From_Penalties_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            },
+            "Escheat_Liability_GL": {
+              "type": "unspecified",
+              "visible_when": "Accounting == Cash-based"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:03:46] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "AST accurately captures the described interactive elements, wizards, steps, fields, and conditionals for Savings, Fixed Deposit, and Recurring Deposit product creation.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:03:46] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "AST accurately captures the described interactive elements, wizards, steps, fields, and conditionals for Savings, Fixed Deposit, and Recurring Deposit product creation.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}

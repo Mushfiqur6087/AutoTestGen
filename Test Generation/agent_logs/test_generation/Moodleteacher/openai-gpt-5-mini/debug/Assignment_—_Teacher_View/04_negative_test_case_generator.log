@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.203060
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.905874
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - SYSTEM PROMPT
+[22:49:29] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - USER PROMPT
+[22:49:29] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 10,
   "module_title": "Assignment \u2014 Teacher View",
-  "summary": "Shows an individual assignment's metadata, grading summary metrics, description and attachments, and provides access to the per-student grading interface and assignment-related tabs.",
-  "where_it_fits": "Accessed from a course\u2019s activity view (breadcrumbs and the course tab bar: Course / Activities) when viewing a specific assignment within a Course Page; it complements the Course Index sidebar and sits alongside tabs for Settings, Submissions, and Advanced grading in the assignment lifecycle.",
-  "assumed_state_on_entry": "Logged in as a teacher and viewing a specific assignment activity within an existing course"
+  "summary": "Displays an assignment's metadata, attached files, read-only grading summary metrics, and navigation for grading, submissions, settings, and advanced grading from the teacher perspective.",
+  "where_it_fits": "Shown when viewing an assignment activity within a course (accessible via the course page and Course Index and represented in breadcrumbs like Course \u2192 Assignment); it sits in the activity-level workflow where teachers review assignment details and launch grading or submission management. ",
+  "assumed_state_on_entry": "Logged in as a Teacher and viewing a course that contains the assignment (the assignment activity already exists)."
 }
 </module_context>
 
@@ -258,20 +268,20 @@ If a `<workflows>` block is present in the input:
 
 <ast>
 {
-  "module_name": "Assignment \u0002 Teacher View",
+  "module_name": "Assignment \u2014 Teacher View",
   "components": {
-    "Assignment_Actions": {
+    "Assignment_Action_Bar": {
       "type": "action_bar",
-      "fields": {
-        "Grade": {
-          "type": "button",
+      "available_actions": [
+        {
           "action_name": "Grade",
-          "on_success": "opens grading interface",
+          "on_success": "opens grading interface for individual students",
           "preconditions": [
-            "Logged in as a teacher and viewing a specific assignment activity within an existing course"
+            "Logged in as a Teacher",
+            "Viewing a course that contains the assignment"
           ]
         }
-      }
+      ]
     },
     "Assignment_Tabs": {
       "type": "tab_container",
@@ -312,13 +322,13 @@ The Assignment page (teacher view) displays the assignment's metadata including 
 </description>
 
 <workflows>
-WF-001 | Open grading interface via Grade button | actor: Teacher | branch: none | terminal: Grade | on_success: opens grading interface
+WF-001 | Open grading interface via Grade button | actor: Teacher | branch: none | terminal: Grade | on_success: opens grading interface for individual students
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:14:30] Test-Negative - LLM RESPONSE
+[22:51:28] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Assignment — Teacher View",
@@ -327,61 +337,76 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access the Assignment (teacher) page",
+      "test_case": "Unauthenticated user attempts to open the Assignment (Teacher) page",
       "preconditions": [
-        "User is not logged in"
+        "User is not logged in",
+        "The assignment activity exists in a course"
       ],
       "steps": [
-        "1. Navigate to the Assignment teacher view URL for <existing assignment> (direct URL)",
-        "2. Observe the page that loads"
+        "1. Open the assignment teacher-view URL in a browser while not authenticated"
       ],
-      "expected_result": "Access is blocked: the Login page is shown (user is redirected to the sign-in screen) and the Assignment teacher view is not displayed; the Grade button is not accessible.",
+      "expected_result": "User is redirected to the login page or shown a sign-in prompt; the Assignment — Teacher View is not displayed and the Grade button is not accessible",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "User with Student role attempts to open the grading interface via the Grade button",
+      "test_case": "Non-Teacher role (Student) attempts to open grading via the Grade control",
       "preconditions": [
-        "User is logged in with the Student role",
-        "An assignment <existing assignment> is present in the course"
+        "User is logged in as a Student (not a Teacher)",
+        "Viewing the course that contains the assignment"
       ],
       "steps": [
         "1. Log in as a Student",
-        "2. Navigate to the Assignment page for <existing assignment>",
-        "3. Look for the Grade button in the action bar",
-        "4. If the Grade button is visible, attempt to click it"
+        "2. Navigate to the assignment page within the course",
+        "3. Attempt to locate and click the Grade button (or open the grading interface URL directly)"
       ],
-      "expected_result": "Action is blocked: the Grade button is not visible (or is rendered disabled) for a Student; clicking it does not open the grading interface and no transition occurs. The page remains on the Assignment view and the grading interface is not opened.",
+      "expected_result": "Grade button is not visible or is disabled for non-Teacher accounts; attempting to click Grade or open the grading interface does not open the grading interface and the Assignment page remains displayed (action is blocked)",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Teacher attempts to open grading interface when not viewing a specific/existing assignment",
+      "test_case": "Teacher attempts to open grading for an assignment that is not present in the current course context",
       "preconditions": [
         "User is logged in as a Teacher",
-        "The target assignment does not exist or has been removed (not present in the course)"
+        "The assignment is not present in the currently viewed course (e.g., moved or deleted)"
       ],
       "steps": [
         "1. Log in as a Teacher",
-        "2. Navigate to the Assignment teacher view URL for <nonexistent or deleted assignment>",
-        "3. Attempt to click the Grade button if it is shown"
+        "2. Navigate to the assignment teacher-view URL while the assignment is not in the course context",
+        "3. Attempt to locate and click the Grade button"
       ],
-      "expected_result": "Action is blocked: the grading interface does not open. The page displays an error indication that the assignment cannot be found (assignment not loaded) and remains on an error or course context page; no grading UI is opened and no navigation to the grading interface occurs.",
+      "expected_result": "Page displays an access error or not-found indication and the Grade button is not shown; clicking Grade is not possible and the grading interface does not open (action is blocked)",
       "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": null,
+      "test_case": "Attempt to edit read-only grading summary metrics on the Assignment page",
+      "preconditions": [
+        "User is logged in as a Teacher",
+        "Viewing the assignment page (assignment exists)"
+      ],
+      "steps": [
+        "1. Open the Assignment — Teacher View page",
+        "2. Try to edit a grading summary metric (e.g., attempt to change Number of participants by clicking or invoking an inline edit)",
+        "3. Attempt to save any change if edit controls appear"
+      ],
+      "expected_result": "Grading summary metrics (Number of participants, Number of submissions, Needs grading, Visibility, Time remaining) do not present inline edit controls; values cannot be changed and no Save option is available (attempted edit is blocked)",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 3,
+    "total": 4,
     "high_priority": 3,
-    "medium_priority": 0,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:14:30] Test-Negative - PARSED JSON
+[22:51:28] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Assignment \u2014 Teacher View",
@@ -390,55 +415,70 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access the Assignment (teacher) page",
+      "test_case": "Unauthenticated user attempts to open the Assignment (Teacher) page",
       "preconditions": [
-        "User is not logged in"
+        "User is not logged in",
+        "The assignment activity exists in a course"
       ],
       "steps": [
-        "1. Navigate to the Assignment teacher view URL for <existing assignment> (direct URL)",
-        "2. Observe the page that loads"
+        "1. Open the assignment teacher-view URL in a browser while not authenticated"
       ],
-      "expected_result": "Access is blocked: the Login page is shown (user is redirected to the sign-in screen) and the Assignment teacher view is not displayed; the Grade button is not accessible.",
+      "expected_result": "User is redirected to the login page or shown a sign-in prompt; the Assignment \u2014 Teacher View is not displayed and the Grade button is not accessible",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "User with Student role attempts to open the grading interface via the Grade button",
+      "test_case": "Non-Teacher role (Student) attempts to open grading via the Grade control",
       "preconditions": [
-        "User is logged in with the Student role",
-        "An assignment <existing assignment> is present in the course"
+        "User is logged in as a Student (not a Teacher)",
+        "Viewing the course that contains the assignment"
       ],
       "steps": [
         "1. Log in as a Student",
-        "2. Navigate to the Assignment page for <existing assignment>",
-        "3. Look for the Grade button in the action bar",
-        "4. If the Grade button is visible, attempt to click it"
+        "2. Navigate to the assignment page within the course",
+        "3. Attempt to locate and click the Grade button (or open the grading interface URL directly)"
       ],
-      "expected_result": "Action is blocked: the Grade button is not visible (or is rendered disabled) for a Student; clicking it does not open the grading interface and no transition occurs. The page remains on the Assignment view and the grading interface is not opened.",
+      "expected_result": "Grade button is not visible or is disabled for non-Teacher accounts; attempting to click Grade or open the grading interface does not open the grading interface and the Assignment page remains displayed (action is blocked)",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Teacher attempts to open grading interface when not viewing a specific/existing assignment",
+      "test_case": "Teacher attempts to open grading for an assignment that is not present in the current course context",
       "preconditions": [
         "User is logged in as a Teacher",
-        "The target assignment does not exist or has been removed (not present in the course)"
+        "The assignment is not present in the currently viewed course (e.g., moved or deleted)"
       ],
       "steps": [
         "1. Log in as a Teacher",
-        "2. Navigate to the Assignment teacher view URL for <nonexistent or deleted assignment>",
-        "3. Attempt to click the Grade button if it is shown"
+        "2. Navigate to the assignment teacher-view URL while the assignment is not in the course context",
+        "3. Attempt to locate and click the Grade button"
       ],
-      "expected_result": "Action is blocked: the grading interface does not open. The page displays an error indication that the assignment cannot be found (assignment not loaded) and remains on an error or course context page; no grading UI is opened and no navigation to the grading interface occurs.",
+      "expected_result": "Page displays an access error or not-found indication and the Grade button is not shown; clicking Grade is not possible and the grading interface does not open (action is blocked)",
       "priority": "high"
+    },
+    {
+      "tc_id": "N-004",
+      "wf_ref": null,
+      "test_case": "Attempt to edit read-only grading summary metrics on the Assignment page",
+      "preconditions": [
+        "User is logged in as a Teacher",
+        "Viewing the assignment page (assignment exists)"
+      ],
+      "steps": [
+        "1. Open the Assignment \u2014 Teacher View page",
+        "2. Try to edit a grading summary metric (e.g., attempt to change Number of participants by clicking or invoking an inline edit)",
+        "3. Attempt to save any change if edit controls appear"
+      ],
+      "expected_result": "Grading summary metrics (Number of participants, Number of submissions, Needs grading, Visibility, Time remaining) do not present inline edit controls; values cannot be changed and no Save option is available (attempted edit is blocked)",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 3,
+    "total": 4,
     "high_priority": 3,
-    "medium_priority": 0,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }

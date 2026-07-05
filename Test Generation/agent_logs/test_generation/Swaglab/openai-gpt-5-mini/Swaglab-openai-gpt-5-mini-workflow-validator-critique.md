@@ -1,13 +1,13 @@
 # Workflow Critique — Swaglab
 
-Generated: 2026-07-04T15:05:38.161756Z
+Generated: 2026-07-04T16:57:18.483460Z
 
 ## Login
 
 **Verdict:** yes  
 **Forced ship:** no  
 
-The provided workflows cover the form's submit action and all conditional outcomes expressed in the AST (successful login, locked-out user, invalid credentials, and each empty-field case); no missing or phantom workflows or structural errors were found.
+The provided workflows cover the form's submit action (success and all described error conditions) and have valid conditional branches and on_success outcomes matching the AST.
 
 **Missing workflows:** none
 
@@ -20,7 +20,7 @@ The provided workflows cover the form's submit action and all conditional outcom
 **Verdict:** yes  
 **Forced ship:** no  
 
-The workflow list covers all data_table row actions and the header action, with correct conditional branches and matching on_success texts — no missing or phantom workflows detected.
+The workflow list correctly covers all actions in the AST (header menu items, cart navigation, sorting, product links, and conditional Add/Remove row actions) with appropriate conditional branches and on_success mappings.
 
 **Missing workflows:** none
 
@@ -33,7 +33,7 @@ The workflow list covers all data_table row actions and the header action, with 
 **Verdict:** yes  
 **Forced ship:** no  
 
-All required workflows for state-bound actions and navigation links are present, with no missing or phantom workflows and no structural errors.
+Workflows cover all state-bound actions and links in the AST with matching conditional branches and on_success texts; no missing or phantom workflows found.
 
 **Missing workflows:** none
 
@@ -46,7 +46,7 @@ All required workflows for state-bound actions and navigation links are present,
 **Verdict:** yes  
 **Forced ship:** no  
 
-The provided workflows cover all actions declared in the AST (row action Remove, action-bar actions Continue Shopping and Checkout) with matching on_success and conditional, so the list is complete and correct.
+All required workflows for the data table row action and the action bar actions are present and correctly mapped to AST nodes; no structural errors found.
 
 **Missing workflows:** none
 
@@ -59,9 +59,11 @@ The provided workflows cover all actions declared in the AST (row action Remove,
 **Verdict:** yes  
 **Forced ship:** no  
 
-The workflow list covers all form submit actions (Continue and Cancel) and matches the AST; no missing or phantom workflows or structural errors detected.
+Workflows cover both submit actions (Continue and Cancel); one minor missing workflow (Continue → validation error) should be added to represent the user-visible validation failure path.
 
-**Missing workflows:** none
+**Missing workflows:**
+
+- {'path': 'components.Checkout_Information_Form submit_action=Continue (validation failure path)', 'severity': 'minor', 'reason': "The description and form fields specify that submitting with missing required fields shows error banners (e.g., 'Error: First Name is required'), but there is no workflow that covers Continue resulting in validation errors."}
 
 **Phantom workflows:** none
 
@@ -72,7 +74,7 @@ The workflow list covers all form submit actions (Continue and Cancel) and match
 **Verdict:** yes  
 **Forced ship:** no  
 
-All required workflows for the wizard's Overview submit actions (Finish, Cancel) are present and correctly mapped; no missing or phantom workflows or structural errors found.
+Workflows cover both form submit_actions (Finish and Cancel); no missing or phantom workflows or structural errors were found.
 
 **Missing workflows:** none
 
@@ -85,7 +87,7 @@ All required workflows for the wizard's Overview submit actions (Finish, Cancel)
 **Verdict:** yes  
 **Forced ship:** no  
 
-Workflow list is complete and correct: the single workflow matches the page submit_action 'Back Home' and its on_success behavior.
+The provided single workflow matches the AST action for the 'Back Home' button and its on_success behavior; no missing or phantom workflows detected.
 
 **Missing workflows:** none
 
@@ -98,7 +100,7 @@ Workflow list is complete and correct: the single workflow matches the page subm
 **Verdict:** yes  
 **Forced ship:** no  
 
-Workflows cover each navigation menu field in the AST (All_Items, About, Logout, Reset_App_State) with matching on_success text where provided; no missing or phantom workflows detected.
+The single workflow covers the Logout button defined in the AST; no missing or phantom workflows and no structural errors detected.
 
 **Missing workflows:** none
 
@@ -111,7 +113,7 @@ Workflows cover each navigation menu field in the AST (All_Items, About, Logout,
 **Verdict:** yes  
 **Forced ship:** no  
 
-The single workflow matches the button action in the AST, its on_success text matches, and there are no missing or phantom workflows or structural errors.
+The workflow list correctly covers all actionable menu items and matches AST preconditions and on_success behaviors; no missing or phantom workflows detected.
 
 **Missing workflows:** none
 

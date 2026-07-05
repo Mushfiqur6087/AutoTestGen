@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.217473
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.917182
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - SYSTEM PROMPT
+[22:49:29] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - USER PROMPT
+[22:49:29] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 11,
   "module_title": "Assignment Submissions",
-  "summary": "Displays a searchable and filterable table of all student submission records for an assignment, including submission and grading statuses, timestamps, previews, feedback, and quick-grading inline controls.",
-  "where_it_fits": "Accessible from an assignment's activity page within a course (reachable via the Course tab and course breadcrumbs or the Course Index sidebar), this view is part of the teacher/grader workflow for reviewing and grading student work after submissions have been made. It sits downstream of Assignment Creation and is used prior to or during updating the Gradebook.",
-  "assumed_state_on_entry": "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
+  "summary": "Displays a table of all student submission records for an assignment with search/filter controls, per-student actions to grade, and optional quick inline grading.",
+  "where_it_fits": "Accessible from within a course's activity view for an Assignment (breadcrumbs show the path from the course), and reachable via the Course tab and Course Index sidebar when an Assignment activity is selected. It is part of the grading workflow that teachers use after students submit work and complements the Gradebook and Assignment \u2014 Teacher View modules.",
+  "assumed_state_on_entry": "User is viewing a course that contains the specific Assignment activity and is logged in with a role that has grading/teacher permissions; the assignment has at least one student submission (or is ready to receive submissions)."
 }
 </module_context>
 
@@ -260,10 +270,10 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Assignment Submissions",
   "components": {
-    "Submissions_Search_Filters": {
+    "Submission_Filters": {
       "type": "form",
       "fields": {
-        "Student_Search": {
+        "Student_Name_Search": {
           "type": "search"
         },
         "Submission_Status_Filter": {
@@ -283,61 +293,62 @@ If a `<workflows>` block is present in the input:
         },
         "Quick_Grading_Mode": {
           "type": "checkbox",
-          "description": "Enables inline grade entry directly in the table"
+          "preconditions": [
+            "User is viewing a course that contains the specific Assignment activity and is logged in with a role that has grading/teacher permissions; the assignment has at least one student submission (or is ready to receive submissions)."
+          ]
         }
-      },
-      "preconditions": [
-        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
-      ]
+      }
     },
     "Submissions_Table": {
       "type": "data_table",
       "searchable": true,
       "filterable_columns": [
-        "Submission_Status",
-        "Grading_Status"
+        "Submission Status",
+        "Grading Status"
       ],
-      "row_fields": {
-        "Student_Identity": {
-          "type": "link",
-          "description": "Student name and initials icon; link opens student profile"
-        },
-        "Online_Text_Preview": {
-          "type": "link",
-          "description": "Opens an inline preview of online text submission"
-        },
-        "File_Submissions": {
-          "type": "link",
-          "description": "Links to submitted files for download/view"
-        },
-        "Submission_Comments": {
-          "type": "link",
-          "description": "Opens submission comments thread or modal"
-        },
-        "Feedback_Comments": {
-          "type": "link",
-          "description": "Opens or adds feedback comments"
-        },
-        "Feedback_Files": {
-          "type": "link",
-          "description": "Links to feedback files (download or view)"
-        },
-        "Final_Grade": {
-          "type": "unspecified",
-          "editable": true,
-          "enabled_when": "Quick_Grading_Mode == true",
-          "description": "Inline editable final grade when Quick Grading Mode is enabled"
-        }
+      "filter_controls": {
+        "ref": "Submission_Filters"
       },
       "row_actions": [
         {
+          "action_name": "View Profile",
+          "type": "link"
+        },
+        {
+          "action_name": "Preview Online Text",
+          "type": "button"
+        },
+        {
+          "action_name": "View Submission Files",
+          "type": "button"
+        },
+        {
+          "action_name": "View Submission Comments",
+          "type": "button"
+        },
+        {
+          "action_name": "View Feedback Comments",
+          "type": "button"
+        },
+        {
+          "action_name": "Download Feedback Files",
+          "type": "button"
+        },
+        {
           "action_name": "Open Grading Workflow",
-          "on_click": "opens the grading workflow for the selected student"
+          "type": "button",
+          "preconditions": [
+            "User is viewing a course that contains the specific Assignment activity and is logged in with a role that has grading/teacher permissions; the assignment has at least one student submission (or is ready to receive submissions)."
+          ]
         }
       ],
-      "preconditions": [
-        "User is viewing a specific course assignment and has grading permissions (e.g., teacher or grader), and at least the assignment exists (with one or more student submissions available)."
-      ]
+      "row_inline_fields": {
+        "Final_Grade": {
+          "type": "unspecified",
+          "visible_when": "Quick_Grading_Mode == true",
+          "enabled_when": "Quick_Grading_Mode == true"
+        }
+      }
     }
   }
 }
@@ -354,24 +365,20 @@ The Submissions view presents a table of all student submission records. Search 
 </description>
 
 <workflows>
-WF-001 | Search by student name | actor: teacher or grader | branch: none | terminal: Student_Search | on_success: Table is filtered to match the student search query, narrowing visible submissions.
-WF-002 | Filter by submission status | actor: teacher or grader | branch: none | terminal: Submission_Status_Filter | on_success: Table is filtered by the selected Submission Status (e.g., Submitted for grading, No submission, Draft — not submitted).
-WF-003 | Filter by grading status | actor: teacher or grader | branch: none | terminal: Grading_Status_Filter | on_success: Table is filtered by the selected Grading Status (Graded or Not graded).
-WF-004 | Enable Quick Grading mode | actor: teacher or grader | branch: none | terminal: Quick_Grading_Mode | on_success: Quick Grading Mode enabled; inline grade entry (Final_Grade) becomes editable directly in the table.
-WF-005 | Open student profile from row | actor: teacher or grader | branch: none | terminal: Student_Identity | on_success: Link opens the student's profile.
-WF-006 | Open online text preview | actor: teacher or grader | branch: none | terminal: Online_Text_Preview | on_success: Opens an inline preview of the student's online text submission.
-WF-007 | Open submitted files | actor: teacher or grader | branch: none | terminal: File_Submissions | on_success: Links to submitted files are opened for download or viewing.
-WF-008 | Open submission comments | actor: teacher or grader | branch: none | terminal: Submission_Comments | on_success: Opens the submission comments thread or modal.
-WF-009 | Open or add feedback comments | actor: teacher or grader | branch: none | terminal: Feedback_Comments | on_success: Opens or allows adding feedback comments for the submission.
-WF-010 | Open feedback files | actor: teacher or grader | branch: none | terminal: Feedback_Files | on_success: Links to feedback files are opened for download or viewing.
-WF-011 | Open grading workflow for a student | actor: teacher or grader | branch: none | terminal: Open Grading Workflow | on_success: Opens the grading workflow for the selected student.
-WF-012 | Edit final grade inline (Quick Grading enabled) | actor: teacher or grader | branch: Quick_Grading_Mode == true | terminal: Final_Grade | on_success: Final grade is edited inline in the table when Quick Grading Mode is enabled.
+WF-001 | Open student profile from a submission row | actor: Teacher | branch: none | terminal: View Profile | on_success: Student profile opened (navigates to the student's profile page)
+WF-002 | Preview online text for a submission | actor: Teacher | branch: none | terminal: Preview Online Text | on_success: Online text preview displayed for the selected submission
+WF-003 | View submission files for a student | actor: Teacher | branch: none | terminal: View Submission Files | on_success: Submission files view opened for the selected student
+WF-004 | View submission comments for a student | actor: Teacher | branch: none | terminal: View Submission Comments | on_success: Submission comments displayed for the selected submission
+WF-005 | View feedback comments for a student | actor: Teacher | branch: none | terminal: View Feedback Comments | on_success: Feedback comments displayed for the selected submission
+WF-006 | Download feedback files for a student | actor: Teacher | branch: none | terminal: Download Feedback Files | on_success: Download of feedback files initiated for the selected submission
+WF-007 | Open full grading workflow for a student | actor: Teacher | branch: none | terminal: Open Grading Workflow | on_success: Grading workflow opened for the selected student (navigates to grading interface)
+WF-008 | Enable Quick grading to reveal inline Final grade fields | actor: Teacher | branch: Quick_Grading_Mode == true | terminal: Quick_Grading_Mode | on_success: Quick grading mode enabled; Final grade inline fields become visible and editable in the table
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:15:09] Test-Negative - LLM RESPONSE
+[22:51:50] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Assignment Submissions",
@@ -380,94 +387,97 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Unauthenticated user cannot access the Submissions view",
-      "preconditions": ["User is not signed in", "Assignment exists in a course"],
-      "steps": [
-        "1. As <unauthenticated user> navigate to the Assignment Submissions URL for <assignment>",
-        "2. Observe the page that loads"
+      "test_case": "Unauthenticated user attempts to access Assignment Submissions view",
+      "preconditions": [
+        "User is not authenticated",
+        "Course and Assignment exist"
       ],
-      "expected_result": "Access is blocked: the application redirects to the login page (login form is shown); the Submissions table and its search/filters (Student_Search, Submission_Status_Filter, Grading_Status_Filter, Quick_Grading_Mode) are not visible or accessible.",
+      "steps": [
+        "1. In a browser with no active session, navigate to the Assignment Submissions page URL for <Course>/<Assignment>",
+        "2. Observe the resulting page"
+      ],
+      "expected_result": "Navigation is blocked: the user is redirected to the login page and the Submissions table is not displayed; no controls (search, filters, row actions) are accessible.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": null,
-      "test_case": "User without grading permissions (student role) is blocked from Submissions controls",
-      "preconditions": ["Login as <student user> (no grading permissions)", "Assignment exists and may have submissions"],
-      "steps": [
-        "1. Sign in as <student user>",
-        "2. Navigate to the Assignment Submissions view for <assignment>",
-        "3. Inspect the page area where search filters and the submissions table would appear"
+      "wf_ref": "WF-008",
+      "test_case": "User without grading/teacher permissions (Student role) cannot enable Quick grading",
+      "preconditions": [
+        "User is authenticated with a Student role (<Student account>)",
+        "Course contains the Assignment"
       ],
-      "expected_result": "Access is blocked/limited: the Submissions table and search/filters are not available to the user; grading-specific controls (Quick_Grading_Mode toggle, editable Final_Grade cells, row action 'Open Grading Workflow') are not visible or are disabled, and the page displays an access-denied notice or equivalent UI indicating the user lacks permission to view/manage submissions.",
+      "steps": [
+        "1. Log in as <Student account>",
+        "2. Navigate to the Course page, open the Assignment, then open the Assignment Submissions view",
+        "3. Look for the Quick grading checkbox control above the submissions table",
+        "4. If the Quick grading checkbox is visible, attempt to click/toggle it"
+      ],
+      "expected_result": "Quick grading control is not available to this role: the Quick grading checkbox is not displayed (or is not interactive) for users without grading/teacher permissions; attempting to toggle it is not possible and Final grade inline fields remain hidden for all rows.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-012",
-      "test_case": "Cannot edit Final Grade inline when Quick Grading mode is disabled",
-      "preconditions": ["Login as <teacher or grader user> with grading permissions", "Assignment exists and has at least one student submission", "Quick_Grading_Mode is unchecked/disabled"],
-      "steps": [
-        "1. Sign in as <teacher or grader user>",
-        "2. Navigate to the Assignment Submissions view for <assignment>",
-        "3. Verify Quick_Grading_Mode checkbox is unchecked",
-        "4. Click the Final_Grade cell for <a student row> in the submissions table"
+      "wf_ref": "WF-007",
+      "test_case": "User without grading/teacher permissions (Student role) cannot open the Grading Workflow from a submission row",
+      "preconditions": [
+        "User is authenticated with a Student role (<Student account>)",
+        "Course contains the Assignment and at least one submission exists"
       ],
-      "expected_result": "Inline edit is blocked: the Final_Grade cell remains read-only; clicking it does not open an inline editor (no input field, no Save/Cancel controls appear), and the grade value remains unchanged.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-004",
-      "wf_ref": "WF-011",
-      "test_case": "Open Grading Workflow action is not available when assignment has no submissions",
-      "preconditions": ["Login as <teacher or grader user> with grading permissions", "Assignment exists but has <no student submissions>"],
       "steps": [
-        "1. Sign in as <teacher or grader user>",
-        "2. Navigate to the Assignment Submissions view for <assignment with no submissions>",
-        "3. Inspect the submissions table and any row action menus"
+        "1. Log in as <Student account>",
+        "2. Navigate to the Assignment Submissions view for <Course>/<Assignment>",
+        "3. Open the row actions menu for a submission row",
+        "4. Attempt to click the 'Open Grading Workflow' action if present"
       ],
-      "expected_result": "Action is blocked: the submissions table shows no submission rows (or a 'No submissions' empty state) and the per-row 'Open Grading Workflow' action/menu is not present or is disabled; attempting to open the grading workflow is not possible and no grading workflow opens.",
+      "expected_result": "'Open Grading Workflow' is not available to this role: the 'Open Grading Workflow' button/link is not shown in the row actions for users without grading/teacher permissions; clicking it is not possible and no navigation to a grading interface occurs.",
       "priority": "high"
     },
     {
-      "tc_id": "N-005",
-      "wf_ref": "WF-006",
-      "test_case": "Online text preview should not open for rows filtered to 'No submission'",
-      "preconditions": ["Login as <teacher or grader user> with grading permissions", "Assignment exists and roster includes students with 'No submission' status"],
-      "steps": [
-        "1. Sign in as <teacher or grader user>",
-        "2. Navigate to the Assignment Submissions view for <assignment>",
-        "3. Set Submission_Status_Filter to 'No submission'",
-        "4. Locate a row shown with Submission_Status = 'No submission'",
-        "5. Attempt to click the Online_Text_Preview area/link for that row"
+      "tc_id": "N-004",
+      "wf_ref": "WF-008",
+      "test_case": "Teacher cannot edit Final grade inline when Quick grading mode is not enabled",
+      "preconditions": [
+        "User is authenticated with grading/teacher permissions (<Teacher account>)",
+        "Course contains the Assignment with at least one submission",
+        "Quick grading mode is currently disabled"
       ],
-      "expected_result": "Preview is blocked: no Online Text Preview link/control is present for rows with Submission_Status = 'No submission'; clicking the preview area does not open a preview modal or viewer and no preview content appears.",
+      "steps": [
+        "1. Log in as <Teacher account>",
+        "2. Navigate to the Assignment Submissions view for <Course>/<Assignment>",
+        "3. Verify Quick grading checkbox is unchecked",
+        "4. Attempt to click the Final grade cell for a submission row and type an inline grade value (e.g., focus the cell and enter <grade>)"
+      ],
+      "expected_result": "Inline editing is blocked: Final grade inline fields are not visible/editable while Quick grading mode is disabled; no inline editor opens, the attempted input is not accepted, and the Final grade value remains unchanged in the table.",
       "priority": "medium"
     },
     {
-      "tc_id": "N-006",
-      "wf_ref": "WF-004",
-      "test_case": "Quick Grading toggle is not actionable when user lacks grading permission (precondition failure on control)",
-      "preconditions": ["Login as <user who previously had access but whose grading permission was revoked> OR login as <user without grading permissions>", "Assignment exists"],
-      "steps": [
-        "1. Sign in as <user without grading permissions>",
-        "2. Navigate to the Assignment Submissions view for <assignment>",
-        "3. Attempt to toggle the Quick_Grading_Mode checkbox"
+      "tc_id": "N-005",
+      "wf_ref": "WF-008",
+      "test_case": "Quick grading control is not shown when Assignment state does not meet preconditions (assignment has no submissions and is not ready)",
+      "preconditions": [
+        "User is authenticated with grading/teacher permissions (<Teacher account>)",
+        "Course contains an Assignment that currently has no student submissions and is not marked as ready to receive submissions (<Assignment with no submissions>)"
       ],
-      "expected_result": "Toggle is blocked: the Quick_Grading_Mode checkbox is not shown or is disabled; attempting to toggle it has no effect, inline Final_Grade controls do not become editable, and the UI displays that grading controls are unavailable due to insufficient permissions.",
+      "steps": [
+        "1. Log in as <Teacher account>",
+        "2. Navigate to the Assignment Submissions view for <Course>/<Assignment with no submissions>",
+        "3. Observe the filter/control area above the submissions table"
+      ],
+      "expected_result": "Quick grading cannot be enabled because preconditions are not met: the Quick grading checkbox is not displayed on the page when the Assignment lacks submissions and is not ready; Final grade inline fields are not visible in the table. The page does not offer Quick grading functionality.",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 6,
+    "total": 5,
     "high_priority": 4,
-    "medium_priority": 2,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:15:09] Test-Negative - PARSED JSON
+[22:51:50] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Assignment Submissions",
@@ -476,107 +486,91 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Unauthenticated user cannot access the Submissions view",
+      "test_case": "Unauthenticated user attempts to access Assignment Submissions view",
       "preconditions": [
-        "User is not signed in",
-        "Assignment exists in a course"
+        "User is not authenticated",
+        "Course and Assignment exist"
       ],
       "steps": [
-        "1. As <unauthenticated user> navigate to the Assignment Submissions URL for <assignment>",
-        "2. Observe the page that loads"
+        "1. In a browser with no active session, navigate to the Assignment Submissions page URL for <Course>/<Assignment>",
+        "2. Observe the resulting page"
       ],
-      "expected_result": "Access is blocked: the application redirects to the login page (login form is shown); the Submissions table and its search/filters (Student_Search, Submission_Status_Filter, Grading_Status_Filter, Quick_Grading_Mode) are not visible or accessible.",
+      "expected_result": "Navigation is blocked: the user is redirected to the login page and the Submissions table is not displayed; no controls (search, filters, row actions) are accessible.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": null,
-      "test_case": "User without grading permissions (student role) is blocked from Submissions controls",
+      "wf_ref": "WF-008",
+      "test_case": "User without grading/teacher permissions (Student role) cannot enable Quick grading",
       "preconditions": [
-        "Login as <student user> (no grading permissions)",
-        "Assignment exists and may have submissions"
+        "User is authenticated with a Student role (<Student account>)",
+        "Course contains the Assignment"
       ],
       "steps": [
-        "1. Sign in as <student user>",
-        "2. Navigate to the Assignment Submissions view for <assignment>",
-        "3. Inspect the page area where search filters and the submissions table would appear"
+        "1. Log in as <Student account>",
+        "2. Navigate to the Course page, open the Assignment, then open the Assignment Submissions view",
+        "3. Look for the Quick grading checkbox control above the submissions table",
+        "4. If the Quick grading checkbox is visible, attempt to click/toggle it"
       ],
-      "expected_result": "Access is blocked/limited: the Submissions table and search/filters are not available to the user; grading-specific controls (Quick_Grading_Mode toggle, editable Final_Grade cells, row action 'Open Grading Workflow') are not visible or are disabled, and the page displays an access-denied notice or equivalent UI indicating the user lacks permission to view/manage submissions.",
+      "expected_result": "Quick grading control is not available to this role: the Quick grading checkbox is not displayed (or is not interactive) for users without grading/teacher permissions; attempting to toggle it is not possible and Final grade inline fields remain hidden for all rows.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-012",
-      "test_case": "Cannot edit Final Grade inline when Quick Grading mode is disabled",
+      "wf_ref": "WF-007",
+      "test_case": "User without grading/teacher permissions (Student role) cannot open the Grading Workflow from a submission row",
       "preconditions": [
-        "Login as <teacher or grader user> with grading permissions",
-        "Assignment exists and has at least one student submission",
-        "Quick_Grading_Mode is unchecked/disabled"
+        "User is authenticated with a Student role (<Student account>)",
+        "Course contains the Assignment and at least one submission exists"
       ],
       "steps": [
-        "1. Sign in as <teacher or grader user>",
-        "2. Navigate to the Assignment Submissions view for <assignment>",
-        "3. Verify Quick_Grading_Mode checkbox is unchecked",
-        "4. Click the Final_Grade cell for <a student row> in the submissions table"
+        "1. Log in as <Student account>",
+        "2. Navigate to the Assignment Submissions view for <Course>/<Assignment>",
+        "3. Open the row actions menu for a submission row",
+        "4. Attempt to click the 'Open Grading Workflow' action if present"
       ],
-      "expected_result": "Inline edit is blocked: the Final_Grade cell remains read-only; clicking it does not open an inline editor (no input field, no Save/Cancel controls appear), and the grade value remains unchanged.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-004",
-      "wf_ref": "WF-011",
-      "test_case": "Open Grading Workflow action is not available when assignment has no submissions",
-      "preconditions": [
-        "Login as <teacher or grader user> with grading permissions",
-        "Assignment exists but has <no student submissions>"
-      ],
-      "steps": [
-        "1. Sign in as <teacher or grader user>",
-        "2. Navigate to the Assignment Submissions view for <assignment with no submissions>",
-        "3. Inspect the submissions table and any row action menus"
-      ],
-      "expected_result": "Action is blocked: the submissions table shows no submission rows (or a 'No submissions' empty state) and the per-row 'Open Grading Workflow' action/menu is not present or is disabled; attempting to open the grading workflow is not possible and no grading workflow opens.",
+      "expected_result": "'Open Grading Workflow' is not available to this role: the 'Open Grading Workflow' button/link is not shown in the row actions for users without grading/teacher permissions; clicking it is not possible and no navigation to a grading interface occurs.",
       "priority": "high"
     },
     {
-      "tc_id": "N-005",
-      "wf_ref": "WF-006",
-      "test_case": "Online text preview should not open for rows filtered to 'No submission'",
+      "tc_id": "N-004",
+      "wf_ref": "WF-008",
+      "test_case": "Teacher cannot edit Final grade inline when Quick grading mode is not enabled",
       "preconditions": [
-        "Login as <teacher or grader user> with grading permissions",
-        "Assignment exists and roster includes students with 'No submission' status"
+        "User is authenticated with grading/teacher permissions (<Teacher account>)",
+        "Course contains the Assignment with at least one submission",
+        "Quick grading mode is currently disabled"
       ],
       "steps": [
-        "1. Sign in as <teacher or grader user>",
-        "2. Navigate to the Assignment Submissions view for <assignment>",
-        "3. Set Submission_Status_Filter to 'No submission'",
-        "4. Locate a row shown with Submission_Status = 'No submission'",
-        "5. Attempt to click the Online_Text_Preview area/link for that row"
+        "1. Log in as <Teacher account>",
+        "2. Navigate to the Assignment Submissions view for <Course>/<Assignment>",
+        "3. Verify Quick grading checkbox is unchecked",
+        "4. Attempt to click the Final grade cell for a submission row and type an inline grade value (e.g., focus the cell and enter <grade>)"
       ],
-      "expected_result": "Preview is blocked: no Online Text Preview link/control is present for rows with Submission_Status = 'No submission'; clicking the preview area does not open a preview modal or viewer and no preview content appears.",
+      "expected_result": "Inline editing is blocked: Final grade inline fields are not visible/editable while Quick grading mode is disabled; no inline editor opens, the attempted input is not accepted, and the Final grade value remains unchanged in the table.",
       "priority": "medium"
     },
     {
-      "tc_id": "N-006",
-      "wf_ref": "WF-004",
-      "test_case": "Quick Grading toggle is not actionable when user lacks grading permission (precondition failure on control)",
+      "tc_id": "N-005",
+      "wf_ref": "WF-008",
+      "test_case": "Quick grading control is not shown when Assignment state does not meet preconditions (assignment has no submissions and is not ready)",
       "preconditions": [
-        "Login as <user who previously had access but whose grading permission was revoked> OR login as <user without grading permissions>",
-        "Assignment exists"
+        "User is authenticated with grading/teacher permissions (<Teacher account>)",
+        "Course contains an Assignment that currently has no student submissions and is not marked as ready to receive submissions (<Assignment with no submissions>)"
       ],
       "steps": [
-        "1. Sign in as <user without grading permissions>",
-        "2. Navigate to the Assignment Submissions view for <assignment>",
-        "3. Attempt to toggle the Quick_Grading_Mode checkbox"
+        "1. Log in as <Teacher account>",
+        "2. Navigate to the Assignment Submissions view for <Course>/<Assignment with no submissions>",
+        "3. Observe the filter/control area above the submissions table"
       ],
-      "expected_result": "Toggle is blocked: the Quick_Grading_Mode checkbox is not shown or is disabled; attempting to toggle it has no effect, inline Final_Grade controls do not become editable, and the UI displays that grading controls are unavailable due to insufficient permissions.",
+      "expected_result": "Quick grading cannot be enabled because preconditions are not met: the Quick grading checkbox is not displayed on the page when the Assignment lacks submissions and is not ready; Final grade inline fields are not visible in the table. The page does not offer Quick grading functionality.",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 6,
+    "total": 5,
     "high_priority": 4,
-    "medium_priority": 2,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }

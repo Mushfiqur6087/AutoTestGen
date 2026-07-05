@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:04:20.739928
+DEBUG SESSION STARTED: 2026-07-04T22:55:35.970579
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Negative - SYSTEM PROMPT
+[22:55:35] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Negative - USER PROMPT
+[22:55:35] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 6,
   "module_title": "Checkout - Overview",
-  "summary": "Displays an order summary with cart items, payment and shipping details, and totals, allowing the user to finish or cancel the checkout process.",
-  "where_it_fits": "This is the middle step of the three-step checkout flow reached from the Product Inventory -> Shopping Cart -> Checkout (Information \u2192 Overview \u2192 Confirmation). It follows the Checkout - Information step and precedes Checkout - Confirmation, completing the order when Finish is used or exiting checkout when Cancel is used.",
-  "assumed_state_on_entry": "Logged in user with items in the shopping cart who has completed the Checkout - Information step (checkout flow initiated)"
+  "summary": "Displays an order summary of cart items with item total, tax, total, and shows the selected payment and shipping information while providing controls to finish or cancel the checkout.",
+  "where_it_fits": "This module is the second step in the three-step checkout flow reached from the Product Inventory via the Shopping Cart (Inventory \u2192 Cart \u2192 Checkout - Information \u2192 Checkout - Overview \u2192 Checkout - Confirmation). It appears after the Checkout - Information step and before the Checkout - Confirmation step in the purchase lifecycle.",
+  "assumed_state_on_entry": "User is logged in, cart contains one or more items, and checkout contact/payment/shipping information has been entered on the Checkout - Information step."
 }
 </module_context>
 
@@ -260,43 +270,20 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Checkout - Overview",
   "components": {
-    "Checkout_Overview_Wizard": {
-      "type": "wizard",
-      "steps": [
+    "Checkout_Overview": {
+      "type": "form",
+      "fields": {},
+      "submit_actions": [
         {
-          "step_index": 1,
-          "step_name": "Information",
-          "fields": {}
-        },
-        {
-          "step_index": 2,
-          "step_name": "Overview",
-          "fields": {},
-          "submit_actions": [
-            {
-              "action_name": "Finish",
-              "on_success": "completes the order and navigates to Checkout - Confirmation",
-              "preconditions": [
-                "user must be logged in",
-                "must have items in the shopping cart",
-                "checkout flow initiated (completed Checkout - Information step)"
-              ]
-            },
-            {
-              "action_name": "Cancel",
-              "on_success": "exits checkout",
-              "preconditions": [
-                "user must be logged in",
-                "must have items in the shopping cart",
-                "checkout flow initiated (completed Checkout - Information step)"
-              ]
-            }
+          "action_name": "Finish",
+          "on_success": "navigates to Checkout - Confirmation",
+          "preconditions": [
+            "User is logged in, cart contains one or more items, and checkout contact/payment/shipping information has been entered on the Checkout - Information step."
           ]
         },
         {
-          "step_index": 3,
-          "step_name": "Confirmation",
-          "fields": {}
+          "action_name": "Cancel",
+          "on_success": "exits checkout"
         }
       ]
     }
@@ -312,14 +299,14 @@ The overview step shows an order summary of cart items and a totals section (Ite
 </description>
 
 <workflows>
-WF-001 | Finish — complete order and go to Confirmation | actor: Logged-in user | branch: none | terminal: Finish | on_success: completes the order and navigates to Checkout - Confirmation
-WF-002 | Cancel — exit checkout | actor: Logged-in user | branch: none | terminal: Cancel | on_success: exits checkout
+WF-001 | Finish checkout and go to confirmation | actor: User | branch: none | terminal: Finish | on_success: navigates to Checkout - Confirmation
+WF-002 | Cancel checkout and exit | actor: User | branch: none | terminal: Cancel | on_success: exits checkout
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:05:23] Test-Negative - LLM RESPONSE
+[22:56:32] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Checkout - Overview",
@@ -327,131 +314,62 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": "WF-001",
-      "test_case": "Finish blocked when user is not logged in (unauthenticated)",
+      "wf_ref": null,
+      "test_case": "Access Overview while not authenticated",
       "preconditions": [
-        "User is not logged in (no active session)"
+        "User is not logged in",
+        "Cart may contain items or be empty"
       ],
       "steps": [
-        "1. Ensure the user is logged out (no active session).",
-        "2. Navigate to the Checkout - Overview page (attempt to open the overview step).",
-        "3. Click the Finish button."
+        "1. In a browser session where the user is logged out, navigate to the Checkout - Overview page URL (or click Checkout from the Cart)",
+        "2. Observe the resulting page"
       ],
-      "expected_result": "User is redirected to the Login page (sign-in form visible). The Finish action is not executed and no order is created; user remains unauthenticated and is not navigated to Checkout - Confirmation.",
+      "expected_result": "User is not shown the Checkout - Overview; the UI redirects to or displays the login screen (or an authentication prompt). The checkout is not accessible and no Finish/Cancel actions are performed.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Finish blocked when shopping cart is empty",
+      "test_case": "Click Finish when cart is empty",
       "preconditions": [
         "User is logged in",
-        "Shopping cart is empty",
-        "Checkout flow initiated (Checkout - Information step has been completed)"
+        "Cart contains no items",
+        "Checkout contact/payment/shipping information may or may not be present"
       ],
       "steps": [
-        "1. Log in as a valid user.",
-        "2. Ensure the shopping cart contains no items.",
-        "3. Navigate to the Checkout - Overview step (flow initiated).",
-        "4. Click the Finish button."
+        "1. Navigate to the Checkout - Overview page while signed in and with an empty cart",
+        "2. Click the Finish button"
       ],
-      "expected_result": "A blocking error banner or inline error appears on the Overview page indicating the cart must contain at least one item to complete checkout; Finish does not complete the order and the user remains on the Overview page (no navigation to Checkout - Confirmation).",
+      "expected_result": "Finish does not complete; the page does not navigate to Checkout - Confirmation. An inline validation/error indicator is shown in or near the order summary indicating the cart is empty or that items are required. The order is not created and the user remains on Checkout - Overview.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Finish blocked when Checkout - Information step not completed (flow not initiated)",
+      "test_case": "Click Finish with missing payment or shipping information",
       "preconditions": [
         "User is logged in",
-        "Shopping cart has items",
-        "Checkout flow not initiated (Checkout - Information step was NOT completed)"
+        "Cart contains one or more items",
+        "Checkout contact/payment/shipping information has NOT been provided on the previous information step"
       ],
       "steps": [
-        "1. Log in as a valid user.",
-        "2. Ensure the shopping cart contains at least one item.",
-        "3. Navigate directly to Checkout - Overview without completing the Information step.",
-        "4. Click the Finish button."
+        "1. Navigate to the Checkout - Overview page while signed in and with items in the cart but without entering payment/shipping/contact information",
+        "2. Click the Finish button"
       ],
-      "expected_result": "An inline error or modal is shown instructing the user to complete the Checkout - Information step before finishing; the Finish action is blocked, no order is created, and the user remains on the Overview step (no navigation to Checkout - Confirmation).",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-004",
-      "wf_ref": "WF-002",
-      "test_case": "Cancel blocked when user is not logged in (unauthenticated)",
-      "preconditions": [
-        "User is not logged in (no active session)"
-      ],
-      "steps": [
-        "1. Ensure the user is logged out (no active session).",
-        "2. Navigate to the Checkout - Overview page (attempt to open the overview step).",
-        "3. Click the Cancel button."
-      ],
-      "expected_result": "User is redirected to the Login page (sign-in form visible). The Cancel action is not executed and the checkout is not exited; user remains unauthenticated and no post-cancel navigation occurs.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-005",
-      "wf_ref": "WF-002",
-      "test_case": "Cancel blocked when shopping cart is empty",
-      "preconditions": [
-        "User is logged in",
-        "Shopping cart is empty",
-        "Checkout flow initiated (Checkout - Information step has been completed)"
-      ],
-      "steps": [
-        "1. Log in as a valid user.",
-        "2. Ensure the shopping cart contains no items.",
-        "3. Navigate to the Checkout - Overview step.",
-        "4. Click the Cancel button."
-      ],
-      "expected_result": "A blocking error banner or inline error appears on the Overview page indicating the cart must contain items for the checkout action to proceed; Cancel does not exit the checkout and the user remains on the Overview page.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-006",
-      "wf_ref": null,
-      "test_case": "Overview page access blocked for unauthenticated users",
-      "preconditions": [
-        "User is not logged in (no active session)"
-      ],
-      "steps": [
-        "1. Ensure the user is logged out (no active session).",
-        "2. Attempt to navigate directly to the Checkout - Overview URL/page."
-      ],
-      "expected_result": "User is redirected to the Login page (sign-in form visible). The Checkout - Overview page is not displayed and Finish/Cancel controls are not accessible until authentication; no checkout actions are possible.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": "WF-002",
-      "test_case": "Cancel blocked when Checkout - Information step not completed (flow not initiated)",
-      "preconditions": [
-        "User is logged in",
-        "Shopping cart has items",
-        "Checkout flow not initiated (Checkout - Information step was NOT completed)"
-      ],
-      "steps": [
-        "1. Log in as a valid user.",
-        "2. Ensure the shopping cart contains at least one item.",
-        "3. Navigate directly to Checkout - Overview without completing the Information step.",
-        "4. Click the Cancel button."
-      ],
-      "expected_result": "An inline error or modal is shown instructing the user to complete the Checkout - Information step before exiting checkout; the Cancel action is blocked and the user remains on the Overview step (checkout not exited).",
+      "expected_result": "Finish does not complete; the page does not navigate to Checkout - Confirmation. Inline validation errors appear on the missing information area(s) (for example, Payment information and/or Shipping information) indicating those details are required. The order is not created and the user remains on Checkout - Overview.",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 7,
-    "high_priority": 7,
+    "total": 3,
+    "high_priority": 3,
     "medium_priority": 0,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:05:23] Test-Negative - PARSED JSON
+[22:56:32] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Checkout - Overview",
@@ -459,124 +377,55 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": "WF-001",
-      "test_case": "Finish blocked when user is not logged in (unauthenticated)",
+      "wf_ref": null,
+      "test_case": "Access Overview while not authenticated",
       "preconditions": [
-        "User is not logged in (no active session)"
+        "User is not logged in",
+        "Cart may contain items or be empty"
       ],
       "steps": [
-        "1. Ensure the user is logged out (no active session).",
-        "2. Navigate to the Checkout - Overview page (attempt to open the overview step).",
-        "3. Click the Finish button."
+        "1. In a browser session where the user is logged out, navigate to the Checkout - Overview page URL (or click Checkout from the Cart)",
+        "2. Observe the resulting page"
       ],
-      "expected_result": "User is redirected to the Login page (sign-in form visible). The Finish action is not executed and no order is created; user remains unauthenticated and is not navigated to Checkout - Confirmation.",
+      "expected_result": "User is not shown the Checkout - Overview; the UI redirects to or displays the login screen (or an authentication prompt). The checkout is not accessible and no Finish/Cancel actions are performed.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Finish blocked when shopping cart is empty",
+      "test_case": "Click Finish when cart is empty",
       "preconditions": [
         "User is logged in",
-        "Shopping cart is empty",
-        "Checkout flow initiated (Checkout - Information step has been completed)"
+        "Cart contains no items",
+        "Checkout contact/payment/shipping information may or may not be present"
       ],
       "steps": [
-        "1. Log in as a valid user.",
-        "2. Ensure the shopping cart contains no items.",
-        "3. Navigate to the Checkout - Overview step (flow initiated).",
-        "4. Click the Finish button."
+        "1. Navigate to the Checkout - Overview page while signed in and with an empty cart",
+        "2. Click the Finish button"
       ],
-      "expected_result": "A blocking error banner or inline error appears on the Overview page indicating the cart must contain at least one item to complete checkout; Finish does not complete the order and the user remains on the Overview page (no navigation to Checkout - Confirmation).",
+      "expected_result": "Finish does not complete; the page does not navigate to Checkout - Confirmation. An inline validation/error indicator is shown in or near the order summary indicating the cart is empty or that items are required. The order is not created and the user remains on Checkout - Overview.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Finish blocked when Checkout - Information step not completed (flow not initiated)",
+      "test_case": "Click Finish with missing payment or shipping information",
       "preconditions": [
         "User is logged in",
-        "Shopping cart has items",
-        "Checkout flow not initiated (Checkout - Information step was NOT completed)"
+        "Cart contains one or more items",
+        "Checkout contact/payment/shipping information has NOT been provided on the previous information step"
       ],
       "steps": [
-        "1. Log in as a valid user.",
-        "2. Ensure the shopping cart contains at least one item.",
-        "3. Navigate directly to Checkout - Overview without completing the Information step.",
-        "4. Click the Finish button."
+        "1. Navigate to the Checkout - Overview page while signed in and with items in the cart but without entering payment/shipping/contact information",
+        "2. Click the Finish button"
       ],
-      "expected_result": "An inline error or modal is shown instructing the user to complete the Checkout - Information step before finishing; the Finish action is blocked, no order is created, and the user remains on the Overview step (no navigation to Checkout - Confirmation).",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-004",
-      "wf_ref": "WF-002",
-      "test_case": "Cancel blocked when user is not logged in (unauthenticated)",
-      "preconditions": [
-        "User is not logged in (no active session)"
-      ],
-      "steps": [
-        "1. Ensure the user is logged out (no active session).",
-        "2. Navigate to the Checkout - Overview page (attempt to open the overview step).",
-        "3. Click the Cancel button."
-      ],
-      "expected_result": "User is redirected to the Login page (sign-in form visible). The Cancel action is not executed and the checkout is not exited; user remains unauthenticated and no post-cancel navigation occurs.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-005",
-      "wf_ref": "WF-002",
-      "test_case": "Cancel blocked when shopping cart is empty",
-      "preconditions": [
-        "User is logged in",
-        "Shopping cart is empty",
-        "Checkout flow initiated (Checkout - Information step has been completed)"
-      ],
-      "steps": [
-        "1. Log in as a valid user.",
-        "2. Ensure the shopping cart contains no items.",
-        "3. Navigate to the Checkout - Overview step.",
-        "4. Click the Cancel button."
-      ],
-      "expected_result": "A blocking error banner or inline error appears on the Overview page indicating the cart must contain items for the checkout action to proceed; Cancel does not exit the checkout and the user remains on the Overview page.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-006",
-      "wf_ref": null,
-      "test_case": "Overview page access blocked for unauthenticated users",
-      "preconditions": [
-        "User is not logged in (no active session)"
-      ],
-      "steps": [
-        "1. Ensure the user is logged out (no active session).",
-        "2. Attempt to navigate directly to the Checkout - Overview URL/page."
-      ],
-      "expected_result": "User is redirected to the Login page (sign-in form visible). The Checkout - Overview page is not displayed and Finish/Cancel controls are not accessible until authentication; no checkout actions are possible.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": "WF-002",
-      "test_case": "Cancel blocked when Checkout - Information step not completed (flow not initiated)",
-      "preconditions": [
-        "User is logged in",
-        "Shopping cart has items",
-        "Checkout flow not initiated (Checkout - Information step was NOT completed)"
-      ],
-      "steps": [
-        "1. Log in as a valid user.",
-        "2. Ensure the shopping cart contains at least one item.",
-        "3. Navigate directly to Checkout - Overview without completing the Information step.",
-        "4. Click the Cancel button."
-      ],
-      "expected_result": "An inline error or modal is shown instructing the user to complete the Checkout - Information step before exiting checkout; the Cancel action is blocked and the user remains on the Overview step (checkout not exited).",
+      "expected_result": "Finish does not complete; the page does not navigate to Checkout - Confirmation. Inline validation errors appear on the missing information area(s) (for example, Payment information and/or Shipping information) indicating those details are required. The order is not created and the user remains on Checkout - Overview.",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 7,
-    "high_priority": 7,
+    "total": 3,
+    "high_priority": 3,
     "medium_priority": 0,
     "low_priority": 0
   }

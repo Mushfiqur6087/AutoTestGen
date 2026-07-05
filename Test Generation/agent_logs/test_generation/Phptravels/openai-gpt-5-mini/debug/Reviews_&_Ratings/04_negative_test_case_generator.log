@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:14.020673
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.308932
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:14] Test-Negative - SYSTEM PROMPT
+[22:33:07] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:14] Test-Negative - USER PROMPT
+[22:33:07] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 19,
   "module_title": "Reviews & Ratings",
-  "summary": "Displays aggregate scores and individual guest reviews for listings, including category-specific ratings, written comments, photos, and filtering by rating, date, or traveler type.",
-  "where_it_fits": "Accessible from listing and detail pages within the Hotels/Flights/Tours/Cars sections of the main navigation and exposed on detail pages as a dedicated Reviews section; review submission is also reachable via the user Dashboard or post-stay email prompts after bookings. It complements search/listing workflows by surfacing social proof and post-stay feedback during the booking lifecycle.",
-  "assumed_state_on_entry": "Viewing: public access (no login required); Submitting: authenticated user with a completed/recorded booking (post-stay)."
+  "summary": "Presents aggregated scores and individual guest reviews with category-specific ratings, filters, and photo attachments, and supports post-stay review submissions by eligible users.",
+  "where_it_fits": "Appears on listing pages and item detail pages accessed from the main navigation (Home \u2192 Hotels/Flights/Tours/Cars) and integrates with the User Dashboard and post-stay email workflow; it is part of the post-booking feedback and discovery experience used to inform future bookings. It complements search/listing content by providing social proof and detailed guest feedback within the booking lifecycle.",
+  "assumed_state_on_entry": "Viewing: a listing or detail page exists (with review data available); Submitting: user is authenticated and has a completed booking eligible for review."
 }
 </module_context>
 
@@ -264,12 +274,12 @@ If a `<workflows>` block is present in the input:
       "type": "form",
       "fields": {
         "Rating_Filter": {
-          "type": "unspecified"
+          "type": "dropdown"
         },
         "Date_Filter": {
           "type": "date"
         },
-        "Traveler_Type_Filter": {
+        "Traveler_Type": {
           "type": "dropdown"
         }
       },
@@ -282,33 +292,25 @@ If a `<workflows>` block is present in the input:
         }
       ]
     },
-    "Review_Submission_Form": {
+    "Submit_Review_Form": {
       "type": "form",
-      "preconditions": [
-        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
-      ],
       "fields": {
         "Overall_Rating": {
-          "type": "unspecified",
-          "required": true
+          "type": "unspecified"
         },
         "Category_Ratings": {
           "type": "repeating_group",
           "item_fields": {
             "Category_Name": {
-              "type": "unspecified",
-              "required": true
+              "type": "unspecified"
             },
-            "Category_Rating": {
-              "type": "unspecified",
-              "required": true
+            "Rating": {
+              "type": "unspecified"
             }
-          },
-          "options_note": "e.g., Cleanliness, Service, Location for hotels (partial \u2014 others not specified)"
+          }
         },
-        "Written_Comments": {
-          "type": "unspecified",
-          "required": true
+        "Written_Feedback": {
+          "type": "unspecified"
         },
         "Photos": {
           "type": "file_upload"
@@ -317,25 +319,23 @@ If a `<workflows>` block is present in the input:
       "submit_actions": [
         {
           "action_name": "Submit Review",
-          "on_success": "review submitted"
+          "preconditions": [
+            "Submitting: user is authenticated and has a completed booking eligible for review."
+          ]
         }
       ]
     },
-    "Dashboard_Submit_Review": {
-      "type": "button",
-      "action_name": "Submit Review",
-      "preconditions": [
-        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
-      ],
-      "on_success": "opens Review_Submission_Form"
-    },
-    "Email_Submit_Link": {
+    "Submit_Review_From_Dashboard": {
       "type": "link",
-      "action_name": "Submit Review",
       "preconditions": [
-        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
-      ],
-      "on_success": "opens Review_Submission_Form"
+        "Submitting: user is authenticated and has a completed booking eligible for review."
+      ]
+    },
+    "Submit_Review_From_Email": {
+      "type": "link",
+      "preconditions": [
+        "Submitting: user is authenticated and has a completed booking eligible for review."
+      ]
     }
   }
 }
@@ -351,17 +351,15 @@ Listing pages show an aggregate rating score and total review count for each ite
 </description>
 
 <workflows>
-WF-001 | Apply Filters | actor: Public User | branch: none | terminal: Apply Filters | on_success: Filters applied; review list updated
-WF-002 | Clear Filters | actor: Public User | branch: none | terminal: Clear Filters | on_success: Filters cleared; review list reset
-WF-003 | Submit Review (from Review Submission Form) | actor: Authenticated Post-stay User | branch: source_component == Review_Submission_Form | terminal: Submit Review | on_success: review submitted
-WF-004 | Open Review Form (Dashboard button) | actor: Authenticated Post-stay User | branch: source_component == Dashboard_Submit_Review | terminal: Submit Review | on_success: opens Review_Submission_Form
-WF-005 | Open Review Form (Post-stay Email link) | actor: Authenticated Post-stay User | branch: source_component == Email_Submit_Link | terminal: Submit Review | on_success: opens Review_Submission_Form
+WF-001 | Apply review filters | actor: <role> | branch: none | terminal: Apply Filters | on_success: Reviews filtered according to selected criteria; list updated
+WF-002 | Clear review filters | actor: <role> | branch: none | terminal: Clear Filters | on_success: Filters cleared; reviews list reset to default
+WF-003 | Submit a post-stay review | actor: Authenticated user | branch: none | terminal: Submit Review | on_success: Review submitted; saved and associated with the listing
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:28:39] Test-Negative - LLM RESPONSE
+[22:37:14] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Reviews & Ratings",
@@ -370,125 +368,130 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-003",
-      "test_case": "Submit Review with Overall_Rating left blank (required unspecified field)",
+      "test_case": "Unauthenticated user follows post-stay review email link",
       "preconditions": [
-        "Authenticated user with a completed/recorded booking (post-stay)",
-        "On the Review Submission Form"
+        "User is not authenticated",
+        "Post-stay email link to Submit Review exists (user has received email)"
       ],
       "steps": [
-        "1. Open the Review Submission Form for a listing",
-        "2. Leave the Overall_Rating field blank",
-        "3. Fill all other required fields (Category_Ratings and Written_Comments) with valid values",
-        "4. Click the Submit Review button"
+        "1. From an external browser session where the user is not logged in, open the post-stay review link received by email",
+        "2. Observe what is displayed"
       ],
-      "expected_result": "Inline validation error appears on the Overall_Rating field indicating it is required; the form does not submit and no review is created; Submit Review does not navigate away from the form.",
+      "expected_result": "User is blocked from submitting: the Submit Review form is not shown; the user is redirected to a login page or shown a login prompt/modal and cannot access the review form without authenticating",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-003",
-      "test_case": "Submit Review with ALL required fields empty",
+      "test_case": "Authenticated user without a completed eligible booking attempts to open Submit Review",
       "preconditions": [
-        "Authenticated user with a completed/recorded booking (post-stay)",
-        "On the Review Submission Form"
+        "User is authenticated",
+        "User does not have a completed booking eligible for review"
       ],
       "steps": [
-        "1. Open the Review Submission Form for a listing",
-        "2. Leave Overall_Rating blank",
-        "3. Do not add any Category_Ratings items (or add items but leave Category_Name and Category_Rating blank)",
-        "4. Leave Written_Comments blank",
-        "5. Click the Submit Review button"
+        "1. Log in as a user that has no completed booking eligible for review",
+        "2. Navigate to the Dashboard or the listing/detail page and click the Submit Review link",
+        "3. Observe the result"
       ],
-      "expected_result": "Inline validation errors appear on Overall_Rating and Written_Comments indicating they are required; each Category_Ratings item (or the first item) shows inline errors on Category_Name and Category_Rating indicating they are required; the form does not submit and no review is created.",
+      "expected_result": "Submission is blocked: the Submit Review form does not open; the UI displays an inline message or modal indicating the user is not eligible to submit a review (and the Submit Review action is not available)",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-003",
-      "test_case": "Category_Ratings repeating-group entry missing Category_Rating",
+      "test_case": "Leave Overall_Rating blank and attempt to submit review",
       "preconditions": [
-        "Authenticated user with a completed/recorded booking (post-stay)",
-        "On the Review Submission Form"
+        "User is authenticated and has a completed booking eligible for review",
+        "Submit Review form is open"
       ],
       "steps": [
-        "1. Open the Review Submission Form for a listing",
-        "2. Add one Category_Ratings item",
-        "3. Enter a valid value in Category_Name for that item",
-        "4. Leave Category_Rating for that item blank",
-        "5. Fill other required fields (Overall_Rating and Written_Comments) with valid values",
-        "6. Click the Submit Review button"
+        "1. Open the Submit Review form from the listing detail or dashboard",
+        "2. Leave the Overall_Rating field blank",
+        "3. Enter valid values for all other required rating fields (enter <valid ratings> for each Category_Ratings item)",
+        "4. Enter valid written feedback in Written_Feedback (optional) and attach valid photos if desired",
+        "5. Click the Submit Review button"
       ],
-      "expected_result": "Inline validation error appears on the Category_Rating field within the Category_Ratings item indicating it is required; the form does not submit and no review is created.",
+      "expected_result": "Form submission is blocked; an inline validation error appears on the Overall_Rating field indicating it is required; the review is not submitted or created",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-001",
-      "test_case": "Apply Filters with invalid Date_Filter value",
+      "wf_ref": "WF-003",
+      "test_case": "Submit review with ALL required rating fields empty",
       "preconditions": [
-        "Public user viewing a listing detail page with the Reviews section"
+        "User is authenticated and has a completed booking eligible for review",
+        "Submit Review form is open"
       ],
       "steps": [
-        "1. In the Reviews Filters form, enter <invalid date format> into the Date_Filter field",
-        "2. Click the Apply Filters button"
+        "1. Open the Submit Review form from the listing detail or dashboard",
+        "2. Leave Overall_Rating blank",
+        "3. Leave all Category_Ratings item Rating fields blank",
+        "4. Do not enter Written_Feedback or attach Photos",
+        "5. Click the Submit Review button"
       ],
-      "expected_result": "Date_Filter field displays an inline validation error indicating an invalid date format; filters are not applied and the reviews list remains unchanged.",
-      "priority": "medium"
+      "expected_result": "Form submission is blocked; inline validation errors appear on required rating fields (Overall_Rating and each Category_Ratings Rating) indicating they are required; the review is not created",
+      "priority": "high"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-005",
-      "test_case": "Unauthenticated user clicks post-stay Email_Submit_Link and is blocked from opening the Review Submission Form",
+      "wf_ref": "WF-003",
+      "test_case": "Missing rating inside a Category_Ratings repeating item blocks submission",
       "preconditions": [
-        "User is not authenticated (public)",
-        "Has access to the post-stay email link"
+        "User is authenticated and has a completed booking eligible for review",
+        "Submit Review form is open and Category_Ratings items are present"
       ],
       "steps": [
-        "1. Click the post-stay Email 'Submit Review' link while not logged in"
+        "1. Open the Submit Review form from the listing detail or dashboard",
+        "2. Enter a valid Overall_Rating",
+        "3. For one Category_Ratings item leave the Rating field blank while entering valid ratings for other category items",
+        "4. Click the Submit Review button"
       ],
-      "expected_result": "User is redirected to the login page (or shown the login UI); the Review Submission Form is not opened until the user successfully authenticates.",
+      "expected_result": "Form submission is blocked; an inline validation error appears on the specific Category_Ratings item's Rating field indicating it is required; the review is not submitted",
       "priority": "high"
     },
     {
       "tc_id": "N-006",
-      "wf_ref": "WF-004",
-      "test_case": "Authenticated user without a completed booking attempts to open Review form from Dashboard and is denied",
+      "wf_ref": "WF-001",
+      "test_case": "Apply Filters with an invalid date in Date_Filter",
       "preconditions": [
-        "Authenticated user WITHOUT a completed/recorded booking",
-        "On the user Dashboard"
+        "Listing detail page is open with the Reviews section visible",
+        "Reviews Filters form is visible"
       ],
       "steps": [
-        "1. Click the Dashboard 'Submit Review' button"
+        "1. In Reviews Filters, enter <invalid date format> into the Date_Filter field",
+        "2. Click the Apply Filters button"
       ],
-      "expected_result": "An access-denied message (modal or banner) is displayed indicating the user must have a completed booking to submit a review; the Review Submission Form does not open.",
-      "priority": "high"
+      "expected_result": "Filters are not applied; an inline validation error appears on the Date_Filter field indicating the date is invalid; the reviews list remains unchanged",
+      "priority": "medium"
     },
     {
       "tc_id": "N-007",
       "wf_ref": "WF-003",
-      "test_case": "Authenticated user without a completed booking fills form and attempts to submit (precondition enforced on submit)",
+      "test_case": "Enter a non-numeric value in Overall_Rating and attempt to submit",
       "preconditions": [
-        "Authenticated user WITHOUT a completed/recorded booking"
+        "User is authenticated and has a completed booking eligible for review",
+        "Submit Review form is open"
       ],
       "steps": [
-        "1. Navigate directly to the Review Submission Form URL for a listing while logged in (no completed booking)",
-        "2. Fill Overall_Rating, one Category_Ratings item (Category_Name and Category_Rating), and Written_Comments with valid values",
-        "3. Click the Submit Review button"
+        "1. Open the Submit Review form from the listing detail or dashboard",
+        "2. Enter <non-numeric value> in the Overall_Rating field",
+        "3. Enter valid values for other required rating fields",
+        "4. Click the Submit Review button"
       ],
-      "expected_result": "On submit, the system blocks the action and displays an access-denied message (inline banner or modal) stating the user must have a completed booking to submit a review; the form does not submit and no review is created.",
-      "priority": "high"
+      "expected_result": "Form submission is blocked; an inline validation error appears on the Overall_Rating field indicating it must be a valid star rating/number; the review is not created",
+      "priority": "medium"
     }
   ],
   "summary": {
     "total": 7,
-    "high_priority": 6,
-    "medium_priority": 1,
+    "high_priority": 5,
+    "medium_priority": 2,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:28:39] Test-Negative - PARSED JSON
+[22:37:14] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Reviews & Ratings",
@@ -497,119 +500,124 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-003",
-      "test_case": "Submit Review with Overall_Rating left blank (required unspecified field)",
+      "test_case": "Unauthenticated user follows post-stay review email link",
       "preconditions": [
-        "Authenticated user with a completed/recorded booking (post-stay)",
-        "On the Review Submission Form"
+        "User is not authenticated",
+        "Post-stay email link to Submit Review exists (user has received email)"
       ],
       "steps": [
-        "1. Open the Review Submission Form for a listing",
-        "2. Leave the Overall_Rating field blank",
-        "3. Fill all other required fields (Category_Ratings and Written_Comments) with valid values",
-        "4. Click the Submit Review button"
+        "1. From an external browser session where the user is not logged in, open the post-stay review link received by email",
+        "2. Observe what is displayed"
       ],
-      "expected_result": "Inline validation error appears on the Overall_Rating field indicating it is required; the form does not submit and no review is created; Submit Review does not navigate away from the form.",
+      "expected_result": "User is blocked from submitting: the Submit Review form is not shown; the user is redirected to a login page or shown a login prompt/modal and cannot access the review form without authenticating",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-003",
-      "test_case": "Submit Review with ALL required fields empty",
+      "test_case": "Authenticated user without a completed eligible booking attempts to open Submit Review",
       "preconditions": [
-        "Authenticated user with a completed/recorded booking (post-stay)",
-        "On the Review Submission Form"
+        "User is authenticated",
+        "User does not have a completed booking eligible for review"
       ],
       "steps": [
-        "1. Open the Review Submission Form for a listing",
-        "2. Leave Overall_Rating blank",
-        "3. Do not add any Category_Ratings items (or add items but leave Category_Name and Category_Rating blank)",
-        "4. Leave Written_Comments blank",
-        "5. Click the Submit Review button"
+        "1. Log in as a user that has no completed booking eligible for review",
+        "2. Navigate to the Dashboard or the listing/detail page and click the Submit Review link",
+        "3. Observe the result"
       ],
-      "expected_result": "Inline validation errors appear on Overall_Rating and Written_Comments indicating they are required; each Category_Ratings item (or the first item) shows inline errors on Category_Name and Category_Rating indicating they are required; the form does not submit and no review is created.",
+      "expected_result": "Submission is blocked: the Submit Review form does not open; the UI displays an inline message or modal indicating the user is not eligible to submit a review (and the Submit Review action is not available)",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-003",
-      "test_case": "Category_Ratings repeating-group entry missing Category_Rating",
+      "test_case": "Leave Overall_Rating blank and attempt to submit review",
       "preconditions": [
-        "Authenticated user with a completed/recorded booking (post-stay)",
-        "On the Review Submission Form"
+        "User is authenticated and has a completed booking eligible for review",
+        "Submit Review form is open"
       ],
       "steps": [
-        "1. Open the Review Submission Form for a listing",
-        "2. Add one Category_Ratings item",
-        "3. Enter a valid value in Category_Name for that item",
-        "4. Leave Category_Rating for that item blank",
-        "5. Fill other required fields (Overall_Rating and Written_Comments) with valid values",
-        "6. Click the Submit Review button"
+        "1. Open the Submit Review form from the listing detail or dashboard",
+        "2. Leave the Overall_Rating field blank",
+        "3. Enter valid values for all other required rating fields (enter <valid ratings> for each Category_Ratings item)",
+        "4. Enter valid written feedback in Written_Feedback (optional) and attach valid photos if desired",
+        "5. Click the Submit Review button"
       ],
-      "expected_result": "Inline validation error appears on the Category_Rating field within the Category_Ratings item indicating it is required; the form does not submit and no review is created.",
+      "expected_result": "Form submission is blocked; an inline validation error appears on the Overall_Rating field indicating it is required; the review is not submitted or created",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-001",
-      "test_case": "Apply Filters with invalid Date_Filter value",
+      "wf_ref": "WF-003",
+      "test_case": "Submit review with ALL required rating fields empty",
       "preconditions": [
-        "Public user viewing a listing detail page with the Reviews section"
+        "User is authenticated and has a completed booking eligible for review",
+        "Submit Review form is open"
       ],
       "steps": [
-        "1. In the Reviews Filters form, enter <invalid date format> into the Date_Filter field",
-        "2. Click the Apply Filters button"
+        "1. Open the Submit Review form from the listing detail or dashboard",
+        "2. Leave Overall_Rating blank",
+        "3. Leave all Category_Ratings item Rating fields blank",
+        "4. Do not enter Written_Feedback or attach Photos",
+        "5. Click the Submit Review button"
       ],
-      "expected_result": "Date_Filter field displays an inline validation error indicating an invalid date format; filters are not applied and the reviews list remains unchanged.",
-      "priority": "medium"
+      "expected_result": "Form submission is blocked; inline validation errors appear on required rating fields (Overall_Rating and each Category_Ratings Rating) indicating they are required; the review is not created",
+      "priority": "high"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-005",
-      "test_case": "Unauthenticated user clicks post-stay Email_Submit_Link and is blocked from opening the Review Submission Form",
+      "wf_ref": "WF-003",
+      "test_case": "Missing rating inside a Category_Ratings repeating item blocks submission",
       "preconditions": [
-        "User is not authenticated (public)",
-        "Has access to the post-stay email link"
+        "User is authenticated and has a completed booking eligible for review",
+        "Submit Review form is open and Category_Ratings items are present"
       ],
       "steps": [
-        "1. Click the post-stay Email 'Submit Review' link while not logged in"
+        "1. Open the Submit Review form from the listing detail or dashboard",
+        "2. Enter a valid Overall_Rating",
+        "3. For one Category_Ratings item leave the Rating field blank while entering valid ratings for other category items",
+        "4. Click the Submit Review button"
       ],
-      "expected_result": "User is redirected to the login page (or shown the login UI); the Review Submission Form is not opened until the user successfully authenticates.",
+      "expected_result": "Form submission is blocked; an inline validation error appears on the specific Category_Ratings item's Rating field indicating it is required; the review is not submitted",
       "priority": "high"
     },
     {
       "tc_id": "N-006",
-      "wf_ref": "WF-004",
-      "test_case": "Authenticated user without a completed booking attempts to open Review form from Dashboard and is denied",
+      "wf_ref": "WF-001",
+      "test_case": "Apply Filters with an invalid date in Date_Filter",
       "preconditions": [
-        "Authenticated user WITHOUT a completed/recorded booking",
-        "On the user Dashboard"
+        "Listing detail page is open with the Reviews section visible",
+        "Reviews Filters form is visible"
       ],
       "steps": [
-        "1. Click the Dashboard 'Submit Review' button"
+        "1. In Reviews Filters, enter <invalid date format> into the Date_Filter field",
+        "2. Click the Apply Filters button"
       ],
-      "expected_result": "An access-denied message (modal or banner) is displayed indicating the user must have a completed booking to submit a review; the Review Submission Form does not open.",
-      "priority": "high"
+      "expected_result": "Filters are not applied; an inline validation error appears on the Date_Filter field indicating the date is invalid; the reviews list remains unchanged",
+      "priority": "medium"
     },
     {
       "tc_id": "N-007",
       "wf_ref": "WF-003",
-      "test_case": "Authenticated user without a completed booking fills form and attempts to submit (precondition enforced on submit)",
+      "test_case": "Enter a non-numeric value in Overall_Rating and attempt to submit",
       "preconditions": [
-        "Authenticated user WITHOUT a completed/recorded booking"
+        "User is authenticated and has a completed booking eligible for review",
+        "Submit Review form is open"
       ],
       "steps": [
-        "1. Navigate directly to the Review Submission Form URL for a listing while logged in (no completed booking)",
-        "2. Fill Overall_Rating, one Category_Ratings item (Category_Name and Category_Rating), and Written_Comments with valid values",
-        "3. Click the Submit Review button"
+        "1. Open the Submit Review form from the listing detail or dashboard",
+        "2. Enter <non-numeric value> in the Overall_Rating field",
+        "3. Enter valid values for other required rating fields",
+        "4. Click the Submit Review button"
       ],
-      "expected_result": "On submit, the system blocks the action and displays an access-denied message (inline banner or modal) stating the user must have a completed booking to submit a review; the form does not submit and no review is created.",
-      "priority": "high"
+      "expected_result": "Form submission is blocked; an inline validation error appears on the Overall_Rating field indicating it must be a valid star rating/number; the review is not created",
+      "priority": "medium"
     }
   ],
   "summary": {
     "total": 7,
-    "high_priority": 6,
-    "medium_priority": 1,
+    "high_priority": 5,
+    "medium_priority": 2,
     "low_priority": 0
   }
 }

@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:02:39.093210
+DEBUG SESSION STARTED: 2026-07-04T22:22:17.254589
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Negative - SYSTEM PROMPT
+[22:22:17] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Negative - USER PROMPT
+[22:22:17] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 7,
   "module_title": "Request Loan",
-  "summary": "Provides an interface to apply for Personal, Auto, or Home loans with validation of amounts, down payments, collateral, and a simulated credit decision.",
-  "where_it_fits": "Accessible from the left-hand navigation under \"Request Loan\" after successful sign-in, this module is part of the post-login financial services allowing users to initiate new loan requests alongside other actions like Transfer Funds and Open New Account. It sits in the application lifecycle at the point where authenticated customers request credit and receive an immediate simulated approval or denial outcome.",
-  "assumed_state_on_entry": "User is logged in and has at least one existing account eligible to be selected as a collateral account with sufficient displayed balance"
+  "summary": "Provides an interface for applying for Personal, Auto, or Home loans with amount and down-payment validation, collateral selection and simulated credit approval that returns approval or denial reasons.",
+  "where_it_fits": "Available from the left-hand navigation as option \u2464 Request Loan after successful login and arrival at the account dashboard (Accounts Overview). It is part of the account services flow where users submit credit applications and, if approved, a loan account is created and shown alongside other accounts.",
+  "assumed_state_on_entry": "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present in the system."
 }
 </module_context>
 
@@ -262,9 +272,6 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Request_Loan_Form": {
       "type": "form",
-      "constraints": [
-        "Down_Payment < Loan_Amount"
-      ],
       "fields": {
         "Loan_Type": {
           "type": "radio",
@@ -272,52 +279,50 @@ If a `<workflows>` block is present in the input:
             "Personal",
             "Auto",
             "Home"
-          ],
-          "required": true
+          ]
         },
         "Loan_Amount": {
           "type": "number",
-          "required": true,
           "constraints": [
-            "if Loan_Type == Personal then min 1000 and max 50000",
-            "if Loan_Type == Auto then min 5000 and max 75000",
-            "if Loan_Type == Home then min 50000 and max 500000"
+            "when Loan_Type == Personal: minimum 1000, maximum 50000",
+            "when Loan_Type == Auto: minimum 5000, maximum 75000",
+            "when Loan_Type == Home: minimum 50000, maximum 500000",
+            "must be within the type-specific range above"
           ]
         },
-        "Down_Payment": {
+        "Down_Payment_Amount": {
           "type": "number",
-          "required": true,
           "constraints": [
-            "must be at least 10% of Loan_Amount"
+            "must be less than Loan_Amount",
+            "must be at least 10% of Loan_Amount (minimum down payment requirement)"
           ]
         },
         "Collateral_Account": {
           "type": "dropdown",
-          "required": true,
           "constraints": [
-            "selected account balance must be >= 20% of Loan_Amount",
-            "system validates the selected account has sufficient displayed balance for required collateral value"
+            "selected account must have sufficient available balance",
+            "collateral value must be at least 20% of Loan_Amount",
+            "system validates sufficient collateral funds and 20% collateral value"
           ]
         }
       },
       "submit_actions": [
         {
-          "action_name": "Submit Application",
+          "action_name": "Apply",
           "preconditions": [
-            "User is logged in and has at least one existing account eligible to be selected as a collateral account with sufficient displayed balance"
+            "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present in the system."
           ],
           "simulation": {
-            "approval_rate": "80%",
+            "credit_engine_approval_rate": "80%",
             "minimum_down_payment_percent": 10
           },
-          "on_success": "Loan approved and created successfully! Display created loan and associated account details. Note: No actual balance debits occur in this mock system.",
-          "on_failure": {
-            "message": "Loan application denied",
-            "possible_reasons": [
-              "Insufficient credit history",
-              "Inadequate collateral value"
-            ]
-          }
+          "on_success": "Loan approved and created successfully! (mock account details displayed; no actual balance debits occur in this mock system)",
+          "on_failure_reasons": [
+            "Insufficient credit history",
+            "Inadequate collateral value",
+            "Down payment below minimum requirement",
+            "Other credit risk factors"
+          ]
         }
       ]
     }
@@ -332,15 +337,16 @@ The loan page has interactive loan type cards (Personal, Auto, Home) with intere
 </description>
 
 <workflows>
-WF-001 | Submit Personal Loan application | actor: Authenticated User | branch: Loan_Type == Personal | terminal: Submit Application | on_success: Loan approved and created successfully! Display created loan and associated account details. Note: No actual balance debits occur in this mock system.
-WF-002 | Submit Auto Loan application | actor: Authenticated User | branch: Loan_Type == Auto | terminal: Submit Application | on_success: Loan approved and created successfully! Display created loan and associated account details. Note: No actual balance debits occur in this mock system.
-WF-003 | Submit Home Loan application | actor: Authenticated User | branch: Loan_Type == Home | terminal: Submit Application | on_success: Loan approved and created successfully! Display created loan and associated account details. Note: No actual balance debits occur in this mock system.
+WF-001 | Apply (base submission) | actor: User | branch: none | terminal: Apply | on_success: Loan approved and created successfully! (mock account details displayed; no actual balance debits occur in this mock system)
+WF-002 | Apply with Loan_Type == Personal (Loan Amount validation: $1,000-$50,000) | actor: User | branch: Loan_Type == Personal | terminal: Apply | on_success: Loan approved and created successfully! (mock account details displayed; no actual balance debits occur in this mock system)
+WF-003 | Apply with Loan_Type == Auto (Loan Amount validation: $5,000-$75,000) | actor: User | branch: Loan_Type == Auto | terminal: Apply | on_success: Loan approved and created successfully! (mock account details displayed; no actual balance debits occur in this mock system)
+WF-004 | Apply with Loan_Type == Home (Loan Amount validation: $50,000-$500,000) | actor: User | branch: Loan_Type == Home | terminal: Apply | on_success: Loan approved and created successfully! (mock account details displayed; no actual balance debits occur in this mock system)
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:04:26] Test-Negative - LLM RESPONSE
+[22:24:03] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Request Loan",
@@ -349,211 +355,189 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access Request Loan page",
-      "preconditions": ["User is not signed in"],
-      "steps": [
-        "1. Open the Request Loan page URL in the browser"
+      "test_case": "Unauthenticated user attempts to open Request Loan page",
+      "preconditions": [
+        "User is not logged in"
       ],
-      "expected_result": "User is redirected to the login page / sign-in screen; Request Loan page content is not visible",
+      "steps": [
+        "1. From the application root, click the navigation item 'Request Loan'"
+      ],
+      "expected_result": "User is prevented from accessing the Request Loan page; the UI redirects to the login screen or shows an access-denied state (visible login prompt or message). No loan form is shown.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": null,
-      "test_case": "Submit with ALL required fields empty",
-      "preconditions": ["User is signed in", "User has at least one existing account (state of accounts irrelevant for this validation)"],
-      "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Do not select any option in the Loan_Type radio buttons",
-        "3. Leave the Loan_Amount field blank",
-        "4. Leave the Down_Payment field blank",
-        "5. Leave the Collateral_Account dropdown unselected",
-        "6. Click the 'Submit Application' button"
+      "wf_ref": "WF-002",
+      "test_case": "Personal loan: Loan Amount below minimum is rejected",
+      "preconditions": [
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present"
       ],
-      "expected_result": "Form does not submit; inline validation errors appear on required fields: Loan_Type shows 'This field is required' (or similar) inline; Loan_Amount shows 'This field is required' inline; Down_Payment shows 'This field is required' inline; Collateral_Account shows 'This field is required' inline; no loan is created",
+      "steps": [
+        "1. Click Request Loan in the navigation",
+        "2. Select the 'Personal' loan type card",
+        "3. Enter <amount below minimum for Personal loan (less than 1000)> into the Loan Amount field",
+        "4. Enter <valid down payment between 10% and less than Loan Amount> into the Down Payment field",
+        "5. Select <collateral account with sufficient balance> in the Collateral Account dropdown",
+        "6. Click the Apply button"
+      ],
+      "expected_result": "Form does not submit; the Loan Amount field displays an inline validation error indicating the amount must be within the Personal loan range (Personal: minimum 1,000, maximum 50,000). No loan is created or shown.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": null,
-      "test_case": "Required radio (Loan_Type) left blank and submit",
-      "preconditions": ["User is signed in"],
-      "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Leave Loan_Type unselected",
-        "3. Fill valid values in other required fields: enter <valid Loan_Amount>, enter <valid Down_Payment>, select <valid Collateral_Account>",
-        "4. Click 'Submit Application'"
+      "wf_ref": "WF-003",
+      "test_case": "Auto loan: Loan Amount above maximum is rejected",
+      "preconditions": [
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present"
       ],
-      "expected_result": "Form does not submit; Loan_Type field displays an inline validation error indicating it is required (e.g., 'Please select a loan type'); no loan is created",
+      "steps": [
+        "1. Click Request Loan in the navigation",
+        "2. Select the 'Auto' loan type card",
+        "3. Enter <amount exceeding Auto maximum (greater than 75000)> into the Loan Amount field",
+        "4. Enter <valid down payment at least 10% and less than Loan Amount> into the Down Payment field",
+        "5. Select <collateral account with sufficient balance> in the Collateral Account dropdown",
+        "6. Click the Apply button"
+      ],
+      "expected_result": "Form does not submit; the Loan Amount field displays an inline validation error indicating the amount must be within the Auto loan range (Auto: minimum 5,000, maximum 75,000). No loan is created or shown.",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": null,
-      "test_case": "Required number field (Loan_Amount) left blank and submit",
-      "preconditions": ["User is signed in"],
-      "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select a Loan_Type (e.g., 'Personal')",
-        "3. Leave Loan_Amount blank",
-        "4. Enter <valid Down_Payment> and select <valid Collateral_Account>",
-        "5. Click 'Submit Application'"
+      "wf_ref": "WF-004",
+      "test_case": "Home loan: Loan Amount below minimum is rejected",
+      "preconditions": [
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present"
       ],
-      "expected_result": "Form does not submit; Loan_Amount field displays an inline validation error indicating it is required (e.g., 'This field is required'); no loan is created",
+      "steps": [
+        "1. Click Request Loan in the navigation",
+        "2. Select the 'Home' loan type card",
+        "3. Enter <amount below minimum for Home loan (less than 50000)> into the Loan Amount field",
+        "4. Enter <valid down payment at least 10% and less than Loan Amount> into the Down Payment field",
+        "5. Select <collateral account with sufficient balance> in the Collateral Account dropdown",
+        "6. Click the Apply button"
+      ],
+      "expected_result": "Form does not submit; the Loan Amount field displays an inline validation error indicating the amount must be within the Home loan range (Home: minimum 50,000, maximum 500,000). No loan is created or shown.",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": null,
-      "test_case": "Required dropdown (Collateral_Account) left unselected and submit",
-      "preconditions": ["User is signed in", "User has accounts available in dropdown"],
-      "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select a Loan_Type (e.g., 'Auto')",
-        "3. Enter <valid Loan_Amount> and <valid Down_Payment>",
-        "4. Leave Collateral_Account unselected",
-        "5. Click 'Submit Application'"
+      "wf_ref": "WF-001",
+      "test_case": "Down Payment below required 10% minimum is rejected",
+      "preconditions": [
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present"
       ],
-      "expected_result": "Form does not submit; Collateral_Account dropdown displays an inline validation error indicating selection is required (e.g., 'Please select a collateral account'); no loan is created",
+      "steps": [
+        "1. Click Request Loan in the navigation",
+        "2. Select any loan type (e.g., 'Personal')",
+        "3. Enter <valid Loan Amount within the selected type range> into the Loan Amount field",
+        "4. Enter <Down Payment less than 10% of the entered Loan Amount> into the Down Payment field",
+        "5. Select <collateral account with sufficient balance> in the Collateral Account dropdown",
+        "6. Click the Apply button"
+      ],
+      "expected_result": "Form does not submit; the Down Payment field displays an inline validation error indicating the down payment must be at least 10% of the Loan Amount. No loan is created or shown.",
       "priority": "high"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Loan_Amount field rejects non-numeric input (format violation)",
-      "preconditions": ["User is signed in"],
-      "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select Loan_Type 'Personal'",
-        "3. Enter <non-numeric value> into the Loan_Amount field",
-        "4. Enter <valid Down_Payment> and select <valid Collateral_Account>",
-        "5. Click 'Submit Application'"
+      "test_case": "Down Payment equal to or greater than Loan Amount is rejected",
+      "preconditions": [
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present"
       ],
-      "expected_result": "Form does not submit; Loan_Amount field displays an inline format validation error such as 'Enter a valid number' or 'Must be a number'; no loan is created",
-      "priority": "medium"
+      "steps": [
+        "1. Click Request Loan in the navigation",
+        "2. Select any loan type (e.g., 'Auto')",
+        "3. Enter <valid Loan Amount within the selected type range> into the Loan Amount field",
+        "4. Enter <Down Payment greater than or equal to the entered Loan Amount> into the Down Payment field",
+        "5. Select <collateral account with sufficient balance> in the Collateral Account dropdown",
+        "6. Click the Apply button"
+      ],
+      "expected_result": "Form does not submit; the Down Payment field displays an inline validation error indicating the down payment must be less than the Loan Amount. No loan is created or shown.",
+      "priority": "high"
     },
     {
       "tc_id": "N-007",
       "wf_ref": "WF-001",
-      "test_case": "Personal loan: Loan_Amount below Personal minimum is rejected",
-      "preconditions": ["User is signed in"],
-      "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select Loan_Type 'Personal'",
-        "3. Enter <amount below Personal minimum> in the Loan_Amount field",
-        "4. Enter <valid Down_Payment that satisfies 10% and is < Loan_Amount>",
-        "5. Select <collateral account with sufficient balance for the provided Loan_Amount>",
-        "6. Click 'Submit Application'"
+      "test_case": "Selected Collateral Account has insufficient available balance",
+      "preconditions": [
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present",
+        "At least one account exists whose available balance is less than the required collateral amount for the requested loan"
       ],
-      "expected_result": "Form does not submit; Loan_Amount field displays an inline validation error: 'Loan Amount must be between $1,000 and $50,000 for Personal loans' (or equivalent); no loan is created",
+      "steps": [
+        "1. Click Request Loan in the navigation",
+        "2. Select any loan type (e.g., 'Personal')",
+        "3. Enter <valid Loan Amount within the selected type range> into the Loan Amount field",
+        "4. Enter <valid Down Payment at least 10% and less than Loan Amount> into the Down Payment field",
+        "5. Select <an account whose available balance is insufficient> in the Collateral Account dropdown",
+        "6. Click the Apply button"
+      ],
+      "expected_result": "Form does not submit; the Collateral Account field displays an inline validation error indicating the selected account does not have sufficient available balance for collateral. No loan is created or shown.",
       "priority": "high"
     },
     {
       "tc_id": "N-008",
-      "wf_ref": "WF-002",
-      "test_case": "Auto loan: Loan_Amount above Auto maximum is rejected",
-      "preconditions": ["User is signed in"],
-      "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select Loan_Type 'Auto'",
-        "3. Enter <amount exceeding Auto maximum> in the Loan_Amount field",
-        "4. Enter <valid Down_Payment that satisfies 10% and is < Loan_Amount>",
-        "5. Select <collateral account with sufficient balance for the provided Loan_Amount>",
-        "6. Click 'Submit Application'"
+      "wf_ref": "WF-001",
+      "test_case": "Selected collateral value is below 20% of Loan Amount",
+      "preconditions": [
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present",
+        "At least one account exists whose collateral value would be less than 20% of the intended Loan Amount"
       ],
-      "expected_result": "Form does not submit; Loan_Amount field displays an inline validation error: 'Loan Amount must be between $5,000 and $75,000 for Auto loans' (or equivalent); no loan is created",
+      "steps": [
+        "1. Click Request Loan in the navigation",
+        "2. Select any loan type (e.g., 'Home')",
+        "3. Enter <valid Loan Amount within the selected type range> into the Loan Amount field",
+        "4. Enter <valid Down Payment at least 10% and less than Loan Amount> into the Down Payment field",
+        "5. Select <an account whose collateral value is less than 20% of the Loan Amount> in the Collateral Account dropdown",
+        "6. Click the Apply button"
+      ],
+      "expected_result": "Form does not submit; the Collateral Account field displays an inline validation error indicating the collateral value must be at least 20% of the Loan Amount. No loan is created or shown.",
       "priority": "high"
     },
     {
       "tc_id": "N-009",
-      "wf_ref": "WF-003",
-      "test_case": "Home loan: Loan_Amount below Home minimum is rejected",
-      "preconditions": ["User is signed in"],
-      "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select Loan_Type 'Home'",
-        "3. Enter <amount below Home minimum> in the Loan_Amount field",
-        "4. Enter <valid Down_Payment that satisfies 10% and is < Loan_Amount>",
-        "5. Select <collateral account with sufficient balance for the provided Loan_Amount>",
-        "6. Click 'Submit Application'"
+      "wf_ref": "WF-001",
+      "test_case": "Non-numeric input entered into Loan Amount is rejected",
+      "preconditions": [
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present"
       ],
-      "expected_result": "Form does not submit; Loan_Amount field displays an inline validation error: 'Loan Amount must be between $50,000 and $500,000 for Home loans' (or equivalent); no loan is created",
-      "priority": "high"
+      "steps": [
+        "1. Click Request Loan in the navigation",
+        "2. Select any loan type (e.g., 'Personal')",
+        "3. Enter <non-numeric input> into the Loan Amount field",
+        "4. Click the Apply button"
+      ],
+      "expected_result": "Form does not submit; the Loan Amount field displays an inline validation error indicating a numeric value is required. No loan is created or shown.",
+      "priority": "medium"
     },
     {
       "tc_id": "N-010",
       "wf_ref": null,
-      "test_case": "Down_Payment less than required 10% is rejected",
-      "preconditions": ["User is signed in"],
-      "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select a Loan_Type (e.g., 'Personal')",
-        "3. Enter <valid Loan_Amount>",
-        "4. Enter <Down_Payment less than 10% of Loan_Amount> in Down_Payment field",
-        "5. Select <collateral account with sufficient balance for the provided Loan_Amount>",
-        "6. Click 'Submit Application'"
+      "test_case": "Submit Apply with all main form fields left empty",
+      "preconditions": [
+        "User is logged in and on the dashboard"
       ],
-      "expected_result": "Form does not submit; Down_Payment field displays an inline validation error: 'Down Payment must be at least 10% of Loan Amount' (or equivalent); no loan is created",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-011",
-      "wf_ref": null,
-      "test_case": "Down_Payment equal to or greater than Loan_Amount is rejected (violates Down_Payment < Loan_Amount)",
-      "preconditions": ["User is signed in"],
       "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select a Loan_Type (e.g., 'Auto')",
-        "3. Enter <valid Loan_Amount>",
-        "4. Enter <Down_Payment equal to or greater than the Loan_Amount> in Down_Payment field",
-        "5. Select <collateral account with sufficient balance for the provided Loan_Amount>",
-        "6. Click 'Submit Application'"
+        "1. Click Request Loan in the navigation",
+        "2. Ensure no Loan Type is selected",
+        "3. Leave Loan Amount blank",
+        "4. Leave Down Payment blank",
+        "5. Leave Collateral Account unselected",
+        "6. Click the Apply button"
       ],
-      "expected_result": "Form does not submit; Down_Payment field displays an inline validation error: 'Down Payment must be less than Loan Amount' (or equivalent); no loan is created",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-012",
-      "wf_ref": "WF-002",
-      "test_case": "Selected Collateral_Account with balance below required 20% blocks submission",
-      "preconditions": ["User is signed in", "User has at least one account with displayed balance but that balance is less than required collateral for the chosen Loan_Amount"],
-      "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select Loan_Type 'Auto'",
-        "3. Enter <valid Loan_Amount>",
-        "4. Enter <valid Down_Payment of at least 10% and < Loan_Amount>",
-        "5. Select <collateral account whose displayed balance is less than 20% of Loan_Amount>",
-        "6. Click 'Submit Application'"
-      ],
-      "expected_result": "Form does not submit; Collateral_Account field displays a blocking validation error: 'Selected account balance is insufficient; must be at least 20% of Loan Amount' (or equivalent); no loan is created",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-013",
-      "wf_ref": null,
-      "test_case": "Submit Application when precondition fails: user has no eligible collateral account",
-      "preconditions": ["User is signed in", "User has no account whose displayed balance meets the collateral requirement for any Loan_Amount (i.e., no eligible collateral account exists)"],
-      "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select a Loan_Type (e.g., 'Personal')",
-        "3. Enter <valid Loan_Amount> and <valid Down_Payment>",
-        "4. Observe Collateral_Account dropdown shows accounts but none are eligible (or dropdown indicates no eligible accounts)",
-        "5. Click 'Submit Application'"
-      ],
-      "expected_result": "Submission is blocked; page shows a visible blocking message such as 'No eligible collateral account available' (or equivalent) and the application is not submitted; no loan is created",
+      "expected_result": "Form does not submit; inline validation errors appear on required fields indicating they must be filled: Loan Type, Loan Amount, Down Payment, and Collateral Account. No loan is created or shown.",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 13,
-    "high_priority": 11,
+    "total": 10,
+    "high_priority": 8,
     "medium_priority": 2,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:04:26] Test-Negative - PARSED JSON
+[22:24:03] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Request Loan",
@@ -562,234 +546,182 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access Request Loan page",
+      "test_case": "Unauthenticated user attempts to open Request Loan page",
       "preconditions": [
-        "User is not signed in"
+        "User is not logged in"
       ],
       "steps": [
-        "1. Open the Request Loan page URL in the browser"
+        "1. From the application root, click the navigation item 'Request Loan'"
       ],
-      "expected_result": "User is redirected to the login page / sign-in screen; Request Loan page content is not visible",
+      "expected_result": "User is prevented from accessing the Request Loan page; the UI redirects to the login screen or shows an access-denied state (visible login prompt or message). No loan form is shown.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": null,
-      "test_case": "Submit with ALL required fields empty",
+      "wf_ref": "WF-002",
+      "test_case": "Personal loan: Loan Amount below minimum is rejected",
       "preconditions": [
-        "User is signed in",
-        "User has at least one existing account (state of accounts irrelevant for this validation)"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present"
       ],
       "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Do not select any option in the Loan_Type radio buttons",
-        "3. Leave the Loan_Amount field blank",
-        "4. Leave the Down_Payment field blank",
-        "5. Leave the Collateral_Account dropdown unselected",
-        "6. Click the 'Submit Application' button"
+        "1. Click Request Loan in the navigation",
+        "2. Select the 'Personal' loan type card",
+        "3. Enter <amount below minimum for Personal loan (less than 1000)> into the Loan Amount field",
+        "4. Enter <valid down payment between 10% and less than Loan Amount> into the Down Payment field",
+        "5. Select <collateral account with sufficient balance> in the Collateral Account dropdown",
+        "6. Click the Apply button"
       ],
-      "expected_result": "Form does not submit; inline validation errors appear on required fields: Loan_Type shows 'This field is required' (or similar) inline; Loan_Amount shows 'This field is required' inline; Down_Payment shows 'This field is required' inline; Collateral_Account shows 'This field is required' inline; no loan is created",
+      "expected_result": "Form does not submit; the Loan Amount field displays an inline validation error indicating the amount must be within the Personal loan range (Personal: minimum 1,000, maximum 50,000). No loan is created or shown.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": null,
-      "test_case": "Required radio (Loan_Type) left blank and submit",
+      "wf_ref": "WF-003",
+      "test_case": "Auto loan: Loan Amount above maximum is rejected",
       "preconditions": [
-        "User is signed in"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present"
       ],
       "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Leave Loan_Type unselected",
-        "3. Fill valid values in other required fields: enter <valid Loan_Amount>, enter <valid Down_Payment>, select <valid Collateral_Account>",
-        "4. Click 'Submit Application'"
+        "1. Click Request Loan in the navigation",
+        "2. Select the 'Auto' loan type card",
+        "3. Enter <amount exceeding Auto maximum (greater than 75000)> into the Loan Amount field",
+        "4. Enter <valid down payment at least 10% and less than Loan Amount> into the Down Payment field",
+        "5. Select <collateral account with sufficient balance> in the Collateral Account dropdown",
+        "6. Click the Apply button"
       ],
-      "expected_result": "Form does not submit; Loan_Type field displays an inline validation error indicating it is required (e.g., 'Please select a loan type'); no loan is created",
+      "expected_result": "Form does not submit; the Loan Amount field displays an inline validation error indicating the amount must be within the Auto loan range (Auto: minimum 5,000, maximum 75,000). No loan is created or shown.",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": null,
-      "test_case": "Required number field (Loan_Amount) left blank and submit",
+      "wf_ref": "WF-004",
+      "test_case": "Home loan: Loan Amount below minimum is rejected",
       "preconditions": [
-        "User is signed in"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present"
       ],
       "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select a Loan_Type (e.g., 'Personal')",
-        "3. Leave Loan_Amount blank",
-        "4. Enter <valid Down_Payment> and select <valid Collateral_Account>",
-        "5. Click 'Submit Application'"
+        "1. Click Request Loan in the navigation",
+        "2. Select the 'Home' loan type card",
+        "3. Enter <amount below minimum for Home loan (less than 50000)> into the Loan Amount field",
+        "4. Enter <valid down payment at least 10% and less than Loan Amount> into the Down Payment field",
+        "5. Select <collateral account with sufficient balance> in the Collateral Account dropdown",
+        "6. Click the Apply button"
       ],
-      "expected_result": "Form does not submit; Loan_Amount field displays an inline validation error indicating it is required (e.g., 'This field is required'); no loan is created",
+      "expected_result": "Form does not submit; the Loan Amount field displays an inline validation error indicating the amount must be within the Home loan range (Home: minimum 50,000, maximum 500,000). No loan is created or shown.",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": null,
-      "test_case": "Required dropdown (Collateral_Account) left unselected and submit",
+      "wf_ref": "WF-001",
+      "test_case": "Down Payment below required 10% minimum is rejected",
       "preconditions": [
-        "User is signed in",
-        "User has accounts available in dropdown"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present"
       ],
       "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select a Loan_Type (e.g., 'Auto')",
-        "3. Enter <valid Loan_Amount> and <valid Down_Payment>",
-        "4. Leave Collateral_Account unselected",
-        "5. Click 'Submit Application'"
+        "1. Click Request Loan in the navigation",
+        "2. Select any loan type (e.g., 'Personal')",
+        "3. Enter <valid Loan Amount within the selected type range> into the Loan Amount field",
+        "4. Enter <Down Payment less than 10% of the entered Loan Amount> into the Down Payment field",
+        "5. Select <collateral account with sufficient balance> in the Collateral Account dropdown",
+        "6. Click the Apply button"
       ],
-      "expected_result": "Form does not submit; Collateral_Account dropdown displays an inline validation error indicating selection is required (e.g., 'Please select a collateral account'); no loan is created",
+      "expected_result": "Form does not submit; the Down Payment field displays an inline validation error indicating the down payment must be at least 10% of the Loan Amount. No loan is created or shown.",
       "priority": "high"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Loan_Amount field rejects non-numeric input (format violation)",
+      "test_case": "Down Payment equal to or greater than Loan Amount is rejected",
       "preconditions": [
-        "User is signed in"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present"
       ],
       "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select Loan_Type 'Personal'",
-        "3. Enter <non-numeric value> into the Loan_Amount field",
-        "4. Enter <valid Down_Payment> and select <valid Collateral_Account>",
-        "5. Click 'Submit Application'"
+        "1. Click Request Loan in the navigation",
+        "2. Select any loan type (e.g., 'Auto')",
+        "3. Enter <valid Loan Amount within the selected type range> into the Loan Amount field",
+        "4. Enter <Down Payment greater than or equal to the entered Loan Amount> into the Down Payment field",
+        "5. Select <collateral account with sufficient balance> in the Collateral Account dropdown",
+        "6. Click the Apply button"
       ],
-      "expected_result": "Form does not submit; Loan_Amount field displays an inline format validation error such as 'Enter a valid number' or 'Must be a number'; no loan is created",
-      "priority": "medium"
+      "expected_result": "Form does not submit; the Down Payment field displays an inline validation error indicating the down payment must be less than the Loan Amount. No loan is created or shown.",
+      "priority": "high"
     },
     {
       "tc_id": "N-007",
       "wf_ref": "WF-001",
-      "test_case": "Personal loan: Loan_Amount below Personal minimum is rejected",
+      "test_case": "Selected Collateral Account has insufficient available balance",
       "preconditions": [
-        "User is signed in"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present",
+        "At least one account exists whose available balance is less than the required collateral amount for the requested loan"
       ],
       "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select Loan_Type 'Personal'",
-        "3. Enter <amount below Personal minimum> in the Loan_Amount field",
-        "4. Enter <valid Down_Payment that satisfies 10% and is < Loan_Amount>",
-        "5. Select <collateral account with sufficient balance for the provided Loan_Amount>",
-        "6. Click 'Submit Application'"
+        "1. Click Request Loan in the navigation",
+        "2. Select any loan type (e.g., 'Personal')",
+        "3. Enter <valid Loan Amount within the selected type range> into the Loan Amount field",
+        "4. Enter <valid Down Payment at least 10% and less than Loan Amount> into the Down Payment field",
+        "5. Select <an account whose available balance is insufficient> in the Collateral Account dropdown",
+        "6. Click the Apply button"
       ],
-      "expected_result": "Form does not submit; Loan_Amount field displays an inline validation error: 'Loan Amount must be between $1,000 and $50,000 for Personal loans' (or equivalent); no loan is created",
+      "expected_result": "Form does not submit; the Collateral Account field displays an inline validation error indicating the selected account does not have sufficient available balance for collateral. No loan is created or shown.",
       "priority": "high"
     },
     {
       "tc_id": "N-008",
-      "wf_ref": "WF-002",
-      "test_case": "Auto loan: Loan_Amount above Auto maximum is rejected",
+      "wf_ref": "WF-001",
+      "test_case": "Selected collateral value is below 20% of Loan Amount",
       "preconditions": [
-        "User is signed in"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present",
+        "At least one account exists whose collateral value would be less than 20% of the intended Loan Amount"
       ],
       "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select Loan_Type 'Auto'",
-        "3. Enter <amount exceeding Auto maximum> in the Loan_Amount field",
-        "4. Enter <valid Down_Payment that satisfies 10% and is < Loan_Amount>",
-        "5. Select <collateral account with sufficient balance for the provided Loan_Amount>",
-        "6. Click 'Submit Application'"
+        "1. Click Request Loan in the navigation",
+        "2. Select any loan type (e.g., 'Home')",
+        "3. Enter <valid Loan Amount within the selected type range> into the Loan Amount field",
+        "4. Enter <valid Down Payment at least 10% and less than Loan Amount> into the Down Payment field",
+        "5. Select <an account whose collateral value is less than 20% of the Loan Amount> in the Collateral Account dropdown",
+        "6. Click the Apply button"
       ],
-      "expected_result": "Form does not submit; Loan_Amount field displays an inline validation error: 'Loan Amount must be between $5,000 and $75,000 for Auto loans' (or equivalent); no loan is created",
+      "expected_result": "Form does not submit; the Collateral Account field displays an inline validation error indicating the collateral value must be at least 20% of the Loan Amount. No loan is created or shown.",
       "priority": "high"
     },
     {
       "tc_id": "N-009",
-      "wf_ref": "WF-003",
-      "test_case": "Home loan: Loan_Amount below Home minimum is rejected",
+      "wf_ref": "WF-001",
+      "test_case": "Non-numeric input entered into Loan Amount is rejected",
       "preconditions": [
-        "User is signed in"
+        "User is logged in and on the dashboard with at least one existing account available to select as collateral and basic customer/credit profile data present"
       ],
       "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select Loan_Type 'Home'",
-        "3. Enter <amount below Home minimum> in the Loan_Amount field",
-        "4. Enter <valid Down_Payment that satisfies 10% and is < Loan_Amount>",
-        "5. Select <collateral account with sufficient balance for the provided Loan_Amount>",
-        "6. Click 'Submit Application'"
+        "1. Click Request Loan in the navigation",
+        "2. Select any loan type (e.g., 'Personal')",
+        "3. Enter <non-numeric input> into the Loan Amount field",
+        "4. Click the Apply button"
       ],
-      "expected_result": "Form does not submit; Loan_Amount field displays an inline validation error: 'Loan Amount must be between $50,000 and $500,000 for Home loans' (or equivalent); no loan is created",
-      "priority": "high"
+      "expected_result": "Form does not submit; the Loan Amount field displays an inline validation error indicating a numeric value is required. No loan is created or shown.",
+      "priority": "medium"
     },
     {
       "tc_id": "N-010",
       "wf_ref": null,
-      "test_case": "Down_Payment less than required 10% is rejected",
+      "test_case": "Submit Apply with all main form fields left empty",
       "preconditions": [
-        "User is signed in"
+        "User is logged in and on the dashboard"
       ],
       "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select a Loan_Type (e.g., 'Personal')",
-        "3. Enter <valid Loan_Amount>",
-        "4. Enter <Down_Payment less than 10% of Loan_Amount> in Down_Payment field",
-        "5. Select <collateral account with sufficient balance for the provided Loan_Amount>",
-        "6. Click 'Submit Application'"
+        "1. Click Request Loan in the navigation",
+        "2. Ensure no Loan Type is selected",
+        "3. Leave Loan Amount blank",
+        "4. Leave Down Payment blank",
+        "5. Leave Collateral Account unselected",
+        "6. Click the Apply button"
       ],
-      "expected_result": "Form does not submit; Down_Payment field displays an inline validation error: 'Down Payment must be at least 10% of Loan Amount' (or equivalent); no loan is created",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-011",
-      "wf_ref": null,
-      "test_case": "Down_Payment equal to or greater than Loan_Amount is rejected (violates Down_Payment < Loan_Amount)",
-      "preconditions": [
-        "User is signed in"
-      ],
-      "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select a Loan_Type (e.g., 'Auto')",
-        "3. Enter <valid Loan_Amount>",
-        "4. Enter <Down_Payment equal to or greater than the Loan_Amount> in Down_Payment field",
-        "5. Select <collateral account with sufficient balance for the provided Loan_Amount>",
-        "6. Click 'Submit Application'"
-      ],
-      "expected_result": "Form does not submit; Down_Payment field displays an inline validation error: 'Down Payment must be less than Loan Amount' (or equivalent); no loan is created",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-012",
-      "wf_ref": "WF-002",
-      "test_case": "Selected Collateral_Account with balance below required 20% blocks submission",
-      "preconditions": [
-        "User is signed in",
-        "User has at least one account with displayed balance but that balance is less than required collateral for the chosen Loan_Amount"
-      ],
-      "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select Loan_Type 'Auto'",
-        "3. Enter <valid Loan_Amount>",
-        "4. Enter <valid Down_Payment of at least 10% and < Loan_Amount>",
-        "5. Select <collateral account whose displayed balance is less than 20% of Loan_Amount>",
-        "6. Click 'Submit Application'"
-      ],
-      "expected_result": "Form does not submit; Collateral_Account field displays a blocking validation error: 'Selected account balance is insufficient; must be at least 20% of Loan Amount' (or equivalent); no loan is created",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-013",
-      "wf_ref": null,
-      "test_case": "Submit Application when precondition fails: user has no eligible collateral account",
-      "preconditions": [
-        "User is signed in",
-        "User has no account whose displayed balance meets the collateral requirement for any Loan_Amount (i.e., no eligible collateral account exists)"
-      ],
-      "steps": [
-        "1. Navigate to the Request Loan page",
-        "2. Select a Loan_Type (e.g., 'Personal')",
-        "3. Enter <valid Loan_Amount> and <valid Down_Payment>",
-        "4. Observe Collateral_Account dropdown shows accounts but none are eligible (or dropdown indicates no eligible accounts)",
-        "5. Click 'Submit Application'"
-      ],
-      "expected_result": "Submission is blocked; page shows a visible blocking message such as 'No eligible collateral account available' (or equivalent) and the application is not submitted; no loan is created",
+      "expected_result": "Form does not submit; inline validation errors appear on required fields indicating they must be filled: Loan Type, Loan Amount, Down Payment, and Collateral Account. No loan is created or shown.",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 13,
-    "high_priority": 11,
+    "total": 10,
+    "high_priority": 8,
     "medium_priority": 2,
     "low_priority": 0
   }

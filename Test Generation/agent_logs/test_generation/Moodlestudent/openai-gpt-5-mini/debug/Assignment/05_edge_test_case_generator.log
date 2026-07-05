@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:34.399908
+DEBUG SESSION STARTED: 2026-07-04T22:41:48.090335
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Edge - SYSTEM PROMPT
+[22:41:48] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Edge - USER PROMPT
+[22:41:48] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 7,
   "module_title": "Assignment",
-  "summary": "Displays an individual course assignment's open/due dates, full description, submission form options, submission and grading status, and any teacher feedback.",
-  "where_it_fits": "This is an activity-level page within a course, reached from the Course Page (via the Course tab or the Course Index sidebar) or via breadcrumbs when viewing an activity. It surfaces assignment-specific submission and grading information and ties into the course's Activities and Grades areas.",
-  "assumed_state_on_entry": "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them."
+  "summary": "Displays an individual assignment\u2019s details, submission interface, and submission/grading status including dates, description, student submissions, and teacher feedback.",
+  "where_it_fits": "Accessible from a Course Page via the Activities tab or the Course Index sidebar when viewing a course; it is the activity-level view where students submit work and later review grades and feedback as part of the course workflow.",
+  "assumed_state_on_entry": "Logged in as a course participant (student) enrolled in the course, viewing the specific course with the assignment published and visible in the course\u2019s activity list."
 }
 </module_context>
 
@@ -243,37 +257,42 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Assignment",
   "components": {
-    "Submission_Form": {
+    "Assignment_Submission_Form": {
       "type": "form",
       "fields": {
-        "Online_Text_Editor": {
+        "Online_Text": {
           "type": "unspecified",
-          "visible_when": "assignment allows online text editor"
+          "visible_when": "assignment configuration allows an online text editor"
         },
         "File_Upload": {
           "type": "file_upload",
-          "visible_when": "assignment allows file upload"
+          "visible_when": "assignment configuration allows file uploads"
         }
       },
       "submit_actions": [
         {
           "action_name": "Submit",
-          "on_success": "creates submission and updates submission status to 'Submitted for grading'",
+          "on_success": "creates or updates the student's submission and updates submission status",
           "preconditions": [
-            "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them."
+            "Logged in as a course participant (student) enrolled in the course, viewing the specific course with the assignment published and visible in the course\u2019s activity list."
           ]
         }
       ]
     },
-    "Submission_State_Actions": {
+    "Assignment_Action_Bar": {
       "type": "state_bound_action_bar",
+      "preconditions": [
+        "Logged in as a course participant (student) enrolled in the course, viewing the specific course with the assignment published and visible in the course\u2019s activity list."
+      ],
       "states": {
         "No submissions have been made yet": {
           "available_actions": [
             {
               "action_name": "Add submission",
-              "on_success": "opens submission form",
-              "opens_component": "Submission_Form"
+              "opens_form": "Assignment_Submission_Form",
+              "preconditions": [
+                "Logged in as a course participant (student) enrolled in the course, viewing the specific course with the assignment published and visible in the course\u2019s activity list."
+              ]
             }
           ]
         },
@@ -281,20 +300,15 @@ If a `<workflows>` block is present in the input:
           "available_actions": [
             {
               "action_name": "View submission",
-              "preconditions": [
-                "due date has not passed",
-                "teacher permits resubmission"
-              ],
-              "on_success": "shows submitted content"
+              "visible_when": "submission exists"
             },
             {
               "action_name": "Edit submission",
+              "opens_form": "Assignment_Submission_Form",
+              "visible_when": "submission exists and due date has not passed and teacher permits resubmission",
               "preconditions": [
-                "due date has not passed",
-                "teacher permits resubmission"
-              ],
-              "on_success": "opens submission form for editing",
-              "opens_component": "Submission_Form"
+                "Logged in as a course participant (student) enrolled in the course, viewing the specific course with the assignment published and visible in the course\u2019s activity list."
+              ]
             }
           ]
         },
@@ -302,7 +316,7 @@ If a `<workflows>` block is present in the input:
           "available_actions": [
             {
               "action_name": "View submission",
-              "on_success": "shows submitted content and grading feedback"
+              "visible_when": "submission exists"
             }
           ]
         }
@@ -322,19 +336,19 @@ The Assignment page displays the assignment's Opened date, Due date, and full De
 </description>
 
 <workflows>
-WF-001 | Open submission form from 'No submissions have been made yet' state | actor: <role> | branch: entity_state == No submissions have been made yet | terminal: Add submission | on_success: opens submission form
-WF-002 | View submission while 'Submitted for grading' and resubmission allowed (due date not passed) | actor: <role> | branch: entity_state == Submitted for grading AND due date has not passed AND teacher permits resubmission | terminal: View submission | on_success: shows submitted content
-WF-003 | Edit submission while 'Submitted for grading' and resubmission allowed (due date not passed) | actor: <role> | branch: entity_state == Submitted for grading AND due date has not passed AND teacher permits resubmission | terminal: Edit submission | on_success: opens submission form for editing
-WF-004 | View submission after assignment is Graded | actor: <role> | branch: entity_state == Graded | terminal: View submission | on_success: shows submitted content and grading feedback
-WF-005 | Submit using Online Text Editor only | actor: <role> | branch: assignment allows online text editor AND assignment does not allow file upload | terminal: Submit | on_success: creates submission and updates submission status to 'Submitted for grading'
-WF-006 | Submit using File Upload only | actor: <role> | branch: assignment allows file upload AND assignment does not allow online text editor | terminal: Submit | on_success: creates submission and updates submission status to 'Submitted for grading'
-WF-007 | Submit using both Online Text Editor and File Upload | actor: <role> | branch: assignment allows online text editor AND assignment allows file upload | terminal: Submit | on_success: creates submission and updates submission status to 'Submitted for grading'
+WF-001 | Open Add submission (no submissions yet) | actor: student | branch: entity_state == No submissions have been made yet | terminal: Add submission | on_success: opens Assignment_Submission_Form
+WF-002 | Submit (base - no specific submission-type revealed) | actor: student | branch: none | terminal: Submit | on_success: creates or updates the student's submission and updates submission status
+WF-003 | Submit with online text editor visible | actor: student | branch: Online_Text is visible | terminal: Submit | on_success: creates or updates the student's submission and updates submission status
+WF-004 | Submit with file upload area visible | actor: student | branch: File_Upload is visible | terminal: Submit | on_success: creates or updates the student's submission and updates submission status
+WF-005 | View submission (submitted for grading) | actor: student | branch: entity_state == Submitted for grading AND submission exists | terminal: View submission | on_success: submission details displayed
+WF-006 | Edit submission (submitted for grading, resubmission allowed) | actor: student | branch: entity_state == Submitted for grading AND submission exists AND due date has not passed AND teacher permits resubmission | terminal: Edit submission | on_success: opens Assignment_Submission_Form for editing
+WF-007 | View submission (graded) | actor: student | branch: entity_state == Graded AND submission exists | terminal: View submission | on_success: submission and grade/feedback displayed
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:14:21] Test-Edge - LLM RESPONSE
+[22:43:38] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Assignment",
@@ -342,177 +356,150 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-006",
       "subcategory": "boundary",
-      "test_case": "View submission when Due date == today (allowed boundary)",
+      "test_case": "Edit submission allowed when current time is exactly the due date (boundary)",
       "preconditions": [
-        "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them.",
-        "There is an existing submission with status 'Submitted for grading'.",
-        "Teacher permits resubmission for this assignment.",
-        "<due date> is set to today (i.e., has not passed)."
+        "Logged in as a student enrolled in the course",
+        "A submission already exists for this student",
+        "Teacher permits resubmission for this assignment",
+        "Assignment due date is set to the current time (assignment due date == now)"
       ],
       "steps": [
-        "1. Navigate to the Assignment page for the assignment with the above preconditions.",
-        "2. Locate and click the 'View submission' action in the Submission State Actions area."
+        "1. Open the Assignment page for the assignment",
+        "2. Observe available actions in the Assignment Action Bar",
+        "3. Click the 'Edit submission' action"
       ],
-      "expected_result": "'View submission' action succeeds; the UI shows the submitted content (submitted text and/or uploaded file preview) and the page remains in 'Submitted for grading' status.",
+      "expected_result": "The Assignment_Submission_Form opens (the submission form is displayed). The 'Edit submission' action click succeeds and the form is visible",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-006",
       "subcategory": "boundary",
-      "test_case": "Attempt to view submission when Due date < today (one day past) — blocked",
+      "test_case": "Edit submission blocked immediately after due date has passed (just-past boundary)",
       "preconditions": [
-        "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them.",
-        "There is an existing submission with status 'Submitted for grading'.",
-        "Teacher permits resubmission for this assignment.",
-        "<due date> is one day before today (i.e., the due date has passed)."
+        "Logged in as a student enrolled in the course",
+        "A submission already exists for this student",
+        "Teacher permits resubmission for this assignment",
+        "Assignment due date is one minute in the past (assignment due date < now by one minute)"
       ],
       "steps": [
-        "1. Navigate to the Assignment page for the assignment with the above preconditions.",
-        "2. Attempt to click the 'View submission' action in the Submission State Actions area (or, if the control is missing, attempt to access the view submission affordance)."
+        "1. Open the Assignment page for the assignment",
+        "2. Observe available actions in the Assignment Action Bar"
       ],
-      "expected_result": "Action is blocked / error shown; the 'View submission' control is not available or is disabled, and attempting to access it results in a visible inline message indicating the action is unavailable because the due date has passed.",
+      "expected_result": "The 'Edit submission' action is not visible in the Assignment Action Bar; there is no visible affordance to open the submission form for editing",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-003",
-      "subcategory": "boundary",
-      "test_case": "Edit submission when Due date == today (allowed boundary)",
+      "subcategory": "input_edge",
+      "test_case": "Submit very long online text content (200+ characters) and verify display",
       "preconditions": [
-        "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them.",
-        "There is an existing submission with status 'Submitted for grading'.",
-        "Teacher permits resubmission for this assignment.",
-        "<due date> is set to today (i.e., has not passed)."
+        "Logged in as a student enrolled in the course",
+        "Assignment is configured to allow Online_Text (online text editor visible)",
+        "No prior submission exists or Add submission is available"
       ],
       "steps": [
-        "1. Navigate to the Assignment page for the assignment with the above preconditions.",
-        "2. Click the 'Edit submission' action in the Submission State Actions area."
+        "1. Open the Assignment page",
+        "2. Click 'Add submission' to open the submission form",
+        "3. In the Online_Text editor enter a very long text string (200+ characters)",
+        "4. Click 'Submit'"
       ],
-      "expected_result": "'Edit submission' action succeeds; the Submission Form opens pre-populated with the submitted content ready for editing.",
-      "priority": "medium"
+      "expected_result": "Submission is created and the submission detail area displays the full entered online text content (the long text is visible in the submission content area)",
+      "priority": "low"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-003",
-      "subcategory": "boundary",
-      "test_case": "Attempt to edit submission when Due date < today (one day past) — blocked",
+      "subcategory": "input_edge",
+      "test_case": "Submit online text containing emoji and diverse Unicode characters",
       "preconditions": [
-        "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them.",
-        "There is an existing submission with status 'Submitted for grading'.",
-        "Teacher permits resubmission for this assignment.",
-        "<due date> is one day before today (i.e., the due date has passed)."
+        "Logged in as a student enrolled in the course",
+        "Assignment is configured to allow Online_Text (online text editor visible)"
       ],
       "steps": [
-        "1. Navigate to the Assignment page for the assignment with the above preconditions.",
-        "2. Attempt to click the 'Edit submission' action in the Submission State Actions area (or attempt to open the submission edit affordance)."
+        "1. Open the Assignment page",
+        "2. Click 'Add submission' to open the submission form",
+        "3. In the Online_Text editor enter text that includes emoji and non-ASCII Unicode characters",
+        "4. Click 'Submit'"
       ],
-      "expected_result": "Action is blocked / error shown; the 'Edit submission' control is not available or is disabled, and attempting to open it shows a visible inline message indicating editing is not permitted because the due date has passed.",
-      "priority": "medium"
+      "expected_result": "Submission is created and the submission detail displays the entered Unicode characters and emoji in the online text content area (characters are rendered, not replaced by an upload error)",
+      "priority": "low"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": "WF-005",
+      "wf_ref": "WF-003",
       "subcategory": "input_edge",
-      "test_case": "Submit very long content via Online Text Editor (>200 characters)",
+      "test_case": "Leading and trailing whitespace in online text is normalized on save",
       "preconditions": [
-        "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them.",
-        "Assignment configuration: allows online text editor (does not require file upload).",
-        "Assignment state allows adding a submission (e.g., 'No submissions have been made yet' or editing is permitted)."
+        "Logged in as a student enrolled in the course",
+        "Assignment is configured to allow Online_Text (online text editor visible)"
       ],
       "steps": [
-        "1. Click 'Add submission' to open the Submission Form.",
-        "2. In the Online Text Editor, enter a very long text string (200+ characters).",
-        "3. Click 'Submit'."
+        "1. Open the Assignment page",
+        "2. Click 'Add submission' to open the submission form",
+        "3. In the Online_Text editor enter a short meaningful string with leading and trailing whitespace",
+        "4. Click 'Submit'",
+        "5. Open the submitted content on the Assignment page"
       ],
-      "expected_result": "Form submits successfully; the detail/submission view displays the full entered text (no truncation) and submission status updates to 'Submitted for grading'.",
+      "expected_result": "Submission is created and the displayed online text content is shown without leading or trailing whitespace (leading/trailing spaces are trimmed in the displayed submission content)",
       "priority": "low"
     },
     {
       "tc_id": "E-006",
-      "wf_ref": "WF-005",
+      "wf_ref": "WF-004",
       "subcategory": "input_edge",
-      "test_case": "Submit content composed only of leading/trailing whitespace in Online Text Editor",
+      "test_case": "Upload file whose filename contains non-ASCII / emoji characters and verify attachment display",
       "preconditions": [
-        "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them.",
-        "Assignment configuration: allows online text editor.",
-        "Assignment state allows adding a submission."
+        "Logged in as a student enrolled in the course",
+        "Assignment is configured to allow File_Upload (file upload area visible)",
+        "A local file exists whose filename contains non-ASCII characters and emoji"
       ],
       "steps": [
-        "1. Click 'Add submission' to open the Submission Form.",
-        "2. In the Online Text Editor, enter text that has significant leading and trailing whitespace (e.g., spaces/newlines surrounding a short word).",
-        "3. Click 'Submit'."
+        "1. Open the Assignment page",
+        "2. Click 'Add submission' to open the submission form",
+        "3. Use the File_Upload control to attach the file with a non-ASCII/emoji filename",
+        "4. Click 'Submit'",
+        "5. View the submission attachments list on the Assignment page"
       ],
-      "expected_result": "Leading/trailing whitespace is trimmed in the saved submission; the submission detail shows the entered content without extra leading/trailing spaces (visible on the submission detail), and submission status updates to 'Submitted for grading'.",
+      "expected_result": "Submission is created and the attached file appears in the submission attachments list; the filename is shown with the non-ASCII/emoji characters (no upload error is displayed)",
       "priority": "low"
     },
     {
       "tc_id": "E-007",
-      "wf_ref": null,
+      "wf_ref": "WF-002",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid double-submit (click Submit twice quickly) results in single submission",
+      "test_case": "Rapid double-click Submit results in a single submission created",
       "preconditions": [
-        "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them.",
-        "Assignment configuration allows at least one submission method (online editor or file upload).",
-        "Assignment state allows adding a submission."
+        "Logged in as a student enrolled in the course",
+        "Assignment is configured to allow at least one submission method (online text or file upload visible)",
+        "Add submission form is open with at least one required field filled"
       ],
       "steps": [
-        "1. Click 'Add submission' to open the Submission Form.",
-        "2. Fill the minimal required submission content (enter text in the editor or attach a file).",
-        "3. Click the 'Submit' button twice in rapid succession."
+        "1. In the open Assignment_Submission_Form complete the minimal required input (enter short text or attach a small file)",
+        "2. Click the 'Submit' button",
+        "3. Immediately click the 'Submit' button a second time (rapid double-click)"
       ],
-      "expected_result": "Only one submission is created; the second click is ignored or blocked and no duplicate submission appears. UI shows submission status 'Submitted for grading' and only one submission record is visible.",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-008",
-      "wf_ref": "WF-001",
-      "subcategory": "state_edge",
-      "test_case": "Double-activating 'Add submission' from 'No submissions have been made yet' — only one form instance opens",
-      "preconditions": [
-        "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them.",
-        "Assignment state is 'No submissions have been made yet'."
-      ],
-      "steps": [
-        "1. On the Assignment page, rapidly click 'Add submission' twice.",
-        "2. Observe the UI after the clicks."
-      ],
-      "expected_result": "Second activation is ignored; only a single submission form instance opens. No duplicate modal/dialog or multiple editable forms appear on the page.",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-009",
-      "wf_ref": "WF-006",
-      "subcategory": "input_edge",
-      "test_case": "Assignment configured for File Upload only: Online Text Editor control must not be present",
-      "preconditions": [
-        "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them.",
-        "Assignment configuration: allows file upload and does NOT allow online text editor."
-      ],
-      "steps": [
-        "1. Click 'Add submission' to open the Submission Form.",
-        "2. Inspect the Submission Form UI for presence of an Online Text Editor input area."
-      ],
-      "expected_result": "The Online Text Editor control is not present in the Submission Form; only the File Upload area is visible. Attempting to paste text where the editor would normally appear has no effect because the editor is not rendered.",
-      "priority": "low"
+      "expected_result": "Only one submission record is created; the UI shows a single submission entry and the Submit button is disabled or otherwise prevented from submitting a duplicate (the submission status updates once)",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 9,
-    "boundary": 4,
-    "input_edge": 3,
+    "total": 7,
+    "boundary": 2,
+    "input_edge": 4,
     "interaction_edge": 1,
-    "state_edge": 1,
+    "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 4,
-    "low_priority": 5
+    "medium_priority": 3,
+    "low_priority": 4
   }
 }
 
 ------------------------------------------------------------
-[21:14:21] Test-Edge - PARSED JSON
+[22:43:38] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Assignment",
@@ -520,171 +507,144 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-006",
       "subcategory": "boundary",
-      "test_case": "View submission when Due date == today (allowed boundary)",
+      "test_case": "Edit submission allowed when current time is exactly the due date (boundary)",
       "preconditions": [
-        "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them.",
-        "There is an existing submission with status 'Submitted for grading'.",
-        "Teacher permits resubmission for this assignment.",
-        "<due date> is set to today (i.e., has not passed)."
+        "Logged in as a student enrolled in the course",
+        "A submission already exists for this student",
+        "Teacher permits resubmission for this assignment",
+        "Assignment due date is set to the current time (assignment due date == now)"
       ],
       "steps": [
-        "1. Navigate to the Assignment page for the assignment with the above preconditions.",
-        "2. Locate and click the 'View submission' action in the Submission State Actions area."
+        "1. Open the Assignment page for the assignment",
+        "2. Observe available actions in the Assignment Action Bar",
+        "3. Click the 'Edit submission' action"
       ],
-      "expected_result": "'View submission' action succeeds; the UI shows the submitted content (submitted text and/or uploaded file preview) and the page remains in 'Submitted for grading' status.",
+      "expected_result": "The Assignment_Submission_Form opens (the submission form is displayed). The 'Edit submission' action click succeeds and the form is visible",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-006",
       "subcategory": "boundary",
-      "test_case": "Attempt to view submission when Due date < today (one day past) \u2014 blocked",
+      "test_case": "Edit submission blocked immediately after due date has passed (just-past boundary)",
       "preconditions": [
-        "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them.",
-        "There is an existing submission with status 'Submitted for grading'.",
-        "Teacher permits resubmission for this assignment.",
-        "<due date> is one day before today (i.e., the due date has passed)."
+        "Logged in as a student enrolled in the course",
+        "A submission already exists for this student",
+        "Teacher permits resubmission for this assignment",
+        "Assignment due date is one minute in the past (assignment due date < now by one minute)"
       ],
       "steps": [
-        "1. Navigate to the Assignment page for the assignment with the above preconditions.",
-        "2. Attempt to click the 'View submission' action in the Submission State Actions area (or, if the control is missing, attempt to access the view submission affordance)."
+        "1. Open the Assignment page for the assignment",
+        "2. Observe available actions in the Assignment Action Bar"
       ],
-      "expected_result": "Action is blocked / error shown; the 'View submission' control is not available or is disabled, and attempting to access it results in a visible inline message indicating the action is unavailable because the due date has passed.",
+      "expected_result": "The 'Edit submission' action is not visible in the Assignment Action Bar; there is no visible affordance to open the submission form for editing",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-003",
-      "subcategory": "boundary",
-      "test_case": "Edit submission when Due date == today (allowed boundary)",
+      "subcategory": "input_edge",
+      "test_case": "Submit very long online text content (200+ characters) and verify display",
       "preconditions": [
-        "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them.",
-        "There is an existing submission with status 'Submitted for grading'.",
-        "Teacher permits resubmission for this assignment.",
-        "<due date> is set to today (i.e., has not passed)."
+        "Logged in as a student enrolled in the course",
+        "Assignment is configured to allow Online_Text (online text editor visible)",
+        "No prior submission exists or Add submission is available"
       ],
       "steps": [
-        "1. Navigate to the Assignment page for the assignment with the above preconditions.",
-        "2. Click the 'Edit submission' action in the Submission State Actions area."
+        "1. Open the Assignment page",
+        "2. Click 'Add submission' to open the submission form",
+        "3. In the Online_Text editor enter a very long text string (200+ characters)",
+        "4. Click 'Submit'"
       ],
-      "expected_result": "'Edit submission' action succeeds; the Submission Form opens pre-populated with the submitted content ready for editing.",
-      "priority": "medium"
+      "expected_result": "Submission is created and the submission detail area displays the full entered online text content (the long text is visible in the submission content area)",
+      "priority": "low"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-003",
-      "subcategory": "boundary",
-      "test_case": "Attempt to edit submission when Due date < today (one day past) \u2014 blocked",
+      "subcategory": "input_edge",
+      "test_case": "Submit online text containing emoji and diverse Unicode characters",
       "preconditions": [
-        "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them.",
-        "There is an existing submission with status 'Submitted for grading'.",
-        "Teacher permits resubmission for this assignment.",
-        "<due date> is one day before today (i.e., the due date has passed)."
+        "Logged in as a student enrolled in the course",
+        "Assignment is configured to allow Online_Text (online text editor visible)"
       ],
       "steps": [
-        "1. Navigate to the Assignment page for the assignment with the above preconditions.",
-        "2. Attempt to click the 'Edit submission' action in the Submission State Actions area (or attempt to open the submission edit affordance)."
+        "1. Open the Assignment page",
+        "2. Click 'Add submission' to open the submission form",
+        "3. In the Online_Text editor enter text that includes emoji and non-ASCII Unicode characters",
+        "4. Click 'Submit'"
       ],
-      "expected_result": "Action is blocked / error shown; the 'Edit submission' control is not available or is disabled, and attempting to open it shows a visible inline message indicating editing is not permitted because the due date has passed.",
-      "priority": "medium"
+      "expected_result": "Submission is created and the submission detail displays the entered Unicode characters and emoji in the online text content area (characters are rendered, not replaced by an upload error)",
+      "priority": "low"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": "WF-005",
+      "wf_ref": "WF-003",
       "subcategory": "input_edge",
-      "test_case": "Submit very long content via Online Text Editor (>200 characters)",
+      "test_case": "Leading and trailing whitespace in online text is normalized on save",
       "preconditions": [
-        "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them.",
-        "Assignment configuration: allows online text editor (does not require file upload).",
-        "Assignment state allows adding a submission (e.g., 'No submissions have been made yet' or editing is permitted)."
+        "Logged in as a student enrolled in the course",
+        "Assignment is configured to allow Online_Text (online text editor visible)"
       ],
       "steps": [
-        "1. Click 'Add submission' to open the Submission Form.",
-        "2. In the Online Text Editor, enter a very long text string (200+ characters).",
-        "3. Click 'Submit'."
+        "1. Open the Assignment page",
+        "2. Click 'Add submission' to open the submission form",
+        "3. In the Online_Text editor enter a short meaningful string with leading and trailing whitespace",
+        "4. Click 'Submit'",
+        "5. Open the submitted content on the Assignment page"
       ],
-      "expected_result": "Form submits successfully; the detail/submission view displays the full entered text (no truncation) and submission status updates to 'Submitted for grading'.",
+      "expected_result": "Submission is created and the displayed online text content is shown without leading or trailing whitespace (leading/trailing spaces are trimmed in the displayed submission content)",
       "priority": "low"
     },
     {
       "tc_id": "E-006",
-      "wf_ref": "WF-005",
+      "wf_ref": "WF-004",
       "subcategory": "input_edge",
-      "test_case": "Submit content composed only of leading/trailing whitespace in Online Text Editor",
+      "test_case": "Upload file whose filename contains non-ASCII / emoji characters and verify attachment display",
       "preconditions": [
-        "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them.",
-        "Assignment configuration: allows online text editor.",
-        "Assignment state allows adding a submission."
+        "Logged in as a student enrolled in the course",
+        "Assignment is configured to allow File_Upload (file upload area visible)",
+        "A local file exists whose filename contains non-ASCII characters and emoji"
       ],
       "steps": [
-        "1. Click 'Add submission' to open the Submission Form.",
-        "2. In the Online Text Editor, enter text that has significant leading and trailing whitespace (e.g., spaces/newlines surrounding a short word).",
-        "3. Click 'Submit'."
+        "1. Open the Assignment page",
+        "2. Click 'Add submission' to open the submission form",
+        "3. Use the File_Upload control to attach the file with a non-ASCII/emoji filename",
+        "4. Click 'Submit'",
+        "5. View the submission attachments list on the Assignment page"
       ],
-      "expected_result": "Leading/trailing whitespace is trimmed in the saved submission; the submission detail shows the entered content without extra leading/trailing spaces (visible on the submission detail), and submission status updates to 'Submitted for grading'.",
+      "expected_result": "Submission is created and the attached file appears in the submission attachments list; the filename is shown with the non-ASCII/emoji characters (no upload error is displayed)",
       "priority": "low"
     },
     {
       "tc_id": "E-007",
-      "wf_ref": null,
+      "wf_ref": "WF-002",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid double-submit (click Submit twice quickly) results in single submission",
+      "test_case": "Rapid double-click Submit results in a single submission created",
       "preconditions": [
-        "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them.",
-        "Assignment configuration allows at least one submission method (online editor or file upload).",
-        "Assignment state allows adding a submission."
+        "Logged in as a student enrolled in the course",
+        "Assignment is configured to allow at least one submission method (online text or file upload visible)",
+        "Add submission form is open with at least one required field filled"
       ],
       "steps": [
-        "1. Click 'Add submission' to open the Submission Form.",
-        "2. Fill the minimal required submission content (enter text in the editor or attach a file).",
-        "3. Click the 'Submit' button twice in rapid succession."
+        "1. In the open Assignment_Submission_Form complete the minimal required input (enter short text or attach a small file)",
+        "2. Click the 'Submit' button",
+        "3. Immediately click the 'Submit' button a second time (rapid double-click)"
       ],
-      "expected_result": "Only one submission is created; the second click is ignored or blocked and no duplicate submission appears. UI shows submission status 'Submitted for grading' and only one submission record is visible.",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-008",
-      "wf_ref": "WF-001",
-      "subcategory": "state_edge",
-      "test_case": "Double-activating 'Add submission' from 'No submissions have been made yet' \u2014 only one form instance opens",
-      "preconditions": [
-        "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them.",
-        "Assignment state is 'No submissions have been made yet'."
-      ],
-      "steps": [
-        "1. On the Assignment page, rapidly click 'Add submission' twice.",
-        "2. Observe the UI after the clicks."
-      ],
-      "expected_result": "Second activation is ignored; only a single submission form instance opens. No duplicate modal/dialog or multiple editable forms appear on the page.",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-009",
-      "wf_ref": "WF-006",
-      "subcategory": "input_edge",
-      "test_case": "Assignment configured for File Upload only: Online Text Editor control must not be present",
-      "preconditions": [
-        "Logged-in user enrolled in the course and viewing the specific assignment activity that is visible to them.",
-        "Assignment configuration: allows file upload and does NOT allow online text editor."
-      ],
-      "steps": [
-        "1. Click 'Add submission' to open the Submission Form.",
-        "2. Inspect the Submission Form UI for presence of an Online Text Editor input area."
-      ],
-      "expected_result": "The Online Text Editor control is not present in the Submission Form; only the File Upload area is visible. Attempting to paste text where the editor would normally appear has no effect because the editor is not rendered.",
-      "priority": "low"
+      "expected_result": "Only one submission record is created; the UI shows a single submission entry and the Submit button is disabled or otherwise prevented from submitting a duplicate (the submission status updates once)",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 9,
-    "boundary": 4,
-    "input_edge": 3,
+    "total": 7,
+    "boundary": 2,
+    "input_edge": 4,
     "interaction_edge": 1,
-    "state_edge": 1,
+    "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 4,
-    "low_priority": 5
+    "medium_priority": 3,
+    "low_priority": 4
   }
 }

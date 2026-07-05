@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:13.879075
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.081123
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - SYSTEM PROMPT
+[22:33:07] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - USER PROMPT
+[22:33:07] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 10,
   "module_title": "Tour Details & Booking",
-  "summary": "Displays full tour information including images, day-by-day itinerary, inclusions/exclusions, departure dates, pricing, reviews, terms, and a booking form for traveler details and cost breakdown.",
-  "where_it_fits": "Accessible from the top navigation under Tours or via the Tours Search & Listing results, this module presents detailed information after a tour is chosen and precedes the booking flow handled by Booking Management and Payment Processing. It is part of the user journey that starts from the Home search widget or Tours listing and moves toward account/checkout steps in the dashboard and payment modules.",
-  "assumed_state_on_entry": "A specific tour has been selected from Tours Search & Listing; the tour's availability and departure dates are loaded and the user session is either authenticated or will trigger a redirect to Login."
+  "summary": "Presents full tour information (images, day-by-day itinerary, inclusions/exclusions, departure dates, per-person pricing, map, reviews, and terms) and captures traveler and contact details to calculate the total cost and create a booking.",
+  "where_it_fits": "Reached from the Top Nav \u2192 Tours or the Home search widget via Tours Search & Listing, this module is the detailed product page and booking entry point that precedes Payment Processing and Booking Management in the reservation flow.",
+  "assumed_state_on_entry": "A specific tour has been selected from Tours Search & Listing; if not authenticated, the user will be redirected to Login before completing a booking."
 }
 </module_context>
 
@@ -260,47 +270,38 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Tour Details & Booking",
   "components": {
-    "Tour_Details_Selection_Form": {
-      "type": "form",
+    "Tour_Details_Page": {
+      "type": "page",
       "fields": {
         "Departure_Date": {
           "type": "date",
           "required": true
         },
-        "Adults": {
+        "Adults_Count": {
           "type": "number",
-          "required": true,
-          "constraints": [
-            "minimum 1"
-          ]
+          "required": true
         },
-        "Children": {
+        "Children_Count": {
           "type": "number",
-          "constraints": [
-            "minimum 0"
-          ]
-        }
-      },
-      "submit_actions": [
-        {
+          "required": true
+        },
+        "Book_Now": {
+          "type": "button",
           "action_name": "Book Now",
           "preconditions": [
             "user must be logged in"
           ],
-          "on_precondition_fail": "redirect to Login",
+          "on_failure": "redirects to Login",
           "on_success": "opens Booking Form"
         }
-      ]
+      }
     },
     "Booking_Form": {
       "type": "form",
-      "on_precondition_fail": "redirect to Login",
-      "preconditions": [
-        "user must be logged in"
-      ],
       "fields": {
         "Travelers": {
           "type": "repeating_group",
+          "item_count_source": "components.Tour_Details_Page.fields.Adults_Count + components.Tour_Details_Page.fields.Children_Count",
           "item_fields": {
             "First_Name": {
               "type": "unspecified",
@@ -315,9 +316,12 @@ If a `<workflows>` block is present in the input:
             }
           }
         },
-        "Contact_Email": {
+        "Contact_Name": {
           "type": "unspecified",
           "required": true
+        },
+        "Contact_Email": {
+          "type": "unspecified"
         },
         "Contact_Phone": {
           "type": "unspecified"
@@ -325,12 +329,12 @@ If a `<workflows>` block is present in the input:
       },
       "submit_actions": [
         {
-          "action_name": "Confirm Booking",
+          "action_name": "Submit Booking",
           "preconditions": [
             "user must be logged in"
           ],
-          "on_precondition_fail": "redirect to Login",
-          "on_success": "creates booking and proceeds to Payment Processing"
+          "on_failure": "redirects to Login",
+          "on_success": "creates booking"
         }
       ]
     }
@@ -348,14 +352,16 @@ The tour details page displays a slideshow of images, a full day-by-day itinerar
 </description>
 
 <workflows>
-WF-001 | Select departure/date and start booking (Book Now) | actor: <role> | branch: none | terminal: Book Now | on_success: opens Booking Form
-WF-002 | Complete booking with traveler details (Confirm Booking) | actor: <role> | branch: none | terminal: Confirm Booking | on_success: creates booking and proceeds to Payment Processing
+WF-001 | Book Now — authenticated (opens Booking Form) | actor: <user> | branch: none | terminal: Book Now | on_success: opens Booking Form
+WF-002 | Book Now — unauthenticated (redirects to Login) | actor: <user> | branch: none | terminal: Book Now | on_success: redirects to Login
+WF-003 | Submit Booking — authenticated (creates booking) | actor: <user> | branch: none | terminal: Submit Booking | on_success: creates booking
+WF-004 | Submit Booking — unauthenticated (redirects to Login) | actor: <user> | branch: none | terminal: Submit Booking | on_success: redirects to Login
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:26:29] Test-Negative - LLM RESPONSE
+[22:35:04] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Tour Details & Booking",
@@ -364,132 +370,136 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Submit 'Book Now' with required Departure_Date left blank",
+      "test_case": "Leave Departure Date blank and click Book Now (authenticated)",
       "preconditions": [
         "User is logged in",
-        "On Tour Details page for a selected tour"
+        "On the Tour Details page for a specific tour"
       ],
       "steps": [
-        "1. Ensure user is logged in and on the Tour Details page for a specific tour",
-        "2. Leave the Departure_Date field blank",
-        "3. Enter a valid value in the Adults field (e.g., <number >= 1>)",
-        "4. Click the 'Book Now' button"
+        "1. Leave the Departure_Date field blank",
+        "2. Enter <valid number> in Adults_Count",
+        "3. Enter <valid number> in Children_Count",
+        "4. Click the Book Now button"
       ],
-      "expected_result": "Inline validation error appears on the Departure_Date field indicating it is required; the Book Now action is blocked; Booking Form does not open",
+      "expected_result": "Inline validation error appears on the Departure_Date field indicating it is required; the Booking Form does not open / user remains on Tour Details page",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-001",
-      "test_case": "Enter invalid date format in Departure_Date and attempt to Book Now",
+      "wf_ref": null,
+      "test_case": "Leave a required numeric field (Adults_Count) blank and click Book Now",
       "preconditions": [
         "User is logged in",
-        "On Tour Details page for a selected tour"
+        "On the Tour Details page for a specific tour"
       ],
       "steps": [
-        "1. Ensure user is logged in and on the Tour Details page",
-        "2. Enter <invalid date format> into the Departure_Date field",
-        "3. Enter a valid value in the Adults field (e.g., <number >= 1>)",
-        "4. Click the 'Book Now' button"
+        "1. Select a valid Departure_Date",
+        "2. Leave the Adults_Count field blank",
+        "3. Enter <valid number> in Children_Count",
+        "4. Click the Book Now button"
       ],
-      "expected_result": "Departure_Date field displays an inline validation error indicating invalid date format; the Book Now action is blocked; Booking Form does not open",
-      "priority": "medium"
+      "expected_result": "Inline validation error appears on the Adults_Count field indicating it is required; the Booking Form does not open",
+      "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-001",
-      "test_case": "Set Adults below minimum (violates 'minimum 1') and attempt to Book Now",
+      "wf_ref": "WF-003",
+      "test_case": "Open Booking Form and submit with all required booking fields empty (authenticated)",
       "preconditions": [
         "User is logged in",
-        "On Tour Details page for a selected tour"
+        "On the Tour Details page for a specific tour",
+        "Departure_Date, Adults_Count and Children_Count are set so that Booking Form opens"
       ],
       "steps": [
-        "1. Ensure user is logged in and on the Tour Details page",
-        "2. Enter <number less than 1> into the Adults field",
-        "3. Select a valid Departure_Date",
-        "4. Click the 'Book Now' button"
+        "1. Click the Book Now button to open the Booking Form",
+        "2. Do not enter any First_Name or Last_Name values for any traveler items",
+        "3. Leave Contact_Name blank",
+        "4. Click the Submit Booking button"
       ],
-      "expected_result": "Adults field displays an inline validation error indicating the value must be at least 1; the Book Now action is blocked; Booking Form does not open",
+      "expected_result": "Form does not submit; inline validation errors appear on each Traveler First_Name and Last_Name field indicating they are required and an inline validation error appears on the Contact_Name field indicating it is required; Booking is not created and user remains on the Booking Form",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-001",
-      "test_case": "Enter negative number for Children (violates 'minimum 0') and attempt to Book Now",
+      "wf_ref": null,
+      "test_case": "One traveler missing First_Name in repeating Travelers group",
       "preconditions": [
         "User is logged in",
-        "On Tour Details page for a selected tour"
+        "Booking Form is open with at least one traveler item (Adults_Count + Children_Count >= 1)"
       ],
       "steps": [
-        "1. Ensure user is logged in and on the Tour Details page",
-        "2. Enter <negative number> into the Children field",
-        "3. Select a valid Departure_Date and enter a valid Adults value (e.g., <number >= 1>)",
-        "4. Click the 'Book Now' button"
+        "1. In the Booking Form, for Traveler item #1, leave First_Name blank and enter <valid last name> in Last_Name",
+        "2. For all other required booking fields enter <valid values>",
+        "3. Click the Submit Booking button"
       ],
-      "expected_result": "Children field displays an inline validation error indicating the value must be 0 or greater; the Book Now action is blocked; Booking Form does not open",
-      "priority": "medium"
+      "expected_result": "Form does not submit; inline validation error appears on Traveler #1 First_Name indicating it is required; Booking is not created and user remains on the Booking Form",
+      "priority": "high"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-001",
-      "test_case": "Unauthenticated user clicks Book Now and is redirected to Login",
+      "wf_ref": null,
+      "test_case": "Enter invalid/impossible date in Departure_Date and click Book Now",
       "preconditions": [
-        "User is not logged in",
-        "On Tour Details page for a selected tour"
+        "User is logged in",
+        "On the Tour Details page for a specific tour"
       ],
       "steps": [
-        "1. Ensure user is not logged in and is on the Tour Details page",
-        "2. Select a valid Departure_Date and enter valid Adults value (e.g., <number >= 1>)",
-        "3. Click the 'Book Now' button"
+        "1. Enter <invalid date format> in the Departure_Date field",
+        "2. Enter <valid number> in Adults_Count",
+        "3. Enter <valid number> in Children_Count",
+        "4. Click the Book Now button"
       ],
-      "expected_result": "User is redirected to the Login page (on_precondition_fail = redirect to Login); Booking Form is not opened",
-      "priority": "high"
+      "expected_result": "Inline validation error appears on the Departure_Date field indicating the date is invalid; the Booking Form does not open",
+      "priority": "medium"
     },
     {
       "tc_id": "N-006",
-      "wf_ref": "WF-002",
-      "test_case": "Direct access to Booking Form while unauthenticated redirects to Login",
+      "wf_ref": null,
+      "test_case": "Enter non-numeric input into Adults_Count and click Book Now",
       "preconditions": [
-        "User is not logged in"
+        "User is logged in",
+        "On the Tour Details page for a specific tour"
       ],
       "steps": [
-        "1. As an unauthenticated user, navigate directly to the Booking Form URL or attempt to open the Booking Form",
-        "2. Observe the resulting page"
+        "1. Select a valid Departure_Date",
+        "2. Enter <non-numeric input> in the Adults_Count field",
+        "3. Enter <valid number> in Children_Count",
+        "4. Click the Book Now button"
       ],
-      "expected_result": "User is redirected to the Login page (Booking_Form precondition 'user must be logged in' fails); Booking Form is not accessible",
-      "priority": "high"
+      "expected_result": "Inline validation error appears on the Adults_Count field indicating a numeric value is required; the Booking Form does not open",
+      "priority": "medium"
     },
     {
       "tc_id": "N-007",
       "wf_ref": "WF-002",
-      "test_case": "Leave required Contact_Email blank in Booking Form and attempt Confirm Booking",
+      "test_case": "Unauthenticated user clicks Book Now — redirected to Login",
       "preconditions": [
-        "User is logged in",
-        "Booking Form is open (arrived via successful Book Now)"
+        "User is not logged in",
+        "On the Tour Details page for a specific tour"
       ],
       "steps": [
-        "1. Ensure user is logged in and the Booking Form is open",
-        "2. Fill required traveler item fields with valid values for First_Name and Last_Name (e.g., <valid first name>, <valid last name>)",
-        "3. Leave the Contact_Email field blank",
-        "4. Click the 'Confirm Booking' button"
+        "1. Select a valid Departure_Date",
+        "2. Enter <valid number> in Adults_Count",
+        "3. Enter <valid number> in Children_Count",
+        "4. Click the Book Now button"
       ],
-      "expected_result": "Inline validation error appears on the Contact_Email field indicating it is required; the Confirm Booking action is blocked; no booking is created and no redirect to Payment Processing occurs",
+      "expected_result": "User is redirected to the Login page; the Booking Form does not open",
       "priority": "high"
     },
     {
-      "tc_id": "N-009",
-      "wf_ref": "WF-002",
-      "test_case": "Submit Confirm Booking with ALL required Booking Form fields empty",
+      "tc_id": "N-008",
+      "wf_ref": "WF-004",
+      "test_case": "Unauthenticated attempt to submit a booking — blocked and redirected to Login",
       "preconditions": [
-        "User is logged in",
-        "Booking Form is open"
+        "User is not logged in",
+        "Booking Form submission endpoint is reachable (user attempts to submit without an authenticated session)"
       ],
       "steps": [
-        "1. Ensure user is logged in and the Booking Form is open",
-        "2. Leave all required fields empty: do not enter any Travelers' First_Name or Last_Name and leave Contact_Email blank",
-        "3. Click the 'Confirm Booking' button"
+        "1. Navigate to the Booking Form (or open the Booking Form URL) while not logged in",
+        "2. Populate required booking fields with <valid values>",
+        "3. Click the Submit Booking button"
       ],
-      "expected_result": "Form does not submit; inline validation errors appear on Contact_Email and on required traveler fields (First_Name and Last_Name) indicating they are required; no booking is created and there is no redirect to Payment Processing",
+      "expected_result": "Submission is blocked and the user is redirected to the Login page; booking is not created and the user is not shown a booking confirmation",
       "priority": "high"
     }
   ],
@@ -502,7 +512,7 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
 }
 
 ------------------------------------------------------------
-[21:26:29] Test-Negative - PARSED JSON
+[22:35:04] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Tour Details & Booking",
@@ -511,132 +521,136 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Submit 'Book Now' with required Departure_Date left blank",
+      "test_case": "Leave Departure Date blank and click Book Now (authenticated)",
       "preconditions": [
         "User is logged in",
-        "On Tour Details page for a selected tour"
+        "On the Tour Details page for a specific tour"
       ],
       "steps": [
-        "1. Ensure user is logged in and on the Tour Details page for a specific tour",
-        "2. Leave the Departure_Date field blank",
-        "3. Enter a valid value in the Adults field (e.g., <number >= 1>)",
-        "4. Click the 'Book Now' button"
+        "1. Leave the Departure_Date field blank",
+        "2. Enter <valid number> in Adults_Count",
+        "3. Enter <valid number> in Children_Count",
+        "4. Click the Book Now button"
       ],
-      "expected_result": "Inline validation error appears on the Departure_Date field indicating it is required; the Book Now action is blocked; Booking Form does not open",
+      "expected_result": "Inline validation error appears on the Departure_Date field indicating it is required; the Booking Form does not open / user remains on Tour Details page",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-001",
-      "test_case": "Enter invalid date format in Departure_Date and attempt to Book Now",
+      "wf_ref": null,
+      "test_case": "Leave a required numeric field (Adults_Count) blank and click Book Now",
       "preconditions": [
         "User is logged in",
-        "On Tour Details page for a selected tour"
+        "On the Tour Details page for a specific tour"
       ],
       "steps": [
-        "1. Ensure user is logged in and on the Tour Details page",
-        "2. Enter <invalid date format> into the Departure_Date field",
-        "3. Enter a valid value in the Adults field (e.g., <number >= 1>)",
-        "4. Click the 'Book Now' button"
+        "1. Select a valid Departure_Date",
+        "2. Leave the Adults_Count field blank",
+        "3. Enter <valid number> in Children_Count",
+        "4. Click the Book Now button"
       ],
-      "expected_result": "Departure_Date field displays an inline validation error indicating invalid date format; the Book Now action is blocked; Booking Form does not open",
-      "priority": "medium"
+      "expected_result": "Inline validation error appears on the Adults_Count field indicating it is required; the Booking Form does not open",
+      "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-001",
-      "test_case": "Set Adults below minimum (violates 'minimum 1') and attempt to Book Now",
+      "wf_ref": "WF-003",
+      "test_case": "Open Booking Form and submit with all required booking fields empty (authenticated)",
       "preconditions": [
         "User is logged in",
-        "On Tour Details page for a selected tour"
+        "On the Tour Details page for a specific tour",
+        "Departure_Date, Adults_Count and Children_Count are set so that Booking Form opens"
       ],
       "steps": [
-        "1. Ensure user is logged in and on the Tour Details page",
-        "2. Enter <number less than 1> into the Adults field",
-        "3. Select a valid Departure_Date",
-        "4. Click the 'Book Now' button"
+        "1. Click the Book Now button to open the Booking Form",
+        "2. Do not enter any First_Name or Last_Name values for any traveler items",
+        "3. Leave Contact_Name blank",
+        "4. Click the Submit Booking button"
       ],
-      "expected_result": "Adults field displays an inline validation error indicating the value must be at least 1; the Book Now action is blocked; Booking Form does not open",
+      "expected_result": "Form does not submit; inline validation errors appear on each Traveler First_Name and Last_Name field indicating they are required and an inline validation error appears on the Contact_Name field indicating it is required; Booking is not created and user remains on the Booking Form",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-001",
-      "test_case": "Enter negative number for Children (violates 'minimum 0') and attempt to Book Now",
+      "wf_ref": null,
+      "test_case": "One traveler missing First_Name in repeating Travelers group",
       "preconditions": [
         "User is logged in",
-        "On Tour Details page for a selected tour"
+        "Booking Form is open with at least one traveler item (Adults_Count + Children_Count >= 1)"
       ],
       "steps": [
-        "1. Ensure user is logged in and on the Tour Details page",
-        "2. Enter <negative number> into the Children field",
-        "3. Select a valid Departure_Date and enter a valid Adults value (e.g., <number >= 1>)",
-        "4. Click the 'Book Now' button"
+        "1. In the Booking Form, for Traveler item #1, leave First_Name blank and enter <valid last name> in Last_Name",
+        "2. For all other required booking fields enter <valid values>",
+        "3. Click the Submit Booking button"
       ],
-      "expected_result": "Children field displays an inline validation error indicating the value must be 0 or greater; the Book Now action is blocked; Booking Form does not open",
-      "priority": "medium"
+      "expected_result": "Form does not submit; inline validation error appears on Traveler #1 First_Name indicating it is required; Booking is not created and user remains on the Booking Form",
+      "priority": "high"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-001",
-      "test_case": "Unauthenticated user clicks Book Now and is redirected to Login",
+      "wf_ref": null,
+      "test_case": "Enter invalid/impossible date in Departure_Date and click Book Now",
       "preconditions": [
-        "User is not logged in",
-        "On Tour Details page for a selected tour"
+        "User is logged in",
+        "On the Tour Details page for a specific tour"
       ],
       "steps": [
-        "1. Ensure user is not logged in and is on the Tour Details page",
-        "2. Select a valid Departure_Date and enter valid Adults value (e.g., <number >= 1>)",
-        "3. Click the 'Book Now' button"
+        "1. Enter <invalid date format> in the Departure_Date field",
+        "2. Enter <valid number> in Adults_Count",
+        "3. Enter <valid number> in Children_Count",
+        "4. Click the Book Now button"
       ],
-      "expected_result": "User is redirected to the Login page (on_precondition_fail = redirect to Login); Booking Form is not opened",
-      "priority": "high"
+      "expected_result": "Inline validation error appears on the Departure_Date field indicating the date is invalid; the Booking Form does not open",
+      "priority": "medium"
     },
     {
       "tc_id": "N-006",
-      "wf_ref": "WF-002",
-      "test_case": "Direct access to Booking Form while unauthenticated redirects to Login",
+      "wf_ref": null,
+      "test_case": "Enter non-numeric input into Adults_Count and click Book Now",
       "preconditions": [
-        "User is not logged in"
+        "User is logged in",
+        "On the Tour Details page for a specific tour"
       ],
       "steps": [
-        "1. As an unauthenticated user, navigate directly to the Booking Form URL or attempt to open the Booking Form",
-        "2. Observe the resulting page"
+        "1. Select a valid Departure_Date",
+        "2. Enter <non-numeric input> in the Adults_Count field",
+        "3. Enter <valid number> in Children_Count",
+        "4. Click the Book Now button"
       ],
-      "expected_result": "User is redirected to the Login page (Booking_Form precondition 'user must be logged in' fails); Booking Form is not accessible",
-      "priority": "high"
+      "expected_result": "Inline validation error appears on the Adults_Count field indicating a numeric value is required; the Booking Form does not open",
+      "priority": "medium"
     },
     {
       "tc_id": "N-007",
       "wf_ref": "WF-002",
-      "test_case": "Leave required Contact_Email blank in Booking Form and attempt Confirm Booking",
+      "test_case": "Unauthenticated user clicks Book Now \u2014 redirected to Login",
       "preconditions": [
-        "User is logged in",
-        "Booking Form is open (arrived via successful Book Now)"
+        "User is not logged in",
+        "On the Tour Details page for a specific tour"
       ],
       "steps": [
-        "1. Ensure user is logged in and the Booking Form is open",
-        "2. Fill required traveler item fields with valid values for First_Name and Last_Name (e.g., <valid first name>, <valid last name>)",
-        "3. Leave the Contact_Email field blank",
-        "4. Click the 'Confirm Booking' button"
+        "1. Select a valid Departure_Date",
+        "2. Enter <valid number> in Adults_Count",
+        "3. Enter <valid number> in Children_Count",
+        "4. Click the Book Now button"
       ],
-      "expected_result": "Inline validation error appears on the Contact_Email field indicating it is required; the Confirm Booking action is blocked; no booking is created and no redirect to Payment Processing occurs",
+      "expected_result": "User is redirected to the Login page; the Booking Form does not open",
       "priority": "high"
     },
     {
-      "tc_id": "N-009",
-      "wf_ref": "WF-002",
-      "test_case": "Submit Confirm Booking with ALL required Booking Form fields empty",
+      "tc_id": "N-008",
+      "wf_ref": "WF-004",
+      "test_case": "Unauthenticated attempt to submit a booking \u2014 blocked and redirected to Login",
       "preconditions": [
-        "User is logged in",
-        "Booking Form is open"
+        "User is not logged in",
+        "Booking Form submission endpoint is reachable (user attempts to submit without an authenticated session)"
       ],
       "steps": [
-        "1. Ensure user is logged in and the Booking Form is open",
-        "2. Leave all required fields empty: do not enter any Travelers' First_Name or Last_Name and leave Contact_Email blank",
-        "3. Click the 'Confirm Booking' button"
+        "1. Navigate to the Booking Form (or open the Booking Form URL) while not logged in",
+        "2. Populate required booking fields with <valid values>",
+        "3. Click the Submit Booking button"
       ],
-      "expected_result": "Form does not submit; inline validation errors appear on Contact_Email and on required traveler fields (First_Name and Last_Name) indicating they are required; no booking is created and there is no redirect to Payment Processing",
+      "expected_result": "Submission is blocked and the user is redirected to the Login page; booking is not created and the user is not shown a booking confirmation",
       "priority": "high"
     }
   ],

@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.177319
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.886656
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - SYSTEM PROMPT
+[22:49:29] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - USER PROMPT
+[22:49:29] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 8,
   "module_title": "Course Settings",
-  "summary": "A collapsible form for viewing and editing a course's metadata, appearance, enrollment and participation settings, and completion/grouping options with inline validation and image/summary fields.",
-  "where_it_fits": "This module is accessed from a course's horizontal tab bar under the Settings tab (visible to teachers) and sits within the course page workflow between Course Page and Course Edit Mode, persisting changes back to the course view (Save and display) or aborting (Cancel). It is reachable via the course breadcrumbs and the Course Index when a specific course is active.",
-  "assumed_state_on_entry": "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
+  "summary": "Provides a collapsible form for configuring course metadata, appearance, format, enrollment and completion settings, and media with inline validation and save/cancel actions.",
+  "where_it_fits": "Accessed from a course's horizontal tab bar (the Settings tab shown to teachers) when viewing a course; saving returns to the course page while canceling leaves settings unchanged. It sits alongside other course-level tools such as Participants, Grades, and Activities and is part of the course configuration lifecycle.",
+  "assumed_state_on_entry": "User is logged in, viewing an existing course, and has teacher/editing permissions (Settings tab visible)."
 }
 </module_context>
 
@@ -262,6 +272,11 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Course_Settings_Form": {
       "type": "form",
+      "preconditions": [
+        "User is logged in",
+        "Viewing an existing course",
+        "User has teacher/editing permissions"
+      ],
       "panels": [
         {
           "panel_name": "General",
@@ -271,22 +286,19 @@ If a `<workflows>` block is present in the input:
               "type": "unspecified",
               "required": true,
               "constraints": [
-                "required, inline validation"
+                "inline validation: must not be empty"
               ]
             },
             "Course_Short_Name": {
               "type": "unspecified",
               "required": true,
               "constraints": [
-                "required, inline validation"
+                "inline validation: must not be empty"
               ]
             },
             "Course_Category": {
               "type": "dropdown",
-              "required": true,
-              "constraints": [
-                "required, inline validation"
-              ]
+              "required": true
             },
             "Course_Visibility": {
               "type": "dropdown",
@@ -295,35 +307,44 @@ If a `<workflows>` block is present in the input:
                 "Hide"
               ]
             },
+            "Course_Start_Date": {
+              "type": "date",
+              "constraints": [
+                "must be a valid date"
+              ]
+            },
+            "Enable_Course_End_Date": {
+              "type": "checkbox"
+            },
+            "Course_End_Date": {
+              "type": "date",
+              "enabled_when": "Enable_Course_End_Date == true",
+              "constraints": [
+                "must be a valid date"
+              ]
+            },
             "Course_ID_Number": {
               "type": "unspecified"
             },
             "Course_Summary": {
-              "type": "rich_text_editor"
-            },
+              "type": "unspecified",
+              "constraints": [
+                "rich text editor with inline validation"
+              ]
+            }
+          }
+        },
+        {
+          "panel_name": "Media",
+          "collapsible": true,
+          "fields": {
             "Course_Image_Upload": {
               "type": "file_upload"
             }
           }
         },
         {
-          "panel_name": "Dates",
-          "collapsible": true,
-          "fields": {
-            "Course_Start_Date": {
-              "type": "date"
-            },
-            "Course_End_Date_Enable": {
-              "type": "checkbox"
-            },
-            "Course_End_Date": {
-              "type": "date",
-              "enabled_when": "Course_End_Date_Enable == true"
-            }
-          }
-        },
-        {
-          "panel_name": "Format & Layout",
+          "panel_name": "Format",
           "collapsible": true,
           "fields": {
             "Course_Format": {
@@ -332,18 +353,16 @@ If a `<workflows>` block is present in the input:
                 "Topics format",
                 "Weekly format"
               ],
-              "metadata": {
-                "options_note": "partial \u2014 others not specified in description"
-              }
+              "options_note": "partial \u2014 others not specified in description"
             },
             "Layout_Controls": {
               "type": "unspecified",
-              "visible_when": "Course_Format == Topics format OR Course_Format == Weekly format"
+              "visible_when": "Course_Format is set"
             }
           }
         },
         {
-          "panel_name": "Appearance & Participation",
+          "panel_name": "Appearance",
           "collapsible": true,
           "fields": {
             "Language": {
@@ -352,15 +371,25 @@ If a `<workflows>` block is present in the input:
             "News_Items": {
               "type": "unspecified"
             },
-            "Activity_Dates_Display": {
-              "type": "checkbox"
+            "Activity_Dates": {
+              "type": "unspecified"
             },
             "Completion_Conditions_Display": {
               "type": "checkbox"
             },
             "Maximum_Upload_Size": {
-              "type": "unspecified"
-            },
+              "type": "number",
+              "constraints": [
+                "must be a valid number",
+                "inline validation enforced"
+              ]
+            }
+          }
+        },
+        {
+          "panel_name": "Enrollment_and_Completion",
+          "collapsible": true,
+          "fields": {
             "Completion_Tracking": {
               "type": "checkbox"
             },
@@ -379,14 +408,21 @@ If a `<workflows>` block is present in the input:
       "submit_actions": [
         {
           "action_name": "Save and display",
-          "on_success": "persists configuration and returns to course page",
+          "on_success": "persists configuration and returns to the course page",
           "preconditions": [
-            "An active specific course is open and the user has teacher/manager permissions such that the Settings tab is visible."
+            "User is logged in",
+            "Viewing an existing course",
+            "User has teacher/editing permissions"
           ]
         },
         {
           "action_name": "Cancel",
-          "on_success": "abandons changes and returns to course page"
+          "on_success": "leaves settings unchanged",
+          "preconditions": [
+            "User is logged in",
+            "Viewing an existing course",
+            "User has teacher/editing permissions"
+          ]
         }
       ]
     }
@@ -404,24 +440,18 @@ The Course Settings form is organized into collapsible panels with the following
 </description>
 
 <workflows>
-WF-001 | Save with End Date enabled and Topics format | actor: Teacher/Manager | branch: Course_End_Date_Enable == true AND Course_Format == Topics format | terminal: Save and display | on_success: persists configuration and returns to course page
-WF-002 | Cancel with End Date enabled and Topics format | actor: Teacher/Manager | branch: Course_End_Date_Enable == true AND Course_Format == Topics format | terminal: Cancel | on_success: abandons changes and returns to course page
-WF-003 | Save with End Date disabled and Topics format | actor: Teacher/Manager | branch: Course_End_Date_Enable == false AND Course_Format == Topics format | terminal: Save and display | on_success: persists configuration and returns to course page
-WF-004 | Cancel with End Date disabled and Topics format | actor: Teacher/Manager | branch: Course_End_Date_Enable == false AND Course_Format == Topics format | terminal: Cancel | on_success: abandons changes and returns to course page
-WF-005 | Save with End Date enabled and Weekly format | actor: Teacher/Manager | branch: Course_End_Date_Enable == true AND Course_Format == Weekly format | terminal: Save and display | on_success: persists configuration and returns to course page
-WF-006 | Cancel with End Date enabled and Weekly format | actor: Teacher/Manager | branch: Course_End_Date_Enable == true AND Course_Format == Weekly format | terminal: Cancel | on_success: abandons changes and returns to course page
-WF-007 | Save with End Date disabled and Weekly format | actor: Teacher/Manager | branch: Course_End_Date_Enable == false AND Course_Format == Weekly format | terminal: Save and display | on_success: persists configuration and returns to course page
-WF-008 | Cancel with End Date disabled and Weekly format | actor: Teacher/Manager | branch: Course_End_Date_Enable == false AND Course_Format == Weekly format | terminal: Cancel | on_success: abandons changes and returns to course page
-WF-009 | Save with End Date enabled and Other format | actor: Teacher/Manager | branch: Course_End_Date_Enable == true AND Course_Format == Other | terminal: Save and display | on_success: persists configuration and returns to course page
-WF-010 | Cancel with End Date enabled and Other format | actor: Teacher/Manager | branch: Course_End_Date_Enable == true AND Course_Format == Other | terminal: Cancel | on_success: abandons changes and returns to course page
-WF-011 | Save with End Date disabled and Other format | actor: Teacher/Manager | branch: Course_End_Date_Enable == false AND Course_Format == Other | terminal: Save and display | on_success: persists configuration and returns to course page
-WF-012 | Cancel with End Date disabled and Other format | actor: Teacher/Manager | branch: Course_End_Date_Enable == false AND Course_Format == Other | terminal: Cancel | on_success: abandons changes and returns to course page
+WF-001 | Save and display (base) | actor: Teacher | branch: none | terminal: Save and display | on_success: persists configuration and returns to the course page
+WF-002 | Save and display with Course_Format set | actor: Teacher | branch: Course_Format is set | terminal: Save and display | on_success: persists configuration and returns to the course page
+WF-003 | Save and display with Course_Format not set | actor: Teacher | branch: Course_Format is not set | terminal: Save and display | on_success: persists configuration and returns to the course page
+WF-004 | Cancel (base) | actor: Teacher | branch: none | terminal: Cancel | on_success: leaves settings unchanged
+WF-005 | Cancel with Course_Format set | actor: Teacher | branch: Course_Format is set | terminal: Cancel | on_success: leaves settings unchanged
+WF-006 | Cancel with Course_Format not set | actor: Teacher | branch: Course_Format is not set | terminal: Cancel | on_success: leaves settings unchanged
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:14:05] Test-Negative - LLM RESPONSE
+[22:51:11] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Course Settings",
@@ -429,126 +459,147 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": null,
-      "test_case": "Leave required text field blank (representative: Course Full Name)",
-      "preconditions": ["User is logged in as Teacher/Manager and the Course Settings form is open for an active course"],
-      "steps": [
-        "1. Leave the Course Full Name field blank",
-        "2. In the Course Short Name field, enter <valid course short name>",
-        "3. In the Course Category dropdown, select <valid category>",
-        "4. Click the 'Save and display' button"
+      "wf_ref": "WF-001",
+      "test_case": "Submit with all required fields empty",
+      "preconditions": [
+        "User is logged in as a teacher",
+        "Viewing an existing course (Settings tab visible)"
       ],
-      "expected_result": "Inline validation error appears on the Course Full Name field indicating it is required; the form does not submit; settings are not persisted and the user remains on the Course Settings form",
+      "steps": [
+        "1. Navigate to the Course Settings tab for the course",
+        "2. Clear the Course Full Name field",
+        "3. Clear the Course Short Name field",
+        "4. Leave Course Category unselected",
+        "5. Click the Save and display button"
+      ],
+      "expected_result": "Form does not submit; the page remains on Course Settings; inline validation errors appear on the Course Full Name and Course Short Name fields indicating they are required, and on the Course Category control indicating a selection is required",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": null,
-      "test_case": "Leave required dropdown blank (Course Category)",
-      "preconditions": ["User is logged in as Teacher/Manager and the Course Settings form is open for an active course"],
-      "steps": [
-        "1. In the Course Full Name field, enter <valid course full name>",
-        "2. In the Course Short Name field, enter <valid course short name>",
-        "3. Leave the Course Category dropdown unselected",
-        "4. Click the 'Save and display' button"
+      "wf_ref": "WF-001",
+      "test_case": "Representative text field left blank (Course Full Name)",
+      "preconditions": [
+        "User is logged in as a teacher",
+        "Viewing an existing course (Settings tab visible)"
       ],
-      "expected_result": "Inline validation error appears on the Course Category dropdown indicating it is required; the form does not submit; settings are not persisted and the user remains on the Course Settings form",
+      "steps": [
+        "1. Navigate to the Course Settings tab",
+        "2. Clear the Course Full Name field",
+        "3. Enter <valid value> into the Course Short Name field",
+        "4. Select <valid category> in Course Category",
+        "5. Click the Save and display button"
+      ],
+      "expected_result": "Form does not submit; inline validation error appears on the Course Full Name field indicating it is required; the settings are not persisted and the user remains on the Course Settings page",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": null,
-      "test_case": "Submit with ALL required fields empty",
-      "preconditions": ["User is logged in as Teacher/Manager and the Course Settings form is open for an active course"],
-      "steps": [
-        "1. Leave the Course Full Name field blank",
-        "2. Leave the Course Short Name field blank",
-        "3. Leave the Course Category dropdown unselected",
-        "4. Click the 'Save and display' button"
+      "wf_ref": "WF-001",
+      "test_case": "Required dropdown left unselected (Course Category)",
+      "preconditions": [
+        "User is logged in as a teacher",
+        "Viewing an existing course (Settings tab visible)"
       ],
-      "expected_result": "Inline validation errors appear on Course Full Name, Course Short Name, and Course Category indicating they are required; the form does not submit; no changes are persisted and the user remains on the Course Settings form",
+      "steps": [
+        "1. Navigate to the Course Settings tab",
+        "2. Enter <valid value> into Course Full Name",
+        "3. Enter <valid value> into Course Short Name",
+        "4. Leave Course Category unselected",
+        "5. Click the Save and display button"
+      ],
+      "expected_result": "Form does not submit; inline validation error appears on the Course Category control indicating a selection is required; the settings are not persisted and the user remains on the Course Settings page",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-001",
-      "test_case": "Enable Course End Date then leave End Date blank and attempt Save (End Date conditional field blank)",
-      "preconditions": ["User is logged in as Teacher/Manager and the Course Settings form is open for an active course; Course Format is set to Topics format"],
-      "steps": [
-        "1. In the Course Full Name field, enter <valid course full name>",
-        "2. In the Course Short Name field, enter <valid course short name>",
-        "3. In the Course Category dropdown, select <valid category>",
-        "4. Toggle Course End Date Enable to true",
-        "5. Leave the revealed Course End Date field blank",
-        "6. Click the 'Save and display' button"
+      "wf_ref": null,
+      "test_case": "Maximum Upload Size accepts non-numeric input",
+      "preconditions": [
+        "User is logged in as a teacher",
+        "Viewing an existing course (Settings tab visible)"
       ],
-      "expected_result": "Inline validation error appears on the Course End Date field indicating a date is required when End Date is enabled; the form does not submit; settings are not persisted and the user remains on the Course Settings form",
-      "priority": "high"
+      "steps": [
+        "1. Navigate to the Course Settings tab",
+        "2. Enter <non-numeric input> into the Maximum Upload Size field",
+        "3. Click the Save and display button"
+      ],
+      "expected_result": "Form does not submit; inline validation error appears on the Maximum Upload Size field indicating it must be a valid number; the settings are not persisted",
+      "priority": "medium"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": null,
-      "test_case": "Enter invalid format into Course Start Date",
-      "preconditions": ["User is logged in as Teacher/Manager and the Course Settings form is open for an active course"],
-      "steps": [
-        "1. In the Course Full Name field, enter <valid course full name>",
-        "2. In the Course Short Name field, enter <valid course short name>",
-        "3. In the Course Category dropdown, select <valid category>",
-        "4. In the Course Start Date field, enter <invalid date format>",
-        "5. Click the 'Save and display' button"
+      "wf_ref": "WF-001",
+      "test_case": "Course Start Date invalid format",
+      "preconditions": [
+        "User is logged in as a teacher",
+        "Viewing an existing course (Settings tab visible)"
       ],
-      "expected_result": "Inline validation error appears on the Course Start Date field indicating an invalid date format; the form does not submit; settings are not persisted and the user remains on the Course Settings form",
+      "steps": [
+        "1. Navigate to the Course Settings tab",
+        "2. Enter <invalid date format> into the Course Start Date field",
+        "3. Click the Save and display button"
+      ],
+      "expected_result": "Form does not submit; inline validation error appears on the Course Start Date field indicating it must be a valid date; the settings are not persisted",
       "priority": "medium"
     },
     {
       "tc_id": "N-006",
       "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access Course Settings",
-      "preconditions": ["User is not authenticated"],
-      "steps": [
-        "1. Navigate directly to the Course Settings URL for an active course"
+      "test_case": "Conditional Course End Date enabled but invalid",
+      "preconditions": [
+        "User is logged in as a teacher",
+        "Viewing an existing course (Settings tab visible)"
       ],
-      "expected_result": "Access is blocked: user is redirected to the Login page (or shown an authentication prompt); Course Settings are not accessible and no changes can be made",
-      "priority": "high"
+      "steps": [
+        "1. Navigate to the Course Settings tab",
+        "2. Check the Enable Course End Date checkbox to reveal Course End Date",
+        "3. Enter <invalid date format> into the Course End Date field",
+        "4. Click the Save and display button"
+      ],
+      "expected_result": "Form does not submit; inline validation error appears on the Course End Date field indicating it must be a valid date; the settings are not persisted",
+      "priority": "medium"
     },
     {
       "tc_id": "N-007",
       "wf_ref": null,
-      "test_case": "User without teacher/manager role cannot access Settings tab (Settings tab not visible)",
-      "preconditions": ["User is logged in as a non-teacher role (e.g., Student) and an active course is open"],
-      "steps": [
-        "1. Open the course page for an active course"
+      "test_case": "Unauthenticated user attempts to access Course Settings",
+      "preconditions": [
+        "User is not logged in"
       ],
-      "expected_result": "The Course Settings tab is not visible in the course horizontal tab bar to the non-teacher user; attempting to navigate directly to Course Settings results in access denied or no access to editing controls",
+      "steps": [
+        "1. Ensure the user is logged out",
+        "2. Open the Course Settings URL for an existing course"
+      ],
+      "expected_result": "User is redirected to the login page or shown an access denied page; the Course Settings form and the Save and display button are not accessible to the unauthenticated user",
       "priority": "high"
     },
     {
       "tc_id": "N-008",
-      "wf_ref": "WF-001",
-      "test_case": "Enable Course End Date then enter invalid date in Course End Date",
-      "preconditions": ["User is logged in as Teacher/Manager and the Course Settings form is open for an active course; Course Format is set to Topics format"],
-      "steps": [
-        "1. In the Course Full Name field, enter <valid course full name>",
-        "2. In the Course Short Name field, enter <valid course short name>",
-        "3. In the Course Category dropdown, select <valid category>",
-        "4. Toggle Course End Date Enable to true",
-        "5. In the revealed Course End Date field, enter <invalid date format>",
-        "6. Click the 'Save and display' button"
+      "wf_ref": null,
+      "test_case": "User without teacher/editing permissions cannot see Settings tab",
+      "preconditions": [
+        "User is logged in as a non-teacher role (e.g., student)",
+        "Viewing an existing course"
       ],
-      "expected_result": "Inline validation error appears on the Course End Date field indicating an invalid date format; the form does not submit; settings are not persisted and the user remains on the Course Settings form",
-      "priority": "medium"
+      "steps": [
+        "1. Log in as a user without teacher/editing permissions",
+        "2. Navigate to the course page"
+      ],
+      "expected_result": "The Settings tab is not present on the course's tab bar for this user role; the Save and display button and Course Settings form are not visible or accessible",
+      "priority": "high"
     }
   ],
   "summary": {
     "total": 8,
-    "high_priority": 6,
-    "medium_priority": 2,
+    "high_priority": 5,
+    "medium_priority": 3,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:14:05] Test-Negative - PARSED JSON
+[22:51:11] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Course Settings",
@@ -556,136 +607,141 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": null,
-      "test_case": "Leave required text field blank (representative: Course Full Name)",
+      "wf_ref": "WF-001",
+      "test_case": "Submit with all required fields empty",
       "preconditions": [
-        "User is logged in as Teacher/Manager and the Course Settings form is open for an active course"
+        "User is logged in as a teacher",
+        "Viewing an existing course (Settings tab visible)"
       ],
       "steps": [
-        "1. Leave the Course Full Name field blank",
-        "2. In the Course Short Name field, enter <valid course short name>",
-        "3. In the Course Category dropdown, select <valid category>",
-        "4. Click the 'Save and display' button"
+        "1. Navigate to the Course Settings tab for the course",
+        "2. Clear the Course Full Name field",
+        "3. Clear the Course Short Name field",
+        "4. Leave Course Category unselected",
+        "5. Click the Save and display button"
       ],
-      "expected_result": "Inline validation error appears on the Course Full Name field indicating it is required; the form does not submit; settings are not persisted and the user remains on the Course Settings form",
+      "expected_result": "Form does not submit; the page remains on Course Settings; inline validation errors appear on the Course Full Name and Course Short Name fields indicating they are required, and on the Course Category control indicating a selection is required",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": null,
-      "test_case": "Leave required dropdown blank (Course Category)",
+      "wf_ref": "WF-001",
+      "test_case": "Representative text field left blank (Course Full Name)",
       "preconditions": [
-        "User is logged in as Teacher/Manager and the Course Settings form is open for an active course"
+        "User is logged in as a teacher",
+        "Viewing an existing course (Settings tab visible)"
       ],
       "steps": [
-        "1. In the Course Full Name field, enter <valid course full name>",
-        "2. In the Course Short Name field, enter <valid course short name>",
-        "3. Leave the Course Category dropdown unselected",
-        "4. Click the 'Save and display' button"
+        "1. Navigate to the Course Settings tab",
+        "2. Clear the Course Full Name field",
+        "3. Enter <valid value> into the Course Short Name field",
+        "4. Select <valid category> in Course Category",
+        "5. Click the Save and display button"
       ],
-      "expected_result": "Inline validation error appears on the Course Category dropdown indicating it is required; the form does not submit; settings are not persisted and the user remains on the Course Settings form",
+      "expected_result": "Form does not submit; inline validation error appears on the Course Full Name field indicating it is required; the settings are not persisted and the user remains on the Course Settings page",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": null,
-      "test_case": "Submit with ALL required fields empty",
+      "wf_ref": "WF-001",
+      "test_case": "Required dropdown left unselected (Course Category)",
       "preconditions": [
-        "User is logged in as Teacher/Manager and the Course Settings form is open for an active course"
+        "User is logged in as a teacher",
+        "Viewing an existing course (Settings tab visible)"
       ],
       "steps": [
-        "1. Leave the Course Full Name field blank",
-        "2. Leave the Course Short Name field blank",
-        "3. Leave the Course Category dropdown unselected",
-        "4. Click the 'Save and display' button"
+        "1. Navigate to the Course Settings tab",
+        "2. Enter <valid value> into Course Full Name",
+        "3. Enter <valid value> into Course Short Name",
+        "4. Leave Course Category unselected",
+        "5. Click the Save and display button"
       ],
-      "expected_result": "Inline validation errors appear on Course Full Name, Course Short Name, and Course Category indicating they are required; the form does not submit; no changes are persisted and the user remains on the Course Settings form",
+      "expected_result": "Form does not submit; inline validation error appears on the Course Category control indicating a selection is required; the settings are not persisted and the user remains on the Course Settings page",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-001",
-      "test_case": "Enable Course End Date then leave End Date blank and attempt Save (End Date conditional field blank)",
+      "wf_ref": null,
+      "test_case": "Maximum Upload Size accepts non-numeric input",
       "preconditions": [
-        "User is logged in as Teacher/Manager and the Course Settings form is open for an active course; Course Format is set to Topics format"
+        "User is logged in as a teacher",
+        "Viewing an existing course (Settings tab visible)"
       ],
       "steps": [
-        "1. In the Course Full Name field, enter <valid course full name>",
-        "2. In the Course Short Name field, enter <valid course short name>",
-        "3. In the Course Category dropdown, select <valid category>",
-        "4. Toggle Course End Date Enable to true",
-        "5. Leave the revealed Course End Date field blank",
-        "6. Click the 'Save and display' button"
+        "1. Navigate to the Course Settings tab",
+        "2. Enter <non-numeric input> into the Maximum Upload Size field",
+        "3. Click the Save and display button"
       ],
-      "expected_result": "Inline validation error appears on the Course End Date field indicating a date is required when End Date is enabled; the form does not submit; settings are not persisted and the user remains on the Course Settings form",
-      "priority": "high"
+      "expected_result": "Form does not submit; inline validation error appears on the Maximum Upload Size field indicating it must be a valid number; the settings are not persisted",
+      "priority": "medium"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": null,
-      "test_case": "Enter invalid format into Course Start Date",
+      "wf_ref": "WF-001",
+      "test_case": "Course Start Date invalid format",
       "preconditions": [
-        "User is logged in as Teacher/Manager and the Course Settings form is open for an active course"
+        "User is logged in as a teacher",
+        "Viewing an existing course (Settings tab visible)"
       ],
       "steps": [
-        "1. In the Course Full Name field, enter <valid course full name>",
-        "2. In the Course Short Name field, enter <valid course short name>",
-        "3. In the Course Category dropdown, select <valid category>",
-        "4. In the Course Start Date field, enter <invalid date format>",
-        "5. Click the 'Save and display' button"
+        "1. Navigate to the Course Settings tab",
+        "2. Enter <invalid date format> into the Course Start Date field",
+        "3. Click the Save and display button"
       ],
-      "expected_result": "Inline validation error appears on the Course Start Date field indicating an invalid date format; the form does not submit; settings are not persisted and the user remains on the Course Settings form",
+      "expected_result": "Form does not submit; inline validation error appears on the Course Start Date field indicating it must be a valid date; the settings are not persisted",
       "priority": "medium"
     },
     {
       "tc_id": "N-006",
       "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access Course Settings",
+      "test_case": "Conditional Course End Date enabled but invalid",
       "preconditions": [
-        "User is not authenticated"
+        "User is logged in as a teacher",
+        "Viewing an existing course (Settings tab visible)"
       ],
       "steps": [
-        "1. Navigate directly to the Course Settings URL for an active course"
+        "1. Navigate to the Course Settings tab",
+        "2. Check the Enable Course End Date checkbox to reveal Course End Date",
+        "3. Enter <invalid date format> into the Course End Date field",
+        "4. Click the Save and display button"
       ],
-      "expected_result": "Access is blocked: user is redirected to the Login page (or shown an authentication prompt); Course Settings are not accessible and no changes can be made",
-      "priority": "high"
+      "expected_result": "Form does not submit; inline validation error appears on the Course End Date field indicating it must be a valid date; the settings are not persisted",
+      "priority": "medium"
     },
     {
       "tc_id": "N-007",
       "wf_ref": null,
-      "test_case": "User without teacher/manager role cannot access Settings tab (Settings tab not visible)",
+      "test_case": "Unauthenticated user attempts to access Course Settings",
       "preconditions": [
-        "User is logged in as a non-teacher role (e.g., Student) and an active course is open"
+        "User is not logged in"
       ],
       "steps": [
-        "1. Open the course page for an active course"
+        "1. Ensure the user is logged out",
+        "2. Open the Course Settings URL for an existing course"
       ],
-      "expected_result": "The Course Settings tab is not visible in the course horizontal tab bar to the non-teacher user; attempting to navigate directly to Course Settings results in access denied or no access to editing controls",
+      "expected_result": "User is redirected to the login page or shown an access denied page; the Course Settings form and the Save and display button are not accessible to the unauthenticated user",
       "priority": "high"
     },
     {
       "tc_id": "N-008",
-      "wf_ref": "WF-001",
-      "test_case": "Enable Course End Date then enter invalid date in Course End Date",
+      "wf_ref": null,
+      "test_case": "User without teacher/editing permissions cannot see Settings tab",
       "preconditions": [
-        "User is logged in as Teacher/Manager and the Course Settings form is open for an active course; Course Format is set to Topics format"
+        "User is logged in as a non-teacher role (e.g., student)",
+        "Viewing an existing course"
       ],
       "steps": [
-        "1. In the Course Full Name field, enter <valid course full name>",
-        "2. In the Course Short Name field, enter <valid course short name>",
-        "3. In the Course Category dropdown, select <valid category>",
-        "4. Toggle Course End Date Enable to true",
-        "5. In the revealed Course End Date field, enter <invalid date format>",
-        "6. Click the 'Save and display' button"
+        "1. Log in as a user without teacher/editing permissions",
+        "2. Navigate to the course page"
       ],
-      "expected_result": "Inline validation error appears on the Course End Date field indicating an invalid date format; the form does not submit; settings are not persisted and the user remains on the Course Settings form",
-      "priority": "medium"
+      "expected_result": "The Settings tab is not present on the course's tab bar for this user role; the Save and display button and Course Settings form are not visible or accessible",
+      "priority": "high"
     }
   ],
   "summary": {
     "total": 8,
-    "high_priority": 6,
-    "medium_priority": 2,
+    "high_priority": 5,
+    "medium_priority": 3,
     "low_priority": 0
   }
 }

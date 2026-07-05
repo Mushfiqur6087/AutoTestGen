@@ -1,0 +1,903 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:08:30.030706
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:08:30] Test-Edge - SYSTEM PROMPT
+------------------------------------------------------------
+You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
+
+You are NOT producing happy paths (positive prompt) or standard validation failures (negative prompt). You are finding the cracks between valid and invalid, and the unusual paths real users take.
+
+---
+
+**INPUT:**
+
+<module_context>
+{Global context: summary, where_it_fits, assumed_state_on_entry}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+<workflows>
+{Compact workflow list — one line per workflow, or absent if no workflows were extracted}
+</workflows>
+
+---
+
+**Structural Model REFERENCE — How to Read the AST for Edge Testing:**
+
+| AST node / field | What to look for |
+|---|---|
+| `constraints: []` with numeric/date/count threshold | The boundary values — test AT and JUST PAST each limit |
+| `repeating_group` with `max` | Test adding exactly `max` entries (should succeed) then one more (should block) |
+| `visible_when` / `required_when` | Edge: trigger condition, fill revealed field with boundary value |
+| `state_bound_action_bar` | State edges: rapid consecutive state transitions, transition from a boundary state |
+
+| `type: "date"` fields | Data edges: today, yesterday, far future, Feb 29 leap year |
+| `type: "file_upload"` | Edge: file exactly at size limit, file at 1 byte over limit |
+
+> If the module has no `constraints`, no `repeating_group`, no `date` or `number` fields, and no `state_bound_action_bar` — it has minimal edge surface. Produce 1–3 generic input edge cases (long text, special characters) and stop. Do not invent boundary tests where no boundary exists.
+
+---
+
+**ASSERTION STYLE (CRITICAL):**
+
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
+- ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
+- ✅ `"Form submits successfully; entity is created with the <minimum value>"`
+- ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
+
+**Rule B — For edge cases, describe the precise visible outcome.**
+Same rule as the positive/negative prompts — name the UI element that changes.
+- ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
+- ✅ `"Second submission attempt is blocked; only one record appears in the table"`
+- ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
+
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
+
+---
+
+**GENERIC DATA RULE (CRITICAL):**
+
+Never invent specific data values. Express boundary values relative to the constraint.
+
+- ✅ `"Enter <minimum allowed value> in the <field>"`
+- ✅ `"Enter <one unit below minimum> in the <field>"`
+- ✅ `"Enter <maximum length string> in the <text field>"`
+- ✅ `"Add <maximum allowed entries + 1> rows to the repeating group"`
+- ❌ `"Enter '$25' in the Amount field"`
+- ❌ `"Enter 'aaaaaaaaaa' (10 chars) in the field"`
+
+Exception: values explicitly quoted in the spec (e.g., `"$25 minimum"`) may be used.
+
+---
+
+**STEP GRANULARITY RULE:**
+
+Each step is ONE atomic action — one field, one click, one navigation. No grouping.
+- ✅ `"1. Enter <minimum allowed value> in the <Amount> field"`, `"2. Fill all other required fields"`, `"3. Click Submit"`
+- ❌ `"Fill the form with minimum value and submit"`
+
+---
+
+**SCOPE GATE:**
+
+Every test must pass ALL three checks:
+1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
+2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
+3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
+
+---
+
+**WHAT TO GENERATE:**
+
+**1. Boundary Tests (from AST constraints):**
+
+Scan every `constraints: []` array and every numeric/date/count threshold mentioned in the description. For each threshold:
+
+| Constraint | Boundary (should PASS) | Past-boundary (should FAIL) |
+|---|---|---|
+| `"minimum <X>"` | Enter exactly `<minimum value>` | Enter `<one unit below minimum>` |
+| `"maximum <N> entries"` | Add exactly `<N>` entries | Attempt to add `<N+1>` entry |
+| `"<date A> must not be before <date B>"` | `<date A>` = `<date B>` (same day) | `<date A>` = `<date B>` minus 1 day |
+| `"<X>–<Y> range"` | Enter `<X>` → pass; enter `<Y>` → pass | Enter `<X-1>` → fail; enter `<Y+1>` → fail |
+| `"at least <N> characters"` | Enter exactly `<N>` characters | Enter `<N-1>` characters |
+| `"must be ≥ <P>% of <reference>"` | Enter exactly `<P>%` | Enter `<P minus small delta>%` |
+
+Rules:
+- If a constraint has both a minimum AND maximum, test both ends (up to 4 tests total for that constraint).
+- If a constraint has no numeric/date/count threshold (e.g., "must be unique", "cannot transition while children exist") → **skip it** — it belongs in negative tests, not boundary tests.
+- Generate zero boundary tests if zero thresholds exist — do not invent them.
+
+**Cross-field boundary tests** (only if the description/AST shows a field ordering constraint — e.g., date A must not be before date B, closing date must be after opening date):
+- ONE test where field A equals field B exactly (same-day / same-value boundary) → assert this **succeeds** per spec
+- ONE test where field A is one unit before field B → assert **blocked with a visible error**
+
+**2. Input Edge Cases:**
+
+Pick only the ones that apply to field types present in this module's AST:
+
+- **Long text** (any `text/unspecified` or `textarea` field): enter a very long string (200+ characters) → assert it is either accepted or truncated/rejected with a visible indicator
+- **Special characters / emoji / unicode** (free-text fields): enter special chars → assert accepted or a specific error shown
+- **Leading/trailing whitespace** (text inputs): enter value with leading/trailing spaces → assert trimmed in saved output shown on the detail page, or an inline error shown
+- **Zero as numeric input** (number fields where zero is ambiguous): if the spec states a minimum > 0, assert `0` is blocked with a visible error; if the spec permits zero, assert the form submits successfully and the saved record displays `0`
+- **Decimal precision** (financial/numeric fields): enter a value with more decimal places than the field supports → assert rounding behavior is visible in the saved output, or an inline error is shown
+
+**3. Interaction Edge Cases:**
+
+Pick only the ones that match component types in this module's AST:
+
+- **Rapid re-submission after redirect** (any form that redirects to a detail page on success): after a successful submit, press the browser back button → assert the creation form is shown blank (not pre-filled) OR the user is redirected to the detail page without a second entity being created
+- **Wizard step skip — enforced navigation** (wizard where steps must be completed sequentially): attempt to click a later step tab directly without completing earlier steps → assert navigation is blocked and the earlier step remains active
+- **Wizard step skip — free navigation** (wizard that allows free tab navigation): navigate to a later step without filling earlier steps → assert the later step displays and returning to the earlier step shows fields blank (no data was lost from the later step)
+- **Repeating group: add then remove all** (any `repeating_group`): add entries → remove all entries → submit → assert behavior: if spec states no minimum, form submits successfully; if spec requires at least one entry, a visible error is shown
+
+**4. State / Data Edge Cases:**
+
+Pick only what applies to this module:
+
+- **Rapid consecutive state transitions** (`state_bound_action_bar`): complete one transition → immediately attempt the next → assert the action succeeds or the expected blocking message is shown per spec
+- **State boundary condition:** If the `<module_context>` block specifies an `assumed_state_on_entry` that is on the boundary of an entity's lifecycle (e.g. "Newly created", "Pending Review"), generate an edge case testing an action immediately following that state entry.
+- **Date edges** (`date` fields): test today's date, yesterday, and a far future date — assert which are accepted per spec and describe the visible outcome for each
+- **Leap year date** (`date` fields, free-text entry only): enter February 29 on a non-leap year → assert error; on a leap year → assert accepted. *Skip this test if the field uses a calendar date picker — pickers remove February 29 from non-leap years at the UI level and the test is not UI-executable.*
+- **File at exact size limit** (`file_upload`): upload a file exactly at the stated size limit → assert accepted with a visible success indicator; upload a file one unit over the limit → assert a visible error naming the size constraint
+
+**RELEVANCE RULE:** Only generate edge cases that match component types present in this module's AST. A login form does not need repeating-group edge cases. A data table does not need wizard-step-skip tests.
+
+**`visible_when` fields:** If the spec reveals a conditional field via a toggle/dropdown, test a boundary value in that revealed field. If the revealed field has no numeric or date constraint, generate one `input_edge` test using a long-text or special-character value instead.
+
+---
+
+**CALIBRATION:**
+
+- Simple module (login, single form, display page): **2–4 tests**
+- Medium module (form with numeric/date constraints): **4–8 tests**
+- Complex module (state machine, wizard, repeating groups): **6–10 tests**
+
+If you exceed these, you are generating generic edges that don't apply to this module. Apply the relevance rule and scope gate again.
+
+---
+
+**MINIMUM OUTPUT RULE:**
+
+If the module has any numeric/date/count threshold in the AST or description, produce at least 2 boundary tests. Zero boundary tests when thresholds exist is a generation failure.
+
+---
+
+**PRIORITY:**
+
+- **High:** None — edge tests are secondary to core functionality
+- **Medium:** Boundary tests at thresholds (financial amounts, date ordering, count limits, file size limits)
+- **Low:** Input edge cases (long text, special chars, whitespace, decimal precision), interaction edge cases (browser back, wizard skip)
+
+---
+
+**WORKFLOW-AWARE BOUNDARY SCOPING (run before outputting):**
+
+If a `<workflows>` block is present in the input:
+- For each workflow where `conditional_branch` activates a numeric or date field, check if that field has a boundary (a numeric/date threshold in the AST `constraints` or description).
+- If yes, that workflow's branch is a **candidate for a boundary edge test** — add or confirm a boundary TC exists for it.
+- Add `"wf_ref": "WF-NNN"` to each TC that maps to a specific workflow's boundary. Set `"wf_ref": null` for generic input/interaction edge tests.
+
+---
+
+**OUTPUT — JSON only, no prose, no markdown fencing:**
+
+{
+  "module": "Module Name",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "wf_ref": null,
+      "subcategory": "boundary | input_edge | interaction_edge | state_edge | data_edge",
+      "test_case": "Short descriptive name",
+      "preconditions": ["precondition 1"],
+      "steps": ["1. Step one", "2. Step two"],
+      "expected_result": "Precise visible outcome — state pass or fail explicitly for boundary tests",
+      "priority": "medium | low"
+    }
+  ],
+  "summary": {
+    "total": 0,
+    "boundary": 0,
+    "input_edge": 0,
+    "interaction_edge": 0,
+    "state_edge": 0,
+    "data_edge": 0,
+    "medium_priority": 0,
+    "low_priority": 0
+  }
+}
+
+
+------------------------------------------------------------
+[23:08:30] Test-Edge - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 30,
+  "module_title": "System Administration",
+  "summary": "System Administration provides centralized management of scheduled jobs, global feature flags, code lists, custom data tables, and audit trails for the application.",
+  "where_it_fits": "This module is an administrative area exposed via the top navigation (Admin) and appears in the content area with breadcrumbs and icon-based sidebar context; it is used for system-wide configuration and background job lifecycle management across the application. It sits at the platform-level configuration layer, affecting Clients, Accounts, Products and reporting behaviors referenced elsewhere in the app.",
+  "assumed_state_on_entry": "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+}
+</module_context>
+
+<module_name>System Administration</module_name>
+
+<ast>
+{
+  "module_name": "System Administration",
+  "components": {
+    "Manage_Scheduler_Jobs": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Table of batch jobs. Per-row interactive controls provided for toggling active state and editing CRON expression.",
+      "fields": {
+        "Scheduler_Enabled": {
+          "type": "checkbox",
+          "field_label": "Start/Stop Scheduler",
+          "on_change": "enables or disables execution of all scheduled jobs globally",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        "Is_Active": {
+          "type": "checkbox",
+          "field_label": "Is Active",
+          "on_change": "toggles Is_Active for the job",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        "CRON_Expression": {
+          "type": "unspecified",
+          "field_label": "CRON Expression",
+          "on_change": "updates the job's schedule; editable per job (inline or modal)",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "Edit CRON",
+          "fields": {
+            "CRON_Expression": {
+              "type": "unspecified",
+              "field_label": "CRON Expression",
+              "on_change": "persists edited CRON expression for the job"
+            }
+          },
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "Toggle Active",
+          "fields": {
+            "Is_Active": {
+              "type": "checkbox",
+              "field_label": "Is Active",
+              "on_change": "toggles Is_Active for the job"
+            }
+          },
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "Run Now",
+          "on_success": "queues immediate execution of the selected job",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "View Run History",
+          "on_success": "navigates to job run history for the selected job",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "bulk_actions": [],
+      "searchable": false
+    },
+    "Manage_Global_Configuration": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Table of global feature flags and configuration entries (each row interactive).",
+      "fields": {
+        "Enabled": {
+          "type": "checkbox",
+          "field_label": "Enabled",
+          "on_change": "toggles the feature flag or configuration entry for the system",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        "Value": {
+          "type": "unspecified",
+          "field_label": "Value",
+          "on_change": "persists the configuration value for the entry",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "Edit",
+          "fields": {
+            "Enabled": {
+              "type": "checkbox",
+              "field_label": "Enabled"
+            },
+            "Value": {
+              "type": "unspecified",
+              "field_label": "Value"
+            }
+          },
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "bulk_actions": [],
+      "searchable": false,
+      "notes": "Key settings include maker-checker (4-eyes approval), reschedule-future-repayments, allow-transactions-on-non-workingday, reschedule-repayments-on-holidays, savings-interest-posting-current-period-end, financial-year-beginning-month, meetings-mandatory-for-jlg-loans."
+    },
+    "Manage_Codes": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Lists code lists. Clicking a code opens its values for management.",
+      "row_actions": [
+        {
+          "action_name": "Open Code",
+          "on_success": "opens Manage_Code_Values for the selected code list",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "searchable": false,
+      "bulk_actions": []
+    },
+    "Manage_Code_Values": {
+      "type": "form",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Manage values for a single code list. Supports add, edit, reorder, deactivate.",
+      "fields": {
+        "Values": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Value": {
+              "type": "unspecified",
+              "field_label": "Value"
+            },
+            "Code": {
+              "type": "unspecified",
+              "field_label": "Code (optional)"
+            },
+            "Is_Active": {
+              "type": "checkbox",
+              "field_label": "Is Active",
+              "on_change": "toggles active state of this code value"
+            },
+            "Order": {
+              "type": "unspecified",
+              "field_label": "Order (used for dropdown ordering)"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Add Value",
+          "on_success": "adds a new value row to the code list"
+        },
+        {
+          "action_name": "Save Changes",
+          "on_success": "persists edits, order changes, and active state toggles"
+        }
+      ]
+    },
+    "Manage_Data_Tables": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Lists custom data tables that extend core entities. Provides creation form to add new custom tables and their columns.",
+      "row_actions": [
+        {
+          "action_name": "Edit",
+          "on_success": "opens Create_Data_Table_Form in edit mode for the selected custom table",
+          "preconditions": [
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ],
+      "bulk_actions": [],
+      "searchable": false,
+      "create_form": {
+        "type": "form",
+        "fields": {
+          "Data_Table_Name": {
+            "type": "unspecified",
+            "field_label": "Data Table Name"
+          },
+          "Application_Table_Name": {
+            "type": "dropdown",
+            "field_label": "Application Table Name",
+            "options": [
+              "m_client",
+              "m_group",
+              "m_loan",
+              "m_office",
+              "m_saving_account",
+              "m_product_loan",
+              "m_savings_product"
+            ]
+          },
+          "Multi_Row": {
+            "type": "checkbox",
+            "field_label": "Multi Row"
+          },
+          "Columns": {
+            "type": "repeating_group",
+            "item_fields": {
+              "Name": {
+                "type": "unspecified",
+                "field_label": "Column Name"
+              },
+              "Type": {
+                "type": "dropdown",
+                "field_label": "Type",
+                "options": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "decimal",
+                  "date",
+                  "datetime",
+                  "text",
+                  "dropdown"
+                ]
+              },
+              "Length": {
+                "type": "unspecified",
+                "field_label": "Length"
+              },
+              "Is_Mandatory": {
+                "type": "checkbox",
+                "field_label": "Is Mandatory"
+              },
+              "Is_Unique": {
+                "type": "checkbox",
+                "field_label": "Is Unique"
+              }
+            }
+          }
+        },
+        "submit_actions": [
+          {
+            "action_name": "Create",
+            "on_success": "creates the custom data table and associated columns",
+            "preconditions": [
+              "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+            ]
+          },
+          {
+            "action_name": "Cancel",
+            "on_success": "cancels creation and returns to Manage Data Tables list"
+          }
+        ]
+      }
+    },
+    "Audit_Trails": {
+      "type": "data_table",
+      "preconditions": [
+        "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+      ],
+      "description": "Displays system actions. Filters provided. Pending commands present when maker-checker enabled.",
+      "searchable": true,
+      "filterable_columns": [
+        "Action Name",
+        "Entity Name",
+        "Resource ID",
+        "Maker",
+        "Checker",
+        "Office",
+        "Date Range"
+      ],
+      "filters": {
+        "Action_Name": {
+          "type": "unspecified",
+          "field_label": "Action Name"
+        },
+        "Entity_Name": {
+          "type": "unspecified",
+          "field_label": "Entity Name"
+        },
+        "Resource_ID": {
+          "type": "unspecified",
+          "field_label": "Resource ID"
+        },
+        "Maker_ID": {
+          "type": "unspecified",
+          "field_label": "Maker ID"
+        },
+        "Checker_ID": {
+          "type": "unspecified",
+          "field_label": "Checker ID"
+        },
+        "Office": {
+          "type": "unspecified",
+          "field_label": "Office"
+        },
+        "Date_Range": {
+          "type": "date",
+          "field_label": "Date Range"
+        }
+      },
+      "row_actions": [
+        {
+          "action_name": "View Details",
+          "on_success": "opens audit entry details"
+        },
+        {
+          "action_name": "Approve",
+          "on_success": "marks the pending command as Approved and triggers post-approve processing",
+          "preconditions": [
+            "Processing Result == Pending",
+            "maker-checker (4-eyes approval) feature flag enabled",
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        },
+        {
+          "action_name": "Reject",
+          "fields": {
+            "Reason": {
+              "type": "unspecified",
+              "field_label": "Reason",
+              "required": true
+            }
+          },
+          "on_success": "marks the pending command as Rejected and records the rejection reason",
+          "preconditions": [
+            "Processing Result == Pending",
+            "maker-checker (4-eyes approval) feature flag enabled",
+            "Logged in as a user with administrative privileges (role permitting access to Admin/System Administration) and viewing the Admin section in the top navigation."
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Manage Scheduler Jobs page displays a table of all batch jobs with columns for Job Name, Is Active (toggle), CRON Expression, Previous Run Status (Success/Failed with start/end times), Next Run Time, Currently Running indicator, and action buttons. Jobs include Apply Annual Fee, Add Accrual Transactions, Apply Penalty to Overdue Loans, Update Loan Summary, Post Interest for Savings, Transfer Fees, and Generate Loan Loss Provisioning. Each job can be toggled active/inactive and its CRON expression edited. A global Start/Stop scheduler toggle controls whether all scheduled jobs execute.
+
+The Global Configuration page displays a table of system-wide feature flags with columns for Configuration Name, Enabled (toggle), Value, and Description. Key settings include maker-checker (4-eyes approval), reschedule-future-repayments, allow-transactions-on-non-workingday, reschedule-repayments-on-holidays, savings-interest-posting-current-period-end, financial-year-beginning-month, and meetings-mandatory-for-jlg-loans.
+
+The Manage Codes page lists all code lists (Client Type, Gender, Address Type, Loan Purpose, etc.) with Name and Is System Defined columns. Clicking a code opens its values for adding, editing, reordering, and deactivating entries that populate dropdown options throughout the system.
+
+The Manage Data Tables page lists custom data tables that extend core entities (m_client, m_group, m_loan, m_office, m_saving_account, m_product_loan, m_savings_product) with custom fields. The Create form includes Data Table Name, Application Table Name dropdown, Multi Row checkbox, and column definitions — each with Name, Type (string, number, boolean, decimal, date, datetime, text, dropdown), Length, Is Mandatory, and Is Unique checkboxes.
+
+The Audit Trails page displays all system actions with columns for Action Name, Entity Name, Resource ID, Maker, Made On Date, Checker, Checked On Date, Processing Result (Pending, Approved, Rejected), Office Name, and Client/Loan/Savings details. Filters allow searching by Action Name, Entity Name, Resource ID, Maker ID, Checker ID, Office, and Date Range. When maker-checker is enabled, pending commands appear with Approve and Reject buttons.
+
+---
+
+
+</description>
+
+<workflows>
+WF-001 | Toggle Scheduler Execution (Start/Stop Scheduler) | actor: Administrator | branch: none | terminal: Scheduler_Enabled | on_success: enables or disables execution of all scheduled jobs globally
+WF-002 | Edit CRON (row action) | actor: Administrator | branch: none | terminal: Edit CRON | on_success: persists edited CRON expression for the job
+WF-003 | Toggle Job Active (row action) | actor: Administrator | branch: none | terminal: Toggle Active | on_success: toggles Is_Active for the job
+WF-004 | Toggle Job Active (inline) | actor: Administrator | branch: none | terminal: Is_Active | on_success: toggles Is_Active for the job
+WF-005 | Update CRON Expression (inline edit) | actor: Administrator | branch: none | terminal: CRON_Expression | on_success: updates the job's schedule; editable per job (inline or modal)
+WF-006 | Run Job Now (row action) | actor: Administrator | branch: none | terminal: Run Now | on_success: queues immediate execution of the selected job
+WF-007 | View Job Run History (row action) | actor: Administrator | branch: none | terminal: View Run History | on_success: navigates to job run history for the selected job
+WF-008 | Toggle Global Configuration Enabled (inline) | actor: Administrator | branch: none | terminal: Enabled | on_success: toggles the feature flag or configuration entry for the system
+WF-009 | Edit Global Configuration (row action) | actor: Administrator | branch: none | terminal: Edit | on_success: persists the configuration value for the entry
+WF-010 | Update Global Configuration Value (inline) | actor: Administrator | branch: none | terminal: Value | on_success: persists the configuration value for the entry
+WF-011 | Open Code List | actor: Administrator | branch: none | terminal: Open Code | on_success: opens Manage_Code_Values for the selected code list
+WF-012 | Add Value to Code List | actor: Administrator | branch: none | terminal: Add Value | on_success: adds a new value row to the code list
+WF-013 | Save Changes to Code List | actor: Administrator | branch: none | terminal: Save Changes | on_success: persists edits, order changes, and active state toggles
+WF-014 | Edit Custom Data Table (row action) | actor: Administrator | branch: none | terminal: Edit | on_success: opens Create_Data_Table_Form in edit mode for the selected custom table
+WF-015 | Create Custom Data Table | actor: Administrator | branch: none | terminal: Create | on_success: creates the custom data table and associated columns
+WF-016 | Cancel Create Custom Data Table | actor: Administrator | branch: none | terminal: Cancel | on_success: cancels creation and returns to Manage Data Tables list
+WF-017 | View Audit Entry Details | actor: Administrator | branch: none | terminal: View Details | on_success: opens audit entry details
+WF-018 | Approve Pending Command | actor: Administrator | branch: Processing Result == Pending AND maker-checker (4-eyes approval) feature flag enabled | terminal: Approve | on_success: marks the pending command as Approved and triggers post-approve processing
+WF-019 | Reject Pending Command with Reason | actor: Administrator | branch: Processing Result == Pending AND maker-checker (4-eyes approval) feature flag enabled | terminal: Reject | on_success: marks the pending command as Rejected and records the rejection reason
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:13:41] Test-Edge - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "System Administration",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "wf_ref": "WF-006",
+      "subcategory": "interaction_edge",
+      "test_case": "Attempt 'Run Now' while global scheduler is stopped",
+      "preconditions": [
+        "Logged in as a user with administrative privileges and viewing the Admin/System Administration section",
+        "At least one job is present in the Manage Scheduler Jobs table"
+      ],
+      "steps": [
+        "1. Click the global 'Start/Stop Scheduler' toggle to set Scheduler_Enabled = Off",
+        "2. In the Manage Scheduler Jobs table, locate a job row",
+        "3. Click the row action 'Run Now' for that job"
+      ],
+      "expected_result": "Queuing the job is blocked; a visible inline or modal error is shown indicating the scheduler is disabled and the job was not queued; the Manage Scheduler Jobs table shows no change to the job's 'Currently Running' indicator",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-002",
+      "wf_ref": "WF-003",
+      "subcategory": "state_edge",
+      "test_case": "Attempt to deactivate a job that shows 'Currently Running'",
+      "preconditions": [
+        "Logged in as a user with administrative privileges and viewing the Admin/System Administration section",
+        "At least one job row in Manage Scheduler Jobs currently displays the 'Currently Running' indicator = true and Is_Active = true"
+      ],
+      "steps": [
+        "1. In the job row that is currently running, click the 'Is Active' toggle to set it Off"
+      ],
+      "expected_result": "The toggle action is blocked; an inline error is shown indicating the job cannot be deactivated while it is currently running; the Is Active checkbox remains checked in the UI",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-003",
+      "wf_ref": "WF-005",
+      "subcategory": "input_edge",
+      "test_case": "Inline edit CRON expression containing leading and trailing whitespace is persisted trimmed",
+      "preconditions": [
+        "Logged in as a user with administrative privileges and viewing the Admin/System Administration section",
+        "Manage Scheduler Jobs table contains at least one editable job"
+      ],
+      "steps": [
+        "1. In a job row, click the inline CRON expression cell or the 'Edit CRON' action to open the editor",
+        "2. Enter a CRON expression value that has leading and trailing whitespace surrounding the valid expression",
+        "3. Click Save (persist the edited CRON expression)"
+      ],
+      "expected_result": "Save succeeds; the job row displays the persisted CRON Expression with leading and trailing whitespace removed (trimmed) and the editor is closed",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-004",
+      "wf_ref": null,
+      "subcategory": "boundary",
+      "test_case": "Apply Audit Trails Date Range filter where Start Date = End Date (same-day)",
+      "preconditions": [
+        "Logged in as a user with administrative privileges and viewing the Admin/System Administration section",
+        "Audit Trails page is open"
+      ],
+      "steps": [
+        "1. Open the Date Range filter controls on the Audit Trails page",
+        "2. Set the Start Date to a particular day",
+        "3. Set the End Date to the same day as the Start Date",
+        "4. Click Apply Filters"
+      ],
+      "expected_result": "Filter applies successfully; the audit table shows entries for that single date and the Date Range filter UI continues to show the selected same-day range",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-005",
+      "wf_ref": null,
+      "subcategory": "boundary",
+      "test_case": "Attempt to apply Audit Trails Date Range where Start Date is after End Date",
+      "preconditions": [
+        "Logged in as a user with administrative privileges and viewing the Admin/System Administration section",
+        "Audit Trails page is open"
+      ],
+      "steps": [
+        "1. Open the Date Range filter controls on the Audit Trails page",
+        "2. Set the Start Date to a day that is one day after the End Date",
+        "3. Set the End Date to a day that is one day before the Start Date",
+        "4. Click Apply Filters"
+      ],
+      "expected_result": "Applying the filter is blocked; an inline validation error is shown indicating the start date must be on or before the end date and the audit table contents remain unchanged",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-006",
+      "wf_ref": "WF-012",
+      "subcategory": "input_edge",
+      "test_case": "Add a code list value with a very long Value and special characters in Code",
+      "preconditions": [
+        "Logged in as a user with administrative privileges and viewing the Admin/System Administration section",
+        "Manage Codes page is open and at least one code list is present"
+      ],
+      "steps": [
+        "1. Click a code list row to open its Manage Code Values screen",
+        "2. Click 'Add Value' to create a new value row",
+        "3. In the new row, enter a Value consisting of a very long string (200+ characters) into the Value field",
+        "4. Enter a Code value containing special characters and punctuation into the Code field",
+        "5. Click 'Add Value' (or 'Save Changes' if required to persist)"
+      ],
+      "expected_result": "The new value row is added to the values list and displays the entered Value and Code as entered (no silent truncation); the new row appears in the list with its Is Active state visible",
+      "priority": "low"
+    }
+  ],
+  "summary": {
+    "total": 6,
+    "boundary": 2,
+    "input_edge": 2,
+    "interaction_edge": 1,
+    "state_edge": 1,
+    "data_edge": 0,
+    "medium_priority": 4,
+    "low_priority": 2
+  }
+}
+
+------------------------------------------------------------
+[23:13:41] Test-Edge - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "System Administration",
+  "category": "edge",
+  "test_cases": [
+    {
+      "tc_id": "E-001",
+      "wf_ref": "WF-006",
+      "subcategory": "interaction_edge",
+      "test_case": "Attempt 'Run Now' while global scheduler is stopped",
+      "preconditions": [
+        "Logged in as a user with administrative privileges and viewing the Admin/System Administration section",
+        "At least one job is present in the Manage Scheduler Jobs table"
+      ],
+      "steps": [
+        "1. Click the global 'Start/Stop Scheduler' toggle to set Scheduler_Enabled = Off",
+        "2. In the Manage Scheduler Jobs table, locate a job row",
+        "3. Click the row action 'Run Now' for that job"
+      ],
+      "expected_result": "Queuing the job is blocked; a visible inline or modal error is shown indicating the scheduler is disabled and the job was not queued; the Manage Scheduler Jobs table shows no change to the job's 'Currently Running' indicator",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-002",
+      "wf_ref": "WF-003",
+      "subcategory": "state_edge",
+      "test_case": "Attempt to deactivate a job that shows 'Currently Running'",
+      "preconditions": [
+        "Logged in as a user with administrative privileges and viewing the Admin/System Administration section",
+        "At least one job row in Manage Scheduler Jobs currently displays the 'Currently Running' indicator = true and Is_Active = true"
+      ],
+      "steps": [
+        "1. In the job row that is currently running, click the 'Is Active' toggle to set it Off"
+      ],
+      "expected_result": "The toggle action is blocked; an inline error is shown indicating the job cannot be deactivated while it is currently running; the Is Active checkbox remains checked in the UI",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-003",
+      "wf_ref": "WF-005",
+      "subcategory": "input_edge",
+      "test_case": "Inline edit CRON expression containing leading and trailing whitespace is persisted trimmed",
+      "preconditions": [
+        "Logged in as a user with administrative privileges and viewing the Admin/System Administration section",
+        "Manage Scheduler Jobs table contains at least one editable job"
+      ],
+      "steps": [
+        "1. In a job row, click the inline CRON expression cell or the 'Edit CRON' action to open the editor",
+        "2. Enter a CRON expression value that has leading and trailing whitespace surrounding the valid expression",
+        "3. Click Save (persist the edited CRON expression)"
+      ],
+      "expected_result": "Save succeeds; the job row displays the persisted CRON Expression with leading and trailing whitespace removed (trimmed) and the editor is closed",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-004",
+      "wf_ref": null,
+      "subcategory": "boundary",
+      "test_case": "Apply Audit Trails Date Range filter where Start Date = End Date (same-day)",
+      "preconditions": [
+        "Logged in as a user with administrative privileges and viewing the Admin/System Administration section",
+        "Audit Trails page is open"
+      ],
+      "steps": [
+        "1. Open the Date Range filter controls on the Audit Trails page",
+        "2. Set the Start Date to a particular day",
+        "3. Set the End Date to the same day as the Start Date",
+        "4. Click Apply Filters"
+      ],
+      "expected_result": "Filter applies successfully; the audit table shows entries for that single date and the Date Range filter UI continues to show the selected same-day range",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-005",
+      "wf_ref": null,
+      "subcategory": "boundary",
+      "test_case": "Attempt to apply Audit Trails Date Range where Start Date is after End Date",
+      "preconditions": [
+        "Logged in as a user with administrative privileges and viewing the Admin/System Administration section",
+        "Audit Trails page is open"
+      ],
+      "steps": [
+        "1. Open the Date Range filter controls on the Audit Trails page",
+        "2. Set the Start Date to a day that is one day after the End Date",
+        "3. Set the End Date to a day that is one day before the Start Date",
+        "4. Click Apply Filters"
+      ],
+      "expected_result": "Applying the filter is blocked; an inline validation error is shown indicating the start date must be on or before the end date and the audit table contents remain unchanged",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-006",
+      "wf_ref": "WF-012",
+      "subcategory": "input_edge",
+      "test_case": "Add a code list value with a very long Value and special characters in Code",
+      "preconditions": [
+        "Logged in as a user with administrative privileges and viewing the Admin/System Administration section",
+        "Manage Codes page is open and at least one code list is present"
+      ],
+      "steps": [
+        "1. Click a code list row to open its Manage Code Values screen",
+        "2. Click 'Add Value' to create a new value row",
+        "3. In the new row, enter a Value consisting of a very long string (200+ characters) into the Value field",
+        "4. Enter a Code value containing special characters and punctuation into the Code field",
+        "5. Click 'Add Value' (or 'Save Changes' if required to persist)"
+      ],
+      "expected_result": "The new value row is added to the values list and displays the entered Value and Code as entered (no silent truncation); the new row appears in the list with its Is Active state visible",
+      "priority": "low"
+    }
+  ],
+  "summary": {
+    "total": 6,
+    "boundary": 2,
+    "input_edge": 2,
+    "interaction_edge": 1,
+    "state_edge": 1,
+    "data_edge": 0,
+    "medium_priority": 4,
+    "low_priority": 2
+  }
+}

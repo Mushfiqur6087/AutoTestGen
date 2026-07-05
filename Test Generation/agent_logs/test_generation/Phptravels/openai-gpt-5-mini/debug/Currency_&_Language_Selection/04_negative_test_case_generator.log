@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:13.998009
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.210744
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - SYSTEM PROMPT
+[22:33:07] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:14] Test-Negative - USER PROMPT
+[22:33:07] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 17,
   "module_title": "Currency & Language Selection",
-  "summary": "Selection controls for currency and language that update displayed prices and the site interface in real-time and persist preferences to the user profile or session/cookies.",
-  "where_it_fits": "Located in the top navigation bar (right side) and available across the Home, Search, and all section pages; it ties into the Home Page & Search and all booking/listing modules so prices, labels, and content reflect the chosen currency and language throughout the user journey.",
-  "assumed_state_on_entry": "A site page is loaded with the top navigation visible; user is either authenticated (profile available) or a guest with session/cookie support enabled."
+  "summary": "Provides site-wide currency and language preferences that update prices and interface text in real-time and persist to the user profile or session/cookies.",
+  "where_it_fits": "Presented in the top navigation bar as currency and language selectors and available across all primary sections (Home, Hotels, Flights, Tours, Cars, Offers, Blog, Account), affecting search widgets, listings, details, booking flows and the user dashboard. Selections take effect immediately across the site and are applied for the duration of the session or saved to the authenticated user's profile.",
+  "assumed_state_on_entry": "User is browsing the site with an active session on any page; if authenticated, the user account is available for preference persistence, otherwise session/cookies are available to store preferences."
 }
 </module_context>
 
@@ -258,36 +268,30 @@ If a `<workflows>` block is present in the input:
 
 <ast>
 {
+  "module_id": 17,
   "module_name": "Currency & Language Selection",
   "components": {
-    "Top_Nav_Selectors": {
+    "Top_Nav_Preferences": {
       "type": "control_group",
       "preconditions": [
-        "A site page is loaded with the top navigation visible; user is either authenticated (profile available) or a guest with session/cookie support enabled."
+        "User has an active session; if authenticated, the user account is available for preference persistence, otherwise session/cookies are available"
       ],
       "fields": {
         "Currency_Selector": {
-          "type": "unspecified",
+          "type": "dropdown",
           "constraints": [
-            "updates displayed prices in real-time",
-            "retains current search context when changed"
+            "must preserve current search context (do not reset filters, search queries, or navigation state) when updating currency"
           ],
-          "on_change_actions": [
-            {
-              "action_name": "Persist Preference to Profile",
-              "preconditions": [
-                "user is authenticated"
-              ],
-              "on_success": "preference saved to user profile"
-            },
-            {
-              "action_name": "Persist Preference to Session/Cookie",
-              "preconditions": [
-                "user is not authenticated"
-              ],
-              "on_success": "preference saved to session/cookie for current browsing session"
+          "on_change": {
+            "apply_immediately": true,
+            "effects": [
+              "update all displayed prices across the site in real-time"
+            ],
+            "persistence": {
+              "when_authenticated": "save to user profile",
+              "when_unauthenticated": "store in session/cookie"
             }
-          ]
+          }
         },
         "Language_Selector": {
           "type": "dropdown",
@@ -297,29 +301,16 @@ If a `<workflows>` block is present in the input:
             "Spanish",
             "French"
           ],
-          "constraints": [
-            "switches entire site interface (navigation labels, form labels, and content) to the chosen language in real-time"
-          ],
-          "on_change_actions": [
-            {
-              "action_name": "Apply Language Change",
-              "on_success": "site interface updates to selected language immediately"
-            },
-            {
-              "action_name": "Persist Preference to Profile",
-              "preconditions": [
-                "user is authenticated"
-              ],
-              "on_success": "preference saved to user profile"
-            },
-            {
-              "action_name": "Persist Preference to Session/Cookie",
-              "preconditions": [
-                "user is not authenticated"
-              ],
-              "on_success": "preference saved to session/cookie for current browsing session"
+          "on_change": {
+            "apply_immediately": true,
+            "effects": [
+              "switch entire site interface including navigation labels, form labels, and content to the selected language"
+            ],
+            "persistence": {
+              "when_authenticated": "save to user profile",
+              "when_unauthenticated": "store in session/cookie"
             }
-          ]
+          }
         }
       }
     }
@@ -337,18 +328,14 @@ The currency selector updates all prices displayed across the site in real-time 
 </description>
 
 <workflows>
-WF-001 | Change currency — persist to user profile (authenticated) | actor: Authenticated User | branch: user is authenticated | terminal: Persist Preference to Profile | on_success: preference saved to user profile
-WF-002 | Change currency — persist to session/cookie (unauthenticated) | actor: Unauthenticated User | branch: user is not authenticated | terminal: Persist Preference to Session/Cookie | on_success: preference saved to session/cookie for current browsing session
-WF-003 | Change language — apply change (authenticated) | actor: Authenticated User | branch: user is authenticated | terminal: Apply Language Change | on_success: site interface updates to selected language immediately
-WF-004 | Change language — persist to user profile (authenticated) | actor: Authenticated User | branch: user is authenticated | terminal: Persist Preference to Profile | on_success: preference saved to user profile
-WF-005 | Change language — apply change (unauthenticated) | actor: Unauthenticated User | branch: user is not authenticated | terminal: Apply Language Change | on_success: site interface updates to selected language immediately
-WF-006 | Change language — persist to session/cookie (unauthenticated) | actor: Unauthenticated User | branch: user is not authenticated | terminal: Persist Preference to Session/Cookie | on_success: preference saved to session/cookie for current browsing session
+WF-001 | Change currency (preserve search context) | actor: <role> | branch: none | terminal: Currency_Selector | on_success: Apply immediately: update all displayed prices across the site in real-time while preserving the current search context (do not reset filters, search queries, or navigation state). If authenticated: save to user profile; otherwise: store in session/cookie.
+WF-002 | Change language (switch site interface) | actor: <role> | branch: none | terminal: Language_Selector | on_success: Apply immediately: switch entire site interface including navigation labels, form labels, and content to the selected language. If authenticated: save to user profile; otherwise: store in session/cookie.
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:28:17] Test-Negative - LLM RESPONSE
+[22:36:56] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Currency & Language Selection",
@@ -356,122 +343,74 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": "WF-002",
-      "test_case": "Guest: change currency with browser cookies/session disabled — persistence blocked",
+      "wf_ref": null,
+      "test_case": "Attempt to change Currency with no active session",
       "preconditions": [
-        "Browser cookies/session storage disabled",
-        "User is not authenticated (guest)",
-        "A site page is loaded with the top navigation visible"
+        "Browser has no active site session (clear site cookies or open a fresh session so there is <no active session>)"
       ],
       "steps": [
-        "1. Disable cookies and session storage in the browser",
-        "2. Open a site page where the top navigation is visible",
-        "3. Confirm the user is logged out (guest)",
-        "4. Click the Currency selector in the top navigation",
-        "5. Select <new currency> from the list"
+        "1. Navigate to any page where the Top Nav Preferences are visible",
+        "2. Click the Currency_Selector dropdown",
+        "3. Select <a different valid currency> from the list"
       ],
-      "expected_result": "An inline error appears adjacent to the Currency selector indicating preferences cannot be saved because cookies/session storage are disabled; the change is not persisted to session/cookie and prices do not update (the page continues displaying prices in the previous currency). No preference is saved for the browsing session.",
+      "expected_result": "Currency_Selector does not accept or persist the new selection: the dropdown reverts to the previous value and displayed prices remain in the original currency; a visible notice or modal appears indicating an active session is required to persist preferences (selection is not applied or saved)",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-006",
-      "test_case": "Guest: change language with browser cookies/session disabled — persistence and UI switch blocked",
+      "wf_ref": "WF-001",
+      "test_case": "Change currency while a search with non-default filters is active — attempt that would reset search context must be blocked",
       "preconditions": [
-        "Browser cookies/session storage disabled",
-        "User is not authenticated (guest)",
-        "A site page is loaded with the top navigation visible"
+        "User has an active session",
+        "A search results page is open with a non-default <filter> applied and a <search query> entered"
       ],
       "steps": [
-        "1. Disable cookies and session storage in the browser",
-        "2. Open a site page where the top navigation is visible",
-        "3. Confirm the user is logged out (guest)",
-        "4. Click the Language selector in the top navigation",
-        "5. Select <new language> from the list"
+        "1. On the search results page, confirm <filter> is applied and <search query> is present",
+        "2. Click the Currency_Selector dropdown in the top navigation",
+        "3. Select <a different valid currency> from the list"
       ],
-      "expected_result": "An inline error appears adjacent to the Language selector indicating preferences cannot be saved because cookies/session storage are disabled; the site interface does not switch to <new language> (remaining in the previous language) and no preference is stored for the browsing session.",
+      "expected_result": "Currency change is not applied if doing so would reset the current search context: Currency_Selector remains at the original currency (or the selection is ignored); search filters, search query, pagination and navigation state remain unchanged; an inline warning appears near the Currency_Selector indicating the action would alter the current search context and is blocked",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": null,
-      "test_case": "Top navigation hidden / not present — selectors not accessible",
+      "wf_ref": "WF-002",
+      "test_case": "Attempt to load an unsupported language via URL parameter (unsupported language code) — selection must be rejected",
       "preconditions": [
-        "A site page is loaded where the top navigation is not visible (e.g., full-screen modal or page variant)",
-        "User may be authenticated or guest"
+        "User has an active session"
       ],
       "steps": [
-        "1. Open a site page variant where the top navigation is not visible",
-        "2. Attempt to locate the Currency selector in the top navigation",
-        "3. Attempt to locate the Language selector in the top navigation"
+        "1. In the browser address bar, navigate to a site URL with the language parameter set to <unsupported_language_code>",
+        "2. Load the page"
       ],
-      "expected_result": "Currency and Language selectors are not visible or accessible in the UI (no controls present in the top navigation area); user cannot change currency or language from this page and no preference change action is possible.",
+      "expected_result": "Language change request is rejected: Language_Selector remains on its previous valid option; site interface does not switch to an unsupported language and falls back to a supported/default language; a visible inline notice or fallback indicator appears (Language_Selector shows one of the allowed options)",
       "priority": "medium"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": null,
-      "test_case": "Change currency causes loss of current search context — change should be blocked (retain context)",
-      "preconditions": [
-        "A site search results page is loaded with an active search context (filters, dates, location) visible in the UI",
-        "User is authenticated or guest with session support"
-      ],
-      "steps": [
-        "1. On a search results page, set identifiable search context and filters (e.g., apply <search filters/date range>)",
-        "2. Note the current search context visibly displayed on the page",
-        "3. Click the Currency selector in the top navigation",
-        "4. Select <new currency> from the list"
-      ],
-      "expected_result": "The search context and filters remain unchanged and visible after the currency change; prices update without clearing or resetting filters. If the UI attempts to clear the search context, the change must be rejected and an inline warning should appear near the Currency selector stating the search context would be lost (preference not applied). The final state must preserve the original search context.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-005",
       "wf_ref": "WF-001",
-      "test_case": "Attempt to persist currency preference to user profile when not authenticated — profile save must not occur",
+      "test_case": "Attempt to set an unsupported currency via URL parameter (unsupported currency code) — selector must not accept it",
       "preconditions": [
-        "User is not authenticated (guest)",
-        "A site page is loaded with the top navigation visible"
+        "User has an active session"
       ],
       "steps": [
-        "1. Ensure no user is signed in (guest session)",
-        "2. Click the Currency selector in the top navigation",
-        "3. Select <new currency> from the list",
-        "4. Sign in as the same user account that would normally have a profile preference (perform login)",
-        "5. Open the user's profile preferences page"
+        "1. In the browser address bar, navigate to a site URL with the currency parameter set to <unsupported_currency_code>",
+        "2. Load the page"
       ],
-      "expected_result": "The user's profile preference for currency remains as the previous profile value (e.g., <existing profile currency>); the change made while unauthenticated was not saved to the user profile. There is no indication in the profile that <new currency> was persisted to the profile (precondition 'user is authenticated' prevented profile persistence). The temporary selection may have applied to the guest session only but was not written to profile.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-006",
-      "wf_ref": "WF-004",
-      "test_case": "Attempt to persist language preference to user profile when not authenticated — profile save must not occur",
-      "preconditions": [
-        "User is not authenticated (guest)",
-        "A site page is loaded with the top navigation visible"
-      ],
-      "steps": [
-        "1. Ensure no user is signed in (guest session)",
-        "2. Click the Language selector in the top navigation",
-        "3. Select <new language> from the list",
-        "4. Sign in as the same user account that would normally have a profile preference (perform login)",
-        "5. Open the user's profile preferences page"
-      ],
-      "expected_result": "The user's profile preference for language remains as the previous profile value (e.g., <existing profile language>); the change made while unauthenticated was not saved to the user profile. The language change performed as a guest did not persist to the profile after login, demonstrating the Persist Preference to Profile precondition was enforced.",
-      "priority": "high"
+      "expected_result": "Currency_Selector does not switch to an unsupported currency: the dropdown stays at the previous valid currency and displayed prices remain in the previous currency; a visible inline notice or fallback to the default currency is shown (Currency_Selector displays one of the supported currencies)",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 6,
-    "high_priority": 4,
+    "total": 4,
+    "high_priority": 2,
     "medium_priority": 2,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:28:17] Test-Negative - PARSED JSON
+[22:36:56] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Currency & Language Selection",
@@ -479,115 +418,67 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": "WF-002",
-      "test_case": "Guest: change currency with browser cookies/session disabled \u2014 persistence blocked",
+      "wf_ref": null,
+      "test_case": "Attempt to change Currency with no active session",
       "preconditions": [
-        "Browser cookies/session storage disabled",
-        "User is not authenticated (guest)",
-        "A site page is loaded with the top navigation visible"
+        "Browser has no active site session (clear site cookies or open a fresh session so there is <no active session>)"
       ],
       "steps": [
-        "1. Disable cookies and session storage in the browser",
-        "2. Open a site page where the top navigation is visible",
-        "3. Confirm the user is logged out (guest)",
-        "4. Click the Currency selector in the top navigation",
-        "5. Select <new currency> from the list"
+        "1. Navigate to any page where the Top Nav Preferences are visible",
+        "2. Click the Currency_Selector dropdown",
+        "3. Select <a different valid currency> from the list"
       ],
-      "expected_result": "An inline error appears adjacent to the Currency selector indicating preferences cannot be saved because cookies/session storage are disabled; the change is not persisted to session/cookie and prices do not update (the page continues displaying prices in the previous currency). No preference is saved for the browsing session.",
+      "expected_result": "Currency_Selector does not accept or persist the new selection: the dropdown reverts to the previous value and displayed prices remain in the original currency; a visible notice or modal appears indicating an active session is required to persist preferences (selection is not applied or saved)",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-006",
-      "test_case": "Guest: change language with browser cookies/session disabled \u2014 persistence and UI switch blocked",
+      "wf_ref": "WF-001",
+      "test_case": "Change currency while a search with non-default filters is active \u2014 attempt that would reset search context must be blocked",
       "preconditions": [
-        "Browser cookies/session storage disabled",
-        "User is not authenticated (guest)",
-        "A site page is loaded with the top navigation visible"
+        "User has an active session",
+        "A search results page is open with a non-default <filter> applied and a <search query> entered"
       ],
       "steps": [
-        "1. Disable cookies and session storage in the browser",
-        "2. Open a site page where the top navigation is visible",
-        "3. Confirm the user is logged out (guest)",
-        "4. Click the Language selector in the top navigation",
-        "5. Select <new language> from the list"
+        "1. On the search results page, confirm <filter> is applied and <search query> is present",
+        "2. Click the Currency_Selector dropdown in the top navigation",
+        "3. Select <a different valid currency> from the list"
       ],
-      "expected_result": "An inline error appears adjacent to the Language selector indicating preferences cannot be saved because cookies/session storage are disabled; the site interface does not switch to <new language> (remaining in the previous language) and no preference is stored for the browsing session.",
+      "expected_result": "Currency change is not applied if doing so would reset the current search context: Currency_Selector remains at the original currency (or the selection is ignored); search filters, search query, pagination and navigation state remain unchanged; an inline warning appears near the Currency_Selector indicating the action would alter the current search context and is blocked",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": null,
-      "test_case": "Top navigation hidden / not present \u2014 selectors not accessible",
+      "wf_ref": "WF-002",
+      "test_case": "Attempt to load an unsupported language via URL parameter (unsupported language code) \u2014 selection must be rejected",
       "preconditions": [
-        "A site page is loaded where the top navigation is not visible (e.g., full-screen modal or page variant)",
-        "User may be authenticated or guest"
+        "User has an active session"
       ],
       "steps": [
-        "1. Open a site page variant where the top navigation is not visible",
-        "2. Attempt to locate the Currency selector in the top navigation",
-        "3. Attempt to locate the Language selector in the top navigation"
+        "1. In the browser address bar, navigate to a site URL with the language parameter set to <unsupported_language_code>",
+        "2. Load the page"
       ],
-      "expected_result": "Currency and Language selectors are not visible or accessible in the UI (no controls present in the top navigation area); user cannot change currency or language from this page and no preference change action is possible.",
+      "expected_result": "Language change request is rejected: Language_Selector remains on its previous valid option; site interface does not switch to an unsupported language and falls back to a supported/default language; a visible inline notice or fallback indicator appears (Language_Selector shows one of the allowed options)",
       "priority": "medium"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": null,
-      "test_case": "Change currency causes loss of current search context \u2014 change should be blocked (retain context)",
-      "preconditions": [
-        "A site search results page is loaded with an active search context (filters, dates, location) visible in the UI",
-        "User is authenticated or guest with session support"
-      ],
-      "steps": [
-        "1. On a search results page, set identifiable search context and filters (e.g., apply <search filters/date range>)",
-        "2. Note the current search context visibly displayed on the page",
-        "3. Click the Currency selector in the top navigation",
-        "4. Select <new currency> from the list"
-      ],
-      "expected_result": "The search context and filters remain unchanged and visible after the currency change; prices update without clearing or resetting filters. If the UI attempts to clear the search context, the change must be rejected and an inline warning should appear near the Currency selector stating the search context would be lost (preference not applied). The final state must preserve the original search context.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-005",
       "wf_ref": "WF-001",
-      "test_case": "Attempt to persist currency preference to user profile when not authenticated \u2014 profile save must not occur",
+      "test_case": "Attempt to set an unsupported currency via URL parameter (unsupported currency code) \u2014 selector must not accept it",
       "preconditions": [
-        "User is not authenticated (guest)",
-        "A site page is loaded with the top navigation visible"
+        "User has an active session"
       ],
       "steps": [
-        "1. Ensure no user is signed in (guest session)",
-        "2. Click the Currency selector in the top navigation",
-        "3. Select <new currency> from the list",
-        "4. Sign in as the same user account that would normally have a profile preference (perform login)",
-        "5. Open the user's profile preferences page"
+        "1. In the browser address bar, navigate to a site URL with the currency parameter set to <unsupported_currency_code>",
+        "2. Load the page"
       ],
-      "expected_result": "The user's profile preference for currency remains as the previous profile value (e.g., <existing profile currency>); the change made while unauthenticated was not saved to the user profile. There is no indication in the profile that <new currency> was persisted to the profile (precondition 'user is authenticated' prevented profile persistence). The temporary selection may have applied to the guest session only but was not written to profile.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-006",
-      "wf_ref": "WF-004",
-      "test_case": "Attempt to persist language preference to user profile when not authenticated \u2014 profile save must not occur",
-      "preconditions": [
-        "User is not authenticated (guest)",
-        "A site page is loaded with the top navigation visible"
-      ],
-      "steps": [
-        "1. Ensure no user is signed in (guest session)",
-        "2. Click the Language selector in the top navigation",
-        "3. Select <new language> from the list",
-        "4. Sign in as the same user account that would normally have a profile preference (perform login)",
-        "5. Open the user's profile preferences page"
-      ],
-      "expected_result": "The user's profile preference for language remains as the previous profile value (e.g., <existing profile language>); the change made while unauthenticated was not saved to the user profile. The language change performed as a guest did not persist to the profile after login, demonstrating the Persist Preference to Profile precondition was enforced.",
-      "priority": "high"
+      "expected_result": "Currency_Selector does not switch to an unsupported currency: the dropdown stays at the previous valid currency and displayed prices remain in the previous currency; a visible inline notice or fallback to the default currency is shown (Currency_Selector displays one of the supported currencies)",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 6,
-    "high_priority": 4,
+    "total": 4,
+    "high_priority": 2,
     "medium_priority": 2,
     "low_priority": 0
   }

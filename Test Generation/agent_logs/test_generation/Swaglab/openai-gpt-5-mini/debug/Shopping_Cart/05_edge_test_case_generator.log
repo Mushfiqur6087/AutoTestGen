@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:04:20.736101
+DEBUG SESSION STARTED: 2026-07-04T22:55:35.954462
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Edge - SYSTEM PROMPT
+[22:55:35] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Edge - USER PROMPT
+[22:55:35] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 4,
   "module_title": "Shopping Cart",
-  "summary": "Lists items added to the cart with quantity, description, and per-item remove controls, and provides actions to continue shopping or begin the checkout flow.",
-  "where_it_fits": "Reached from the Product Inventory (via the header shopping cart icon or after adding items), the Shopping Cart sits between browsing and the multi-step Checkout flow. It functions as the review/modify step before entering Checkout - Information \u2192 Checkout - Overview \u2192 Checkout - Confirmation.",
-  "assumed_state_on_entry": "Logged in user with one or more items already added to the cart."
+  "summary": "Shows the list of items currently in the shopping cart with quantity, description, and per-item remove controls, and exposes actions to continue shopping or proceed to checkout.",
+  "where_it_fits": "Reached from the Product Inventory via the shopping cart icon or by navigating to the cart, the Shopping Cart is part of the purchase flow and leads into the Checkout steps (Checkout - Information \u2192 Overview \u2192 Confirmation); it is displayed within the app header/navigation structure (hamburger menu, title, cart badge).",
+  "assumed_state_on_entry": "Logged-in user with one or more items previously added to the cart from Product Inventory."
 }
 </module_context>
 
@@ -243,7 +257,7 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Shopping Cart",
   "components": {
-    "Shopping_Cart_Items_Table": {
+    "Shopping_Cart_Table": {
       "type": "data_table",
       "row_actions": [
         {
@@ -257,14 +271,14 @@ If a `<workflows>` block is present in the input:
       "actions": [
         {
           "action_name": "Continue Shopping",
-          "action_type": "link",
-          "on_success": "navigates to Product Inventory"
+          "type": "link",
+          "destination": "Product Inventory"
         },
         {
           "action_name": "Checkout",
-          "action_type": "button",
+          "type": "button",
           "preconditions": [
-            "Logged in user with one or more items already added to the cart."
+            "user must be logged in"
           ],
           "on_success": "begins checkout flow"
         }
@@ -282,15 +296,15 @@ The Shopping Cart page lists items added to the cart with quantity (shown as 1),
 </description>
 
 <workflows>
-WF-001 | Remove item from cart (row action) | actor: Logged in user | branch: none | terminal: Remove | on_success: removes item from cart
-WF-002 | Continue Shopping (navigate to Product Inventory) | actor: Logged in user | branch: none | terminal: Continue Shopping | on_success: navigates to Product Inventory
-WF-003 | Begin Checkout | actor: Logged in user | branch: Logged in user with one or more items already added to the cart. | terminal: Checkout | on_success: begins checkout flow
+WF-001 | Remove item from cart | actor: Logged-in user | branch: none | terminal: Remove | on_success: removes item from cart
+WF-002 | Continue shopping (navigate to Product Inventory) | actor: Logged-in user | branch: none | terminal: Continue Shopping | on_success: navigates to Product Inventory
+WF-003 | Begin checkout | actor: Logged-in user | branch: none | terminal: Checkout | on_success: begins checkout flow
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:05:10] Test-Edge - LLM RESPONSE
+[22:56:31] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Shopping Cart",
@@ -298,102 +312,65 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-003",
-      "subcategory": "boundary",
-      "test_case": "Checkout succeeds when cart contains exactly one item (minimum count boundary)",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click Remove on a single cart row",
       "preconditions": [
-        "Logged in user",
-        "Shopping cart contains exactly one item"
+        "Logged-in user with at least one item present in the Shopping Cart (single cart row visible)",
+        "Cart badge shows the current item count"
       ],
       "steps": [
         "1. Open the Shopping Cart page",
-        "2. Confirm exactly one row is present in the items table",
-        "3. Click the Checkout button in the Shopping Cart Action Bar"
+        "2. Double-click the Remove button on the visible cart row (two clicks in quick succession)"
       ],
-      "expected_result": "Checkout begins and navigation to the Checkout flow succeeds; user is navigated to the Checkout - Information page (Checkout action succeeds). The Shopping Cart no longer blocks the transition.",
+      "expected_result": "Remove action succeeds once: the cart row for that item disappears from the table and the cart badge count decrements by one; the second click is ignored and no error message is shown",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-003",
-      "subcategory": "boundary",
-      "test_case": "Checkout is blocked when cart contains zero items (past-boundary of the 'one or more items' requirement)",
+      "wf_ref": null,
+      "subcategory": "input_edge",
+      "test_case": "Item description containing emoji and non-Latin unicode is displayed intact",
       "preconditions": [
-        "Logged in user",
-        "Shopping cart is empty (zero items)"
+        "Logged-in user with an item previously added to the cart whose description contains emoji and non-Latin/unicode characters"
       ],
       "steps": [
         "1. Open the Shopping Cart page",
-        "2. Confirm no rows are present in the items table",
-        "3. Click the Checkout button in the Shopping Cart Action Bar"
+        "2. Locate the description cell for the item containing the special characters"
       ],
-      "expected_result": "Checkout is blocked / error shown: the UI displays a visible inline message near the Checkout button indicating that one or more items are required (Checkout does not begin and the user remains on the Shopping Cart page).",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-003",
-      "wf_ref": "WF-001",
-      "subcategory": "state_edge",
-      "test_case": "Remove the only item then immediately attempt Checkout (state boundary/race)",
-      "preconditions": [
-        "Logged in user",
-        "Shopping cart contains exactly one item"
-      ],
-      "steps": [
-        "1. Open the Shopping Cart page",
-        "2. Click Remove on the single item row",
-        "3. Immediately (within one second) click the Checkout button"
-      ],
-      "expected_result": "Remove action succeeds and the item row is removed from the table; because the cart becomes empty, the subsequent Checkout attempt is blocked and a visible inline message is shown indicating one or more items are required (remove succeeds; Checkout is blocked / error shown).",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-004",
-      "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click of Remove on the same item does not produce duplicate removals or errors",
-      "preconditions": [
-        "Logged in user",
-        "Shopping cart contains at least one item"
-      ],
-      "steps": [
-        "1. Open the Shopping Cart page",
-        "2. Rapidly click Remove on the same item row twice in quick succession"
-      ],
-      "expected_result": "First Remove click succeeds and removes the row; the second rapid click has no additional effect because the row is no longer present (no duplicate removal operations are performed and no persistent error is shown). The table ends with the row removed exactly once.",
+      "expected_result": "Shopping Cart displays the emoji and non-Latin/unicode characters intact in the item's description cell (visible characters match the stored description); no placeholder glyphs or inline error indicators are shown",
       "priority": "low"
     },
     {
-      "tc_id": "E-005",
+      "tc_id": "E-003",
       "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Very long item description rendering in the cart (display edge)",
+      "test_case": "Leading and trailing whitespace in stored product text is trimmed in cart display",
       "preconditions": [
-        "Logged in user",
-        "A product with a very long description (>= 200 characters) has been added to the cart"
+        "Logged-in user with an item previously added to the cart whose name/description was saved with leading and/or trailing whitespace"
       ],
       "steps": [
         "1. Open the Shopping Cart page",
-        "2. Observe the description cell for the long-description item row"
+        "2. Inspect the displayed product name and description for that cart row"
       ],
-      "expected_result": "The Shopping Cart displays the long description without breaking the page layout. The UI either shows the full text wrapped across lines or shows a truncated description with an obvious affordance (e.g., ellipsis and a tooltip or expand control) to view the full text; no layout overflow or functional regression occurs and the cart remains usable (long-description rendering succeeds or is gracefully truncated with a visible indicator).",
+      "expected_result": "Leading and trailing whitespace is trimmed in the Shopping Cart display: the product name and description visible in the table have no extra spaces at the start or end",
       "priority": "low"
     }
   ],
   "summary": {
-    "total": 5,
-    "boundary": 2,
-    "input_edge": 1,
+    "total": 3,
+    "boundary": 0,
+    "input_edge": 2,
     "interaction_edge": 1,
-    "state_edge": 1,
+    "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 3,
+    "medium_priority": 1,
     "low_priority": 2
   }
 }
 
 ------------------------------------------------------------
-[21:05:10] Test-Edge - PARSED JSON
+[22:56:31] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Shopping Cart",
@@ -401,96 +378,59 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-003",
-      "subcategory": "boundary",
-      "test_case": "Checkout succeeds when cart contains exactly one item (minimum count boundary)",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click Remove on a single cart row",
       "preconditions": [
-        "Logged in user",
-        "Shopping cart contains exactly one item"
+        "Logged-in user with at least one item present in the Shopping Cart (single cart row visible)",
+        "Cart badge shows the current item count"
       ],
       "steps": [
         "1. Open the Shopping Cart page",
-        "2. Confirm exactly one row is present in the items table",
-        "3. Click the Checkout button in the Shopping Cart Action Bar"
+        "2. Double-click the Remove button on the visible cart row (two clicks in quick succession)"
       ],
-      "expected_result": "Checkout begins and navigation to the Checkout flow succeeds; user is navigated to the Checkout - Information page (Checkout action succeeds). The Shopping Cart no longer blocks the transition.",
+      "expected_result": "Remove action succeeds once: the cart row for that item disappears from the table and the cart badge count decrements by one; the second click is ignored and no error message is shown",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-003",
-      "subcategory": "boundary",
-      "test_case": "Checkout is blocked when cart contains zero items (past-boundary of the 'one or more items' requirement)",
+      "wf_ref": null,
+      "subcategory": "input_edge",
+      "test_case": "Item description containing emoji and non-Latin unicode is displayed intact",
       "preconditions": [
-        "Logged in user",
-        "Shopping cart is empty (zero items)"
+        "Logged-in user with an item previously added to the cart whose description contains emoji and non-Latin/unicode characters"
       ],
       "steps": [
         "1. Open the Shopping Cart page",
-        "2. Confirm no rows are present in the items table",
-        "3. Click the Checkout button in the Shopping Cart Action Bar"
+        "2. Locate the description cell for the item containing the special characters"
       ],
-      "expected_result": "Checkout is blocked / error shown: the UI displays a visible inline message near the Checkout button indicating that one or more items are required (Checkout does not begin and the user remains on the Shopping Cart page).",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-003",
-      "wf_ref": "WF-001",
-      "subcategory": "state_edge",
-      "test_case": "Remove the only item then immediately attempt Checkout (state boundary/race)",
-      "preconditions": [
-        "Logged in user",
-        "Shopping cart contains exactly one item"
-      ],
-      "steps": [
-        "1. Open the Shopping Cart page",
-        "2. Click Remove on the single item row",
-        "3. Immediately (within one second) click the Checkout button"
-      ],
-      "expected_result": "Remove action succeeds and the item row is removed from the table; because the cart becomes empty, the subsequent Checkout attempt is blocked and a visible inline message is shown indicating one or more items are required (remove succeeds; Checkout is blocked / error shown).",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-004",
-      "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click of Remove on the same item does not produce duplicate removals or errors",
-      "preconditions": [
-        "Logged in user",
-        "Shopping cart contains at least one item"
-      ],
-      "steps": [
-        "1. Open the Shopping Cart page",
-        "2. Rapidly click Remove on the same item row twice in quick succession"
-      ],
-      "expected_result": "First Remove click succeeds and removes the row; the second rapid click has no additional effect because the row is no longer present (no duplicate removal operations are performed and no persistent error is shown). The table ends with the row removed exactly once.",
+      "expected_result": "Shopping Cart displays the emoji and non-Latin/unicode characters intact in the item's description cell (visible characters match the stored description); no placeholder glyphs or inline error indicators are shown",
       "priority": "low"
     },
     {
-      "tc_id": "E-005",
+      "tc_id": "E-003",
       "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Very long item description rendering in the cart (display edge)",
+      "test_case": "Leading and trailing whitespace in stored product text is trimmed in cart display",
       "preconditions": [
-        "Logged in user",
-        "A product with a very long description (>= 200 characters) has been added to the cart"
+        "Logged-in user with an item previously added to the cart whose name/description was saved with leading and/or trailing whitespace"
       ],
       "steps": [
         "1. Open the Shopping Cart page",
-        "2. Observe the description cell for the long-description item row"
+        "2. Inspect the displayed product name and description for that cart row"
       ],
-      "expected_result": "The Shopping Cart displays the long description without breaking the page layout. The UI either shows the full text wrapped across lines or shows a truncated description with an obvious affordance (e.g., ellipsis and a tooltip or expand control) to view the full text; no layout overflow or functional regression occurs and the cart remains usable (long-description rendering succeeds or is gracefully truncated with a visible indicator).",
+      "expected_result": "Leading and trailing whitespace is trimmed in the Shopping Cart display: the product name and description visible in the table have no extra spaces at the start or end",
       "priority": "low"
     }
   ],
   "summary": {
-    "total": 5,
-    "boundary": 2,
-    "input_edge": 1,
+    "total": 3,
+    "boundary": 0,
+    "input_edge": 2,
     "interaction_edge": 1,
-    "state_edge": 1,
+    "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 3,
+    "medium_priority": 1,
     "low_priority": 2
   }
 }

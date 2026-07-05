@@ -1,13 +1,13 @@
 # Structural Model Critique — Phptravels
 
-Generated: 2026-07-04T15:28:55.331277Z
+Generated: 2026-07-04T16:37:37.067258Z
 
 ## Home Page & Search
 
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST matches the described interactive elements (tabs, per-tab fields, passenger/group counts, trip type, cabin class, and Search action with validation and redirect) and contains no critical missing items or phantoms.
+AST accurately represents the tabbed search widget, each tab's interactive fields, the Search action with validation and redirection, and matches the described module context.
 
 **Missing:** none
 
@@ -20,7 +20,7 @@ AST matches the described interactive elements (tabs, per-tab fields, passenger/
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST accurately captures all interactive elements, validations, submit action, and success/failure behaviors described for the registration form.
+AST correctly captures the registration form fields, validations, submit action, and success/failure behaviors described.
 
 **Missing:** none
 
@@ -33,7 +33,7 @@ AST accurately captures all interactive elements, validations, submit action, an
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST accurately captures all interactive elements, conditionals, preconditions, and submit behaviors described for the login page.
+The AST includes all interactive elements (Email, Password, Remember Me, Forgot Password link, Login submit action, social login buttons, and CAPTCHA conditional), the described submission behaviors, and conditionals; no critical issues found.
 
 **Missing:** none
 
@@ -46,7 +46,7 @@ AST accurately captures all interactive elements, conditionals, preconditions, a
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST accurately captures the interactive elements (email input, reset submit, password reset form with matching confirmation and token precondition) and their behaviors described.
+AST accurately represents the interactive elements and behaviors described (forgot-password form with Email + Reset action, and password-reset page with new/confirm password and link-valid precondition).
 
 **Missing:** none
 
@@ -59,13 +59,11 @@ AST accurately captures the interactive elements (email input, reset submit, pas
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST accurately captures all interactive elements and behaviours described; only a tiny implementation-detail field was added that has no explicit textual anchor.
+AST includes the search form and all interactive listing elements (filters, active-filter actions, sorting, and Book Now) described, with no critical omissions or structural errors.
 
 **Missing:** none
 
-**Phantoms (hallucinations):**
-
-- {'path': 'components.Active_Filters_Bar.actions[0].fields.Filter_Key', 'severity': 'minor', 'reason': "The description specifies individual remove buttons but does not name an internal 'Filter_Key' field; this is an internal parameter the generator invented."}
+**Phantoms:** none
 
 ---
 
@@ -74,7 +72,7 @@ AST accurately captures all interactive elements and behaviours described; only 
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST includes the interactive room selection, the conditional booking form with required guest-input fields, and the Book Now submit action with the login precondition and payment transition; no critical interactive elements from the description are missing.
+The AST includes the room selection action, the booking form with the required fields, the Book Now submit action, the logged-in precondition, and the visibility conditional triggered by room selection, matching the described interactive elements.
 
 **Missing:** none
 
@@ -87,7 +85,7 @@ AST includes the interactive room selection, the conditional booking form with r
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST correctly captures the interactive elements described (search form fields, submit action with redirect, listing with select and expand actions, sidebar filters, and sorting), with no critical omissions or phantoms.
+AST includes the described interactive elements (search form fields and submit, results list with Select and expand actions, sidebar filters, and sort controls) and contains no critical omissions or phantoms.
 
 **Missing:** none
 
@@ -100,7 +98,7 @@ The AST correctly captures the interactive elements described (search form field
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST correctly captures the interactive booking form: repeating passenger fields (with required fields and optional meal/seat), lead contact fields, validation behavior, preconditions, and a Continue submit action navigating to payment.
+The AST accurately captures the interactive elements described (repeating traveler fields with required validations, optional meal/seat fields, lead contact email/phone, and a Continue submit action with preconditions and validation constraints).
 
 **Missing:** none
 
@@ -113,7 +111,7 @@ The AST correctly captures the interactive booking form: repeating passenger fie
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST correctly represents the interactive elements described (search form with required fields and submit action, sidebar filters, sorting options, and results cards); no critical or structural issues found.
+AST includes all interactive elements described (search form fields and submit, sidebar filters, sort control, and result card actions) with no critical omissions or structural errors.
 
 **Missing:** none
 
@@ -126,7 +124,7 @@ AST correctly represents the interactive elements described (search form with re
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST includes the departure selection, traveler counts, Book Now action with login precondition, and the booking form with traveler names and contact fields matching the description; no critical elements are missing.
+The AST includes all interactive elements described (departure date selection, adult/child counts, Book Now button, booking form with repeating traveler entries and contact fields, and login preconditions), with no critical omissions or phantoms.
 
 **Missing:** none
 
@@ -139,7 +137,7 @@ AST includes the departure selection, traveler counts, Book Now action with logi
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST correctly captures the interactive elements (search form fields, search submit redirect, dynamic sidebar filters, grouped listings with Book Now actions) and contains no critical missing items or phantoms.
+AST matches the described interactive elements (search form with submit, sidebar filters with dynamic updates, grouped listings with Book Now actions); no critical items missing or phantom elements detected.
 
 **Missing:** none
 
@@ -152,7 +150,7 @@ AST correctly captures the interactive elements (search form fields, search subm
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST includes all interactive elements described (driver fields, add-ons, insurance selection, accept-terms checkbox, and Confirm Booking submit with preconditions and on_success); no critical omissions or phantoms found.
+AST accurately captures all interactive elements (driver fields, add-on checkboxes, insurance selection, terms acceptance, inline validation, and Confirm Booking submit) described in the spec; no critical or structural issues found.
 
 **Missing:** none
 
@@ -162,10 +160,10 @@ AST includes all interactive elements described (driver fields, add-ons, insuran
 
 ## Visa Services
 
-**Verdict:** retry  
+**Verdict:** yes  
 **Forced ship:** no  
 
-The AST mostly matches the description but it's ambiguous whether selecting Nationality and Destination Country should auto-display requirements or require an explicit 'View/Search' action — clarification needed.
+The AST includes the nationality/destination filter, visa application form fields (personal, travel, document uploads), and submit actions as described; no critical missing or phantom interactive elements were found.
 
 **Missing:** none
 
@@ -178,7 +176,7 @@ The AST mostly matches the description but it's ambiguous whether selecting Nati
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST accurately captures the interactive elements and conditionals described for the User Dashboard; no critical omissions or structural errors found.
+AST includes all described interactive elements (bookings row actions, profile edit flow, wallet transactions, wishlist, review submission, settings controls, and logout) with appropriate conditionals and preconditions; no critical issues found.
 
 **Missing:** none
 
@@ -191,7 +189,7 @@ AST accurately captures the interactive elements and conditionals described for 
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST correctly models the interactive elements (Modify and Cancel actions, their preconditions, fields, submit actions, and email notifications); passive display-only booking details were appropriately omitted.
+The AST correctly models the interactive elements described: conditional Modify action with modal fields and constraints, Cancel confirmation flow with explicit confirm action and refund initiation, and email notifications on modification/cancellation; no critical elements are missing.
 
 **Missing:** none
 
@@ -204,7 +202,7 @@ The AST correctly models the interactive elements (Modify and Cancel actions, th
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST captures the interactive elements and conditional flows described (payment method selection, card fields, save card option, success/failure behaviors, and confirmation page actions) with no critical missing items or phantoms.
+The AST includes the expected interactive elements (payment method selection, card fields with conditional visibility, save-card option, pay/retry actions, and confirmation downloads) and matches the module precondition; no critical issues found.
 
 **Missing:** none
 
@@ -217,7 +215,7 @@ The AST captures the interactive elements and conditional flows described (payme
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST accurately captures the interactive elements (currency and language selectors), their real-time behaviors, and persistence rules for authenticated/unauthenticated users; no critical missing items or structural errors found.
+AST accurately represents the interactive elements (currency and language selectors), their immediate effects, and persistence behavior described in the module.
 
 **Missing:** none
 
@@ -230,7 +228,7 @@ AST accurately captures the interactive elements (currency and language selector
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST includes the sidebar with collapsible sections, category-visible conditionals, common and listing-specific filters, dynamic result updates, sorting control, and active-filters summary with remove and reset actions as described.
+AST accurately represents the interactive elements described (collapsible filter groups, specified filters per listing type, dynamic update handlers, sorting controls, active-filters summary with remove and reset), with no critical missing items or structural errors.
 
 **Missing:** none
 
@@ -243,14 +241,14 @@ The AST includes the sidebar with collapsible sections, category-visible conditi
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST covers the interactive elements described (filters, submission form, dashboard/email triggers and preconditions); only a couple of minor, non-blocking extras are present.
+The AST includes the expected interactive elements (filters and the review submission flow with preconditions) and contains only minor, non-blocking divergences.
 
 **Missing:** none
 
 **Phantoms (hallucinations):**
 
-- {'path': 'components.Reviews_Filters.submit_actions[1]', 'severity': 'minor', 'reason': "A 'Clear Filters' action is not mentioned in the description; it's a reasonable UI affordance but not specified."}
-- {'path': 'components.Review_Submission_Form.submit_actions[0].on_success', 'severity': 'minor', 'reason': "The description does not state the exact on_success text 'review submitted'; a success consequence is implied but this specific string is not anchored in the text."}
+- {'path': 'components.Reviews_Filters.submit_actions[0]', 'severity': 'minor', 'reason': "The description states users can filter reviews but does not name an 'Apply Filters' action label; the action is a reasonable UI inference."}
+- {'path': 'components.Reviews_Filters.submit_actions[1]', 'severity': 'minor', 'reason': "The description does not name a 'Clear Filters' action label; providing a clear/ reset action is a common UI affordance but not explicitly specified."}
 
 ---
 
@@ -259,11 +257,15 @@ AST covers the interactive elements described (filters, submission form, dashboa
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST includes the interactive filters (service, destination, dates), Apply Filters action, per-offer Book Now and Terms links for both banners and cards, and the newsletter subscription form with email and subscribe action — matching the description.
+AST is usable: all critical interactive elements from the description are present; only minor omissions/implausible additions present.
 
-**Missing:** none
+**Missing:**
 
-**Phantoms:** none
+- {'path': 'components.Offers_Filters_Form.fields.Destination.type', 'severity': 'minor', 'reason': "The description requires a Destination filter input but does not specify its input type; the AST has the field but leaves its type 'unspecified'."}
+
+**Phantoms (hallucinations):**
+
+- {'path': 'components.Offers_Filters_Form.submit_actions[1]', 'severity': 'minor', 'reason': "A 'Reset Filters' submit action is present in the AST but the description does not mention a reset action explicitly (plausible but not anchored in text)."}
 
 ---
 
@@ -272,7 +274,7 @@ The AST includes the interactive filters (service, destination, dates), Apply Fi
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST correctly represents the single interactive element (Logout button) with matching precondition and on_success behavior; no missing or phantom interactive elements detected.
+The AST correctly models the single interactive element (Logout button) with the stated precondition and on_success behavior; no missing elements or phantoms found.
 
 **Missing:** none
 

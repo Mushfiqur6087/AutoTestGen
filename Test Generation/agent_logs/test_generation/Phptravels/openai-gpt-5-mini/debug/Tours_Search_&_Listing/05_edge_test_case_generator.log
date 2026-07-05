@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:13.870044
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.073530
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Edge - SYSTEM PROMPT
+[22:33:07] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Edge - USER PROMPT
+[22:33:07] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 9,
   "module_title": "Tours Search & Listing",
-  "summary": "Provides a search form and results listing for available tours, showing cards with images, key details (destination, duration, price, availability, rating) and sidebar filters and sorting options.",
-  "where_it_fits": "Accessible from the top navigation (Tours) and the Home page search widget tabs, this module handles the discovery phase for tours by collecting search criteria and presenting filtered listings before users proceed to tour details and booking. It sits alongside other search/listing modules (Hotels, Flights, Cars) and feeds into the Tour Details & Booking flow.",
-  "assumed_state_on_entry": "User has navigated to the Tours section (via top nav or Home search widget) and has entered or will enter required search criteria such as destination and travel dates."
+  "summary": "Provides search and listing of available tours with filters, sorting, and result cards that display images, destination, duration, starting price, availability, and traveler ratings.",
+  "where_it_fits": "Accessible from the top navigation under Tours or via the home page search widget's Tours tab, this module follows the initial search entry point and precedes the Tour Details & Booking flow. It serves as the discovery layer that narrows options and presents selectable tour results for booking or deeper inspection.",
+  "assumed_state_on_entry": "Visitor is in the Tours section (via top nav or home search) with valid search criteria entered (e.g., destination and travel dates); user may be guest or authenticated."
 }
 </module_context>
 
@@ -245,14 +259,24 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Tours_Search_Form": {
       "type": "form",
+      "submit_actions": [
+        {
+          "action_name": "Search",
+          "on_success": "redirect to Tours Listing page",
+          "preconditions": [
+            "Visitor is in the Tours section (via top nav or home search) with valid search criteria entered (e.g., destination and travel dates)"
+          ]
+        }
+      ],
       "fields": {
         "Destination": {
-          "type": "unspecified",
-          "required": true
+          "type": "unspecified"
         },
-        "Travel_Dates": {
-          "type": "date",
-          "required": true
+        "Start_Date": {
+          "type": "date"
+        },
+        "End_Date": {
+          "type": "date"
         },
         "Tour_Type": {
           "type": "dropdown",
@@ -270,70 +294,64 @@ If a `<workflows>` block is present in the input:
         "Budget_Range": {
           "type": "unspecified"
         }
-      },
-      "submit_actions": [
-        {
-          "action_name": "Search",
-          "on_success": "redirects to Tours_Listings_Page",
-          "preconditions": [
-            "User has navigated to the Tours section (via top nav or Home search widget) and has entered or will enter required search criteria such as destination and travel dates."
-          ]
-        }
-      ]
+      }
     },
-    "Tours_Listings_Page": {
-      "type": "listings_page",
-      "components": {
-        "Sidebar_Filters": {
-          "type": "form",
-          "fields": {
-            "Destination_Filter": {
-              "type": "unspecified"
-            },
-            "Tour_Type_Filter": {
-              "type": "dropdown",
-              "options": [
-                "Adventure",
-                "Cultural",
-                "Cruise",
-                "Wildlife"
-              ],
-              "options_note": "partial \u2014 others not specified in description"
-            },
-            "Price_Range": {
-              "type": "unspecified"
-            },
-            "Duration_Filter": {
-              "type": "unspecified"
-            },
-            "Departure_Dates": {
-              "type": "date"
-            }
-          }
+    "Sidebar_Filters": {
+      "type": "filters",
+      "fields": {
+        "Destination": {
+          "type": "unspecified"
         },
-        "Results_Sorting": {
+        "Tour_Type": {
           "type": "dropdown",
           "options": [
-            "Popularity",
-            "Price",
-            "Duration",
-            "Rating"
+            "Adventure",
+            "Cultural",
+            "Cruise",
+            "Wildlife"
+          ],
+          "options_note": "partial \u2014 others not specified in description"
+        },
+        "Price_Range": {
+          "type": "unspecified"
+        },
+        "Duration": {
+          "type": "unspecified"
+        },
+        "Departure_Start_Date": {
+          "type": "date"
+        },
+        "Departure_End_Date": {
+          "type": "date"
+        }
+      }
+    },
+    "Tours_Listing_Page": {
+      "type": "listing_page",
+      "components": {
+        "Filters_Panel": {
+          "ref": "Sidebar_Filters"
+        },
+        "Sort_By": {
+          "type": "dropdown",
+          "options": [
+            "popularity",
+            "price",
+            "duration",
+            "rating"
           ]
         },
-        "Tours_Results_Cards": {
+        "Tour_Results_Cards": {
           "type": "card_list",
-          "sortable_by": [
-            "Popularity",
-            "Price",
-            "Duration",
-            "Rating"
-          ],
-          "filterable_by": [
-            "Destination",
-            "Tour_Type",
-            "Price_Range",
-            "Duration",
-            "Departure_Dates"
+          "card_actions": [
+            {
+              "action_name": "View Details",
+              "type": "link"
+            },
+            {
+              "action_name": "Book",
+              "type": "button"
+            }
           ]
         }
       }
@@ -352,13 +370,17 @@ The tours search form collects destination, travel dates, tour type (Adventure, 
 </description>
 
 <workflows>
-WF-001 | Search Tours | actor: <role> | branch: none | terminal: Search | on_success: redirects to Tours_Listings_Page
+WF-001 | Submit search form | actor: Visitor | branch: none | terminal: Search | on_success: redirect to Tours Listing page
+WF-002 | Sort listing by selected criterion | actor: Visitor | branch: none | terminal: Sort_By | on_success: results resorted by selected criterion (popularity/price/duration/rating)
+WF-003 | Apply sidebar filters to refine results | actor: Visitor | branch: none | terminal: Sidebar_Filters | on_success: listing updated with applied filters (destination, tour type, price range, duration, departure dates)
+WF-004 | View tour details from a result card | actor: Visitor | branch: none | terminal: View Details | on_success: redirect to Tour Details page
+WF-005 | Initiate booking from a result card | actor: Visitor | branch: none | terminal: Book | on_success: redirect to Booking flow
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:26:17] Test-Edge - LLM RESPONSE
+[22:34:56] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Tours Search & Listing",
@@ -367,146 +389,97 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "E-001",
       "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Travel_Dates = today (succeeds) vs Travel_Dates = yesterday (is blocked / error shown)",
+      "subcategory": "input_edge",
+      "test_case": "Very long Destination string accepted and shown on listing",
       "preconditions": [
-        "User is on the Tours Search form"
+        "Tours Search Form is open",
+        "Valid Start_Date and End_Date already entered"
       ],
       "steps": [
-        "1. Enter <destination> in the Destination field",
-        "2. Enter <today's date> in the Travel_Dates field",
-        "3. Click the Search button"
+        "1. Enter a very long string (200+ characters) into the Destination field",
+        "2. Click the Search button"
       ],
-      "expected_result": "Submitting the form with Travel_Dates = <today's date> succeeds; user is redirected to Tours_Listings_Page and search summary shows the entered destination and travel date.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-001b",
-      "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Travel_Dates = one day before today (is blocked / error shown)",
-      "preconditions": [
-        "User is on the Tours Search form"
-      ],
-      "steps": [
-        "1. Enter <destination> in the Destination field",
-        "2. Enter <one day before today's date> in the Travel_Dates field",
-        "3. Click the Search button"
-      ],
-      "expected_result": "Submitting the form with Travel_Dates = <one day before today's date> is blocked / error shown; an inline error is displayed on the Travel_Dates field indicating past dates are not allowed and the form does not redirect.",
+      "expected_result": "Search action succeeds; user is redirected to the Tours Listing page and the search summary on the listing page displays the entered Destination string (system accepted the long input) — no validation error is shown",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": null,
-      "subcategory": "data_edge",
-      "test_case": "Sidebar Departure_Dates filter = today (succeeds) vs yesterday (succeeds but yields no results)",
+      "wf_ref": "WF-001",
+      "subcategory": "input_edge",
+      "test_case": "Destination containing special characters and emoji is preserved",
       "preconditions": [
-        "User has performed a search and is on Tours_Listings_Page"
+        "Tours Search Form is open",
+        "Valid Start_Date and End_Date already entered"
       ],
       "steps": [
-        "1. Open the Sidebar_Filters on the Tours_Listings_Page",
-        "2. Set Departure_Dates = <today's date>",
-        "3. Apply the filters"
+        "1. Enter a Destination value composed primarily of special characters and emoji into the Destination field",
+        "2. Click the Search button"
       ],
-      "expected_result": "Applying Departure_Dates = <today's date> succeeds; the results pane updates and displays tours matching the selected departure date (if any).",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-002b",
-      "wf_ref": null,
-      "subcategory": "data_edge",
-      "test_case": "Sidebar Departure_Dates filter = one day before today (succeeds; likely no matches)",
-      "preconditions": [
-        "User has performed a search and is on Tours_Listings_Page"
-      ],
-      "steps": [
-        "1. Open the Sidebar_Filters on the Tours_Listings_Page",
-        "2. Set Departure_Dates = <one day before today's date>",
-        "3. Apply the filters"
-      ],
-      "expected_result": "Applying Departure_Dates = <one day before today's date> succeeds; the results pane updates and shows a visible 'No tours match your filters' indicator if no tours have past departure dates.",
-      "priority": "low"
+      "expected_result": "Search action succeeds; user is redirected to the Tours Listing page and the search summary displays the Destination with the special characters and emoji preserved (no inline error shown)",
+      "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Destination with leading and trailing whitespace is submitted and trimmed on results page",
+      "test_case": "Leading and trailing whitespace in Destination is trimmed on submit",
       "preconditions": [
-        "User is on the Tours Search form"
+        "Tours Search Form is open",
+        "Valid Start_Date and End_Date already entered"
       ],
       "steps": [
-        "1. Enter <destination with leading and trailing whitespace> in the Destination field",
-        "2. Enter <valid travel date> in the Travel_Dates field",
-        "3. Click the Search button"
+        "1. Enter a Destination value with leading and trailing whitespace in the Destination field",
+        "2. Click the Search button"
       ],
-      "expected_result": "Submitting the form with a Destination that contains leading/trailing whitespace succeeds; user is redirected to Tours_Listings_Page and the search summary displays the Destination value with leading/trailing whitespace trimmed.",
-      "priority": "low"
+      "expected_result": "Search action succeeds; user is redirected to the Tours Listing page and the search summary shows the Destination value with leading/trailing whitespace removed (visible trimmed value) — no validation error is shown",
+      "priority": "medium"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-001",
-      "subcategory": "input_edge",
-      "test_case": "Destination contains special characters and emoji (input preserved in search summary)",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click of Search button does not create duplicate searches",
       "preconditions": [
-        "User is on the Tours Search form"
+        "Tours Search Form is open",
+        "All required search fields populated with valid values"
       ],
       "steps": [
-        "1. Enter <destination containing special characters and emoji> in the Destination field",
-        "2. Enter <valid travel date> in the Travel_Dates field",
-        "3. Click the Search button"
+        "1. Click the Search button twice in rapid succession (double-click)"
       ],
-      "expected_result": "Submitting the form with special characters/emoji in Destination succeeds; user is redirected to Tours_Listings_Page and the search summary displays the same special characters/emoji (or shows a visible indication that no matching tours were found) — no generic validation error is shown for unicode/special characters.",
-      "priority": "low"
+      "expected_result": "Second submission attempt is blocked/ignored; user is redirected only once to the Tours Listing page and the listing displays a single set of results / single search summary (no duplicate result pages or duplicate visible search runs)",
+      "priority": "medium"
     },
     {
       "tc_id": "E-005",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click of Search button (only one search request processed / single redirect)",
+      "test_case": "Browser Back after successful search restores search form with previous criteria",
       "preconditions": [
-        "User is on the Tours Search form with required fields filled"
+        "Tours Search Form is open",
+        "Valid Start_Date and End_Date already entered"
       ],
       "steps": [
-        "1. Enter <destination> in the Destination field",
-        "2. Enter <valid travel date> in the Travel_Dates field",
-        "3. Double-click the Search button (two clicks in rapid succession)"
+        "1. Click the Search button",
+        "2. On the Tours Listing page, press the browser Back button"
       ],
-      "expected_result": "Double-clicking Search succeeds once; the UI processes a single search request and redirects to Tours_Listings_Page only once (Search button is disabled or subsequent click is ignored), avoiding duplicate navigation or duplicate search processing.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-006",
-      "wf_ref": null,
-      "subcategory": "data_edge",
-      "test_case": "Sidebar Departure_Dates = far future date (succeeds but likely no matches)",
-      "preconditions": [
-        "User has performed a search and is on Tours_Listings_Page"
-      ],
-      "steps": [
-        "1. Open the Sidebar_Filters on the Tours_Listings_Page",
-        "2. Set Departure_Dates = <far future date>",
-        "3. Apply the filters"
-      ],
-      "expected_result": "Applying Departure_Dates = <far future date> succeeds; the results pane updates and if no tours are scheduled that far in the future, a visible 'No tours match your filters' message is shown.",
+      "expected_result": "Navigation succeeds; user returns to the Tours Search Form and the form fields are pre-filled with the previous search criteria (visible: Destination, dates, and selected Tour_Type as previously entered) — no automatic re-submission occurs",
       "priority": "low"
     }
   ],
   "summary": {
-    "total": 8,
-    "boundary": 2,
-    "input_edge": 2,
-    "interaction_edge": 1,
+    "total": 5,
+    "boundary": 0,
+    "input_edge": 3,
+    "interaction_edge": 2,
     "state_edge": 0,
-    "data_edge": 3,
-    "medium_priority": 3,
-    "low_priority": 5
+    "data_edge": 0,
+    "medium_priority": 4,
+    "low_priority": 1
   }
 }
 
 ------------------------------------------------------------
-[21:26:17] Test-Edge - PARSED JSON
+[22:34:56] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Tours Search & Listing",
@@ -515,140 +488,91 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "E-001",
       "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Travel_Dates = today (succeeds) vs Travel_Dates = yesterday (is blocked / error shown)",
+      "subcategory": "input_edge",
+      "test_case": "Very long Destination string accepted and shown on listing",
       "preconditions": [
-        "User is on the Tours Search form"
+        "Tours Search Form is open",
+        "Valid Start_Date and End_Date already entered"
       ],
       "steps": [
-        "1. Enter <destination> in the Destination field",
-        "2. Enter <today's date> in the Travel_Dates field",
-        "3. Click the Search button"
+        "1. Enter a very long string (200+ characters) into the Destination field",
+        "2. Click the Search button"
       ],
-      "expected_result": "Submitting the form with Travel_Dates = <today's date> succeeds; user is redirected to Tours_Listings_Page and search summary shows the entered destination and travel date.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-001b",
-      "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Travel_Dates = one day before today (is blocked / error shown)",
-      "preconditions": [
-        "User is on the Tours Search form"
-      ],
-      "steps": [
-        "1. Enter <destination> in the Destination field",
-        "2. Enter <one day before today's date> in the Travel_Dates field",
-        "3. Click the Search button"
-      ],
-      "expected_result": "Submitting the form with Travel_Dates = <one day before today's date> is blocked / error shown; an inline error is displayed on the Travel_Dates field indicating past dates are not allowed and the form does not redirect.",
+      "expected_result": "Search action succeeds; user is redirected to the Tours Listing page and the search summary on the listing page displays the entered Destination string (system accepted the long input) \u2014 no validation error is shown",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": null,
-      "subcategory": "data_edge",
-      "test_case": "Sidebar Departure_Dates filter = today (succeeds) vs yesterday (succeeds but yields no results)",
+      "wf_ref": "WF-001",
+      "subcategory": "input_edge",
+      "test_case": "Destination containing special characters and emoji is preserved",
       "preconditions": [
-        "User has performed a search and is on Tours_Listings_Page"
+        "Tours Search Form is open",
+        "Valid Start_Date and End_Date already entered"
       ],
       "steps": [
-        "1. Open the Sidebar_Filters on the Tours_Listings_Page",
-        "2. Set Departure_Dates = <today's date>",
-        "3. Apply the filters"
+        "1. Enter a Destination value composed primarily of special characters and emoji into the Destination field",
+        "2. Click the Search button"
       ],
-      "expected_result": "Applying Departure_Dates = <today's date> succeeds; the results pane updates and displays tours matching the selected departure date (if any).",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-002b",
-      "wf_ref": null,
-      "subcategory": "data_edge",
-      "test_case": "Sidebar Departure_Dates filter = one day before today (succeeds; likely no matches)",
-      "preconditions": [
-        "User has performed a search and is on Tours_Listings_Page"
-      ],
-      "steps": [
-        "1. Open the Sidebar_Filters on the Tours_Listings_Page",
-        "2. Set Departure_Dates = <one day before today's date>",
-        "3. Apply the filters"
-      ],
-      "expected_result": "Applying Departure_Dates = <one day before today's date> succeeds; the results pane updates and shows a visible 'No tours match your filters' indicator if no tours have past departure dates.",
-      "priority": "low"
+      "expected_result": "Search action succeeds; user is redirected to the Tours Listing page and the search summary displays the Destination with the special characters and emoji preserved (no inline error shown)",
+      "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Destination with leading and trailing whitespace is submitted and trimmed on results page",
+      "test_case": "Leading and trailing whitespace in Destination is trimmed on submit",
       "preconditions": [
-        "User is on the Tours Search form"
+        "Tours Search Form is open",
+        "Valid Start_Date and End_Date already entered"
       ],
       "steps": [
-        "1. Enter <destination with leading and trailing whitespace> in the Destination field",
-        "2. Enter <valid travel date> in the Travel_Dates field",
-        "3. Click the Search button"
+        "1. Enter a Destination value with leading and trailing whitespace in the Destination field",
+        "2. Click the Search button"
       ],
-      "expected_result": "Submitting the form with a Destination that contains leading/trailing whitespace succeeds; user is redirected to Tours_Listings_Page and the search summary displays the Destination value with leading/trailing whitespace trimmed.",
-      "priority": "low"
+      "expected_result": "Search action succeeds; user is redirected to the Tours Listing page and the search summary shows the Destination value with leading/trailing whitespace removed (visible trimmed value) \u2014 no validation error is shown",
+      "priority": "medium"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-001",
-      "subcategory": "input_edge",
-      "test_case": "Destination contains special characters and emoji (input preserved in search summary)",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click of Search button does not create duplicate searches",
       "preconditions": [
-        "User is on the Tours Search form"
+        "Tours Search Form is open",
+        "All required search fields populated with valid values"
       ],
       "steps": [
-        "1. Enter <destination containing special characters and emoji> in the Destination field",
-        "2. Enter <valid travel date> in the Travel_Dates field",
-        "3. Click the Search button"
+        "1. Click the Search button twice in rapid succession (double-click)"
       ],
-      "expected_result": "Submitting the form with special characters/emoji in Destination succeeds; user is redirected to Tours_Listings_Page and the search summary displays the same special characters/emoji (or shows a visible indication that no matching tours were found) \u2014 no generic validation error is shown for unicode/special characters.",
-      "priority": "low"
+      "expected_result": "Second submission attempt is blocked/ignored; user is redirected only once to the Tours Listing page and the listing displays a single set of results / single search summary (no duplicate result pages or duplicate visible search runs)",
+      "priority": "medium"
     },
     {
       "tc_id": "E-005",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click of Search button (only one search request processed / single redirect)",
+      "test_case": "Browser Back after successful search restores search form with previous criteria",
       "preconditions": [
-        "User is on the Tours Search form with required fields filled"
+        "Tours Search Form is open",
+        "Valid Start_Date and End_Date already entered"
       ],
       "steps": [
-        "1. Enter <destination> in the Destination field",
-        "2. Enter <valid travel date> in the Travel_Dates field",
-        "3. Double-click the Search button (two clicks in rapid succession)"
+        "1. Click the Search button",
+        "2. On the Tours Listing page, press the browser Back button"
       ],
-      "expected_result": "Double-clicking Search succeeds once; the UI processes a single search request and redirects to Tours_Listings_Page only once (Search button is disabled or subsequent click is ignored), avoiding duplicate navigation or duplicate search processing.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-006",
-      "wf_ref": null,
-      "subcategory": "data_edge",
-      "test_case": "Sidebar Departure_Dates = far future date (succeeds but likely no matches)",
-      "preconditions": [
-        "User has performed a search and is on Tours_Listings_Page"
-      ],
-      "steps": [
-        "1. Open the Sidebar_Filters on the Tours_Listings_Page",
-        "2. Set Departure_Dates = <far future date>",
-        "3. Apply the filters"
-      ],
-      "expected_result": "Applying Departure_Dates = <far future date> succeeds; the results pane updates and if no tours are scheduled that far in the future, a visible 'No tours match your filters' message is shown.",
+      "expected_result": "Navigation succeeds; user returns to the Tours Search Form and the form fields are pre-filled with the previous search criteria (visible: Destination, dates, and selected Tour_Type as previously entered) \u2014 no automatic re-submission occurs",
       "priority": "low"
     }
   ],
   "summary": {
-    "total": 8,
-    "boundary": 2,
-    "input_edge": 2,
-    "interaction_edge": 1,
+    "total": 5,
+    "boundary": 0,
+    "input_edge": 3,
+    "interaction_edge": 2,
     "state_edge": 0,
-    "data_edge": 3,
-    "medium_priority": 3,
-    "low_priority": 5
+    "data_edge": 0,
+    "medium_priority": 4,
+    "low_priority": 1
   }
 }

@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.113614
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.855935
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - SYSTEM PROMPT
+[22:49:29] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - USER PROMPT
+[22:49:29] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 5,
   "module_title": "Course Page",
-  "summary": "Displays the full course content organized into collapsible sections with activities and resources listed under each section.",
-  "where_it_fits": "Accessible from the main navigation via Home / Dashboard / My Courses or by selecting a course link (breadcrumbs reflect the path), this view is the central course workspace where the horizontal course tab bar and Course Index sidebar provide navigation between course-level screens and activities.",
-  "assumed_state_on_entry": "User is logged in and has access to the course (enrolled student or teacher) with the course available in My Courses or Dashboard."
+  "summary": "Displays a selected course\u2019s full content organized into collapsible sections with activities and resources listed and a course-level tab bar.",
+  "where_it_fits": "Reached from the top navigation (e.g., My Courses or Dashboard) when a user opens a specific course, this is the primary course view located beneath the course title and horizontal tab bar (Course, Participants, Grades, Activities, Competencies) and works with the Course Index sidebar to navigate sections and activities. It is the main lifecycle screen for viewing course materials and activity links.",
+  "assumed_state_on_entry": "User is logged in and has opened a specific course (the course exists and the user has permission to view it)."
 }
 </module_context>
 
@@ -260,57 +270,68 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Course Page",
   "components": {
-    "Course_Tab_Bar": {
+    "Course_Page_Tabs": {
       "type": "tab_container",
-      "tabs": []
-    },
-    "Course_Index_Sidebar": {
-      "type": "navigation_sidebar",
-      "preconditions": [
-        "User is logged in and has access to the course (enrolled student or teacher) with the course available in My Courses or Dashboard."
-      ],
-      "Items": {
-        "type": "repeating_group",
-        "item_fields": {
-          "Index_Item_Link": {
-            "type": "link"
-          }
-        }
-      }
-    },
-    "Course_Content_Sections": {
-      "type": "repeating_group",
-      "preconditions": [
-        "User is logged in and has access to the course (enrolled student or teacher) with the course available in My Courses or Dashboard."
-      ],
-      "item_fields": {
-        "Toggle_Collapse": {
-          "type": "button"
-        },
-        "Activities": {
-          "type": "repeating_group",
-          "item_fields": {
-            "Activity_Link": {
-              "type": "link"
-            }
-          }
-        },
-        "Resources": {
-          "type": "repeating_group",
-          "item_fields": {
-            "Resource_Link": {
-              "type": "link"
-            }
-          }
-        }
-      },
-      "actions": [
+      "tabs": [
         {
-          "action_name": "Collapse all",
-          "type": "link",
-          "preconditions": [
-            "User is logged in and has access to the course (enrolled student or teacher) with the course available in My Courses or Dashboard."
-          ]
+          "tab_name": "Course",
+          "fields": {
+            "Collapse_All": {
+              "type": "link",
+              "on_success": {
+                "set_all": {
+                  "path": "Sections.item_fields.Is_Collapsed",
+                  "value": true
+                }
+              },
+              "preconditions": [
+                "User is logged in and has opened a specific course (the course exists and the user has permission to view it)."
+              ]
+            },
+            "Sections": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Section_Name": {
+                  "type": "unspecified"
+                },
+                "Toggle_Section": {
+                  "type": "button",
+                  "on_success": {
+                    "toggle": "Sections.item_fields.Is_Collapsed"
+                  }
+                },
+                "Is_Collapsed": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "Activities": {
+                  "type": "repeating_group",
+                  "visible_when": "Is_Collapsed == false",
+                  "item_fields": {
+                    "Activity_Name": {
+                      "type": "link"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "tab_name": "Participants",
+          "fields": {}
+        },
+        {
+          "tab_name": "Grades",
+          "fields": {}
+        },
+        {
+          "tab_name": "Activities",
+          "fields": {}
+        },
+        {
+          "tab_name": "Competencies",
+          "fields": {}
         }
       ]
     }
@@ -328,17 +349,15 @@ The Course page displays the full course content organized into collapsible sect
 </description>
 
 <workflows>
-WF-001 | Navigate to section via Course Index | actor: Enrolled student or teacher | branch: none | terminal: Index_Item_Link | on_success: Navigates to the selected section in the course content (Course Index sidebar link activates the section view).
-WF-002 | Toggle a single section (expand/collapse) | actor: Enrolled student or teacher | branch: none | terminal: Toggle_Collapse | on_success: The targeted section toggles between expanded and collapsed states; its activities and resources are shown or hidden accordingly.
-WF-003 | Collapse all sections | actor: Enrolled student or teacher | branch: none | terminal: Collapse all | on_success: All course content sections collapse so only section headers remain visible.
-WF-004 | Open an activity from a section | actor: Enrolled student or teacher | branch: none | terminal: Activity_Link | on_success: Navigates to the selected activity (opens the activity page or view).
-WF-005 | Open a resource from a section | actor: Enrolled student or teacher | branch: none | terminal: Resource_Link | on_success: Navigates to or opens the selected resource.
+WF-001 | Collapse all sections via Collapse_All link | actor: User | branch: none | terminal: Collapse_All | on_success: set_all: Sections.item_fields.Is_Collapsed = true
+WF-002 | Toggle a single section's collapsed state | actor: User | branch: none | terminal: Toggle_Section | on_success: toggle: Sections.item_fields.Is_Collapsed
+WF-003 | Open an activity/resource from a visible section | actor: User | branch: Is_Collapsed == false | terminal: Activity_Name | on_success: Navigate to activity/resource page
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:13:21] Test-Negative - LLM RESPONSE
+[22:50:26] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Course Page",
@@ -347,43 +366,59 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Unauthenticated user cannot view Course Page (redirect to login)",
+      "test_case": "Unauthenticated user attempts to open Course Page",
       "preconditions": [
-        "User is not logged in"
+        "User is not authenticated (logged out)"
       ],
       "steps": [
-        "1. Open the Course Page URL directly in a browser while not authenticated",
-        "2. Observe the resulting page"
+        "1. Ensure the user is logged out",
+        "2. Navigate to the Course Page URL for <a specific course>"
       ],
-      "expected_result": "User is redirected to the login page or shown a login prompt; the Course Page heading, Course Tab Bar, Course Index sidebar, and course sections are not displayed or accessible. The action is blocked: no course content is visible or interactable.",
+      "expected_result": "Navigation is blocked: the user is redirected to the login screen (or presented with an authentication prompt); the course page heading, the Course tab bar, and the Sections list are not displayed",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Logged-in user who is not enrolled cannot access course content or use Course Index",
+      "test_case": "Click 'Collapse all' when user lacks permission to view the course",
       "preconditions": [
-        "User is logged in but is not enrolled in the course / does not have access to the course"
+        "User is logged in but does not have permission to view the specified course"
       ],
       "steps": [
-        "1. Log in as a user who is not enrolled in the course",
-        "2. Navigate to the Course Page via Dashboard or by selecting the course link",
-        "3. Attempt to use the Course Index sidebar link (Index_Item_Link) or interact with any section toggles"
+        "1. Log in as a user without view permission for <course>",
+        "2. Navigate to the Course Page URL for <course>",
+        "3. Look for the 'Collapse all' link at the top right",
+        "4. If the 'Collapse all' link is present, click it"
       ],
-      "expected_result": "Page blocks access to course content: the course heading, Course Tab Bar, Course Index sidebar, section headers and their activities/resources are not shown or are disabled. An access-denied message is displayed (e.g., 'You do not have access to this course' or equivalent). The navigation action is blocked: the user is not taken to any section and cannot toggle or open section content.",
+      "expected_result": "User is prevented from using the 'Collapse all' action: the 'Collapse all' link is not visible or is disabled when the user lacks permission; clicking it does not change any Section's Is_Collapsed state and the Sections list remains unchanged",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-003",
+      "test_case": "Attempt to open an activity from a collapsed section (visible_when violation)",
+      "preconditions": [
+        "User is logged in and has opened the course (course loaded on Course tab)"
+      ],
+      "steps": [
+        "1. On the Course tab, identify a section <Section A> that currently shows activities",
+        "2. Click the section's Toggle_Section button to collapse <Section A> (set Is_Collapsed = true)",
+        "3. Attempt to click the Activity_Name link for an activity inside <Section A>"
+      ],
+      "expected_result": "Activity links inside a collapsed section are not available: the Activity_Name link for <Section A> is not visible or clickable when Is_Collapsed == true; no navigation occurs and <Section A> remains collapsed",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 2,
-    "high_priority": 2,
+    "total": 3,
+    "high_priority": 3,
     "medium_priority": 0,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:13:21] Test-Negative - PARSED JSON
+[22:50:26] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Course Page",
@@ -392,36 +427,52 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Unauthenticated user cannot view Course Page (redirect to login)",
+      "test_case": "Unauthenticated user attempts to open Course Page",
       "preconditions": [
-        "User is not logged in"
+        "User is not authenticated (logged out)"
       ],
       "steps": [
-        "1. Open the Course Page URL directly in a browser while not authenticated",
-        "2. Observe the resulting page"
+        "1. Ensure the user is logged out",
+        "2. Navigate to the Course Page URL for <a specific course>"
       ],
-      "expected_result": "User is redirected to the login page or shown a login prompt; the Course Page heading, Course Tab Bar, Course Index sidebar, and course sections are not displayed or accessible. The action is blocked: no course content is visible or interactable.",
+      "expected_result": "Navigation is blocked: the user is redirected to the login screen (or presented with an authentication prompt); the course page heading, the Course tab bar, and the Sections list are not displayed",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Logged-in user who is not enrolled cannot access course content or use Course Index",
+      "test_case": "Click 'Collapse all' when user lacks permission to view the course",
       "preconditions": [
-        "User is logged in but is not enrolled in the course / does not have access to the course"
+        "User is logged in but does not have permission to view the specified course"
       ],
       "steps": [
-        "1. Log in as a user who is not enrolled in the course",
-        "2. Navigate to the Course Page via Dashboard or by selecting the course link",
-        "3. Attempt to use the Course Index sidebar link (Index_Item_Link) or interact with any section toggles"
+        "1. Log in as a user without view permission for <course>",
+        "2. Navigate to the Course Page URL for <course>",
+        "3. Look for the 'Collapse all' link at the top right",
+        "4. If the 'Collapse all' link is present, click it"
       ],
-      "expected_result": "Page blocks access to course content: the course heading, Course Tab Bar, Course Index sidebar, section headers and their activities/resources are not shown or are disabled. An access-denied message is displayed (e.g., 'You do not have access to this course' or equivalent). The navigation action is blocked: the user is not taken to any section and cannot toggle or open section content.",
+      "expected_result": "User is prevented from using the 'Collapse all' action: the 'Collapse all' link is not visible or is disabled when the user lacks permission; clicking it does not change any Section's Is_Collapsed state and the Sections list remains unchanged",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-003",
+      "wf_ref": "WF-003",
+      "test_case": "Attempt to open an activity from a collapsed section (visible_when violation)",
+      "preconditions": [
+        "User is logged in and has opened the course (course loaded on Course tab)"
+      ],
+      "steps": [
+        "1. On the Course tab, identify a section <Section A> that currently shows activities",
+        "2. Click the section's Toggle_Section button to collapse <Section A> (set Is_Collapsed = true)",
+        "3. Attempt to click the Activity_Name link for an activity inside <Section A>"
+      ],
+      "expected_result": "Activity links inside a collapsed section are not available: the Activity_Name link for <Section A> is not visible or clickable when Is_Collapsed == true; no navigation occurs and <Section A> remains collapsed",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 2,
-    "high_priority": 2,
+    "total": 3,
+    "high_priority": 3,
     "medium_priority": 0,
     "low_priority": 0
   }

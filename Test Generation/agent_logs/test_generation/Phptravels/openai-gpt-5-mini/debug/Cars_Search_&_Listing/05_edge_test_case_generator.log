@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:13.907924
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.094110
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Edge - SYSTEM PROMPT
+[22:33:07] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Edge - USER PROMPT
+[22:33:07] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 11,
   "module_title": "Cars Search & Listing",
-  "summary": "Provides a car rental search form and a dynamic listing of available vehicles grouped by category with detailed attributes, pricing, and filtering options.",
-  "where_it_fits": "Accessible from the main navigation under Cars or via the home page search widget's Cars tab, this module handles the search input and displays results before booking and payment flows; it sits alongside other transport modules like Flights and Tours and feeds into the Car Booking and Payment Processing modules.",
-  "assumed_state_on_entry": "Visitor has selected the Cars section (or used the home search widget) and has provided pick-up/drop-off locations and dates/times; user may be guest or authenticated."
+  "summary": "Provides car rental search and dynamic listing of available vehicles by category with detailed specs, pricing, and sidebar filters.",
+  "where_it_fits": "Accessible from the main navigation under the Cars section or via the home page search widget's Cars tab, this module handles the search input and presents matching car listings as part of the booking flow before Car Booking and Payment Processing. It sits alongside other transport modules (Flights, Tours) and links into Booking Management and User Dashboard for completed reservations.",
+  "assumed_state_on_entry": "User (guest or authenticated) has accessed the Cars section and supplied or selected car rental search criteria (pick-up/drop-off locations and dates/times); no prior booking required."
 }
 </module_context>
 
@@ -245,6 +259,15 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Cars_Search_Form": {
       "type": "form",
+      "preconditions": [
+        "User (guest or authenticated) has accessed the Cars section and supplied or selected car rental search criteria (pick-up/drop-off locations and dates/times)"
+      ],
+      "submit_actions": [
+        {
+          "action_name": "Search",
+          "on_success": "redirect to Cars_Listings_Page"
+        }
+      ],
       "fields": {
         "Pick_Up_Location": {
           "type": "unspecified"
@@ -252,32 +275,20 @@ If a `<workflows>` block is present in the input:
         "Drop_Off_Location": {
           "type": "unspecified"
         },
-        "Pick_Up_Date": {
+        "Pick_Up_Date_Time": {
           "type": "date"
         },
-        "Pick_Up_Time": {
-          "type": "unspecified"
-        },
-        "Drop_Off_Date": {
+        "Drop_Off_Date_Time": {
           "type": "date"
-        },
-        "Drop_Off_Time": {
-          "type": "unspecified"
         },
         "Driver_Age": {
           "type": "number"
         }
-      },
-      "submit_actions": [
-        {
-          "action_name": "Search",
-          "on_success": "redirect to Cars_Listing_Page"
-        }
-      ]
+      }
     },
-    "Listing_Sidebar_Filters": {
-      "type": "filters",
-      "dynamic": true,
+    "Sidebar_Filters": {
+      "type": "form",
+      "on_change": "updates_Car_Listings_dynamically",
       "fields": {
         "Car_Type": {
           "type": "dropdown",
@@ -287,104 +298,42 @@ If a `<workflows>` block is present in the input:
             "SUV",
             "Luxury",
             "Van"
-          ],
-          "on_change": "update_results"
+          ]
         },
         "Transmission": {
           "type": "dropdown",
           "options": [
             "Automatic",
             "Manual"
-          ],
-          "on_change": "update_results"
+          ]
         },
         "Fuel_Policy": {
-          "type": "unspecified",
-          "on_change": "update_results"
+          "type": "unspecified"
         },
         "Rental_Company": {
-          "type": "unspecified",
-          "on_change": "update_results"
+          "type": "unspecified"
         },
         "Price_Range": {
-          "type": "unspecified",
-          "on_change": "update_results"
+          "type": "unspecified"
         }
       }
     },
-    "Cars_Listing_Page": {
-      "type": "grouped_list",
-      "preconditions": [
-        "pick-up/drop-off locations and dates/times provided"
-      ],
+    "Car_Listings": {
+      "type": "listings",
+      "grouped_by": "Category",
       "groups": [
-        {
-          "group_name": "Economy",
-          "fields": {},
-          "item_actions": [
-            {
-              "action_name": "Book Now",
-              "preconditions": [
-                "pick-up/drop-off locations and dates/times provided"
-              ],
-              "on_success": "navigate to Car Booking module"
-            }
-          ]
-        },
-        {
-          "group_name": "Compact",
-          "fields": {},
-          "item_actions": [
-            {
-              "action_name": "Book Now",
-              "preconditions": [
-                "pick-up/drop-off locations and dates/times provided"
-              ],
-              "on_success": "navigate to Car Booking module"
-            }
-          ]
-        },
-        {
-          "group_name": "SUV",
-          "fields": {},
-          "item_actions": [
-            {
-              "action_name": "Book Now",
-              "preconditions": [
-                "pick-up/drop-off locations and dates/times provided"
-              ],
-              "on_success": "navigate to Car Booking module"
-            }
-          ]
-        },
-        {
-          "group_name": "Luxury",
-          "fields": {},
-          "item_actions": [
-            {
-              "action_name": "Book Now",
-              "preconditions": [
-                "pick-up/drop-off locations and dates/times provided"
-              ],
-              "on_success": "navigate to Car Booking module"
-            }
-          ]
-        },
-        {
-          "group_name": "Van",
-          "fields": {},
-          "item_actions": [
-            {
-              "action_name": "Book Now",
-              "preconditions": [
-                "pick-up/drop-off locations and dates/times provided"
-              ],
-              "on_success": "navigate to Car Booking module"
-            }
-          ]
-        }
+        "Economy",
+        "Compact",
+        "SUV",
+        "Luxury",
+        "Van"
       ],
-      "filters_component": "Listing_Sidebar_Filters"
+      "item_actions": [
+        {
+          "action_name": "Book Now",
+          "on_success": "proceeds to Car Booking flow"
+        }
+      ]
     }
   }
 }
@@ -400,23 +349,14 @@ The car rental search form collects pick-up and drop-off location, pick-up and d
 </description>
 
 <workflows>
-WF-001 | Submit Cars search form | actor: Visitor | branch: none | terminal: Search | on_success: redirect to Cars_Listing_Page
-WF-002 | Filter by Car Type (select option) | actor: Visitor | branch: Listing_Sidebar_Filters.fields.Car_Type selected | terminal: update_results | on_success: Listing results updated dynamically
-WF-003 | Filter by Transmission (select option) | actor: Visitor | branch: Listing_Sidebar_Filters.fields.Transmission selected | terminal: update_results | on_success: Listing results updated dynamically
-WF-004 | Filter by Fuel Policy (select option) | actor: Visitor | branch: Listing_Sidebar_Filters.fields.Fuel_Policy selected | terminal: update_results | on_success: Listing results updated dynamically
-WF-005 | Filter by Rental Company (select option) | actor: Visitor | branch: Listing_Sidebar_Filters.fields.Rental_Company selected | terminal: update_results | on_success: Listing results updated dynamically
-WF-006 | Adjust Price Range filter (change) | actor: Visitor | branch: Listing_Sidebar_Filters.fields.Price_Range changed | terminal: update_results | on_success: Listing results updated dynamically
-WF-007 | Book Now from Economy group | actor: Visitor | branch: Cars_Listing_Page.groups["Economy"].selected AND preconditions satisfied | terminal: Book Now | on_success: navigate to Car Booking module
-WF-008 | Book Now from Compact group | actor: Visitor | branch: Cars_Listing_Page.groups["Compact"].selected AND preconditions satisfied | terminal: Book Now | on_success: navigate to Car Booking module
-WF-009 | Book Now from SUV group | actor: Visitor | branch: Cars_Listing_Page.groups["SUV"].selected AND preconditions satisfied | terminal: Book Now | on_success: navigate to Car Booking module
-WF-010 | Book Now from Luxury group | actor: Visitor | branch: Cars_Listing_Page.groups["Luxury"].selected AND preconditions satisfied | terminal: Book Now | on_success: navigate to Car Booking module
-WF-011 | Book Now from Van group | actor: Visitor | branch: Cars_Listing_Page.groups["Van"].selected AND preconditions satisfied | terminal: Book Now | on_success: navigate to Car Booking module
+WF-001 | Search for available cars | actor: User | branch: none | terminal: Search | on_success: redirect to Cars_Listings_Page
+WF-002 | Book a listed car via Book Now | actor: User | branch: none | terminal: Book Now | on_success: proceeds to Car Booking flow
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:27:01] Test-Edge - LLM RESPONSE
+[22:35:19] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Cars Search & Listing",
@@ -425,133 +365,79 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "E-001",
       "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Pick-up date equals today — search accepts today's date",
+      "subcategory": "input_edge",
+      "test_case": "Very long Pick_Up_Location input (>200 chars)",
       "preconditions": [
-        "Visitor is on the Cars Search form (Cars section selected)",
-        "Pick_Up_Time, Drop_Off_Date, Drop_Off_Time, Pick_Up_Location, Drop_Off_Location filled with valid values"
+        "User has accessed the Cars section and is on the Cars Search form with other required search criteria already provided (per assumed state on entry)"
       ],
       "steps": [
-        "1. Set Pick_Up_Date to <today>",
-        "2. Ensure other required fields remain populated",
-        "3. Click the Search button"
+        "1. Enter a very long string (>200 characters) into the Pick_Up_Location field",
+        "2. Click the Search button"
       ],
-      "expected_result": "Form submits successfully; redirect to Cars_Listing_Page (WF-001) and search results for the selected date range are displayed — test succeeds",
+      "expected_result": "An inline validation error is shown on the Pick_Up_Location field indicating the value exceeds the allowed length; the search action is blocked (search does not redirect to Cars Listings page).",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Pick-up date set to yesterday — past-date boundary blocked",
+      "subcategory": "input_edge",
+      "test_case": "Special characters and emoji in Pick_Up and Drop_Off locations",
       "preconditions": [
-        "Visitor is on the Cars Search form",
-        "Pick_Up_Time, Drop_Off_Date, Drop_Off_Time, Pick_Up_Location, Drop_Off_Location filled with valid values"
+        "User has accessed the Cars section and is on the Cars Search form with other required search criteria already provided (per assumed state on entry)"
       ],
       "steps": [
-        "1. Set Pick_Up_Date to <one day before today>",
-        "2. Ensure other required fields remain populated",
+        "1. Enter a string containing special characters and emoji into the Pick_Up_Location field",
+        "2. Enter a string containing special characters and emoji into the Drop_Off_Location field",
         "3. Click the Search button"
       ],
-      "expected_result": "Search is blocked; Pick_Up_Date shows an inline validation error indicating the date is before today's date and must be corrected — test is blocked / error shown",
+      "expected_result": "Form submits successfully; user is redirected to the Cars Listings page; the search summary or header on the Listings page displays the entered special characters and emoji exactly as entered (visible to the user).",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Leading and trailing whitespace in Pick-Up Location is handled visibly",
+      "test_case": "Leading and trailing whitespace in Pick_Up_Location is trimmed",
       "preconditions": [
-        "Visitor is on the Cars Search form"
+        "User has accessed the Cars section and is on the Cars Search form with other required search criteria already provided (per assumed state on entry)"
       ],
       "steps": [
-        "1. Enter a Pick_Up_Location value with leading and trailing whitespace (e.g., '  <location>  ')",
-        "2. Fill remaining required fields with valid values",
-        "3. Click the Search button"
+        "1. Enter a valid location string with leading and trailing whitespace into the Pick_Up_Location field",
+        "2. Click the Search button"
       ],
-      "expected_result": "Form submits successfully; on the Cars_Listing_Page the displayed pick-up location value is shown without leading/trailing whitespace (whitespace trimmed) or a visible inline message indicates trimming — user-visible result confirms whitespace normalization",
+      "expected_result": "Form submits successfully; user is redirected to the Cars Listings page; the search summary displays the Pick_Up_Location value with leading and trailing whitespace trimmed (no extra spaces visible).",
       "priority": "low"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-001",
-      "subcategory": "input_edge",
-      "test_case": "Special characters / emoji in Pick-Up Location preserved through search",
-      "preconditions": [
-        "Visitor is on the Cars Search form"
-      ],
-      "steps": [
-        "1. Enter special characters and emoji into Pick_Up_Location (e.g., include emoji and non-ASCII punctuation)",
-        "2. Fill remaining required fields with valid values",
-        "3. Click the Search button"
-      ],
-      "expected_result": "Form submits successfully; redirected to Cars_Listing_Page and the displayed pick-up location preserves the special characters/emoji (no encoding corruption) — visible result succeeds",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-005",
-      "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Driver age set to zero — numeric lower-bound edge",
-      "preconditions": [
-        "Visitor is on the Cars Search form"
-      ],
-      "steps": [
-        "1. Enter 0 in the Driver_Age field",
-        "2. Fill remaining required fields with valid values",
-        "3. Click the Search button"
-      ],
-      "expected_result": "Search is blocked; Driver_Age displays an inline validation error indicating the age is below the allowed minimum and must be corrected — test is blocked / error shown",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-006",
-      "wf_ref": "WF-002",
       "subcategory": "interaction_edge",
-      "test_case": "Rapidly toggle Car Type filter — final selection must be applied",
+      "test_case": "Rapid double-click of Search button results in single navigation",
       "preconditions": [
-        "Visitor is on Cars_Listing_Page with results shown and Listing_Sidebar_Filters visible"
+        "User has accessed the Cars section and completed or prefilled search criteria (per assumed state on entry)"
       ],
       "steps": [
-        "1. Click Car_Type option 'Economy'",
-        "2. Immediately (within 1–2 seconds) click Car_Type option 'SUV'",
-        "3. Immediately click Car_Type option 'Luxury' (final selection)",
-        "4. Observe the listing results"
+        "1. Click the Search button once",
+        "2. Immediately click the Search button a second time (rapid double-click)"
       ],
-      "expected_result": "After rapid changes, the final selected Car_Type ('Luxury') is applied and listing updates to show results for 'Luxury' only; the UI remains responsive and no duplicated items appear — final filter application succeeds",
+      "expected_result": "The second submission attempt is ignored; only a single redirect to the Cars Listings page occurs and no duplicate listings load or duplicate navigations are observed (user sees a single Listings page load).",
       "priority": "low"
-    },
-    {
-      "tc_id": "E-007",
-      "wf_ref": "WF-006",
-      "subcategory": "boundary",
-      "test_case": "Set Price Range min and max equal (narrowest possible range)",
-      "preconditions": [
-        "Visitor is on Cars_Listing_Page with Listing_Sidebar_Filters visible"
-      ],
-      "steps": [
-        "1. Open the Price_Range control in the sidebar",
-        "2. Set the minimum value equal to the maximum value (min == max)",
-        "3. Observe the listing area after the dynamic update"
-      ],
-      "expected_result": "Filter update is applied (WF-006): listing updates to show only vehicles whose total rental cost equals the selected exact price; if no vehicles match that exact price, the listing displays a visible 'No vehicles match your filters' message — filter application succeeds (boundary condition)",
-      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 7,
-    "boundary": 4,
-    "input_edge": 2,
+    "total": 4,
+    "boundary": 0,
+    "input_edge": 3,
     "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 4,
-    "low_priority": 3
+    "medium_priority": 2,
+    "low_priority": 2
   }
 }
 
 ------------------------------------------------------------
-[21:27:01] Test-Edge - PARSED JSON
+[22:35:19] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Cars Search & Listing",
@@ -560,127 +446,73 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "E-001",
       "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Pick-up date equals today \u2014 search accepts today's date",
+      "subcategory": "input_edge",
+      "test_case": "Very long Pick_Up_Location input (>200 chars)",
       "preconditions": [
-        "Visitor is on the Cars Search form (Cars section selected)",
-        "Pick_Up_Time, Drop_Off_Date, Drop_Off_Time, Pick_Up_Location, Drop_Off_Location filled with valid values"
+        "User has accessed the Cars section and is on the Cars Search form with other required search criteria already provided (per assumed state on entry)"
       ],
       "steps": [
-        "1. Set Pick_Up_Date to <today>",
-        "2. Ensure other required fields remain populated",
-        "3. Click the Search button"
+        "1. Enter a very long string (>200 characters) into the Pick_Up_Location field",
+        "2. Click the Search button"
       ],
-      "expected_result": "Form submits successfully; redirect to Cars_Listing_Page (WF-001) and search results for the selected date range are displayed \u2014 test succeeds",
+      "expected_result": "An inline validation error is shown on the Pick_Up_Location field indicating the value exceeds the allowed length; the search action is blocked (search does not redirect to Cars Listings page).",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Pick-up date set to yesterday \u2014 past-date boundary blocked",
+      "subcategory": "input_edge",
+      "test_case": "Special characters and emoji in Pick_Up and Drop_Off locations",
       "preconditions": [
-        "Visitor is on the Cars Search form",
-        "Pick_Up_Time, Drop_Off_Date, Drop_Off_Time, Pick_Up_Location, Drop_Off_Location filled with valid values"
+        "User has accessed the Cars section and is on the Cars Search form with other required search criteria already provided (per assumed state on entry)"
       ],
       "steps": [
-        "1. Set Pick_Up_Date to <one day before today>",
-        "2. Ensure other required fields remain populated",
+        "1. Enter a string containing special characters and emoji into the Pick_Up_Location field",
+        "2. Enter a string containing special characters and emoji into the Drop_Off_Location field",
         "3. Click the Search button"
       ],
-      "expected_result": "Search is blocked; Pick_Up_Date shows an inline validation error indicating the date is before today's date and must be corrected \u2014 test is blocked / error shown",
+      "expected_result": "Form submits successfully; user is redirected to the Cars Listings page; the search summary or header on the Listings page displays the entered special characters and emoji exactly as entered (visible to the user).",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Leading and trailing whitespace in Pick-Up Location is handled visibly",
+      "test_case": "Leading and trailing whitespace in Pick_Up_Location is trimmed",
       "preconditions": [
-        "Visitor is on the Cars Search form"
+        "User has accessed the Cars section and is on the Cars Search form with other required search criteria already provided (per assumed state on entry)"
       ],
       "steps": [
-        "1. Enter a Pick_Up_Location value with leading and trailing whitespace (e.g., '  <location>  ')",
-        "2. Fill remaining required fields with valid values",
-        "3. Click the Search button"
+        "1. Enter a valid location string with leading and trailing whitespace into the Pick_Up_Location field",
+        "2. Click the Search button"
       ],
-      "expected_result": "Form submits successfully; on the Cars_Listing_Page the displayed pick-up location value is shown without leading/trailing whitespace (whitespace trimmed) or a visible inline message indicates trimming \u2014 user-visible result confirms whitespace normalization",
+      "expected_result": "Form submits successfully; user is redirected to the Cars Listings page; the search summary displays the Pick_Up_Location value with leading and trailing whitespace trimmed (no extra spaces visible).",
       "priority": "low"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-001",
-      "subcategory": "input_edge",
-      "test_case": "Special characters / emoji in Pick-Up Location preserved through search",
-      "preconditions": [
-        "Visitor is on the Cars Search form"
-      ],
-      "steps": [
-        "1. Enter special characters and emoji into Pick_Up_Location (e.g., include emoji and non-ASCII punctuation)",
-        "2. Fill remaining required fields with valid values",
-        "3. Click the Search button"
-      ],
-      "expected_result": "Form submits successfully; redirected to Cars_Listing_Page and the displayed pick-up location preserves the special characters/emoji (no encoding corruption) \u2014 visible result succeeds",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-005",
-      "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Driver age set to zero \u2014 numeric lower-bound edge",
-      "preconditions": [
-        "Visitor is on the Cars Search form"
-      ],
-      "steps": [
-        "1. Enter 0 in the Driver_Age field",
-        "2. Fill remaining required fields with valid values",
-        "3. Click the Search button"
-      ],
-      "expected_result": "Search is blocked; Driver_Age displays an inline validation error indicating the age is below the allowed minimum and must be corrected \u2014 test is blocked / error shown",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-006",
-      "wf_ref": "WF-002",
       "subcategory": "interaction_edge",
-      "test_case": "Rapidly toggle Car Type filter \u2014 final selection must be applied",
+      "test_case": "Rapid double-click of Search button results in single navigation",
       "preconditions": [
-        "Visitor is on Cars_Listing_Page with results shown and Listing_Sidebar_Filters visible"
+        "User has accessed the Cars section and completed or prefilled search criteria (per assumed state on entry)"
       ],
       "steps": [
-        "1. Click Car_Type option 'Economy'",
-        "2. Immediately (within 1\u20132 seconds) click Car_Type option 'SUV'",
-        "3. Immediately click Car_Type option 'Luxury' (final selection)",
-        "4. Observe the listing results"
+        "1. Click the Search button once",
+        "2. Immediately click the Search button a second time (rapid double-click)"
       ],
-      "expected_result": "After rapid changes, the final selected Car_Type ('Luxury') is applied and listing updates to show results for 'Luxury' only; the UI remains responsive and no duplicated items appear \u2014 final filter application succeeds",
+      "expected_result": "The second submission attempt is ignored; only a single redirect to the Cars Listings page occurs and no duplicate listings load or duplicate navigations are observed (user sees a single Listings page load).",
       "priority": "low"
-    },
-    {
-      "tc_id": "E-007",
-      "wf_ref": "WF-006",
-      "subcategory": "boundary",
-      "test_case": "Set Price Range min and max equal (narrowest possible range)",
-      "preconditions": [
-        "Visitor is on Cars_Listing_Page with Listing_Sidebar_Filters visible"
-      ],
-      "steps": [
-        "1. Open the Price_Range control in the sidebar",
-        "2. Set the minimum value equal to the maximum value (min == max)",
-        "3. Observe the listing area after the dynamic update"
-      ],
-      "expected_result": "Filter update is applied (WF-006): listing updates to show only vehicles whose total rental cost equals the selected exact price; if no vehicles match that exact price, the listing displays a visible 'No vehicles match your filters' message \u2014 filter application succeeds (boundary condition)",
-      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 7,
-    "boundary": 4,
-    "input_edge": 2,
+    "total": 4,
+    "boundary": 0,
+    "input_edge": 3,
     "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 4,
-    "low_priority": 3
+    "medium_priority": 2,
+    "low_priority": 2
   }
 }

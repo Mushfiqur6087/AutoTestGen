@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:13.828892
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.028542
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - SYSTEM PROMPT
+[22:33:07] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - USER PROMPT
+[22:33:07] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 6,
   "module_title": "Hotel Details & Booking",
-  "summary": "Displays comprehensive hotel information (gallery, description, location, room types, pricing, reviews, and policies) and presents a room selection and booking form with a detailed price breakdown.",
-  "where_it_fits": "Accessible from the top navigation via Hotels and from the Home Page search results, this module is the step after Hotels Search & Listing and precedes Payment Processing in the booking lifecycle; it feeds selected room and guest details into the payment flow and links to the User Dashboard for booking history after completion.",
-  "assumed_state_on_entry": "A specific hotel has been selected from Hotels Search & Listing (stay dates and guest count chosen); user authentication is required to complete the booking (viewing details may not require login)."
+  "summary": "Displays comprehensive hotel information (photos, description, map), room options with pricing and policies, guest reviews, and a booking form that captures guest details and price breakdown prior to payment.",
+  "where_it_fits": "Accessible from the main navigation via Home -> Hotels or Hotels Search & Listing, this module is the detailed property view users reach after searching for hotels and selecting a result; it precedes Payment Processing and Booking Management in the booking lifecycle.",
+  "assumed_state_on_entry": "User has performed a hotel search and selected a specific hotel and stay dates (guest count and room selection available); booking completion requires an authenticated (logged-in) user."
 }
 </module_context>
 
@@ -265,37 +275,41 @@ If a `<workflows>` block is present in the input:
       "row_actions": [
         {
           "action_name": "Select Room",
-          "on_success": "sets Selected_Room_Type and reveals booking form"
+          "on_success": "opens Booking_Form with selected room prefilled; sets Room_Selected == true"
         }
       ]
     },
     "Booking_Form": {
       "type": "form",
-      "visible_when": "Selected_Room_Type is set",
+      "visible_when": "Room_Selected == true",
       "fields": {
         "First_Name": {
-          "type": "unspecified"
+          "type": "text",
+          "required": true
         },
         "Last_Name": {
-          "type": "unspecified"
+          "type": "text",
+          "required": true
         },
         "Email": {
-          "type": "unspecified"
+          "type": "email",
+          "required": true
         },
         "Phone_Number": {
-          "type": "unspecified"
+          "type": "tel",
+          "required": true
         },
         "Special_Requests": {
-          "type": "unspecified"
+          "type": "textarea"
         }
       },
       "submit_actions": [
         {
           "action_name": "Book Now",
+          "on_success": "navigates to Payment Processing",
           "preconditions": [
             "user must be logged in"
-          ],
-          "on_success": "proceeds to the payment page"
+          ]
         }
       ]
     }
@@ -313,14 +327,15 @@ The hotel details page displays a photo gallery, full property description, loca
 </description>
 
 <workflows>
-WF-001 | Select a room from the room types list | actor: <role> | branch: none | terminal: Select Room | on_success: sets Selected_Room_Type and reveals booking form
-WF-002 | Book Now after selecting a room | actor: <role> | branch: Selected_Room_Type is set | terminal: Book Now | on_success: proceeds to the payment page
+WF-001 | Select a room from the room types list | actor: User | branch: none | terminal: Select Room | on_success: opens Booking_Form with selected room prefilled; sets Room_Selected == true
+WF-002 | Book Now when a room is selected and user is logged in | actor: User | branch: Room_Selected == true AND user_logged_in == true | terminal: Book Now | on_success: navigates to Payment Processing
+WF-003 | Book Now when a room is selected but user is not logged in | actor: User | branch: Room_Selected == true AND user_logged_in == false | terminal: Book Now | on_success: redirects to Login
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:25:36] Test-Negative - LLM RESPONSE
+[22:34:21] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Hotel Details & Booking",
@@ -329,121 +344,117 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-002",
-      "test_case": "Leave a required text field blank (representative: First Name) and submit",
+      "test_case": "Leave required text field (First_Name) blank and submit",
       "preconditions": [
-        "Selected_Room_Type is set (a room has been selected from the Room Types list)",
-        "User is logged in"
+        "Room_Selected == true",
+        "user_logged_in == true"
       ],
       "steps": [
-        "1. Open the Hotel Details page for the selected hotel",
-        "2. Select a room from the Room Types list",
-        "3. Ensure the Booking form is visible",
-        "4. Leave the First Name field blank",
-        "5. Enter <valid last name> in the Last Name field",
-        "6. Enter <valid email address> in the Email field",
-        "7. Enter <valid phone number> in the Phone Number field",
-        "8. Click the Book Now button"
+        "1. On Hotel Details page, select a room from the Room Types list",
+        "2. Wait until the Booking Form is displayed",
+        "3. Leave the First_Name field blank",
+        "4. Enter <valid last name> in the Last_Name field",
+        "5. Enter <valid email address> in the Email field",
+        "6. Enter <valid phone number> in the Phone_Number field",
+        "7. Click the Book Now button"
       ],
-      "expected_result": "Inline validation error appears on the First Name field indicating it is required; the form does not submit; user remains on the Hotel Details page; no booking is created and the user is not taken to the payment page.",
+      "expected_result": "An inline validation error appears on the First_Name field indicating it is required; the form does not submit; the Booking Form remains displayed and the user is not navigated to Payment Processing (booking is not created).",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-002",
-      "test_case": "Submit booking with ALL required fields empty",
+      "test_case": "Submit Booking Form with ALL required fields empty",
       "preconditions": [
-        "Selected_Room_Type is set (a room has been selected from the Room Types list)",
-        "User is logged in"
+        "Room_Selected == true",
+        "user_logged_in == true"
       ],
       "steps": [
-        "1. Open the Hotel Details page for the selected hotel",
-        "2. Select a room from the Room Types list",
-        "3. Ensure the Booking form is visible",
-        "4. Leave the First Name field blank",
-        "5. Leave the Last Name field blank",
-        "6. Leave the Email field blank",
-        "7. Leave the Phone Number field blank",
-        "8. Click the Book Now button"
+        "1. On Hotel Details page, select a room from the Room Types list",
+        "2. Wait until the Booking Form is displayed",
+        "3. Leave the First_Name field blank",
+        "4. Leave the Last_Name field blank",
+        "5. Leave the Email field blank",
+        "6. Leave the Phone_Number field blank",
+        "7. Click the Book Now button"
       ],
-      "expected_result": "Inline validation errors appear on the First Name, Last Name, Email, and Phone Number fields indicating each is required; the form does not submit; user remains on the Hotel Details page; no booking is created and the user is not taken to the payment page.",
+      "expected_result": "Inline validation errors appear on First_Name, Last_Name, Email, and Phone_Number indicating each is required; the form does not submit; the Booking Form remains displayed and no booking is created or progressed to Payment Processing.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-002",
-      "test_case": "Enter invalid email format and attempt to submit",
+      "test_case": "Enter invalid format in Email field",
       "preconditions": [
-        "Selected_Room_Type is set (a room has been selected from the Room Types list)",
-        "User is logged in"
+        "Room_Selected == true",
+        "user_logged_in == true"
       ],
       "steps": [
-        "1. Open the Hotel Details page for the selected hotel",
-        "2. Select a room from the Room Types list",
-        "3. Ensure the Booking form is visible",
-        "4. Enter <valid first name> in the First Name field",
-        "5. Enter <valid last name> in the Last Name field",
-        "6. Enter <invalid email format> in the Email field",
-        "7. Enter <valid phone number> in the Phone Number field",
-        "8. Click the Book Now button"
+        "1. On Hotel Details page, select a room from the Room Types list",
+        "2. Wait until the Booking Form is displayed",
+        "3. Enter <valid first name> in the First_Name field",
+        "4. Enter <valid last name> in the Last_Name field",
+        "5. Enter <invalid email format> in the Email field",
+        "6. Enter <valid phone number> in the Phone_Number field",
+        "7. Click the Book Now button"
       ],
-      "expected_result": "Email field displays an inline validation error indicating the email format is invalid; the form does not submit; user remains on the Hotel Details page; no booking is created and the user is not taken to the payment page.",
+      "expected_result": "Email field displays an inline validation error indicating an invalid email format; the form does not submit; the Booking Form remains displayed and booking is not created.",
       "priority": "medium"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-002",
-      "test_case": "Enter non-numeric phone number and attempt to submit",
+      "test_case": "Enter invalid format in Phone_Number (tel) field",
       "preconditions": [
-        "Selected_Room_Type is set (a room has been selected from the Room Types list)",
-        "User is logged in"
+        "Room_Selected == true",
+        "user_logged_in == true"
       ],
       "steps": [
-        "1. Open the Hotel Details page for the selected hotel",
-        "2. Select a room from the Room Types list",
-        "3. Ensure the Booking form is visible",
-        "4. Enter <valid first name> in the First Name field",
-        "5. Enter <valid last name> in the Last Name field",
-        "6. Enter <valid email address> in the Email field",
-        "7. Enter <non-numeric phone input> in the Phone Number field",
-        "8. Click the Book Now button"
+        "1. On Hotel Details page, select a room from the Room Types list",
+        "2. Wait until the Booking Form is displayed",
+        "3. Enter <valid first name> in the First_Name field",
+        "4. Enter <valid last name> in the Last_Name field",
+        "5. Enter <valid email address> in the Email field",
+        "6. Enter <invalid phone format> in the Phone_Number field",
+        "7. Click the Book Now button"
       ],
-      "expected_result": "Phone Number field displays an inline validation error indicating phone number format is invalid (non-numeric input not allowed); the form does not submit; user remains on the Hotel Details page; no booking is created and the user is not taken to the payment page.",
+      "expected_result": "Phone_Number field displays an inline validation error indicating an invalid phone number format; the form does not submit; the Booking Form remains displayed and booking is not created.",
       "priority": "medium"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-002",
-      "test_case": "Attempt Book Now while not logged in (precondition: user must be logged in)",
+      "wf_ref": "WF-003",
+      "test_case": "Attempt Book Now while not logged in (unauthenticated)",
       "preconditions": [
-        "Selected_Room_Type is set (a room has been selected from the Room Types list)",
-        "User is not logged in"
+        "Room_Selected == true",
+        "user_logged_in == false"
       ],
       "steps": [
-        "1. Open the Hotel Details page for the selected hotel",
-        "2. Select a room from the Room Types list",
-        "3. Ensure the Booking form is visible",
-        "4. Fill First Name with <valid first name>",
-        "5. Fill Last Name with <valid last name>",
-        "6. Fill Email with <valid email address>",
-        "7. Fill Phone Number with <valid phone number>",
-        "8. Click the Book Now button"
+        "1. On Hotel Details page, select a room from the Room Types list",
+        "2. Wait until the Booking Form is displayed",
+        "3. Enter <valid first name> in the First_Name field",
+        "4. Enter <valid last name> in the Last_Name field",
+        "5. Enter <valid email address> in the Email field",
+        "6. Enter <valid phone number> in the Phone_Number field",
+        "7. Click the Book Now button"
       ],
-      "expected_result": "Click is blocked by authentication precondition: user is redirected to the Login page (login form is displayed) and is not taken to the payment page; the booking is not created and the payment flow does not start.",
+      "expected_result": "User is redirected to the Login page instead of proceeding to Payment Processing; the booking is not created.",
       "priority": "high"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Booking form is not accessible when no room is selected (visible_when violation)",
+      "test_case": "Attempt to access Booking Form / Book Now without selecting a room",
       "preconditions": [
-        "Selected_Room_Type is NOT set (no room has been selected)"
+        "Room_Selected == false"
       ],
       "steps": [
-        "1. Open the Hotel Details page for the selected hotel without selecting a room",
-        "2. Attempt to locate the Booking form on the page",
-        "3. Attempt to locate or click a Book Now button"
+        "1. Navigate to the Hotel Details page for a hotel with selected stay dates",
+        "2. Verify no room has been selected from the Room Types list",
+        "3. Attempt to locate the Booking Form on the page",
+        "4. Attempt to locate or click a Book Now button"
       ],
-      "expected_result": "Booking form is not visible and the Book Now button is not present; user remains on the Hotel Details page viewing room types; the UI requires selecting a room first (no booking form fields are shown and no Book Now action is available).",
+      "expected_result": "Booking Form is not visible and the Book Now button is not present when no room is selected; the user cannot proceed to Payment Processing.",
       "priority": "high"
     }
   ],
@@ -456,7 +467,7 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
 }
 
 ------------------------------------------------------------
-[21:25:36] Test-Negative - PARSED JSON
+[22:34:21] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Hotel Details & Booking",
@@ -465,121 +476,117 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-002",
-      "test_case": "Leave a required text field blank (representative: First Name) and submit",
+      "test_case": "Leave required text field (First_Name) blank and submit",
       "preconditions": [
-        "Selected_Room_Type is set (a room has been selected from the Room Types list)",
-        "User is logged in"
+        "Room_Selected == true",
+        "user_logged_in == true"
       ],
       "steps": [
-        "1. Open the Hotel Details page for the selected hotel",
-        "2. Select a room from the Room Types list",
-        "3. Ensure the Booking form is visible",
-        "4. Leave the First Name field blank",
-        "5. Enter <valid last name> in the Last Name field",
-        "6. Enter <valid email address> in the Email field",
-        "7. Enter <valid phone number> in the Phone Number field",
-        "8. Click the Book Now button"
+        "1. On Hotel Details page, select a room from the Room Types list",
+        "2. Wait until the Booking Form is displayed",
+        "3. Leave the First_Name field blank",
+        "4. Enter <valid last name> in the Last_Name field",
+        "5. Enter <valid email address> in the Email field",
+        "6. Enter <valid phone number> in the Phone_Number field",
+        "7. Click the Book Now button"
       ],
-      "expected_result": "Inline validation error appears on the First Name field indicating it is required; the form does not submit; user remains on the Hotel Details page; no booking is created and the user is not taken to the payment page.",
+      "expected_result": "An inline validation error appears on the First_Name field indicating it is required; the form does not submit; the Booking Form remains displayed and the user is not navigated to Payment Processing (booking is not created).",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-002",
-      "test_case": "Submit booking with ALL required fields empty",
+      "test_case": "Submit Booking Form with ALL required fields empty",
       "preconditions": [
-        "Selected_Room_Type is set (a room has been selected from the Room Types list)",
-        "User is logged in"
+        "Room_Selected == true",
+        "user_logged_in == true"
       ],
       "steps": [
-        "1. Open the Hotel Details page for the selected hotel",
-        "2. Select a room from the Room Types list",
-        "3. Ensure the Booking form is visible",
-        "4. Leave the First Name field blank",
-        "5. Leave the Last Name field blank",
-        "6. Leave the Email field blank",
-        "7. Leave the Phone Number field blank",
-        "8. Click the Book Now button"
+        "1. On Hotel Details page, select a room from the Room Types list",
+        "2. Wait until the Booking Form is displayed",
+        "3. Leave the First_Name field blank",
+        "4. Leave the Last_Name field blank",
+        "5. Leave the Email field blank",
+        "6. Leave the Phone_Number field blank",
+        "7. Click the Book Now button"
       ],
-      "expected_result": "Inline validation errors appear on the First Name, Last Name, Email, and Phone Number fields indicating each is required; the form does not submit; user remains on the Hotel Details page; no booking is created and the user is not taken to the payment page.",
+      "expected_result": "Inline validation errors appear on First_Name, Last_Name, Email, and Phone_Number indicating each is required; the form does not submit; the Booking Form remains displayed and no booking is created or progressed to Payment Processing.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-002",
-      "test_case": "Enter invalid email format and attempt to submit",
+      "test_case": "Enter invalid format in Email field",
       "preconditions": [
-        "Selected_Room_Type is set (a room has been selected from the Room Types list)",
-        "User is logged in"
+        "Room_Selected == true",
+        "user_logged_in == true"
       ],
       "steps": [
-        "1. Open the Hotel Details page for the selected hotel",
-        "2. Select a room from the Room Types list",
-        "3. Ensure the Booking form is visible",
-        "4. Enter <valid first name> in the First Name field",
-        "5. Enter <valid last name> in the Last Name field",
-        "6. Enter <invalid email format> in the Email field",
-        "7. Enter <valid phone number> in the Phone Number field",
-        "8. Click the Book Now button"
+        "1. On Hotel Details page, select a room from the Room Types list",
+        "2. Wait until the Booking Form is displayed",
+        "3. Enter <valid first name> in the First_Name field",
+        "4. Enter <valid last name> in the Last_Name field",
+        "5. Enter <invalid email format> in the Email field",
+        "6. Enter <valid phone number> in the Phone_Number field",
+        "7. Click the Book Now button"
       ],
-      "expected_result": "Email field displays an inline validation error indicating the email format is invalid; the form does not submit; user remains on the Hotel Details page; no booking is created and the user is not taken to the payment page.",
+      "expected_result": "Email field displays an inline validation error indicating an invalid email format; the form does not submit; the Booking Form remains displayed and booking is not created.",
       "priority": "medium"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-002",
-      "test_case": "Enter non-numeric phone number and attempt to submit",
+      "test_case": "Enter invalid format in Phone_Number (tel) field",
       "preconditions": [
-        "Selected_Room_Type is set (a room has been selected from the Room Types list)",
-        "User is logged in"
+        "Room_Selected == true",
+        "user_logged_in == true"
       ],
       "steps": [
-        "1. Open the Hotel Details page for the selected hotel",
-        "2. Select a room from the Room Types list",
-        "3. Ensure the Booking form is visible",
-        "4. Enter <valid first name> in the First Name field",
-        "5. Enter <valid last name> in the Last Name field",
-        "6. Enter <valid email address> in the Email field",
-        "7. Enter <non-numeric phone input> in the Phone Number field",
-        "8. Click the Book Now button"
+        "1. On Hotel Details page, select a room from the Room Types list",
+        "2. Wait until the Booking Form is displayed",
+        "3. Enter <valid first name> in the First_Name field",
+        "4. Enter <valid last name> in the Last_Name field",
+        "5. Enter <valid email address> in the Email field",
+        "6. Enter <invalid phone format> in the Phone_Number field",
+        "7. Click the Book Now button"
       ],
-      "expected_result": "Phone Number field displays an inline validation error indicating phone number format is invalid (non-numeric input not allowed); the form does not submit; user remains on the Hotel Details page; no booking is created and the user is not taken to the payment page.",
+      "expected_result": "Phone_Number field displays an inline validation error indicating an invalid phone number format; the form does not submit; the Booking Form remains displayed and booking is not created.",
       "priority": "medium"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-002",
-      "test_case": "Attempt Book Now while not logged in (precondition: user must be logged in)",
+      "wf_ref": "WF-003",
+      "test_case": "Attempt Book Now while not logged in (unauthenticated)",
       "preconditions": [
-        "Selected_Room_Type is set (a room has been selected from the Room Types list)",
-        "User is not logged in"
+        "Room_Selected == true",
+        "user_logged_in == false"
       ],
       "steps": [
-        "1. Open the Hotel Details page for the selected hotel",
-        "2. Select a room from the Room Types list",
-        "3. Ensure the Booking form is visible",
-        "4. Fill First Name with <valid first name>",
-        "5. Fill Last Name with <valid last name>",
-        "6. Fill Email with <valid email address>",
-        "7. Fill Phone Number with <valid phone number>",
-        "8. Click the Book Now button"
+        "1. On Hotel Details page, select a room from the Room Types list",
+        "2. Wait until the Booking Form is displayed",
+        "3. Enter <valid first name> in the First_Name field",
+        "4. Enter <valid last name> in the Last_Name field",
+        "5. Enter <valid email address> in the Email field",
+        "6. Enter <valid phone number> in the Phone_Number field",
+        "7. Click the Book Now button"
       ],
-      "expected_result": "Click is blocked by authentication precondition: user is redirected to the Login page (login form is displayed) and is not taken to the payment page; the booking is not created and the payment flow does not start.",
+      "expected_result": "User is redirected to the Login page instead of proceeding to Payment Processing; the booking is not created.",
       "priority": "high"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Booking form is not accessible when no room is selected (visible_when violation)",
+      "test_case": "Attempt to access Booking Form / Book Now without selecting a room",
       "preconditions": [
-        "Selected_Room_Type is NOT set (no room has been selected)"
+        "Room_Selected == false"
       ],
       "steps": [
-        "1. Open the Hotel Details page for the selected hotel without selecting a room",
-        "2. Attempt to locate the Booking form on the page",
-        "3. Attempt to locate or click a Book Now button"
+        "1. Navigate to the Hotel Details page for a hotel with selected stay dates",
+        "2. Verify no room has been selected from the Room Types list",
+        "3. Attempt to locate the Booking Form on the page",
+        "4. Attempt to locate or click a Book Now button"
       ],
-      "expected_result": "Booking form is not visible and the Book Now button is not present; user remains on the Hotel Details page viewing room types; the UI requires selecting a room first (no booking form fields are shown and no Book Now action is available).",
+      "expected_result": "Booking Form is not visible and the Book Now button is not present when no room is selected; the user cannot proceed to Payment Processing.",
       "priority": "high"
     }
   ],

@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:04:20.745070
+DEBUG SESSION STARTED: 2026-07-04T22:55:35.997318
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Edge - SYSTEM PROMPT
+[22:55:35] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Edge - USER PROMPT
+[22:55:35] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 8,
   "module_title": "Logout",
-  "summary": "Ends the current authenticated session and returns the user to the login page, preventing access to protected pages until re-authentication.",
-  "where_it_fits": "Accessible from the hamburger menu in the persistent header after sign-in (hamburger menu options: All Items, About, Logout, Reset App State), Logout is part of session management and is used at any point after landing on the Product Inventory or other protected pages to terminate the session and send the user back to the sign-in screen.",
-  "assumed_state_on_entry": "An active authenticated user session (logged in) on a protected page such as Product Inventory, Product Detail, Shopping Cart, or any Checkout step."
+  "summary": "Terminates the user's session and returns the application to the login page, preventing access to protected pages until re-authentication.",
+  "where_it_fits": "Accessible from the hamburger menu in the persistent header after login (e.g., from Product Inventory and other protected pages), Logout is a global action that ends the current session and returns the user to the sign-in page. It sits alongside other header menu items like All Items, About, and Reset App State as a session-control navigation option.",
+  "assumed_state_on_entry": "User is currently authenticated and on a protected page (e.g., Product Inventory, Product Detail, Shopping Cart, or Checkout)."
 }
 </module_context>
 
@@ -243,30 +257,13 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Logout",
   "components": {
-    "Hamburger_Menu": {
-      "type": "navigation_menu",
+    "Header_Logout": {
+      "type": "button",
+      "action_name": "Logout",
       "preconditions": [
-        "An active authenticated user session (logged in) on a protected page such as Product Inventory, Product Detail, Shopping Cart, or any Checkout step."
+        "User is currently authenticated and on a protected page (e.g., Product Inventory, Product Detail, Shopping Cart, or Checkout)."
       ],
-      "fields": {
-        "All_Items": {
-          "type": "link"
-        },
-        "About": {
-          "type": "link"
-        },
-        "Logout": {
-          "type": "link",
-          "preconditions": [
-            "An active authenticated user session (logged in) on a protected page such as Product Inventory, Product Detail, Shopping Cart, or any Checkout step."
-          ],
-          "on_success": "Ends the current authenticated session and navigates the user to the login page; protected pages are not accessible until re-authentication."
-        },
-        "Reset_App_State": {
-          "type": "button",
-          "on_success": "Resets the application's local state"
-        }
-      }
+      "on_success": "Terminates the user's session and redirects to the sign-in page, preventing access to protected pages until re-authentication."
     }
   }
 }
@@ -280,16 +277,13 @@ Logout ends the session and returns the user to the login page. After logout, pr
 </description>
 
 <workflows>
-WF-001 | Navigate to All Items | actor: Authenticated User | branch: none | terminal: All_Items | on_success: Navigates to the All Items page.
-WF-002 | Open About page | actor: Authenticated User | branch: none | terminal: About | on_success: Navigates to the About page.
-WF-003 | Logout (end session) | actor: Authenticated User | branch: none | terminal: Logout | on_success: Ends the current authenticated session and navigates the user to the login page; protected pages are not accessible until re-authentication.
-WF-004 | Reset application local state | actor: Authenticated User | branch: none | terminal: Reset_App_State | on_success: Resets the application's local state
+WF-001 | Logout via header button | actor: Authenticated User | branch: none | terminal: Logout | on_success: Terminates the user's session and redirects to the sign-in page, preventing access to protected pages until re-authentication.
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:05:31] Test-Edge - LLM RESPONSE
+[22:57:02] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Logout",
@@ -297,87 +291,69 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-003",
+      "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid / double-click Logout from hamburger menu",
-      "preconditions": [
-        "User is authenticated and on a protected page (e.g. Product Inventory)"
-      ],
-      "steps": [
-        "1. Click the persistent header hamburger menu",
-        "2. Click the 'Logout' menu item",
-        "3. Immediately (within a fraction of a second) click the 'Logout' menu item again (double-click / second click)"
-      ],
-      "expected_result": "First logout click succeeds and navigates the user to the login page; the immediate second click is ignored (no second navigation or duplicate state change) and no UI error is shown. After this, attempts to access protected content require re-authentication.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-002",
-      "wf_ref": "WF-003",
-      "subcategory": "interaction_edge",
-      "test_case": "Use browser Back button after logout to attempt to return to protected page",
-      "preconditions": [
-        "User is authenticated and on a protected page",
-        "A protected page URL is present in the browser history"
-      ],
-      "steps": [
-        "1. Click the persistent header hamburger menu",
-        "2. Click the 'Logout' menu item",
-        "3. Once navigated to the login page, click the browser Back button"
-      ],
-      "expected_result": "Attempt to return to the protected page using the Back button is blocked; the login page is displayed (or the user is redirected to the login page) and protected-page content is not shown. The user remains unauthenticated until they sign in again.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-003",
-      "wf_ref": "WF-003",
-      "subcategory": "state_edge",
-      "test_case": "Logout in one tab while a second tab has an open protected page; then interact in the second tab",
-      "preconditions": [
-        "User is authenticated",
-        "The same authenticated account has a protected page open in two separate browser tabs"
-      ],
-      "steps": [
-        "1. In Tab A, click the persistent header hamburger menu",
-        "2. In Tab A, click the 'Logout' menu item",
-        "3. Switch to Tab B (still showing a protected page without refresh)",
-        "4. In Tab B, click a protected-page action or refresh the page"
-      ],
-      "expected_result": "Logout in Tab A succeeds and ends the session; the interaction or refresh in Tab B is blocked and presents the login page (or redirects to login) instead of allowing access to protected functionality. No protected actions succeed without re-authentication.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-004",
-      "wf_ref": "WF-004",
-      "subcategory": "interaction_edge",
-      "test_case": "Reset App State immediately before Logout",
+      "test_case": "Rapid double-click of Logout button",
       "preconditions": [
         "User is authenticated and on a protected page"
       ],
       "steps": [
-        "1. Click the persistent header hamburger menu",
-        "2. Click the 'Reset App State' button",
-        "3. After the reset completes, click the persistent header hamburger menu again",
-        "4. Click the 'Logout' menu item"
+        "1. Click the header hamburger menu",
+        "2. Click the Logout button",
+        "3. Immediately click the Logout button again (within a short interval)"
       ],
-      "expected_result": "Reset App State succeeds (local state is cleared) and subsequent Logout succeeds and navigates the user to the login page. After logout, protected pages are inaccessible until re-authentication and no residual protected state remains visible.",
-      "priority": "low"
+      "expected_result": "Logout succeeds; the sign-in page with visible login form is displayed once, and the second click is ignored (no additional navigation or duplicate session changes are visible).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-002",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Browser Back after successful logout",
+      "preconditions": [
+        "User is authenticated and on a protected page"
+      ],
+      "steps": [
+        "1. Click the header hamburger menu",
+        "2. Click the Logout button",
+        "3. Wait until the sign-in page with visible login form is displayed",
+        "4. Press the browser Back button"
+      ],
+      "expected_result": "Access to the previously viewed protected page is blocked; the browser remains on or is redirected back to the sign-in page with the login form visible (protected page content is not shown).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-003",
+      "wf_ref": "WF-001",
+      "subcategory": "state_edge",
+      "test_case": "Direct navigation to a protected URL after logout",
+      "preconditions": [
+        "User is authenticated and on a protected page"
+      ],
+      "steps": [
+        "1. Click the header hamburger menu",
+        "2. Click the Logout button",
+        "3. Wait until the sign-in page with visible login form is displayed",
+        "4. Enter the URL of a protected page (e.g., product detail or cart) into the browser address bar and press Enter"
+      ],
+      "expected_result": "Navigation to the protected URL is blocked; the browser displays the sign-in page with the login form visible instead of the protected page.",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 4,
+    "total": 3,
     "boundary": 0,
     "input_edge": 0,
-    "interaction_edge": 3,
+    "interaction_edge": 2,
     "state_edge": 1,
     "data_edge": 0,
     "medium_priority": 3,
-    "low_priority": 1
+    "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:05:31] Test-Edge - PARSED JSON
+[22:57:02] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Logout",
@@ -385,81 +361,63 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-003",
+      "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid / double-click Logout from hamburger menu",
-      "preconditions": [
-        "User is authenticated and on a protected page (e.g. Product Inventory)"
-      ],
-      "steps": [
-        "1. Click the persistent header hamburger menu",
-        "2. Click the 'Logout' menu item",
-        "3. Immediately (within a fraction of a second) click the 'Logout' menu item again (double-click / second click)"
-      ],
-      "expected_result": "First logout click succeeds and navigates the user to the login page; the immediate second click is ignored (no second navigation or duplicate state change) and no UI error is shown. After this, attempts to access protected content require re-authentication.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-002",
-      "wf_ref": "WF-003",
-      "subcategory": "interaction_edge",
-      "test_case": "Use browser Back button after logout to attempt to return to protected page",
-      "preconditions": [
-        "User is authenticated and on a protected page",
-        "A protected page URL is present in the browser history"
-      ],
-      "steps": [
-        "1. Click the persistent header hamburger menu",
-        "2. Click the 'Logout' menu item",
-        "3. Once navigated to the login page, click the browser Back button"
-      ],
-      "expected_result": "Attempt to return to the protected page using the Back button is blocked; the login page is displayed (or the user is redirected to the login page) and protected-page content is not shown. The user remains unauthenticated until they sign in again.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-003",
-      "wf_ref": "WF-003",
-      "subcategory": "state_edge",
-      "test_case": "Logout in one tab while a second tab has an open protected page; then interact in the second tab",
-      "preconditions": [
-        "User is authenticated",
-        "The same authenticated account has a protected page open in two separate browser tabs"
-      ],
-      "steps": [
-        "1. In Tab A, click the persistent header hamburger menu",
-        "2. In Tab A, click the 'Logout' menu item",
-        "3. Switch to Tab B (still showing a protected page without refresh)",
-        "4. In Tab B, click a protected-page action or refresh the page"
-      ],
-      "expected_result": "Logout in Tab A succeeds and ends the session; the interaction or refresh in Tab B is blocked and presents the login page (or redirects to login) instead of allowing access to protected functionality. No protected actions succeed without re-authentication.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-004",
-      "wf_ref": "WF-004",
-      "subcategory": "interaction_edge",
-      "test_case": "Reset App State immediately before Logout",
+      "test_case": "Rapid double-click of Logout button",
       "preconditions": [
         "User is authenticated and on a protected page"
       ],
       "steps": [
-        "1. Click the persistent header hamburger menu",
-        "2. Click the 'Reset App State' button",
-        "3. After the reset completes, click the persistent header hamburger menu again",
-        "4. Click the 'Logout' menu item"
+        "1. Click the header hamburger menu",
+        "2. Click the Logout button",
+        "3. Immediately click the Logout button again (within a short interval)"
       ],
-      "expected_result": "Reset App State succeeds (local state is cleared) and subsequent Logout succeeds and navigates the user to the login page. After logout, protected pages are inaccessible until re-authentication and no residual protected state remains visible.",
-      "priority": "low"
+      "expected_result": "Logout succeeds; the sign-in page with visible login form is displayed once, and the second click is ignored (no additional navigation or duplicate session changes are visible).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-002",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Browser Back after successful logout",
+      "preconditions": [
+        "User is authenticated and on a protected page"
+      ],
+      "steps": [
+        "1. Click the header hamburger menu",
+        "2. Click the Logout button",
+        "3. Wait until the sign-in page with visible login form is displayed",
+        "4. Press the browser Back button"
+      ],
+      "expected_result": "Access to the previously viewed protected page is blocked; the browser remains on or is redirected back to the sign-in page with the login form visible (protected page content is not shown).",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-003",
+      "wf_ref": "WF-001",
+      "subcategory": "state_edge",
+      "test_case": "Direct navigation to a protected URL after logout",
+      "preconditions": [
+        "User is authenticated and on a protected page"
+      ],
+      "steps": [
+        "1. Click the header hamburger menu",
+        "2. Click the Logout button",
+        "3. Wait until the sign-in page with visible login form is displayed",
+        "4. Enter the URL of a protected page (e.g., product detail or cart) into the browser address bar and press Enter"
+      ],
+      "expected_result": "Navigation to the protected URL is blocked; the browser displays the sign-in page with the login form visible instead of the protected page.",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 4,
+    "total": 3,
     "boundary": 0,
     "input_edge": 0,
-    "interaction_edge": 3,
+    "interaction_edge": 2,
     "state_edge": 1,
     "data_edge": 0,
     "medium_priority": 3,
-    "low_priority": 1
+    "low_priority": 0
   }
 }

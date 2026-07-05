@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:13.882503
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.085810
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Edge - SYSTEM PROMPT
+[22:33:07] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Edge - USER PROMPT
+[22:33:07] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 10,
   "module_title": "Tour Details & Booking",
-  "summary": "Displays full tour information including images, day-by-day itinerary, inclusions/exclusions, departure dates, pricing, reviews, terms, and a booking form for traveler details and cost breakdown.",
-  "where_it_fits": "Accessible from the top navigation under Tours or via the Tours Search & Listing results, this module presents detailed information after a tour is chosen and precedes the booking flow handled by Booking Management and Payment Processing. It is part of the user journey that starts from the Home search widget or Tours listing and moves toward account/checkout steps in the dashboard and payment modules.",
-  "assumed_state_on_entry": "A specific tour has been selected from Tours Search & Listing; the tour's availability and departure dates are loaded and the user session is either authenticated or will trigger a redirect to Login."
+  "summary": "Presents full tour information (images, day-by-day itinerary, inclusions/exclusions, departure dates, per-person pricing, map, reviews, and terms) and captures traveler and contact details to calculate the total cost and create a booking.",
+  "where_it_fits": "Reached from the Top Nav \u2192 Tours or the Home search widget via Tours Search & Listing, this module is the detailed product page and booking entry point that precedes Payment Processing and Booking Management in the reservation flow.",
+  "assumed_state_on_entry": "A specific tour has been selected from Tours Search & Listing; if not authenticated, the user will be redirected to Login before completing a booking."
 }
 </module_context>
 
@@ -243,47 +257,38 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Tour Details & Booking",
   "components": {
-    "Tour_Details_Selection_Form": {
-      "type": "form",
+    "Tour_Details_Page": {
+      "type": "page",
       "fields": {
         "Departure_Date": {
           "type": "date",
           "required": true
         },
-        "Adults": {
+        "Adults_Count": {
           "type": "number",
-          "required": true,
-          "constraints": [
-            "minimum 1"
-          ]
+          "required": true
         },
-        "Children": {
+        "Children_Count": {
           "type": "number",
-          "constraints": [
-            "minimum 0"
-          ]
-        }
-      },
-      "submit_actions": [
-        {
+          "required": true
+        },
+        "Book_Now": {
+          "type": "button",
           "action_name": "Book Now",
           "preconditions": [
             "user must be logged in"
           ],
-          "on_precondition_fail": "redirect to Login",
+          "on_failure": "redirects to Login",
           "on_success": "opens Booking Form"
         }
-      ]
+      }
     },
     "Booking_Form": {
       "type": "form",
-      "on_precondition_fail": "redirect to Login",
-      "preconditions": [
-        "user must be logged in"
-      ],
       "fields": {
         "Travelers": {
           "type": "repeating_group",
+          "item_count_source": "components.Tour_Details_Page.fields.Adults_Count + components.Tour_Details_Page.fields.Children_Count",
           "item_fields": {
             "First_Name": {
               "type": "unspecified",
@@ -298,9 +303,12 @@ If a `<workflows>` block is present in the input:
             }
           }
         },
-        "Contact_Email": {
+        "Contact_Name": {
           "type": "unspecified",
           "required": true
+        },
+        "Contact_Email": {
+          "type": "unspecified"
         },
         "Contact_Phone": {
           "type": "unspecified"
@@ -308,12 +316,12 @@ If a `<workflows>` block is present in the input:
       },
       "submit_actions": [
         {
-          "action_name": "Confirm Booking",
+          "action_name": "Submit Booking",
           "preconditions": [
             "user must be logged in"
           ],
-          "on_precondition_fail": "redirect to Login",
-          "on_success": "creates booking and proceeds to Payment Processing"
+          "on_failure": "redirects to Login",
+          "on_success": "creates booking"
         }
       ]
     }
@@ -331,14 +339,16 @@ The tour details page displays a slideshow of images, a full day-by-day itinerar
 </description>
 
 <workflows>
-WF-001 | Select departure/date and start booking (Book Now) | actor: <role> | branch: none | terminal: Book Now | on_success: opens Booking Form
-WF-002 | Complete booking with traveler details (Confirm Booking) | actor: <role> | branch: none | terminal: Confirm Booking | on_success: creates booking and proceeds to Payment Processing
+WF-001 | Book Now — authenticated (opens Booking Form) | actor: <user> | branch: none | terminal: Book Now | on_success: opens Booking Form
+WF-002 | Book Now — unauthenticated (redirects to Login) | actor: <user> | branch: none | terminal: Book Now | on_success: redirects to Login
+WF-003 | Submit Booking — authenticated (creates booking) | actor: <user> | branch: none | terminal: Submit Booking | on_success: creates booking
+WF-004 | Submit Booking — unauthenticated (redirects to Login) | actor: <user> | branch: none | terminal: Submit Booking | on_success: redirects to Login
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:26:41] Test-Edge - LLM RESPONSE
+[22:35:17] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Tour Details & Booking",
@@ -348,195 +358,170 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Adults = minimum allowed (exact boundary) while starting booking",
+      "test_case": "Attempt to add one traveler beyond Adults+Children total",
       "preconditions": [
-        "User is logged in",
-        "Tour Details page for a tour with at least one available Departure Date is open"
+        "User is authenticated",
+        "Tour Details page is open for a tour with available departure dates"
       ],
       "steps": [
-        "1. Select an available Departure_Date",
-        "2. Enter <minimum 1> in the Adults field",
-        "3. Click Book Now"
+        "1. Select a Departure_Date on the Tour Details page",
+        "2. Enter Adults_Count = <A>",
+        "3. Enter Children_Count = <C>",
+        "4. Click Book Now",
+        "5. Wait for Booking Form to open",
+        "6. Observe Travelers repeating group has exactly <A + C> rows generated",
+        "7. Click the UI control to add one more traveler row (e.g., Add Traveler)"
       ],
-      "expected_result": "Booking Form opens and flow proceeds to booking details (action succeeds).",
+      "expected_result": "Attempt to add an extra traveler is blocked; the Travelers area displays a visible inline error or disables the add control indicating the number of traveler rows cannot exceed the selected Adults_Count + Children_Count",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-001",
+      "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Adults one unit below minimum (0) is rejected when starting booking",
+      "test_case": "Submit booking with Travelers count exactly equal to Adults+Children",
       "preconditions": [
-        "User is logged in",
-        "Tour Details page for a tour with at least one available Departure Date is open"
+        "User is authenticated",
+        "Tour Details page is open for a tour with available departure dates"
       ],
       "steps": [
-        "1. Select an available Departure_Date",
-        "2. Enter <one unit below minimum> in the Adults field",
-        "3. Click Book Now"
+        "1. Select a Departure_Date on the Tour Details page",
+        "2. Enter Adults_Count = <A>",
+        "3. Enter Children_Count = <C>",
+        "4. Click Book Now",
+        "5. Wait for Booking Form to open",
+        "6. Verify there are exactly <A + C> traveler rows",
+        "7. For each traveler row fill First_Name and Last_Name",
+        "8. Fill required Contact_Name",
+        "9. Click Submit Booking"
       ],
-      "expected_result": "Submission is blocked; inline error shown on the Adults field indicating the value is below the minimum of 1 (is blocked; error shown).",
+      "expected_result": "Form submits successfully; booking confirmation (booking-created) page opens and shows a booking summary with exactly <A + C> travelers",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-001",
+      "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Children = minimum allowed (exact boundary) when starting booking",
+      "test_case": "Reduce Adults_Count after travelers filled so traveler rows exceed selected total",
       "preconditions": [
-        "User is logged in",
-        "Tour Details page for a tour with at least one available Departure Date is open"
+        "User is authenticated",
+        "Tour Details page is open for a tour with available departure dates"
       ],
       "steps": [
-        "1. Select an available Departure_Date",
-        "2. Enter <minimum 1> in the Adults field",
-        "3. Enter <minimum 0> in the Children field",
-        "4. Click Book Now"
+        "1. On Tour Details select a Departure_Date",
+        "2. Enter Adults_Count = <A>",
+        "3. Enter Children_Count = <C>",
+        "4. Click Book Now",
+        "5. Wait for Booking Form to open",
+        "6. Verify there are exactly <A + C> traveler rows and fill First_Name and Last_Name for each",
+        "7. Click Back or Edit to return to Tour Details page",
+        "8. Change Adults_Count to <A - 1>",
+        "9. Click Book Now again to re-open the Booking Form (or navigate back to it)",
+        "10. Click Submit Booking"
       ],
-      "expected_result": "Booking Form opens and flow proceeds to booking details; Children value of 0 is accepted (succeeds).",
+      "expected_result": "Submit is blocked; Booking Form displays a visible error on the Travelers area indicating the number of filled traveler entries exceeds the selected Adults_Count + Children_Count",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Children one unit below minimum (-1) is rejected when starting booking",
+      "wf_ref": "WF-003",
+      "subcategory": "input_edge",
+      "test_case": "Very long First_Name value entered for a traveler (200+ characters)",
       "preconditions": [
-        "User is logged in",
-        "Tour Details page for a tour with at least one available Departure Date is open"
+        "User is authenticated",
+        "Booking Form is open with at least one traveler row"
       ],
       "steps": [
-        "1. Select an available Departure_Date",
-        "2. Enter <minimum 1> in the Adults field",
-        "3. Enter <one unit below minimum> in the Children field",
-        "4. Click Book Now"
+        "1. In the first traveler row enter a First_Name value of length > 200 characters",
+        "2. Enter a valid Last_Name for that traveler",
+        "3. Fill required Contact_Name",
+        "4. Click Submit Booking"
       ],
-      "expected_result": "Submission is blocked; inline error shown on the Children field indicating the value is below the minimum of 0 (is blocked; error shown).",
-      "priority": "medium"
+      "expected_result": "Booking submits successfully and the booking confirmation page displays the full First_Name value entered (visible in the traveler summary)",
+      "priority": "low"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-003",
       "subcategory": "input_edge",
-      "test_case": "Very long text in Special_Requirements for a traveler (200+ chars)",
+      "test_case": "Contact_Name with emojis and special/unicode characters",
       "preconditions": [
-        "User is logged in",
-        "Booking Form is open with at least one Traveler entry present"
+        "User is authenticated",
+        "Booking Form is open with required fields visible"
       ],
       "steps": [
-        "1. Add or focus the first Traveler repeating_group item",
-        "2. Enter required value in First_Name",
-        "3. Enter required value in Last_Name",
-        "4. Enter <very long string> (200+ characters) in Special_Requirements",
-        "5. Fill Contact_Email with a valid value",
-        "6. Click Confirm Booking"
+        "1. Enter a Contact_Name containing emoji and unicode punctuation",
+        "2. Fill required traveler First_Name and Last_Name fields",
+        "3. Click Submit Booking"
       ],
-      "expected_result": "Confirm Booking creates the booking and booking confirmation is shown; the Special_Requirements text is saved and displayed in the booking summary as entered (succeeds).",
+      "expected_result": "Booking submits successfully; booking confirmation page shows the Contact_Name preserving the special unicode characters and emoji as entered",
       "priority": "low"
     },
     {
       "tc_id": "E-006",
       "wf_ref": "WF-002",
-      "subcategory": "input_edge",
-      "test_case": "Emoji / Unicode characters in Traveler First_Name",
+      "subcategory": "interaction_edge",
+      "test_case": "Unauthenticated user clicks Book Now and is redirected to Login",
       "preconditions": [
-        "User is logged in",
-        "Booking Form is open with at least one Traveler entry present"
+        "User is not authenticated",
+        "Tour Details page is open for a tour with available departure dates"
       ],
       "steps": [
-        "1. Add or focus the first Traveler repeating_group item",
-        "2. Enter <emoji/unicode characters> in First_Name",
-        "3. Enter required value in Last_Name",
-        "4. Fill Contact_Email with a valid value",
-        "5. Click Confirm Booking"
+        "1. Select a Departure_Date on the Tour Details page",
+        "2. Enter Adults_Count and Children_Count",
+        "3. Click Book Now"
       ],
-      "expected_result": "Confirm Booking creates the booking and booking confirmation displays the Traveler First_Name including the entered unicode/emoji characters (succeeds).",
-      "priority": "low"
+      "expected_result": "User is redirected to the Login page (Login screen is displayed); the Booking Form is not shown until authentication completes",
+      "priority": "medium"
     },
     {
       "tc_id": "E-007",
-      "wf_ref": "WF-002",
-      "subcategory": "input_edge",
-      "test_case": "Leading/trailing whitespace in Contact_Email is trimmed on save",
+      "wf_ref": "WF-003",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click of Submit Booking to attempt duplicate booking",
       "preconditions": [
-        "User is logged in",
-        "Booking Form is open with required Traveler names filled"
+        "User is authenticated",
+        "Booking Form is open and all required fields are filled"
       ],
       "steps": [
-        "1. Enter required values in Traveler First_Name and Last_Name",
-        "2. Enter Contact_Email with leading and trailing whitespace",
-        "3. Click Confirm Booking"
+        "1. Click Submit Booking twice in rapid succession (two clicks within 1 second)"
       ],
-      "expected_result": "Confirm Booking creates the booking and the booking confirmation/contact details display the Contact_Email with leading/trailing whitespace trimmed (succeeds).",
-      "priority": "low"
+      "expected_result": "Second submission is blocked; Submit Booking control becomes disabled or shows a visible 'Submitting' indicator and only one booking confirmation flow completes (user sees the booking confirmation page once)",
+      "priority": "medium"
     },
     {
       "tc_id": "E-008",
-      "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Unauthenticated user clicks Book Now, gets redirected to Login, uses back button, clicks Book Now again",
+      "wf_ref": "WF-003",
+      "subcategory": "input_edge",
+      "test_case": "Leading and trailing whitespace in Contact_Name is submitted and shown trimmed in booking summary",
       "preconditions": [
-        "User is not logged in",
-        "Tour Details page for a tour with at least one available Departure Date is open"
+        "User is authenticated",
+        "Booking Form is open with required fields visible"
       ],
       "steps": [
-        "1. Select an available Departure_Date",
-        "2. Enter <minimum 1> in the Adults field",
-        "3. Click Book Now",
-        "4. On the Login page, use the browser Back action to return to the Tour Details page",
-        "5. Click Book Now again"
+        "1. Enter Contact_Name with leading and trailing whitespace (e.g., '  <name>  ')",
+        "2. Fill required traveler First_Name and Last_Name fields",
+        "3. Click Submit Booking",
+        "4. Open the booking confirmation/summary shown after submit"
       ],
-      "expected_result": "Both Book Now attempts are blocked by authentication; each attempt redirects to Login and no Booking Form is opened or booking created (is blocked; redirect to Login shown).",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-009",
-      "wf_ref": "WF-002",
-      "subcategory": "state_edge",
-      "test_case": "Rapid double-submit of Confirm Booking (double-click) to detect duplicate booking creation",
-      "preconditions": [
-        "User is logged in",
-        "Booking Form is open with all required Traveler and contact fields filled and valid"
-      ],
-      "steps": [
-        "1. Click Confirm Booking twice in rapid succession (double-click)",
-        "2. Observe UI until confirmation or error is shown"
-      ],
-      "expected_result": "Only one booking is created; second rapid submission is blocked (button disabled or request deduplicated) and a single confirmation page/notification is shown (is blocked for duplicate; only one booking succeeds).",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-010",
-      "wf_ref": "WF-002",
-      "subcategory": "interaction_edge",
-      "test_case": "Remove all Traveler repeating_group entries then attempt Confirm Booking",
-      "preconditions": [
-        "User is logged in",
-        "Booking Form is open"
-      ],
-      "steps": [
-        "1. If there are any Traveler repeating_group items, remove them all",
-        "2. Ensure Contact_Email is filled with a valid value",
-        "3. Click Confirm Booking"
-      ],
-      "expected_result": "Submission is blocked; inline error shown indicating at least one Traveler entry with required First_Name/Last_Name must be present (is blocked; error shown).",
-      "priority": "medium"
+      "expected_result": "Whitespace is trimmed in the saved value; booking confirmation displays Contact_Name without leading or trailing spaces",
+      "priority": "low"
     }
   ],
   "summary": {
-    "total": 10,
-    "boundary": 4,
+    "total": 8,
+    "boundary": 3,
     "input_edge": 3,
     "interaction_edge": 2,
-    "state_edge": 1,
+    "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 6,
-    "low_priority": 4
+    "medium_priority": 5,
+    "low_priority": 3
   }
 }
 
 ------------------------------------------------------------
-[21:26:41] Test-Edge - PARSED JSON
+[22:35:17] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Tour Details & Booking",
@@ -546,189 +531,164 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Adults = minimum allowed (exact boundary) while starting booking",
+      "test_case": "Attempt to add one traveler beyond Adults+Children total",
       "preconditions": [
-        "User is logged in",
-        "Tour Details page for a tour with at least one available Departure Date is open"
+        "User is authenticated",
+        "Tour Details page is open for a tour with available departure dates"
       ],
       "steps": [
-        "1. Select an available Departure_Date",
-        "2. Enter <minimum 1> in the Adults field",
-        "3. Click Book Now"
+        "1. Select a Departure_Date on the Tour Details page",
+        "2. Enter Adults_Count = <A>",
+        "3. Enter Children_Count = <C>",
+        "4. Click Book Now",
+        "5. Wait for Booking Form to open",
+        "6. Observe Travelers repeating group has exactly <A + C> rows generated",
+        "7. Click the UI control to add one more traveler row (e.g., Add Traveler)"
       ],
-      "expected_result": "Booking Form opens and flow proceeds to booking details (action succeeds).",
+      "expected_result": "Attempt to add an extra traveler is blocked; the Travelers area displays a visible inline error or disables the add control indicating the number of traveler rows cannot exceed the selected Adults_Count + Children_Count",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-001",
+      "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Adults one unit below minimum (0) is rejected when starting booking",
+      "test_case": "Submit booking with Travelers count exactly equal to Adults+Children",
       "preconditions": [
-        "User is logged in",
-        "Tour Details page for a tour with at least one available Departure Date is open"
+        "User is authenticated",
+        "Tour Details page is open for a tour with available departure dates"
       ],
       "steps": [
-        "1. Select an available Departure_Date",
-        "2. Enter <one unit below minimum> in the Adults field",
-        "3. Click Book Now"
+        "1. Select a Departure_Date on the Tour Details page",
+        "2. Enter Adults_Count = <A>",
+        "3. Enter Children_Count = <C>",
+        "4. Click Book Now",
+        "5. Wait for Booking Form to open",
+        "6. Verify there are exactly <A + C> traveler rows",
+        "7. For each traveler row fill First_Name and Last_Name",
+        "8. Fill required Contact_Name",
+        "9. Click Submit Booking"
       ],
-      "expected_result": "Submission is blocked; inline error shown on the Adults field indicating the value is below the minimum of 1 (is blocked; error shown).",
+      "expected_result": "Form submits successfully; booking confirmation (booking-created) page opens and shows a booking summary with exactly <A + C> travelers",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-001",
+      "wf_ref": "WF-003",
       "subcategory": "boundary",
-      "test_case": "Children = minimum allowed (exact boundary) when starting booking",
+      "test_case": "Reduce Adults_Count after travelers filled so traveler rows exceed selected total",
       "preconditions": [
-        "User is logged in",
-        "Tour Details page for a tour with at least one available Departure Date is open"
+        "User is authenticated",
+        "Tour Details page is open for a tour with available departure dates"
       ],
       "steps": [
-        "1. Select an available Departure_Date",
-        "2. Enter <minimum 1> in the Adults field",
-        "3. Enter <minimum 0> in the Children field",
-        "4. Click Book Now"
+        "1. On Tour Details select a Departure_Date",
+        "2. Enter Adults_Count = <A>",
+        "3. Enter Children_Count = <C>",
+        "4. Click Book Now",
+        "5. Wait for Booking Form to open",
+        "6. Verify there are exactly <A + C> traveler rows and fill First_Name and Last_Name for each",
+        "7. Click Back or Edit to return to Tour Details page",
+        "8. Change Adults_Count to <A - 1>",
+        "9. Click Book Now again to re-open the Booking Form (or navigate back to it)",
+        "10. Click Submit Booking"
       ],
-      "expected_result": "Booking Form opens and flow proceeds to booking details; Children value of 0 is accepted (succeeds).",
+      "expected_result": "Submit is blocked; Booking Form displays a visible error on the Travelers area indicating the number of filled traveler entries exceeds the selected Adults_Count + Children_Count",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-001",
-      "subcategory": "boundary",
-      "test_case": "Children one unit below minimum (-1) is rejected when starting booking",
+      "wf_ref": "WF-003",
+      "subcategory": "input_edge",
+      "test_case": "Very long First_Name value entered for a traveler (200+ characters)",
       "preconditions": [
-        "User is logged in",
-        "Tour Details page for a tour with at least one available Departure Date is open"
+        "User is authenticated",
+        "Booking Form is open with at least one traveler row"
       ],
       "steps": [
-        "1. Select an available Departure_Date",
-        "2. Enter <minimum 1> in the Adults field",
-        "3. Enter <one unit below minimum> in the Children field",
-        "4. Click Book Now"
+        "1. In the first traveler row enter a First_Name value of length > 200 characters",
+        "2. Enter a valid Last_Name for that traveler",
+        "3. Fill required Contact_Name",
+        "4. Click Submit Booking"
       ],
-      "expected_result": "Submission is blocked; inline error shown on the Children field indicating the value is below the minimum of 0 (is blocked; error shown).",
-      "priority": "medium"
+      "expected_result": "Booking submits successfully and the booking confirmation page displays the full First_Name value entered (visible in the traveler summary)",
+      "priority": "low"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-003",
       "subcategory": "input_edge",
-      "test_case": "Very long text in Special_Requirements for a traveler (200+ chars)",
+      "test_case": "Contact_Name with emojis and special/unicode characters",
       "preconditions": [
-        "User is logged in",
-        "Booking Form is open with at least one Traveler entry present"
+        "User is authenticated",
+        "Booking Form is open with required fields visible"
       ],
       "steps": [
-        "1. Add or focus the first Traveler repeating_group item",
-        "2. Enter required value in First_Name",
-        "3. Enter required value in Last_Name",
-        "4. Enter <very long string> (200+ characters) in Special_Requirements",
-        "5. Fill Contact_Email with a valid value",
-        "6. Click Confirm Booking"
+        "1. Enter a Contact_Name containing emoji and unicode punctuation",
+        "2. Fill required traveler First_Name and Last_Name fields",
+        "3. Click Submit Booking"
       ],
-      "expected_result": "Confirm Booking creates the booking and booking confirmation is shown; the Special_Requirements text is saved and displayed in the booking summary as entered (succeeds).",
+      "expected_result": "Booking submits successfully; booking confirmation page shows the Contact_Name preserving the special unicode characters and emoji as entered",
       "priority": "low"
     },
     {
       "tc_id": "E-006",
       "wf_ref": "WF-002",
-      "subcategory": "input_edge",
-      "test_case": "Emoji / Unicode characters in Traveler First_Name",
+      "subcategory": "interaction_edge",
+      "test_case": "Unauthenticated user clicks Book Now and is redirected to Login",
       "preconditions": [
-        "User is logged in",
-        "Booking Form is open with at least one Traveler entry present"
+        "User is not authenticated",
+        "Tour Details page is open for a tour with available departure dates"
       ],
       "steps": [
-        "1. Add or focus the first Traveler repeating_group item",
-        "2. Enter <emoji/unicode characters> in First_Name",
-        "3. Enter required value in Last_Name",
-        "4. Fill Contact_Email with a valid value",
-        "5. Click Confirm Booking"
+        "1. Select a Departure_Date on the Tour Details page",
+        "2. Enter Adults_Count and Children_Count",
+        "3. Click Book Now"
       ],
-      "expected_result": "Confirm Booking creates the booking and booking confirmation displays the Traveler First_Name including the entered unicode/emoji characters (succeeds).",
-      "priority": "low"
+      "expected_result": "User is redirected to the Login page (Login screen is displayed); the Booking Form is not shown until authentication completes",
+      "priority": "medium"
     },
     {
       "tc_id": "E-007",
-      "wf_ref": "WF-002",
-      "subcategory": "input_edge",
-      "test_case": "Leading/trailing whitespace in Contact_Email is trimmed on save",
+      "wf_ref": "WF-003",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-click of Submit Booking to attempt duplicate booking",
       "preconditions": [
-        "User is logged in",
-        "Booking Form is open with required Traveler names filled"
+        "User is authenticated",
+        "Booking Form is open and all required fields are filled"
       ],
       "steps": [
-        "1. Enter required values in Traveler First_Name and Last_Name",
-        "2. Enter Contact_Email with leading and trailing whitespace",
-        "3. Click Confirm Booking"
+        "1. Click Submit Booking twice in rapid succession (two clicks within 1 second)"
       ],
-      "expected_result": "Confirm Booking creates the booking and the booking confirmation/contact details display the Contact_Email with leading/trailing whitespace trimmed (succeeds).",
-      "priority": "low"
+      "expected_result": "Second submission is blocked; Submit Booking control becomes disabled or shows a visible 'Submitting' indicator and only one booking confirmation flow completes (user sees the booking confirmation page once)",
+      "priority": "medium"
     },
     {
       "tc_id": "E-008",
-      "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Unauthenticated user clicks Book Now, gets redirected to Login, uses back button, clicks Book Now again",
+      "wf_ref": "WF-003",
+      "subcategory": "input_edge",
+      "test_case": "Leading and trailing whitespace in Contact_Name is submitted and shown trimmed in booking summary",
       "preconditions": [
-        "User is not logged in",
-        "Tour Details page for a tour with at least one available Departure Date is open"
+        "User is authenticated",
+        "Booking Form is open with required fields visible"
       ],
       "steps": [
-        "1. Select an available Departure_Date",
-        "2. Enter <minimum 1> in the Adults field",
-        "3. Click Book Now",
-        "4. On the Login page, use the browser Back action to return to the Tour Details page",
-        "5. Click Book Now again"
+        "1. Enter Contact_Name with leading and trailing whitespace (e.g., '  <name>  ')",
+        "2. Fill required traveler First_Name and Last_Name fields",
+        "3. Click Submit Booking",
+        "4. Open the booking confirmation/summary shown after submit"
       ],
-      "expected_result": "Both Book Now attempts are blocked by authentication; each attempt redirects to Login and no Booking Form is opened or booking created (is blocked; redirect to Login shown).",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-009",
-      "wf_ref": "WF-002",
-      "subcategory": "state_edge",
-      "test_case": "Rapid double-submit of Confirm Booking (double-click) to detect duplicate booking creation",
-      "preconditions": [
-        "User is logged in",
-        "Booking Form is open with all required Traveler and contact fields filled and valid"
-      ],
-      "steps": [
-        "1. Click Confirm Booking twice in rapid succession (double-click)",
-        "2. Observe UI until confirmation or error is shown"
-      ],
-      "expected_result": "Only one booking is created; second rapid submission is blocked (button disabled or request deduplicated) and a single confirmation page/notification is shown (is blocked for duplicate; only one booking succeeds).",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-010",
-      "wf_ref": "WF-002",
-      "subcategory": "interaction_edge",
-      "test_case": "Remove all Traveler repeating_group entries then attempt Confirm Booking",
-      "preconditions": [
-        "User is logged in",
-        "Booking Form is open"
-      ],
-      "steps": [
-        "1. If there are any Traveler repeating_group items, remove them all",
-        "2. Ensure Contact_Email is filled with a valid value",
-        "3. Click Confirm Booking"
-      ],
-      "expected_result": "Submission is blocked; inline error shown indicating at least one Traveler entry with required First_Name/Last_Name must be present (is blocked; error shown).",
-      "priority": "medium"
+      "expected_result": "Whitespace is trimmed in the saved value; booking confirmation displays Contact_Name without leading or trailing spaces",
+      "priority": "low"
     }
   ],
   "summary": {
-    "total": 10,
-    "boundary": 4,
+    "total": 8,
+    "boundary": 3,
     "input_edge": 3,
     "interaction_edge": 2,
-    "state_edge": 1,
+    "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 6,
-    "low_priority": 4
+    "medium_priority": 5,
+    "low_priority": 3
   }
 }

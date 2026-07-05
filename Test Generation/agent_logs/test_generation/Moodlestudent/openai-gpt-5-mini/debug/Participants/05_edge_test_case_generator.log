@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:34.379343
+DEBUG SESSION STARTED: 2026-07-04T22:41:48.057409
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Edge - SYSTEM PROMPT
+[22:41:48] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Edge - USER PROMPT
+[22:41:48] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 5,
   "module_title": "Participants",
-  "summary": "Displays all users enrolled in the course with filtering and alphabetical tools, showing name (linking to profiles), roles, groups, and last access information.",
-  "where_it_fits": "Located under the course-level horizontal tab bar (Course \u2192 Participants) when viewing a course, alongside Course, Grades, Activities, and Competencies; it is the course-scoped view for inspecting enrolled users and their activity/role information.",
-  "assumed_state_on_entry": "User is logged in and viewing a specific course page that has enrolled users, with permission to view the course participants."
+  "summary": "Displays a searchable and filterable list of users enrolled in the current course, showing names, roles, groups, and last access information.",
+  "where_it_fits": "Accessible from within a course via the horizontal tab bar (Course \u2192 Participants) and linked in the course breadcrumbs and Course Index; it is part of the course-level user management and information views shown while viewing a course. Students see participant listings but not enrollment management options, while instructors use it for reviewing enrolments and accessing profiles.",
+  "assumed_state_on_entry": "User is logged in and viewing a specific course page with course context loaded and enrollment data available."
 }
 </module_context>
 
@@ -243,68 +257,154 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Participants",
   "components": {
-    "Participants_Filters": {
-      "type": "form",
-      "fields": {
-        "Any_Toggle": {
-          "type": "checkbox"
-        },
-        "Conditions": {
-          "type": "repeating_group",
-          "item_fields": {
-            "Attribute": {
+    "Participants_Page": {
+      "type": "page",
+      "preconditions": [
+        "User is logged in",
+        "course context loaded",
+        "enrollment data available"
+      ],
+      "components": {
+        "Filter_Builder": {
+          "type": "form",
+          "fields": {
+            "Any_Toggle": {
+              "type": "checkbox"
+            },
+            "Select_Attribute": {
               "type": "dropdown"
+            },
+            "Conditions": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Attribute": {
+                  "type": "dropdown"
+                },
+                "Operator": {
+                  "type": "unspecified"
+                },
+                "Value": {
+                  "type": "unspecified"
+                }
+              }
+            },
+            "Add_Condition": {
+              "type": "button",
+              "action_name": "+ Add condition"
+            }
+          },
+          "submit_actions": [
+            {
+              "action_name": "Clear filters"
+            },
+            {
+              "action_name": "Apply filters"
+            }
+          ]
+        },
+        "Alphabetical_Filters": {
+          "type": "container",
+          "fields": {
+            "First_Name_Filter": {
+              "type": "dropdown",
+              "options": [
+                "All",
+                "A",
+                "B",
+                "C",
+                "D",
+                "E",
+                "F",
+                "G",
+                "H",
+                "I",
+                "J",
+                "K",
+                "L",
+                "M",
+                "N",
+                "O",
+                "P",
+                "Q",
+                "R",
+                "S",
+                "T",
+                "U",
+                "V",
+                "W",
+                "X",
+                "Y",
+                "Z"
+              ]
+            },
+            "Last_Name_Filter": {
+              "type": "dropdown",
+              "options": [
+                "All",
+                "A",
+                "B",
+                "C",
+                "D",
+                "E",
+                "F",
+                "G",
+                "H",
+                "I",
+                "J",
+                "K",
+                "L",
+                "M",
+                "N",
+                "O",
+                "P",
+                "Q",
+                "R",
+                "S",
+                "T",
+                "U",
+                "V",
+                "W",
+                "X",
+                "Y",
+                "Z"
+              ]
             }
           }
         },
-        "Add_Condition": {
-          "type": "button",
-          "action_name": "+ Add condition"
-        }
-      },
-      "submit_actions": [
-        {
-          "action_name": "Clear filters"
-        },
-        {
-          "action_name": "Apply filters",
-          "preconditions": [
-            "User is logged in and viewing a specific course page that has enrolled users, with permission to view the course participants."
-          ]
-        }
-      ]
-    },
-    "Alphabetical_Filters": {
-      "type": "control_group",
-      "fields": {
-        "First_Name_Alphabetical": {
-          "type": "unspecified",
-          "options": [
-            "All",
-            "A\u2013Z"
-          ]
-        },
-        "Last_Name_Alphabetical": {
-          "type": "unspecified",
-          "options": [
-            "All",
-            "A\u2013Z"
-          ]
+        "Participants_Table": {
+          "type": "data_table",
+          "searchable": true,
+          "selectable_rows": true,
+          "sortable_columns": [
+            "First Name",
+            "Last Name"
+          ],
+          "row_actions": [
+            {
+              "action_name": "View Profile"
+            },
+            {
+              "action_name": "Enrol",
+              "preconditions": [
+                "role must be Instructor"
+              ]
+            },
+            {
+              "action_name": "Unenrol",
+              "preconditions": [
+                "role must be Instructor"
+              ]
+            },
+            {
+              "action_name": "Edit Roles",
+              "preconditions": [
+                "role must be Instructor"
+              ]
+            }
+          ],
+          "bulk_actions": []
         }
       }
-    },
-    "Participants_Table": {
-      "type": "data_table",
-      "selectable_rows": true,
-      "sortable_columns": [
-        "First name",
-        "Last name"
-      ],
-      "row_actions": [
-        {
-          "action_name": "View profile"
-        }
-      ]
     }
   }
 }
@@ -320,23 +420,18 @@ The Participants page lists all users enrolled in the course. A filter system at
 </description>
 
 <workflows>
-WF-001 | Apply alphabetical filters — First: All, Last: All | actor: <role> | branch: Alphabetical_Filters.First_Name_Alphabetical == "All" AND Alphabetical_Filters.Last_Name_Alphabetical == "All" | terminal: Apply filters | on_success: Participants list updated with applied filters.
-WF-002 | Apply alphabetical filters — First: All, Last: A–Z | actor: <role> | branch: Alphabetical_Filters.First_Name_Alphabetical == "All" AND Alphabetical_Filters.Last_Name_Alphabetical == "A–Z" | terminal: Apply filters | on_success: Participants list updated with applied filters.
-WF-003 | Apply alphabetical filters — First: A–Z, Last: All | actor: <role> | branch: Alphabetical_Filters.First_Name_Alphabetical == "A–Z" AND Alphabetical_Filters.Last_Name_Alphabetical == "All" | terminal: Apply filters | on_success: Participants list updated with applied filters.
-WF-004 | Apply alphabetical filters — First: A–Z, Last: A–Z | actor: <role> | branch: Alphabetical_Filters.First_Name_Alphabetical == "A–Z" AND Alphabetical_Filters.Last_Name_Alphabetical == "A–Z" | terminal: Apply filters | on_success: Participants list updated with applied filters.
-WF-005 | Clear filters — First: All, Last: All | actor: <role> | branch: Alphabetical_Filters.First_Name_Alphabetical == "All" AND Alphabetical_Filters.Last_Name_Alphabetical == "All" | terminal: Clear filters | on_success: Filters cleared; participants list reset to show all enrolled users.
-WF-006 | Clear filters — First: All, Last: A–Z | actor: <role> | branch: Alphabetical_Filters.First_Name_Alphabetical == "All" AND Alphabetical_Filters.Last_Name_Alphabetical == "A–Z" | terminal: Clear filters | on_success: Filters cleared; participants list reset to show all enrolled users.
-WF-007 | Clear filters — First: A–Z, Last: All | actor: <role> | branch: Alphabetical_Filters.First_Name_Alphabetical == "A–Z" AND Alphabetical_Filters.Last_Name_Alphabetical == "All" | terminal: Clear filters | on_success: Filters cleared; participants list reset to show all enrolled users.
-WF-008 | Clear filters — First: A–Z, Last: A–Z | actor: <role> | branch: Alphabetical_Filters.First_Name_Alphabetical == "A–Z" AND Alphabetical_Filters.Last_Name_Alphabetical == "A–Z" | terminal: Clear filters | on_success: Filters cleared; participants list reset to show all enrolled users.
-WF-009 | Apply filters with custom conditions or 'Any' toggle | actor: <role> | branch: Participants_Filters.Any_Toggle == true OR Participants_Filters.Conditions != empty | terminal: Apply filters | on_success: Participants list updated with applied custom conditions.
-WF-010 | Clear filters when custom conditions or 'Any' toggle active | actor: <role> | branch: Participants_Filters.Any_Toggle == true OR Participants_Filters.Conditions != empty | terminal: Clear filters | on_success: Filters cleared; participants list reset to show all enrolled users.
-WF-011 | View participant profile from table row | actor: <role> | branch: none | terminal: View profile | on_success: Participant profile is displayed.
+WF-001 | Apply filters to participants list | actor: <role> | branch: none | terminal: Apply filters | on_success: Participants list filtered according to the filter builder and alphabetical selections
+WF-002 | Clear filters and reset list | actor: <role> | branch: none | terminal: Clear filters | on_success: Filters cleared; participants list reset to show all enrolled users
+WF-003 | View a participant's profile | actor: <role> | branch: none | terminal: View Profile | on_success: Navigates to the selected participant's profile page (module exit)
+WF-004 | Enrol a participant (Instructor) | actor: Instructor | branch: none | terminal: Enrol | on_success: Participant enrolled in the course; participants table updated
+WF-005 | Unenrol a participant (Instructor) | actor: Instructor | branch: none | terminal: Unenrol | on_success: Participant unenrolled from the course; participants table updated
+WF-006 | Edit a participant's roles (Instructor) | actor: Instructor | branch: none | terminal: Edit Roles | on_success: Participant roles updated; participants table updated
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:13:41] Test-Edge - LLM RESPONSE
+[22:42:58] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Participants",
@@ -344,93 +439,119 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click Apply filters does not create duplicate updates or errors",
+      "test_case": "Apply filters when no condition rows exist (empty repeating group)",
       "preconditions": [
-        "User is logged in and viewing a course with many enrolled participants",
-        "Alphabetical_Filters.First_Name_Alphabetical == \"All\"",
-        "Alphabetical_Filters.Last_Name_Alphabetical available to set"
+        "User is logged in",
+        "course context loaded",
+        "enrollment data available",
+        "Filter Builder has zero condition rows (user removed any existing conditions)"
       ],
       "steps": [
-        "1. Set Alphabetical_Filters.Last_Name_Alphabetical to \"A–Z\"",
-        "2. Click the \"Apply filters\" button",
-        "3. Immediately click the \"Apply filters\" button again (rapid second click)"
+        "1. Ensure the Filter Builder shows no condition rows in Conditions repeating group",
+        "2. Click Apply filters"
       ],
-      "expected_result": "Second click is ignored / de-duplicated; participants list is updated once and the filtered list is shown. No duplicate rows appear, no error banner is displayed, and the UI shows a single successful update (operation succeeds).",
+      "expected_result": "Apply filters succeeds; Participants table displays all enrolled users and the Filter Builder remains with no condition rows visible",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-009",
-      "subcategory": "interaction_edge",
-      "test_case": "Add then remove all repeating-group conditions and Apply filters",
+      "wf_ref": "WF-001",
+      "subcategory": "data_edge",
+      "test_case": "Apply an alphabetical filter that yields no matches (select letter at boundary with no results)",
       "preconditions": [
-        "User is logged in and viewing a course with enrolled participants",
-        "Participants_Filters.Conditions repeating_group is empty at test start"
+        "User is logged in",
+        "course context loaded",
+        "enrollment data available",
+        "Participants list contains no enrolled users whose Last Name starts with <selected letter>"
       ],
       "steps": [
-        "1. Click the \"+ Add condition\" button",
-        "2. In the new condition row, select any option from the Attribute dropdown",
-        "3. Click the \"+ Add condition\" button again",
-        "4. In the second condition row, select any option from the Attribute dropdown",
-        "5. Remove the first condition row using the condition row remove control",
-        "6. Remove the remaining condition row using the condition row remove control (leaving zero condition rows)",
-        "7. Click the \"Apply filters\" button"
+        "1. In Last_Name_Filter dropdown, select <a single letter>",
+        "2. Click Apply filters"
       ],
-      "expected_result": "Apply filters succeeds; with zero custom conditions the participants list is shown as if no custom conditions are applied (filters behave as cleared) and all enrolled users are displayed. No error is shown and the Any toggle remains in its prior state.",
+      "expected_result": "Apply filters succeeds; Participants table displays zero rows and a visible empty-state indicator (no participants shown) reflecting the filter result",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-008",
-      "subcategory": "interaction_edge",
-      "test_case": "Apply A–Z for both First and Last then immediately Clear filters",
+      "wf_ref": null,
+      "subcategory": "input_edge",
+      "test_case": "Enter an extremely long search string into the participants table search",
       "preconditions": [
-        "User is logged in and viewing a course with enrolled participants",
-        "Alphabetical_Filters options are visible"
+        "User is logged in",
+        "course context loaded",
+        "enrollment data available",
+        "Participants table search field is visible"
       ],
       "steps": [
-        "1. Set Alphabetical_Filters.First_Name_Alphabetical to \"A–Z\"",
-        "2. Set Alphabetical_Filters.Last_Name_Alphabetical to \"A–Z\"",
-        "3. Click the \"Apply filters\" button",
-        "4. Immediately click the \"Clear filters\" button"
+        "1. Focus the participants table search input",
+        "2. Enter a search string longer than 200 characters",
+        "3. Press Enter or click the table search action to execute the search"
       ],
-      "expected_result": "Clear filters succeeds; participants list is reset to show all enrolled users and all alphabetical filter controls visually return to \"All\". No residual filter indicators remain and no error is shown.",
+      "expected_result": "Search action succeeds; Participants table updates and displays zero rows with a visible empty-state indicator (no participants match the long query) and the UI remains responsive",
       "priority": "low"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Select-all when filters intentionally yield zero rows — no selection or error",
+      "test_case": "Rapid double-click of Apply filters button to test duplicate submit handling",
       "preconditions": [
-        "User is logged in and viewing a specially prepared test course where the chosen filters will yield zero participants (test data prepared so no participant matches those filters)"
+        "User is logged in",
+        "course context loaded",
+        "enrollment data available",
+        "There is at least one condition row in the Filter Builder"
       ],
       "steps": [
-        "1. Set Alphabetical_Filters.First_Name_Alphabetical to \"A–Z\"",
-        "2. Set Alphabetical_Filters.Last_Name_Alphabetical to \"A–Z\"",
-        "3. Click the \"Apply filters\" button",
-        "4. In the Participants_Table header, click the select-all checkbox"
+        "1. Add or ensure at least one condition row exists in the Filter Builder",
+        "2. Click Apply filters twice in rapid succession (double-click)"
       ],
-      "expected_result": "No rows are selected because there are zero rows; select-all click is a no-op and the UI shows zero selected. No error message is displayed and the table remains empty (operation succeeds with no selection).",
-      "priority": "low"
+      "expected_result": "Second Apply filters click is ignored; a single filter application succeeds and Participants table displays the filtered results once (no duplicate rows or repeated UI navigation)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-005",
+      "wf_ref": "WF-002",
+      "subcategory": "interaction_edge",
+      "test_case": "Add multiple conditions then use Clear filters to reset the filter builder and participants list",
+      "preconditions": [
+        "User is logged in",
+        "course context loaded",
+        "enrollment data available",
+        "Filter Builder is visible"
+      ],
+      "steps": [
+        "1. Click + Add condition",
+        "2. In the first condition row, open Attribute dropdown",
+        "3. Select an attribute in the first condition row",
+        "4. Enter an operator in the first condition row",
+        "5. Enter a value in the first condition row",
+        "6. Click + Add condition",
+        "7. In the second condition row, open Attribute dropdown",
+        "8. Select an attribute in the second condition row",
+        "9. Enter an operator in the second condition row",
+        "10. Enter a value in the second condition row",
+        "11. Click Clear filters"
+      ],
+      "expected_result": "Clear filters succeeds; Filter Builder resets to defaults (Any toggle in default state, no condition rows present, First_Name_Filter and Last_Name_Filter show 'All') and Participants table displays all enrolled users",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 4,
+    "total": 5,
     "boundary": 0,
-    "input_edge": 0,
-    "interaction_edge": 4,
+    "input_edge": 1,
+    "interaction_edge": 3,
     "state_edge": 0,
-    "data_edge": 0,
-    "medium_priority": 2,
-    "low_priority": 2
+    "data_edge": 1,
+    "medium_priority": 4,
+    "low_priority": 1
   }
 }
 
 ------------------------------------------------------------
-[21:13:41] Test-Edge - PARSED JSON
+[22:42:58] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Participants",
@@ -438,87 +559,113 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click Apply filters does not create duplicate updates or errors",
+      "test_case": "Apply filters when no condition rows exist (empty repeating group)",
       "preconditions": [
-        "User is logged in and viewing a course with many enrolled participants",
-        "Alphabetical_Filters.First_Name_Alphabetical == \"All\"",
-        "Alphabetical_Filters.Last_Name_Alphabetical available to set"
+        "User is logged in",
+        "course context loaded",
+        "enrollment data available",
+        "Filter Builder has zero condition rows (user removed any existing conditions)"
       ],
       "steps": [
-        "1. Set Alphabetical_Filters.Last_Name_Alphabetical to \"A\u2013Z\"",
-        "2. Click the \"Apply filters\" button",
-        "3. Immediately click the \"Apply filters\" button again (rapid second click)"
+        "1. Ensure the Filter Builder shows no condition rows in Conditions repeating group",
+        "2. Click Apply filters"
       ],
-      "expected_result": "Second click is ignored / de-duplicated; participants list is updated once and the filtered list is shown. No duplicate rows appear, no error banner is displayed, and the UI shows a single successful update (operation succeeds).",
+      "expected_result": "Apply filters succeeds; Participants table displays all enrolled users and the Filter Builder remains with no condition rows visible",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-009",
-      "subcategory": "interaction_edge",
-      "test_case": "Add then remove all repeating-group conditions and Apply filters",
+      "wf_ref": "WF-001",
+      "subcategory": "data_edge",
+      "test_case": "Apply an alphabetical filter that yields no matches (select letter at boundary with no results)",
       "preconditions": [
-        "User is logged in and viewing a course with enrolled participants",
-        "Participants_Filters.Conditions repeating_group is empty at test start"
+        "User is logged in",
+        "course context loaded",
+        "enrollment data available",
+        "Participants list contains no enrolled users whose Last Name starts with <selected letter>"
       ],
       "steps": [
-        "1. Click the \"+ Add condition\" button",
-        "2. In the new condition row, select any option from the Attribute dropdown",
-        "3. Click the \"+ Add condition\" button again",
-        "4. In the second condition row, select any option from the Attribute dropdown",
-        "5. Remove the first condition row using the condition row remove control",
-        "6. Remove the remaining condition row using the condition row remove control (leaving zero condition rows)",
-        "7. Click the \"Apply filters\" button"
+        "1. In Last_Name_Filter dropdown, select <a single letter>",
+        "2. Click Apply filters"
       ],
-      "expected_result": "Apply filters succeeds; with zero custom conditions the participants list is shown as if no custom conditions are applied (filters behave as cleared) and all enrolled users are displayed. No error is shown and the Any toggle remains in its prior state.",
+      "expected_result": "Apply filters succeeds; Participants table displays zero rows and a visible empty-state indicator (no participants shown) reflecting the filter result",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-008",
-      "subcategory": "interaction_edge",
-      "test_case": "Apply A\u2013Z for both First and Last then immediately Clear filters",
+      "wf_ref": null,
+      "subcategory": "input_edge",
+      "test_case": "Enter an extremely long search string into the participants table search",
       "preconditions": [
-        "User is logged in and viewing a course with enrolled participants",
-        "Alphabetical_Filters options are visible"
+        "User is logged in",
+        "course context loaded",
+        "enrollment data available",
+        "Participants table search field is visible"
       ],
       "steps": [
-        "1. Set Alphabetical_Filters.First_Name_Alphabetical to \"A\u2013Z\"",
-        "2. Set Alphabetical_Filters.Last_Name_Alphabetical to \"A\u2013Z\"",
-        "3. Click the \"Apply filters\" button",
-        "4. Immediately click the \"Clear filters\" button"
+        "1. Focus the participants table search input",
+        "2. Enter a search string longer than 200 characters",
+        "3. Press Enter or click the table search action to execute the search"
       ],
-      "expected_result": "Clear filters succeeds; participants list is reset to show all enrolled users and all alphabetical filter controls visually return to \"All\". No residual filter indicators remain and no error is shown.",
+      "expected_result": "Search action succeeds; Participants table updates and displays zero rows with a visible empty-state indicator (no participants match the long query) and the UI remains responsive",
       "priority": "low"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Select-all when filters intentionally yield zero rows \u2014 no selection or error",
+      "test_case": "Rapid double-click of Apply filters button to test duplicate submit handling",
       "preconditions": [
-        "User is logged in and viewing a specially prepared test course where the chosen filters will yield zero participants (test data prepared so no participant matches those filters)"
+        "User is logged in",
+        "course context loaded",
+        "enrollment data available",
+        "There is at least one condition row in the Filter Builder"
       ],
       "steps": [
-        "1. Set Alphabetical_Filters.First_Name_Alphabetical to \"A\u2013Z\"",
-        "2. Set Alphabetical_Filters.Last_Name_Alphabetical to \"A\u2013Z\"",
-        "3. Click the \"Apply filters\" button",
-        "4. In the Participants_Table header, click the select-all checkbox"
+        "1. Add or ensure at least one condition row exists in the Filter Builder",
+        "2. Click Apply filters twice in rapid succession (double-click)"
       ],
-      "expected_result": "No rows are selected because there are zero rows; select-all click is a no-op and the UI shows zero selected. No error message is displayed and the table remains empty (operation succeeds with no selection).",
-      "priority": "low"
+      "expected_result": "Second Apply filters click is ignored; a single filter application succeeds and Participants table displays the filtered results once (no duplicate rows or repeated UI navigation)",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-005",
+      "wf_ref": "WF-002",
+      "subcategory": "interaction_edge",
+      "test_case": "Add multiple conditions then use Clear filters to reset the filter builder and participants list",
+      "preconditions": [
+        "User is logged in",
+        "course context loaded",
+        "enrollment data available",
+        "Filter Builder is visible"
+      ],
+      "steps": [
+        "1. Click + Add condition",
+        "2. In the first condition row, open Attribute dropdown",
+        "3. Select an attribute in the first condition row",
+        "4. Enter an operator in the first condition row",
+        "5. Enter a value in the first condition row",
+        "6. Click + Add condition",
+        "7. In the second condition row, open Attribute dropdown",
+        "8. Select an attribute in the second condition row",
+        "9. Enter an operator in the second condition row",
+        "10. Enter a value in the second condition row",
+        "11. Click Clear filters"
+      ],
+      "expected_result": "Clear filters succeeds; Filter Builder resets to defaults (Any toggle in default state, no condition rows present, First_Name_Filter and Last_Name_Filter show 'All') and Participants table displays all enrolled users",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 4,
+    "total": 5,
     "boundary": 0,
-    "input_edge": 0,
-    "interaction_edge": 4,
+    "input_edge": 1,
+    "interaction_edge": 3,
     "state_edge": 0,
-    "data_edge": 0,
-    "medium_priority": 2,
-    "low_priority": 2
+    "data_edge": 1,
+    "medium_priority": 4,
+    "low_priority": 1
   }
 }

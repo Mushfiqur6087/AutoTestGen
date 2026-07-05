@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:13.949678
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.125550
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Edge - SYSTEM PROMPT
+[22:33:07] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Edge - USER PROMPT
+[22:33:07] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 14,
   "module_title": "User Dashboard",
-  "summary": "A post-authentication hub that displays and manages a user\u2019s bookings, profile, wallet/credits, wishlist, reviews, and account settings in one place.",
-  "where_it_fits": "Reached from the top navigation Account/Login after successful authentication, the Dashboard is the central user area following activity initiated from Home (search widget) or section-specific flows like Hotels, Flights, Tours, and Cars; it acts as the lifecycle hub for managing bookings, payments, and account preferences.",
-  "assumed_state_on_entry": "Authenticated (logged-in) user with an active session."
+  "summary": "A personalized account area that aggregates bookings, profile details, wallet/credits, wishlist, reviews, settings, and logout functionality.",
+  "where_it_fits": "Accessible from the top navigation Account/Login after successful authentication, the dashboard serves as the authenticated user's landing area for booking history and account management while the main navigation remains available across pages.",
+  "assumed_state_on_entry": "Authenticated (logged-in) user session with an existing user account."
 }
 </module_context>
 
@@ -243,7 +257,7 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "User Dashboard",
   "components": {
-    "My_Bookings": {
+    "My_Bookings_Table": {
       "type": "data_table",
       "row_actions": [
         {
@@ -252,13 +266,15 @@ If a `<workflows>` block is present in the input:
         {
           "action_name": "Cancel",
           "preconditions": [
-            "cancellation allowed by booking type and cancellation policy"
+            "booking type permits this action",
+            "cancellation policy permits this action"
           ]
         },
         {
           "action_name": "Modify",
           "preconditions": [
-            "modification allowed by booking type and cancellation policy"
+            "booking type permits this action",
+            "cancellation policy permits this action"
           ]
         },
         {
@@ -273,91 +289,98 @@ If a `<workflows>` block is present in the input:
       ]
     },
     "My_Profile": {
-      "type": "panel",
-      "actions": [
+      "type": "form",
+      "fields": {
+        "Edit_Profile": {
+          "type": "button",
+          "action_name": "Edit"
+        }
+      }
+    },
+    "Profile_Edit_Form": {
+      "type": "form",
+      "visible_when": "Edit_Profile == clicked",
+      "fields": {},
+      "submit_actions": [
         {
-          "action_name": "Edit",
-          "opens_form": "Edit_Profile_Form"
+          "action_name": "Save Profile",
+          "on_success": "profile updated"
         }
       ]
     },
-    "Edit_Profile_Form": {
-      "type": "form",
-      "fields": {}
-    },
     "Wallet_Credits": {
-      "type": "panel",
+      "type": "data_table",
+      "description": "Transaction history for wallet/credits",
       "fields": {}
     },
     "Wishlist": {
-      "type": "panel",
+      "type": "data_table",
+      "description": "Saved hotels, tours, or flights",
       "fields": {}
     },
-    "Reviews": {
-      "type": "panel",
-      "actions": [
-        {
-          "action_name": "Write Review",
-          "preconditions": [
-            "booking is completed"
-          ],
-          "opens_form": "Write_Review_Form"
-        }
-      ]
-    },
-    "Write_Review_Form": {
+    "Review_Submission_Form": {
       "type": "form",
       "fields": {
+        "Selected_Booking": {
+          "type": "unspecified"
+        },
         "Rating": {
           "type": "unspecified"
         },
         "Review_Text": {
           "type": "unspecified"
         }
-      }
+      },
+      "visible_when": "Selected_Booking_Status == Completed",
+      "submit_actions": [
+        {
+          "action_name": "Submit Review",
+          "on_success": "review posted"
+        }
+      ]
     },
     "Settings": {
       "type": "form",
       "fields": {
+        "Current_Password": {
+          "type": "password"
+        },
+        "New_Password": {
+          "type": "password"
+        },
+        "Confirm_Password": {
+          "type": "password"
+        },
         "Notification_Preferences": {
           "type": "unspecified"
         },
         "Default_Currency": {
-          "type": "unspecified"
+          "type": "dropdown"
         },
         "Default_Language": {
-          "type": "unspecified"
+          "type": "dropdown"
         }
       },
-      "actions": [
+      "constraints": [
+        "New_Password must match Confirm_Password"
+      ],
+      "submit_actions": [
         {
-          "action_name": "Change Password",
-          "opens_form": "Change_Password_Form"
-        },
-        {
-          "action_name": "Logout",
+          "action_name": "Save Settings",
+          "on_success": "settings updated",
           "preconditions": [
-            "user must be logged in"
+            "Authenticated (logged-in) user session with an existing user account"
           ]
         }
       ]
     },
-    "Change_Password_Form": {
-      "type": "form",
-      "fields": {
-        "Current_Password": {
-          "type": "password",
-          "required": true
-        },
-        "New_Password": {
-          "type": "password",
-          "required": true
-        },
-        "Confirm_New_Password": {
-          "type": "password",
-          "required": true
-        }
-      }
+    "Logout_Button": {
+      "type": "button",
+      "action_name": "Logout",
+      "preconditions": [
+        "Authenticated (logged-in) user session with an existing user account"
+      ],
+      "on_success": "session ended"
     }
   }
 }
@@ -373,22 +396,22 @@ The dashboard is organized into the following sections. My Bookings displays all
 </description>
 
 <workflows>
-WF-001 | View booking details | actor: Authenticated user | branch: none | terminal: View Details | on_success: Booking details displayed
-WF-002 | Cancel booking when cancellation allowed | actor: Authenticated user | branch: cancellation allowed by booking type and cancellation policy | terminal: Cancel | on_success: Booking cancelled; booking status updated; confirmation shown
-WF-003 | Modify booking when modification allowed | actor: Authenticated user | branch: modification allowed by booking type and cancellation policy | terminal: Modify | on_success: Booking modification flow opened
-WF-004 | Download booking confirmation | actor: Authenticated user | branch: none | terminal: Download Confirmation | on_success: Booking confirmation file downloaded
-WF-005 | Download invoice for booking | actor: Authenticated user | branch: none | terminal: Download Invoice | on_success: Invoice file downloaded
-WF-006 | Download voucher for booking | actor: Authenticated user | branch: none | terminal: Download Voucher | on_success: Voucher file downloaded
-WF-007 | Edit profile (open edit form) | actor: Authenticated user | branch: none | terminal: Edit | on_success: Edit_Profile_Form opened
-WF-008 | Write review for completed booking | actor: Authenticated user | branch: booking is completed | terminal: Write Review | on_success: Write_Review_Form opened
-WF-009 | Open change password form | actor: Authenticated user | branch: none | terminal: Change Password | on_success: Change_Password_Form opened
-WF-010 | Logout (end session) | actor: Authenticated user | branch: user must be logged in | terminal: Logout | on_success: User session ended; user logged out
+WF-001 | View booking details (row action) | actor: Authenticated user | branch: none | terminal: View Details | on_success: booking details displayed
+WF-002 | Cancel booking (row action, when permitted) | actor: Authenticated user | branch: none | terminal: Cancel | on_success: booking cancelled
+WF-003 | Modify booking (row action, when permitted) | actor: Authenticated user | branch: none | terminal: Modify | on_success: booking modification started
+WF-004 | Download booking confirmation (row action) | actor: Authenticated user | branch: none | terminal: Download Confirmation | on_success: confirmation downloaded
+WF-005 | Download booking invoice (row action) | actor: Authenticated user | branch: none | terminal: Download Invoice | on_success: invoice downloaded
+WF-006 | Download booking voucher (row action) | actor: Authenticated user | branch: none | terminal: Download Voucher | on_success: voucher downloaded
+WF-007 | Edit profile and save changes | actor: Authenticated user | branch: Edit_Profile == clicked | terminal: Save Profile | on_success: profile updated
+WF-008 | Submit review for a completed booking | actor: Authenticated user | branch: Selected_Booking_Status == Completed | terminal: Submit Review | on_success: review posted
+WF-009 | Save settings (password, preferences, currency/language) | actor: Authenticated user | branch: none | terminal: Save Settings | on_success: settings updated
+WF-010 | Logout (end session) | actor: Authenticated user | branch: none | terminal: Logout | on_success: session ended
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:27:26] Test-Edge - LLM RESPONSE
+[22:36:00] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "User Dashboard",
@@ -396,107 +419,148 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-008",
-      "subcategory": "input_edge",
-      "test_case": "Very long Review_Text (200+ chars) submitted for a completed booking",
+      "wf_ref": "WF-009",
+      "subcategory": "boundary",
+      "test_case": "Save Settings with New_Password exactly matching Confirm_Password",
       "preconditions": [
-        "User is authenticated and on the Dashboard",
-        "There is a booking in status 'Completed' visible in Reviews section"
+        "Authenticated (logged-in) user session with an existing user account",
+        "Settings page available in Dashboard"
       ],
       "steps": [
-        "1. Click Reviews on the Dashboard",
-        "2. For the completed booking row, click Write Review",
-        "3. In the Write_Review_Form, enter <very long string> (200+ characters) into the Review_Text field",
-        "4. In the Write_Review_Form, enter a valid value in the Rating field",
-        "5. Click Submit (or Save) on the Write_Review_Form"
+        "1. Click Settings in the dashboard",
+        "2. Enter the current password in Current_Password",
+        "3. Enter <New_Password value> in New_Password",
+        "4. Enter the identical <New_Password value> in Confirm_Password",
+        "5. Click Save Settings"
       ],
-      "expected_result": "succeeds: The review is created and the UI navigates to the review confirmation or listing; the Review_Text appears on the booking's review detail/listing (if the system truncates, the visible review text is truncated to the system max length and a truncation indicator or '...' is visible).",
+      "expected_result": "Save succeeds; a visible success confirmation with the on_success message \"settings updated\" is shown",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-008",
-      "subcategory": "input_edge",
-      "test_case": "Review_Text containing emoji and special/unicode characters",
+      "wf_ref": "WF-009",
+      "subcategory": "boundary",
+      "test_case": "Save Settings with Confirm_Password differing by one character (password mismatch)",
       "preconditions": [
-        "User is authenticated and on the Dashboard",
-        "There is a booking in status 'Completed' visible in Reviews section"
+        "Authenticated (logged-in) user session with an existing user account",
+        "Settings page available in Dashboard"
       ],
       "steps": [
-        "1. Click Reviews on the Dashboard",
-        "2. For the completed booking row, click Write Review",
-        "3. In the Write_Review_Form, enter a string containing emoji and various special/unicode characters into the Review_Text field",
-        "4. In the Write_Review_Form, enter a valid value in the Rating field",
-        "5. Click Submit (or Save) on the Write_Review_Form"
+        "1. Click Settings in the dashboard",
+        "2. Enter the current password in Current_Password",
+        "3. Enter <New_Password value> in New_Password",
+        "4. Enter a value in Confirm_Password that differs from <New_Password value> by one character",
+        "5. Click Save Settings"
       ],
-      "expected_result": "succeeds: The review is created; the review detail/listing displays the entered emoji and special/unicode characters as stored (or visibly replaces unsupported characters with a replacement glyph) with no silent data-loss.",
+      "expected_result": "Save is blocked; an inline validation error is shown on the Confirm_Password field indicating the mismatch",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-007",
-      "subcategory": "input_edge",
-      "test_case": "Leading and trailing whitespace entered into a profile text field on Edit_Profile_Form",
+      "wf_ref": "WF-008",
+      "subcategory": "boundary",
+      "test_case": "Submit review when Selected_Booking_Status equals Completed (review form revealed)",
       "preconditions": [
-        "User is authenticated and on the Dashboard",
-        "My Profile panel is visible"
+        "Authenticated (logged-in) user session with an existing user account",
+        "User has at least one booking in My Bookings with Selected_Booking_Status == Completed"
       ],
       "steps": [
-        "1. In My Profile, click Edit to open the Edit_Profile_Form",
-        "2. In a profile text field on the Edit_Profile_Form (e.g., display name or other free-text personal field), enter a value with leading and trailing whitespace",
-        "3. Click Save (or Submit) on the Edit_Profile_Form",
-        "4. Open the My Profile view/detail page"
+        "1. Open the dashboard My Bookings table",
+        "2. Locate a booking row whose status is Completed",
+        "3. Click the action that reveals the Review_Submission_Form for that booking",
+        "4. Enter a Rating in Rating",
+        "5. Enter <long review text> (200+ characters) in Review_Text",
+        "6. Click Submit Review"
       ],
-      "expected_result": "succeeds: The profile is saved and the profile detail page shows the value with leading/trailing whitespace removed (trimmed). If the system does not trim, a visible inline validation message or confirmation clearly shows the stored value including whitespace (i.e., no silent storage of unintended whitespace).",
-      "priority": "low"
+      "expected_result": "Submit succeeds; a visible confirmation with the on_success message \"review posted\" is shown",
+      "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-005",
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click on Download Invoice for a booking",
+      "wf_ref": "WF-008",
+      "subcategory": "boundary",
+      "test_case": "Attempt to reveal/submit review when Selected_Booking_Status is Confirmed (one step before Completed)",
       "preconditions": [
-        "User is authenticated and on the Dashboard",
-        "My Bookings contains a booking with an available invoice"
+        "Authenticated (logged-in) user session with an existing user account",
+        "User has at least one booking in My Bookings with Selected_Booking_Status == Confirmed"
       ],
       "steps": [
-        "1. In My Bookings row for the booking, locate the Download Invoice action",
-        "2. Click Download Invoice twice in rapid succession (two clicks within 1 second)"
+        "1. Open the dashboard My Bookings table",
+        "2. Locate a booking row whose status is Confirmed",
+        "3. Attempt to click an action to open the Review_Submission_Form for that booking"
       ],
-      "expected_result": "succeeds: Only a single invoice download is initiated; the UI does not create duplicate invoice downloads or duplicate entries in the application's download queue (the second rapid click is ignored or visibly disabled and no error is shown).",
+      "expected_result": "Action is blocked; the Review_Submission_Form is not displayed and no submit option is available for that booking (review action hidden or disabled)",
       "priority": "medium"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Press browser Back after opening booking details from Dashboard",
+      "wf_ref": "WF-008",
+      "subcategory": "input_edge",
+      "test_case": "Submit review containing emoji and extended unicode in Review_Text",
       "preconditions": [
-        "User is authenticated and on the Dashboard",
-        "My Bookings contains at least one booking"
+        "Authenticated (logged-in) user session with an existing user account",
+        "User has at least one booking in My Bookings with Selected_Booking_Status == Completed"
       ],
       "steps": [
-        "1. In My Bookings, click View Details for a booking to open the booking detail page",
-        "2. Once booking details are displayed, use the browser Back control once"
+        "1. Open the dashboard My Bookings table",
+        "2. Locate a booking row whose status is Completed",
+        "3. Open the Review_Submission_Form for that booking",
+        "4. Enter a Rating in Rating",
+        "5. Enter <review text containing emoji and extended unicode> in Review_Text",
+        "6. Click Submit Review"
       ],
-      "expected_result": "succeeds: Browser returns to the Dashboard (My Bookings list) and the booking list is displayed as before; no duplicate booking entries have been created and the Dashboard state (visible rows and statuses) is unchanged.",
+      "expected_result": "Submit succeeds; the posted review is visible in the UI and displays the emoji and extended unicode characters as entered",
       "priority": "low"
+    },
+    {
+      "tc_id": "E-006",
+      "wf_ref": "WF-007",
+      "subcategory": "interaction_edge",
+      "test_case": "Click Edit Profile then immediately Save Profile without changing fields",
+      "preconditions": [
+        "Authenticated (logged-in) user session with an existing user account",
+        "My Profile section is present in the dashboard"
+      ],
+      "steps": [
+        "1. Click Edit in the My Profile section",
+        "2. Wait for the Profile_Edit_Form to become visible",
+        "3. Click Save Profile without modifying any fields"
+      ],
+      "expected_result": "Save succeeds; a visible confirmation with the on_success message \"profile updated\" is shown",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-007",
+      "wf_ref": "WF-010",
+      "subcategory": "interaction_edge",
+      "test_case": "Logout then use browser Back — dashboard must not be accessible after logout",
+      "preconditions": [
+        "Authenticated (logged-in) user session with an existing user account",
+        "User is on the dashboard"
+      ],
+      "steps": [
+        "1. Click the Logout button in the dashboard",
+        "2. Wait for the logout action to complete",
+        "3. Use the browser Back button to navigate back to the dashboard URL"
+      ],
+      "expected_result": "Dashboard is not displayed; the user sees the login prompt or login page (dashboard content is not accessible without authentication)",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 5,
-    "boundary": 0,
-    "input_edge": 3,
+    "total": 7,
+    "boundary": 4,
+    "input_edge": 1,
     "interaction_edge": 2,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 3,
-    "low_priority": 2
+    "medium_priority": 6,
+    "low_priority": 1
   }
 }
 
 ------------------------------------------------------------
-[21:27:26] Test-Edge - PARSED JSON
+[22:36:00] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "User Dashboard",
@@ -504,101 +568,142 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-008",
-      "subcategory": "input_edge",
-      "test_case": "Very long Review_Text (200+ chars) submitted for a completed booking",
+      "wf_ref": "WF-009",
+      "subcategory": "boundary",
+      "test_case": "Save Settings with New_Password exactly matching Confirm_Password",
       "preconditions": [
-        "User is authenticated and on the Dashboard",
-        "There is a booking in status 'Completed' visible in Reviews section"
+        "Authenticated (logged-in) user session with an existing user account",
+        "Settings page available in Dashboard"
       ],
       "steps": [
-        "1. Click Reviews on the Dashboard",
-        "2. For the completed booking row, click Write Review",
-        "3. In the Write_Review_Form, enter <very long string> (200+ characters) into the Review_Text field",
-        "4. In the Write_Review_Form, enter a valid value in the Rating field",
-        "5. Click Submit (or Save) on the Write_Review_Form"
+        "1. Click Settings in the dashboard",
+        "2. Enter the current password in Current_Password",
+        "3. Enter <New_Password value> in New_Password",
+        "4. Enter the identical <New_Password value> in Confirm_Password",
+        "5. Click Save Settings"
       ],
-      "expected_result": "succeeds: The review is created and the UI navigates to the review confirmation or listing; the Review_Text appears on the booking's review detail/listing (if the system truncates, the visible review text is truncated to the system max length and a truncation indicator or '...' is visible).",
+      "expected_result": "Save succeeds; a visible success confirmation with the on_success message \"settings updated\" is shown",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": "WF-008",
-      "subcategory": "input_edge",
-      "test_case": "Review_Text containing emoji and special/unicode characters",
+      "wf_ref": "WF-009",
+      "subcategory": "boundary",
+      "test_case": "Save Settings with Confirm_Password differing by one character (password mismatch)",
       "preconditions": [
-        "User is authenticated and on the Dashboard",
-        "There is a booking in status 'Completed' visible in Reviews section"
+        "Authenticated (logged-in) user session with an existing user account",
+        "Settings page available in Dashboard"
       ],
       "steps": [
-        "1. Click Reviews on the Dashboard",
-        "2. For the completed booking row, click Write Review",
-        "3. In the Write_Review_Form, enter a string containing emoji and various special/unicode characters into the Review_Text field",
-        "4. In the Write_Review_Form, enter a valid value in the Rating field",
-        "5. Click Submit (or Save) on the Write_Review_Form"
+        "1. Click Settings in the dashboard",
+        "2. Enter the current password in Current_Password",
+        "3. Enter <New_Password value> in New_Password",
+        "4. Enter a value in Confirm_Password that differs from <New_Password value> by one character",
+        "5. Click Save Settings"
       ],
-      "expected_result": "succeeds: The review is created; the review detail/listing displays the entered emoji and special/unicode characters as stored (or visibly replaces unsupported characters with a replacement glyph) with no silent data-loss.",
+      "expected_result": "Save is blocked; an inline validation error is shown on the Confirm_Password field indicating the mismatch",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-007",
-      "subcategory": "input_edge",
-      "test_case": "Leading and trailing whitespace entered into a profile text field on Edit_Profile_Form",
+      "wf_ref": "WF-008",
+      "subcategory": "boundary",
+      "test_case": "Submit review when Selected_Booking_Status equals Completed (review form revealed)",
       "preconditions": [
-        "User is authenticated and on the Dashboard",
-        "My Profile panel is visible"
+        "Authenticated (logged-in) user session with an existing user account",
+        "User has at least one booking in My Bookings with Selected_Booking_Status == Completed"
       ],
       "steps": [
-        "1. In My Profile, click Edit to open the Edit_Profile_Form",
-        "2. In a profile text field on the Edit_Profile_Form (e.g., display name or other free-text personal field), enter a value with leading and trailing whitespace",
-        "3. Click Save (or Submit) on the Edit_Profile_Form",
-        "4. Open the My Profile view/detail page"
+        "1. Open the dashboard My Bookings table",
+        "2. Locate a booking row whose status is Completed",
+        "3. Click the action that reveals the Review_Submission_Form for that booking",
+        "4. Enter a Rating in Rating",
+        "5. Enter <long review text> (200+ characters) in Review_Text",
+        "6. Click Submit Review"
       ],
-      "expected_result": "succeeds: The profile is saved and the profile detail page shows the value with leading/trailing whitespace removed (trimmed). If the system does not trim, a visible inline validation message or confirmation clearly shows the stored value including whitespace (i.e., no silent storage of unintended whitespace).",
-      "priority": "low"
+      "expected_result": "Submit succeeds; a visible confirmation with the on_success message \"review posted\" is shown",
+      "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-005",
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click on Download Invoice for a booking",
+      "wf_ref": "WF-008",
+      "subcategory": "boundary",
+      "test_case": "Attempt to reveal/submit review when Selected_Booking_Status is Confirmed (one step before Completed)",
       "preconditions": [
-        "User is authenticated and on the Dashboard",
-        "My Bookings contains a booking with an available invoice"
+        "Authenticated (logged-in) user session with an existing user account",
+        "User has at least one booking in My Bookings with Selected_Booking_Status == Confirmed"
       ],
       "steps": [
-        "1. In My Bookings row for the booking, locate the Download Invoice action",
-        "2. Click Download Invoice twice in rapid succession (two clicks within 1 second)"
+        "1. Open the dashboard My Bookings table",
+        "2. Locate a booking row whose status is Confirmed",
+        "3. Attempt to click an action to open the Review_Submission_Form for that booking"
       ],
-      "expected_result": "succeeds: Only a single invoice download is initiated; the UI does not create duplicate invoice downloads or duplicate entries in the application's download queue (the second rapid click is ignored or visibly disabled and no error is shown).",
+      "expected_result": "Action is blocked; the Review_Submission_Form is not displayed and no submit option is available for that booking (review action hidden or disabled)",
       "priority": "medium"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Press browser Back after opening booking details from Dashboard",
+      "wf_ref": "WF-008",
+      "subcategory": "input_edge",
+      "test_case": "Submit review containing emoji and extended unicode in Review_Text",
       "preconditions": [
-        "User is authenticated and on the Dashboard",
-        "My Bookings contains at least one booking"
+        "Authenticated (logged-in) user session with an existing user account",
+        "User has at least one booking in My Bookings with Selected_Booking_Status == Completed"
       ],
       "steps": [
-        "1. In My Bookings, click View Details for a booking to open the booking detail page",
-        "2. Once booking details are displayed, use the browser Back control once"
+        "1. Open the dashboard My Bookings table",
+        "2. Locate a booking row whose status is Completed",
+        "3. Open the Review_Submission_Form for that booking",
+        "4. Enter a Rating in Rating",
+        "5. Enter <review text containing emoji and extended unicode> in Review_Text",
+        "6. Click Submit Review"
       ],
-      "expected_result": "succeeds: Browser returns to the Dashboard (My Bookings list) and the booking list is displayed as before; no duplicate booking entries have been created and the Dashboard state (visible rows and statuses) is unchanged.",
+      "expected_result": "Submit succeeds; the posted review is visible in the UI and displays the emoji and extended unicode characters as entered",
       "priority": "low"
+    },
+    {
+      "tc_id": "E-006",
+      "wf_ref": "WF-007",
+      "subcategory": "interaction_edge",
+      "test_case": "Click Edit Profile then immediately Save Profile without changing fields",
+      "preconditions": [
+        "Authenticated (logged-in) user session with an existing user account",
+        "My Profile section is present in the dashboard"
+      ],
+      "steps": [
+        "1. Click Edit in the My Profile section",
+        "2. Wait for the Profile_Edit_Form to become visible",
+        "3. Click Save Profile without modifying any fields"
+      ],
+      "expected_result": "Save succeeds; a visible confirmation with the on_success message \"profile updated\" is shown",
+      "priority": "medium"
+    },
+    {
+      "tc_id": "E-007",
+      "wf_ref": "WF-010",
+      "subcategory": "interaction_edge",
+      "test_case": "Logout then use browser Back \u2014 dashboard must not be accessible after logout",
+      "preconditions": [
+        "Authenticated (logged-in) user session with an existing user account",
+        "User is on the dashboard"
+      ],
+      "steps": [
+        "1. Click the Logout button in the dashboard",
+        "2. Wait for the logout action to complete",
+        "3. Use the browser Back button to navigate back to the dashboard URL"
+      ],
+      "expected_result": "Dashboard is not displayed; the user sees the login prompt or login page (dashboard content is not accessible without authentication)",
+      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 5,
-    "boundary": 0,
-    "input_edge": 3,
+    "total": 7,
+    "boundary": 4,
+    "input_edge": 1,
     "interaction_edge": 2,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 3,
-    "low_priority": 2
+    "medium_priority": 6,
+    "low_priority": 1
   }
 }

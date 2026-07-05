@@ -1,0 +1,580 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:04:00.682888
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:04:00] Workflow-Extractor - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Extractor. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to enumerate every distinct, executable interaction path through this module — one entry per workflow.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ATTEMPT CONTEXT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Attempt: 1 of 3
+
+
+
+---
+
+**INPUT:**
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<module_name>{Module name}</module_name>
+
+<ast>
+{Module Structural Model JSON}
+</ast>
+
+<description>
+{Original functional description text for this module}
+</description>
+
+---
+
+## What is a Workflow?
+
+A **workflow** is one complete, executable interaction path — from the user entering the module to completing **one terminal action** within it.
+
+Two workflows are **distinct** if they require different user actions to reach the terminal — i.e. they activate a different conditional branch, follow a different wizard step set, target a different state, or end on a different terminal action.
+
+### Strict Rules
+
+1. **Strictly intra-module.** A workflow step is an action within this module only. If submitting redirects to another page, the redirect is the **exit** — not a step.
+2. **No invented paths.** Only enumerate paths that are traceable to AST nodes or explicit description text. No UX intuition, no assumed flows.
+3. **Minimal fields.** A workflow carries only what downstream agents actually need: who does it, what makes it distinct, what it ends with, what success looks like.
+4. **No step-by-step instructions.** Workflows do NOT spell out the full step sequence — the agents already have the AST for that. A workflow names the path, not the actions.
+
+---
+
+## What Paths to Enumerate
+
+Enumerate **distinct-outcome** paths — not one-per-type, and **not** the cartesian product of every toggle. The rule: two paths are separate workflows only if the user does something different that leads to a **different terminal outcome** (different `on_success`) **or** exercises a **different revealed required-field group** that needs its own coverage.
+
+| AST node type | What to enumerate |
+|---|---|
+| `form` with no conditionals | One workflow per `submit_actions[]` entry |
+| `form` with `visible_when` / toggle fields | One base workflow per `submit_actions[]` entry, PLUS one workflow for **each conditional branch that reveals a distinct required-field group** (e.g. enabling File submissions reveals max-files/size/types). Do **NOT** multiply independent toggles together. |
+| `wizard` | One workflow per distinct step sequence (if all steps are linear, one workflow per `submit_actions[]`; if any step is conditional, enumerate each branch) |
+| `state_bound_action_bar` | One workflow per `available_actions[]` entry per state (state × action = one workflow) |
+| `data_table` | One workflow per `row_actions[]` entry + one per `bulk_actions[]` entry (include View, Edit, Delete, and all others) |
+| `tab_container` | One workflow per tab that contains a form with a submit action |
+| `repeating_group` | Not a standalone workflow source — it is part of a form workflow that activates it |
+
+**Include all data table row actions** — View, Edit, Delete, and any others. Even read-only row actions (e.g., "View") must be included because they still require a positive test case.
+
+### DO NOT enumerate the cartesian product of toggles (CRITICAL)
+
+A form with independent toggles A, B, C and submit buttons {Save, Save+display, Cancel} must **not** produce 2×2×2×3 = 24 workflows. Independent toggles that do **not** change the terminal outcome are covered **once each**, not in combination:
+- If toggle A (e.g. `File_Submissions`) and toggle B (e.g. `Group_Submissions`) both still reach the same `on_success` ("assignment created"), they are **not** two dimensions to multiply. Emit one workflow that activates A's revealed fields, and one that activates B's revealed fields — not A×B.
+- An `+ Add restriction` / optional-picker step that does not change `on_success` is **not** a separate workflow dimension. Fold it into an existing workflow or add at most one workflow for it.
+
+### Discard / Cancel collapse rule (CRITICAL)
+
+A `Cancel` / `discard` / `abandon` terminal action discards **all** field state, so field/toggle combinations are irrelevant to it. Emit **exactly ONE** Cancel workflow for the module, regardless of how many toggles or revealed-field groups exist. Never produce a Cancel workflow per toggle combination.
+
+**Worked example — Assignment Creation** (toggles: File submissions, Group submissions, Add restriction; buttons: Save and return, Save and display, Cancel):
+- ✅ Correct (~6–8): base Save-and-return, base Save-and-display, one Save covering File-submission revealed fields, one Save covering Group-submission revealed fields, one Save covering an added restriction, one Cancel.
+- ❌ Wrong (24): every `{File}×{Group}×{Restriction}×{Save/Display/Cancel}` combination.
+
+---
+
+## Field Definitions
+
+| Field | Type | Rule |
+|---|---|---|
+| `wf_id` | `"WF-NNN"` | Sequential within this module, starting at WF-001 |
+| `name` | string | Short human name for the path — what makes it distinct |
+| `actor` | string | Role who performs this path — use `<role>` placeholder if spec doesn't specify |
+| `conditional_branch` | string or `null` | The condition(s) that activate this path's unique branch. `null` if no conditionals apply |
+| `terminal_action` | string | Exact name of the button/action that ends this workflow (matches AST `action_name` or `element_name`) |
+| `on_success` | string | Verbatim from AST `on_success` field if available; otherwise derived from description |
+
+**`conditional_branch` format:**
+- Single condition: `"Submission_Type == File_Upload"`
+- Multiple: `"Submission_Type == File_Upload AND Grade_Type == Points"`
+- State condition: `"entity_state == Draft"`
+- `null` if this is the base path with no conditionals
+
+---
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SELF-CHECK — VERIFY EVERY ITEM BEFORE OUTPUTTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Go through these one by one. If any check fails, fix it before outputting.
+
+□ 1. Every `submit_actions[]` entry in every form/wizard has at least one workflow.
+□ 2. Every state × action pair in every `state_bound_action_bar` has exactly one workflow.
+□ 3. Every `row_actions[]` and `bulk_actions[]` entry in every `data_table` has one workflow.
+□ 4. Every tab with a form submission in a `tab_container` has one workflow.
+□ 5. `wf_id` numbering is sequential (WF-001, WF-002, ...) with no gaps.
+□ 6. Every `terminal_action` matches an exact `action_name` or `element_name` from the AST.
+□ 7. No two workflows reach the **same `on_success` via the same code path** — even if their `conditional_branch` strings differ. If they do, merge them (keep the one that activates a distinct revealed required-field group; drop pure toggle-combination duplicates).
+□ 8. There is **at most ONE** `Cancel`/`discard` workflow for the whole module.
+□ 9. No independent toggles are multiplied together — the workflow count is roughly (base submits) + (revealed required-field groups) + 1 Cancel, NOT the product of all toggles × all buttons.
+□ 10. No workflow crosses module boundaries (steps in another module).
+□ 11. Every `on_success` reflects the AST or description — no generic "success" strings.
+
+---
+
+## Anti-Hallucination Gate (run after self-check)
+
+1. Does each workflow trace back to a specific AST node (`submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`) or an explicit action described in the description text? If no → delete it.
+2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
+3. Do two workflows reach the same `on_success` via the same code path (e.g. differing only by an independent toggle that does not change the outcome, or being repeated Cancel variants)? If yes → merge them into one. Keep a separate workflow only when its branch reveals a **distinct required-field group** that needs its own coverage.
+4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
+5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
+
+---
+
+## Calibration
+
+- Simple form module (no conditionals, one submit): 1–3 workflows
+- Form with conditionals/toggles: **(base submit outcomes) + (one per revealed required-field group) + 1 Cancel** — typically 4–8, NOT the product of all toggles × all buttons. A multi-toggle form like Assignment Creation should land near 6–8, never 20+.
+- Module with state machine: add 1 per (state × action) combination
+- Module with data table: add 1 per row_action + 1 per bulk_action
+
+---
+
+## OUTPUT — JSON only, no prose, no markdown fencing:
+
+{
+  "module": "Module Name",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Short human name — what makes this path distinct",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Submit",
+      "on_success": "Verbatim on_success from AST or derived from description"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Submit with File Upload submission type",
+      "actor": "<role>",
+      "conditional_branch": "Submission_Type == File_Upload",
+      "terminal_action": "Submit",
+      "on_success": "Assignment created; success message shown"
+    }
+  ],
+  "total": 2
+}
+
+
+------------------------------------------------------------
+[23:04:00] Workflow-Extractor - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 8,
+  "module_title": "Loan Products",
+  "summary": "Lists existing loan products and provides a 6-step wizard for creating or editing detailed loan product configurations including terms, currency, charges, and accounting mappings.",
+  "where_it_fits": "Accessible from the application's left sidebar Products shortcut and via the Institution area in the top navigation, the Loan Products page appears as an entity listing (with breadcrumbs) where administrators define product templates before loan accounts are created and managed elsewhere in the lifecycle.",
+  "assumed_state_on_entry": "Authenticated user with permission to view and manage product configuration (access to Products/Institution sections) and at least one Fund and any referenced Charges/GL accounts preconfigured if accounting mappings will be used."
+}
+</module_context>
+
+<module_name>Loan Products</module_name>
+
+<ast>
+{
+  "module_name": "Loan Products",
+  "components": {
+    "Loan_Products_Filter_Bar": {
+      "type": "filter_bar",
+      "fields": {}
+    },
+    "Loan_Products_Table": {
+      "type": "data_table",
+      "row_actions": [
+        {
+          "action_name": "View Details",
+          "action_type": "link"
+        }
+      ],
+      "bulk_actions": []
+    },
+    "Loan_Products_Page_Actions": {
+      "type": "action_bar",
+      "fields": {
+        "Create_Loan_Product": {
+          "type": "button",
+          "action_name": "+ Create Loan Product",
+          "opens": "Loan_Product_Create_Wizard",
+          "preconditions": [
+            "Authenticated user with permission to view and manage product configuration (access to Products/Institution sections) and at least one Fund and any referenced Charges/GL accounts preconfigured if accounting mappings will be used."
+          ]
+        }
+      }
+    },
+    "Loan_Product_Create_Wizard": {
+      "type": "wizard",
+      "submit_actions": [
+        {
+          "action_name": "Save",
+          "on_success": "creates or updates loan product template",
+          "preconditions": [
+            "Authenticated user with permission to view and manage product configuration (access to Products/Institution sections) and at least one Fund and any referenced Charges/GL accounts preconfigured if accounting mappings will be used."
+          ]
+        },
+        {
+          "action_name": "Cancel",
+          "on_success": "closes wizard without saving"
+        }
+      ],
+      "steps": [
+        {
+          "step_index": 1,
+          "step_name": "Details",
+          "fields": {
+            "Product_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "Short_Name": {
+              "type": "unspecified",
+              "required": true
+            },
+            "External_Id": {
+              "type": "unspecified"
+            },
+            "Fund": {
+              "type": "unspecified"
+            },
+            "Include_in_Customer_Loan_Counter": {
+              "type": "checkbox"
+            },
+            "Start_Date": {
+              "type": "date"
+            },
+            "Close_Date": {
+              "type": "date"
+            },
+            "Description": {
+              "type": "unspecified"
+            }
+          }
+        },
+        {
+          "step_index": 2,
+          "step_name": "Currency",
+          "fields": {
+            "Currency": {
+              "type": "dropdown"
+            },
+            "Decimal_Places": {
+              "type": "number"
+            },
+            "Multiples_of_Rounding": {
+              "type": "number"
+            },
+            "Principal_Amount_Minimum": {
+              "type": "number"
+            },
+            "Principal_Amount_Default": {
+              "type": "number"
+            },
+            "Principal_Amount_Maximum": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "step_index": 3,
+          "step_name": "Settings",
+          "fields": {
+            "Amortization_Method": {
+              "type": "dropdown",
+              "options": [
+                "Equal Installments",
+                "Equal Principal Payments"
+              ]
+            },
+            "Interest_Method": {
+              "type": "dropdown",
+              "options": [
+                "Flat",
+                "Declining Balance"
+              ]
+            },
+            "Interest_Calculation_Period": {
+              "type": "dropdown",
+              "options": [
+                "Daily",
+                "Same as repayment period"
+              ]
+            },
+            "Repayment_Strategy": {
+              "type": "unspecified"
+            },
+            "Days_in_Year": {
+              "type": "dropdown",
+              "options": [
+                "360",
+                "365",
+                "Actual"
+              ]
+            },
+            "Days_in_Month": {
+              "type": "dropdown",
+              "options": [
+                "30",
+                "Actual"
+              ]
+            },
+            "Grace_Period": {
+              "type": "number"
+            },
+            "Arrears_Tolerance": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "step_index": 4,
+          "step_name": "Terms",
+          "fields": {
+            "Number_of_Repayments_Minimum": {
+              "type": "number"
+            },
+            "Number_of_Repayments_Default": {
+              "type": "number"
+            },
+            "Number_of_Repayments_Maximum": {
+              "type": "number"
+            },
+            "Repaid_Every_Frequency_Number": {
+              "type": "number"
+            },
+            "Repaid_Every_Frequency_Unit": {
+              "type": "dropdown",
+              "options": [
+                "Days",
+                "Weeks",
+                "Months"
+              ]
+            },
+            "Nominal_Interest_Rate_Minimum": {
+              "type": "number"
+            },
+            "Nominal_Interest_Rate_Default": {
+              "type": "number"
+            },
+            "Nominal_Interest_Rate_Maximum": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "step_index": 5,
+          "step_name": "Charges",
+          "fields": {
+            "Charge_Search": {
+              "type": "search"
+            },
+            "Selected_Charges": {
+              "type": "repeating_group",
+              "item_fields": {
+                "Charge": {
+                  "type": "unspecified"
+                },
+                "Remove_Charge": {
+                  "type": "button",
+                  "action_name": "Remove"
+                }
+              }
+            }
+          }
+        },
+        {
+          "step_index": 6,
+          "step_name": "Accounting",
+          "fields": {
+            "Accounting_Method": {
+              "type": "radio",
+              "options": [
+                "None",
+                "Cash-based",
+                "Accrual (periodic)",
+                "Accrual (upfront)"
+              ]
+            },
+            "Fund_Source": {
+              "type": "dropdown",
+              "visible_when": "Accounting_Method != None"
+            },
+            "Loan_Portfolio": {
+              "type": "dropdown",
+              "visible_when": "Accounting_Method != None"
+            },
+            "Interest_On_Loans": {
+              "type": "dropdown",
+              "visible_when": "Accounting_Method != None"
+            },
+            "Income_From_Fees": {
+              "type": "dropdown",
+              "visible_when": "Accounting_Method != None"
+            },
+            "Income_From_Penalties": {
+              "type": "dropdown",
+              "visible_when": "Accounting_Method != None"
+            },
+            "Losses_Written_Off": {
+              "type": "dropdown",
+              "visible_when": "Accounting_Method != None"
+            },
+            "Overpayment_Liability": {
+              "type": "dropdown",
+              "visible_when": "Accounting_Method != None"
+            }
+          }
+        }
+      ]
+    },
+    "Loan_Product_Detail_Actions": {
+      "type": "action_bar",
+      "fields": {
+        "Edit": {
+          "type": "button",
+          "action_name": "Edit",
+          "opens": "Loan_Product_Create_Wizard"
+        }
+      }
+    }
+  }
+}
+</ast>
+
+<description>
+
+The Loan Products page displays a filter bar and a data table listing all loan products with columns for Name (clickable link), Short Name, Expiry Date, and Status. A "+ Create Loan Product" button opens a 6-step stepper wizard. Step 1 (Details) contains Product Name (required), Short Name (required), External Id, Fund, Include in Customer Loan Counter checkbox, Start Date, Close Date, and Description. Step 2 (Currency) contains currency selection with Decimal Places, Multiples of Rounding, and Principal Amount with Minimum, Default, and Maximum values. Step 3 (Settings) contains Amortization method (Equal Installments, Equal Principal Payments), Interest Method (Flat, Declining Balance), Interest Calculation Period (Daily, Same as repayment period), Repayment Strategy, Days in Year (360, 365, Actual), Days in Month (30, Actual), and numeric fields for grace periods and Arrears Tolerance. Step 4 (Terms) contains Number of Repayments with Minimum, Default, and Maximum; Repaid Every frequency with unit (Days, Weeks, Months); and Nominal Interest Rate with Minimum, Default, and Maximum. Step 5 (Charges) is a search-and-add interface for predefined charges. Step 6 (Accounting) contains a radio button for None, Cash-based, Accrual (periodic), or Accrual (upfront); selecting a non-None method reveals GL account dropdown mappings for Fund Source, Loan Portfolio, Interest on Loans, Income from Fees, Income from Penalties, Losses Written Off, and Overpayment Liability. All required fields show inline validation errors. Clicking an existing product name opens its detail view with an Edit option.
+
+---
+
+
+</description>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:04:24] Workflow-Extractor - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Loan Products",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "View product details from listing",
+      "actor": "Authenticated user with product configuration permissions",
+      "conditional_branch": null,
+      "terminal_action": "View Details",
+      "on_success": "opens product detail view"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Create loan product — Save (no accounting mappings)",
+      "actor": "Authenticated user with product configuration permissions",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "creates or updates loan product template"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Create loan product — Save with Accounting_Method != None (reveal GL mappings)",
+      "actor": "Authenticated user with product configuration permissions",
+      "conditional_branch": "Accounting_Method != None",
+      "terminal_action": "Save",
+      "on_success": "creates or updates loan product template"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Edit existing loan product — Save (no accounting mappings)",
+      "actor": "Authenticated user with product configuration permissions",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "creates or updates loan product template"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Edit existing loan product — Save with Accounting_Method != None (reveal GL mappings)",
+      "actor": "Authenticated user with product configuration permissions",
+      "conditional_branch": "Accounting_Method != None",
+      "terminal_action": "Save",
+      "on_success": "creates or updates loan product template"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Cancel out of create/edit wizard (discard changes)",
+      "actor": "Authenticated user with product configuration permissions",
+      "conditional_branch": null,
+      "terminal_action": "Cancel",
+      "on_success": "closes wizard without saving"
+    }
+  ],
+  "total": 6
+}
+
+------------------------------------------------------------
+[23:04:24] Workflow-Extractor - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Loan Products",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "View product details from listing",
+      "actor": "Authenticated user with product configuration permissions",
+      "conditional_branch": null,
+      "terminal_action": "View Details",
+      "on_success": "opens product detail view"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Create loan product \u2014 Save (no accounting mappings)",
+      "actor": "Authenticated user with product configuration permissions",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "creates or updates loan product template"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Create loan product \u2014 Save with Accounting_Method != None (reveal GL mappings)",
+      "actor": "Authenticated user with product configuration permissions",
+      "conditional_branch": "Accounting_Method != None",
+      "terminal_action": "Save",
+      "on_success": "creates or updates loan product template"
+    },
+    {
+      "wf_id": "WF-004",
+      "name": "Edit existing loan product \u2014 Save (no accounting mappings)",
+      "actor": "Authenticated user with product configuration permissions",
+      "conditional_branch": null,
+      "terminal_action": "Save",
+      "on_success": "creates or updates loan product template"
+    },
+    {
+      "wf_id": "WF-005",
+      "name": "Edit existing loan product \u2014 Save with Accounting_Method != None (reveal GL mappings)",
+      "actor": "Authenticated user with product configuration permissions",
+      "conditional_branch": "Accounting_Method != None",
+      "terminal_action": "Save",
+      "on_success": "creates or updates loan product template"
+    },
+    {
+      "wf_id": "WF-006",
+      "name": "Cancel out of create/edit wizard (discard changes)",
+      "actor": "Authenticated user with product configuration permissions",
+      "conditional_branch": null,
+      "terminal_action": "Cancel",
+      "on_success": "closes wizard without saving"
+    }
+  ],
+  "total": 6
+}

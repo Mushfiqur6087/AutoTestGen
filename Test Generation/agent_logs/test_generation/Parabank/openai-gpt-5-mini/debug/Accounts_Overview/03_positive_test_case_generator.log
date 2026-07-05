@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:02:39.079462
+DEBUG SESSION STARTED: 2026-07-04T22:22:17.182326
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Positive - SYSTEM PROMPT
+[22:22:17] Test-Positive - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Expert UI Test Case Generator. You receive (1) a Structural Model JSON for one specific module and (2) the original functional description for that module.
 
@@ -78,6 +78,7 @@ Banned patterns — if your expected_result matches any of these, rewrite it:
 - ❌ `"updates [entity]"` → name the field or value that visibly changed
 - ❌ `"deletes [entity]"` → state that the row is no longer present in the table
 - ❌ `"[system] adjusts automatically"` → that is a backend side effect; assert only what is visible on the current screen immediately after the last step
+- ❌ `"a confirmation email is sent"`, `"a refund is initiated"`, `"the preference is saved to the profile"`, `"the balance is updated"` → these are non-visible backend side effects. Do NOT assert them unless a **visible on-screen confirmation** is named (e.g. `"A 'Booking confirmed' banner with reference number is shown"`). Assert only what appears on the current screen.
 - ❌ `"[field] contains <value>"` after a filter action → assert that the *list/table* is filtered, not that the input field holds a value
 
 Good pattern examples:
@@ -91,7 +92,10 @@ Good pattern examples:
 If a feature has two distinct output paths (e.g., on-screen result vs. file export), generate TWO separate test cases, each with its own expected_result describing only that one path. Never write `"when X, result A; when Y, result B"` inside a single expected_result.
 
 **Rule C — When the description quotes exact success text, use it verbatim.**
-Always use the `on_success` value from the AST when available.
+Use the `on_success` value from the AST **only when it is an actual UI string the app displays** (a quoted message like `"Account opened successfully!"`). Otherwise `on_success` is an internal behavior **token** ("navigates to activity page", "persists configuration and returns to course page", "updates results and result count", "opens the Enrol users dialog") — do NOT paste the token as your `expected_result`. Rewrite it into a describable visible screen state: name the page/heading/row/badge/dialog the tester now sees.
+- ❌ `expected_result: "navigates to activity page"` → ✅ `"The <activity name> activity page opens, showing its title and content"`
+- ❌ `expected_result: "persists configuration and returns to course page"` → ✅ `"The Course page is shown; the course heading displays the saved <full name>"`
+- ❌ `expected_result: "updates results and result count"` → ✅ `"The listing shows only items matching <filter>; the result count decreases accordingly"`
 
 **Rule D — If the module performs calculations or updates a status badge, explicitly assert that visual update** (badge color, calculated value, running balance change).
 Additionally: if the spec describes a **running total, summary row, price breakdown, or auto-calculated field** that derives its value from other inputs, the expected_result must assert that the calculated field *updates visibly* after the dependent inputs are filled — e.g., `"The Total field updates to reflect Base Price + Taxes + Fees"` or `"The Course Total row displays the aggregated grade across all weighted items"`.
@@ -203,10 +207,14 @@ If a TC exceeds **15 steps**, split it at the first sub-feature boundary (e.g., 
 1. Does this test trace back to a specific node in the AST or a specific action/state in the description? If no → delete it.
 2. For each pair of tests: Do they reach a DIFFERENT success state, OR take a DIFFERENT conditional branch/form layout to reach the same state?
    - If two tests share the same code path (e.g., same form, just different optional fields filled) → merge them. Keep the more complete version.
+   - **Filter / sort / layout dedup:** do NOT generate one positive test per filter field or per sort/layout option. A set of filter controls, or a First/Last A–Z alphabetical matrix, or a Card/List/Summary layout switch, is **one representative** filter test (or one navigation test) — not one-per-field/one-per-permutation. Keep separate only where a filter targets a genuinely different result path or form.
 3. Read each `expected_result`. Does it match any **banned pattern** from the ASSERTION STYLE rules?
    - ❌ `"creates/updates/deletes [entity]"` → rewrite to name the visible row, badge, or notification
    - ❌ `"[system] adjusts/recalculates automatically"` → rewrite to describe the immediate visible screen state
-   - ❌ `"when X, result A; when Y, result B"` in a single TC → split into two TCs
+   - ❌ **`on_success` token pasted verbatim** (e.g. `"navigates to activity page"`, `"opens the dialog"`, `"updates results and result count"`) → rewrite to name the visible screen state (see Rule C)
+   - ❌ **Hedged / dual outcome** — `"Either X or Y"`, `"when X, result A; when Y, result B"`, `"succeeds … otherwise blocked"`, `"if credentials exist … if not …"` → pick the single most-likely outcome per the spec and assert it definitively; if two genuinely distinct outcomes exist, split into two TCs
+   - ❌ **Fabricated verbatim message string** — a quoted error/success string the spec never provides (e.g. inventing `'Attribute is required.'`) → either describe it generically (`"an inline error indicating the field is required"`) or, if the spec quotes it, copy the spec's exact text. Quotation marks are reserved for spec-sourced text.
+   - ❌ **Backend side effect** — `"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"` → assert only a visible on-screen confirmation, or drop it
    - ❌ `"[field] contains <value>"` after a filter/search → rewrite to assert the filtered list/table state
    - ❌ `"a success message is displayed"` when spec quotes exact text → replace with the verbatim quoted string
    - ❌ `"filter is applied"` → rewrite to describe the filtered content visible in the results
@@ -254,15 +262,15 @@ If a `<workflows>` block is present in the input:
 }
 
 ------------------------------------------------------------
-[21:02:39] Test-Positive - USER PROMPT
+[22:22:17] Test-Positive - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 3,
   "module_title": "Accounts Overview",
-  "summary": "Displays a personalized dashboard listing all customer accounts with masked account numbers, account details, status badges, and a total balance footer.",
-  "where_it_fits": "This module is the default dashboard view reached immediately after a successful login and is accessible via the left-hand navigation as Accounts Overview among options like Open New Account, Transfer Funds, and Security Settings. It serves as the primary landing page showing an overview of a customer's accounts and balances within the application's main lifecycle after authentication.",
-  "assumed_state_on_entry": "Authenticated customer session with permission to view the customer's account data."
+  "summary": "Displays a personalized dashboard table of the customer's accounts with masked account numbers, account types, current balances, statuses, open dates, and a total balance footer.",
+  "where_it_fits": "Serves as the default dashboard view after a successful sign-in (Accounts Overview in the left-hand navigation). It is the primary authenticated landing page and hub from which users access features like Open New Account, Transfer Funds, Payments, and other account services.",
+  "assumed_state_on_entry": "Authenticated (logged-in) customer session with one or more accounts associated to the user."
 }
 </module_context>
 
@@ -274,12 +282,37 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Accounts_Table": {
       "type": "data_table",
+      "preconditions": [
+        "Authenticated (logged-in) customer session"
+      ],
       "row_actions": [
         {
           "action_name": "Account Number",
-          "action_type": "link",
           "preconditions": [
-            "Authenticated customer session with permission to view the customer's account data"
+            "Authenticated (logged-in) customer session"
+          ]
+        }
+      ]
+    },
+    "Accounts_Action_Bar": {
+      "type": "action_bar",
+      "available_actions": [
+        {
+          "action_name": "Open New Account",
+          "preconditions": [
+            "Authenticated (logged-in) customer session"
+          ]
+        },
+        {
+          "action_name": "Transfer Funds",
+          "preconditions": [
+            "Authenticated (logged-in) customer session"
+          ]
+        },
+        {
+          "action_name": "Payments",
+          "preconditions": [
+            "Authenticated (logged-in) customer session"
           ]
         }
       ]
@@ -295,13 +328,16 @@ The dashboard displays a welcome message with the user's name and a table of all
 </description>
 
 <workflows>
-WF-001 | Click Account Number link in a row | actor: Authenticated customer | branch: none | terminal: Account Number | on_success: Clickable but not implemented yet
+WF-001 | Click Account Number (row action) | actor: Customer | branch: none | terminal: Account Number | on_success: Clickable but not implemented (no navigation or detail view is performed)
+WF-002 | Open New Account action from action bar | actor: Customer | branch: none | terminal: Open New Account | on_success: Navigate to/Open New Account flow (user is taken to the Open New Account module)
+WF-003 | Transfer Funds action from action bar | actor: Customer | branch: none | terminal: Transfer Funds | on_success: Navigate to/Transfer Funds flow (user is taken to the Transfer Funds module)
+WF-004 | Payments action from action bar | actor: Customer | branch: none | terminal: Payments | on_success: Navigate to/Payments flow (user is taken to the Payments module)
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:03:26] Test-Positive - LLM RESPONSE
+[22:22:47] Test-Positive - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Accounts Overview",
@@ -310,89 +346,89 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "P-001",
       "wf_ref": null,
-      "test_case": "Welcome banner shows the signed-in user's name",
+      "test_case": "Accounts table displays masked numbers, types, balances, status badges, open dates, and total footer",
       "preconditions": [
         "User logged in as <Customer>",
-        "Authenticated customer session with permission to view the customer's account data"
+        "One or more accounts exist for the customer"
       ],
       "steps": [
-        "1. Navigate to the Accounts Overview page (click 'Accounts Overview' in the left navigation)",
-        "2. Locate the page header / welcome banner"
+        "1. Click Accounts Overview in the left-hand navigation to open the Accounts Overview page",
+        "2. Observe the Accounts Overview landing page"
       ],
-      "expected_result": "Welcome banner displays 'Welcome, <user name>' (the user's name is shown in the header)",
+      "expected_result": "Welcome message displays the customer's name '<Customer full name>'; the Accounts table is visible and lists each account row showing: Account Number in masked format '****<last 4 digits>', Account Type, Current Balance, an 'Active' status badge, and Open Date. Rows are ordered by Open Date (earliest first). The table footer displays a Total Balance equal to the sum of the Current Balances shown in the table.",
       "priority": "high"
     },
     {
       "tc_id": "P-002",
-      "wf_ref": null,
-      "test_case": "Accounts table rows show masked Account Number, Account Type, Current Balance, Active badge, and Open Date",
-      "preconditions": [
-        "User logged in as <Customer>",
-        "Authenticated customer session with permission to view the customer's account data"
-      ],
-      "steps": [
-        "1. Navigate to the Accounts Overview page (click 'Accounts Overview' in the left navigation)",
-        "2. Inspect any account row in the Accounts table"
-      ],
-      "expected_result": "Each Accounts table row displays: Account Number masked in the format '****<last4>' (only last 4 digits visible), Account Type column, Current Balance column, Account Status showing an 'Active' badge, and Open Date column",
-      "priority": "high"
-    },
-    {
-      "tc_id": "P-003",
       "wf_ref": "WF-001",
-      "test_case": "Clicking the Account Number link in a row shows the not-implemented message",
+      "test_case": "Clicking the Account Number row action does not navigate away when feature is not implemented",
       "preconditions": [
         "User logged in as <Customer>",
-        "Authenticated customer session with permission to view the customer's account data"
+        "One or more accounts exist for the customer"
       ],
       "steps": [
-        "1. Navigate to the Accounts Overview page (click 'Accounts Overview' in the left navigation)",
-        "2. Click the <Account Number> link in any account row of the Accounts table"
+        "1. Click Accounts Overview in the left-hand navigation to open the Accounts Overview page",
+        "2. Click the Account Number link/cell for <an account> in the Accounts table"
       ],
-      "expected_result": "Clickable but not implemented yet",
+      "expected_result": "The Accounts Overview page remains displayed with the account row still visible; no account detail page or navigation is shown after clicking the Account Number link.",
       "priority": "medium"
     },
     {
-      "tc_id": "P-004",
-      "wf_ref": null,
-      "test_case": "Footer row displays Total Balance equal to the sum of visible account balances",
+      "tc_id": "P-003",
+      "wf_ref": "WF-002",
+      "test_case": "Open New Account action navigates to the Open New Account module",
       "preconditions": [
         "User logged in as <Customer>",
-        "Authenticated customer session with permission to view the customer's account data"
+        "One or more accounts exist for the customer"
       ],
       "steps": [
-        "1. Navigate to the Accounts Overview page (click 'Accounts Overview' in the left navigation)",
-        "2. Scroll to the bottom of the Accounts table to view the footer row"
+        "1. Click Accounts Overview in the left-hand navigation to open the Accounts Overview page",
+        "2. Click the 'Open New Account' action in the Accounts action bar"
       ],
-      "expected_result": "Footer row displays 'Total Balance' showing the sum of the Current Balance values for all visible accounts in the table",
+      "expected_result": "The Open New Account page is displayed (the Open New Account module is opened and its page heading is visible).",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-004",
+      "wf_ref": "WF-003",
+      "test_case": "Transfer Funds action navigates to the Transfer Funds module",
+      "preconditions": [
+        "User logged in as <Customer>",
+        "One or more accounts exist for the customer"
+      ],
+      "steps": [
+        "1. Click Accounts Overview in the left-hand navigation to open the Accounts Overview page",
+        "2. Click the 'Transfer Funds' action in the Accounts action bar"
+      ],
+      "expected_result": "The Transfer Funds page is displayed (the Transfer Funds module is opened and its page heading is visible).",
       "priority": "high"
     },
     {
       "tc_id": "P-005",
-      "wf_ref": null,
-      "test_case": "Accounts table rows are ordered by Open Date (earliest first)",
+      "wf_ref": "WF-004",
+      "test_case": "Payments action navigates to the Payments module",
       "preconditions": [
         "User logged in as <Customer>",
-        "Authenticated customer session with permission to view the customer's account data"
+        "One or more accounts exist for the customer"
       ],
       "steps": [
-        "1. Navigate to the Accounts Overview page (click 'Accounts Overview' in the left navigation)",
-        "2. Observe the Open Date column for the accounts listed from top to bottom"
+        "1. Click Accounts Overview in the left-hand navigation to open the Accounts Overview page",
+        "2. Click the 'Payments' action in the Accounts action bar"
       ],
-      "expected_result": "Accounts table rows are ordered by Open Date ascending (earliest first); Open Date values increase or remain the same when reading rows from top to bottom",
-      "priority": "medium"
+      "expected_result": "The Payments page is displayed (the Payments module is opened and its page heading is visible).",
+      "priority": "high"
     }
   ],
   "summary": {
     "total": 5,
-    "high_priority": 3,
-    "medium_priority": 2,
+    "high_priority": 4,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:03:26] Test-Positive - PARSED JSON
+[22:22:47] Test-Positive - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Accounts Overview",
@@ -401,83 +437,83 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "P-001",
       "wf_ref": null,
-      "test_case": "Welcome banner shows the signed-in user's name",
+      "test_case": "Accounts table displays masked numbers, types, balances, status badges, open dates, and total footer",
       "preconditions": [
         "User logged in as <Customer>",
-        "Authenticated customer session with permission to view the customer's account data"
+        "One or more accounts exist for the customer"
       ],
       "steps": [
-        "1. Navigate to the Accounts Overview page (click 'Accounts Overview' in the left navigation)",
-        "2. Locate the page header / welcome banner"
+        "1. Click Accounts Overview in the left-hand navigation to open the Accounts Overview page",
+        "2. Observe the Accounts Overview landing page"
       ],
-      "expected_result": "Welcome banner displays 'Welcome, <user name>' (the user's name is shown in the header)",
+      "expected_result": "Welcome message displays the customer's name '<Customer full name>'; the Accounts table is visible and lists each account row showing: Account Number in masked format '****<last 4 digits>', Account Type, Current Balance, an 'Active' status badge, and Open Date. Rows are ordered by Open Date (earliest first). The table footer displays a Total Balance equal to the sum of the Current Balances shown in the table.",
       "priority": "high"
     },
     {
       "tc_id": "P-002",
-      "wf_ref": null,
-      "test_case": "Accounts table rows show masked Account Number, Account Type, Current Balance, Active badge, and Open Date",
-      "preconditions": [
-        "User logged in as <Customer>",
-        "Authenticated customer session with permission to view the customer's account data"
-      ],
-      "steps": [
-        "1. Navigate to the Accounts Overview page (click 'Accounts Overview' in the left navigation)",
-        "2. Inspect any account row in the Accounts table"
-      ],
-      "expected_result": "Each Accounts table row displays: Account Number masked in the format '****<last4>' (only last 4 digits visible), Account Type column, Current Balance column, Account Status showing an 'Active' badge, and Open Date column",
-      "priority": "high"
-    },
-    {
-      "tc_id": "P-003",
       "wf_ref": "WF-001",
-      "test_case": "Clicking the Account Number link in a row shows the not-implemented message",
+      "test_case": "Clicking the Account Number row action does not navigate away when feature is not implemented",
       "preconditions": [
         "User logged in as <Customer>",
-        "Authenticated customer session with permission to view the customer's account data"
+        "One or more accounts exist for the customer"
       ],
       "steps": [
-        "1. Navigate to the Accounts Overview page (click 'Accounts Overview' in the left navigation)",
-        "2. Click the <Account Number> link in any account row of the Accounts table"
+        "1. Click Accounts Overview in the left-hand navigation to open the Accounts Overview page",
+        "2. Click the Account Number link/cell for <an account> in the Accounts table"
       ],
-      "expected_result": "Clickable but not implemented yet",
+      "expected_result": "The Accounts Overview page remains displayed with the account row still visible; no account detail page or navigation is shown after clicking the Account Number link.",
       "priority": "medium"
     },
     {
-      "tc_id": "P-004",
-      "wf_ref": null,
-      "test_case": "Footer row displays Total Balance equal to the sum of visible account balances",
+      "tc_id": "P-003",
+      "wf_ref": "WF-002",
+      "test_case": "Open New Account action navigates to the Open New Account module",
       "preconditions": [
         "User logged in as <Customer>",
-        "Authenticated customer session with permission to view the customer's account data"
+        "One or more accounts exist for the customer"
       ],
       "steps": [
-        "1. Navigate to the Accounts Overview page (click 'Accounts Overview' in the left navigation)",
-        "2. Scroll to the bottom of the Accounts table to view the footer row"
+        "1. Click Accounts Overview in the left-hand navigation to open the Accounts Overview page",
+        "2. Click the 'Open New Account' action in the Accounts action bar"
       ],
-      "expected_result": "Footer row displays 'Total Balance' showing the sum of the Current Balance values for all visible accounts in the table",
+      "expected_result": "The Open New Account page is displayed (the Open New Account module is opened and its page heading is visible).",
+      "priority": "high"
+    },
+    {
+      "tc_id": "P-004",
+      "wf_ref": "WF-003",
+      "test_case": "Transfer Funds action navigates to the Transfer Funds module",
+      "preconditions": [
+        "User logged in as <Customer>",
+        "One or more accounts exist for the customer"
+      ],
+      "steps": [
+        "1. Click Accounts Overview in the left-hand navigation to open the Accounts Overview page",
+        "2. Click the 'Transfer Funds' action in the Accounts action bar"
+      ],
+      "expected_result": "The Transfer Funds page is displayed (the Transfer Funds module is opened and its page heading is visible).",
       "priority": "high"
     },
     {
       "tc_id": "P-005",
-      "wf_ref": null,
-      "test_case": "Accounts table rows are ordered by Open Date (earliest first)",
+      "wf_ref": "WF-004",
+      "test_case": "Payments action navigates to the Payments module",
       "preconditions": [
         "User logged in as <Customer>",
-        "Authenticated customer session with permission to view the customer's account data"
+        "One or more accounts exist for the customer"
       ],
       "steps": [
-        "1. Navigate to the Accounts Overview page (click 'Accounts Overview' in the left navigation)",
-        "2. Observe the Open Date column for the accounts listed from top to bottom"
+        "1. Click Accounts Overview in the left-hand navigation to open the Accounts Overview page",
+        "2. Click the 'Payments' action in the Accounts action bar"
       ],
-      "expected_result": "Accounts table rows are ordered by Open Date ascending (earliest first); Open Date values increase or remain the same when reading rows from top to bottom",
-      "priority": "medium"
+      "expected_result": "The Payments page is displayed (the Payments module is opened and its page heading is visible).",
+      "priority": "high"
     }
   ],
   "summary": {
     "total": 5,
-    "high_priority": 3,
-    "medium_priority": 2,
+    "high_priority": 4,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }

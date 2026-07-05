@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:13.986687
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.142944
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - SYSTEM PROMPT
+[22:33:07] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - USER PROMPT
+[22:33:07] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 16,
   "module_title": "Payment Processing",
-  "summary": "Handles collection and processing of payment for a prepared booking, presenting a detailed price breakdown, multiple payment methods, and post-payment confirmation or error handling.",
-  "where_it_fits": "Located at the end of the booking flow after a user selects and reviews a Hotel, Flight, Tour, or Car (accessed from the Home search widget or respective section in the top navigation), it serves as the checkout/transaction step before the booking confirmation page and invoice delivery. The module is reachable from any booking path (Hotels, Flights, Tours, Cars) and integrates with the User Dashboard/Booking Management for saved payment methods and booking records.",
-  "assumed_state_on_entry": "A prepared booking exists with a finalized price summary (base price, taxes, fees, discounts) and the user has an active session or guest booking session allowing checkout."
+  "summary": "Processes customer payments for completed bookings by presenting a detailed price breakdown, collecting payment details across multiple methods, and handling success or failure outcomes.",
+  "where_it_fits": "Accessible from booking flows initiated via the Home search widget or section-specific flows (Hotels, Flights, Tours, Cars) after selecting items and proceeding to book; it sits between the booking review stage and the booking confirmation page in the checkout lifecycle. The main navigation (Home, Hotels, Flights, Tours, Cars) leads users into searches and listings that ultimately route to this Payment Processing module when a reservation is being finalized.",
+  "assumed_state_on_entry": "A completed booking/reservation with traveler details and total price is present; payment intent is initiated and the user is authenticated or has provided guest booking information."
 }
 </module_context>
 
@@ -260,8 +270,11 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Payment Processing",
   "components": {
-    "Payment_Page_Form": {
+    "Payment_Page": {
       "type": "form",
+      "preconditions": [
+        "A completed booking/reservation with traveler details and total price is present; payment intent is initiated and the user is authenticated or has provided guest booking information."
+      ],
       "fields": {
         "Payment_Method": {
           "type": "dropdown",
@@ -288,7 +301,7 @@ If a `<workflows>` block is present in the input:
           "type": "unspecified",
           "visible_when": "Payment_Method == Credit/Debit Card"
         },
-        "Save_Card": {
+        "Save_Card_For_Future_Use": {
           "type": "checkbox",
           "visible_when": "Payment_Method == Credit/Debit Card"
         }
@@ -296,38 +309,31 @@ If a `<workflows>` block is present in the input:
       "submit_actions": [
         {
           "action_name": "Pay Now",
-          "on_success": "redirect to Booking_Confirmation_Page; provide reference number; send confirmation email",
-          "on_failure": "show error message (e.g., \"Card declined\", \"Insufficient funds\") and preserve booking details so user can retry",
           "preconditions": [
-            "A prepared booking exists with a finalized price summary (base price, taxes, fees, discounts) and the user has an active session or guest booking session allowing checkout."
-          ]
+            "A completed booking/reservation with traveler details and total price is present; payment intent is initiated and the user is authenticated or has provided guest booking information."
+          ],
+          "on_success": "redirects to booking confirmation page with reference number; confirmation email sent",
+          "on_failure": "displays an error message describing the issue (e.g., \"Card declined\", \"Insufficient funds\") and preserves booking details allowing the user to retry"
         },
         {
           "action_name": "Retry Payment",
-          "visible_when": "Payment_Result == Failed",
-          "on_success": "redirect to Booking_Confirmation_Page; provide reference number; send confirmation email",
-          "on_failure": "show error message and allow additional retries",
+          "visible_when": "Payment_Last_Attempt == Failed",
           "preconditions": [
-            "A prepared booking exists with a finalized price summary (base price, taxes, fees, discounts) and the user has an active session or guest booking session allowing checkout."
-          ]
+            "A completed booking/reservation with traveler details and total price is present; payment intent is initiated and the user is authenticated or has provided guest booking information."
+          ],
+          "on_success": "redirects to booking confirmation page with reference number; confirmation email sent",
+          "on_failure": "displays an error message and allows further retries without losing booking details"
         }
       ]
     },
-    "Booking_Confirmation_Page": {
-      "type": "page",
-      "preconditions": [
-        "payment must be successful"
-      ],
-      "actions": [
+    "Booking_Confirmation_Actions": {
+      "type": "action_bar",
+      "submit_actions": [
         {
-          "action_name": "Download Invoice",
-          "action_type": "download",
-          "on_trigger": "download invoice PDF for the completed booking"
+          "action_name": "Download Invoice"
         },
         {
-          "action_name": "Download Voucher",
-          "action_type": "download",
-          "on_trigger": "download voucher PDF for the completed booking"
+          "action_name": "Download Voucher"
         }
       ]
     }
@@ -345,19 +351,18 @@ The payment page displays a full booking summary with a price breakdown (base pr
 </description>
 
 <workflows>
-WF-001 | Pay Now — Credit/Debit Card | actor: User | branch: Payment_Method == Credit/Debit Card | terminal: Pay Now | on_success: redirect to Booking_Confirmation_Page; provide reference number; send confirmation email
-WF-002 | Pay Now — PayPal | actor: User | branch: Payment_Method == PayPal | terminal: Pay Now | on_success: redirect to Booking_Confirmation_Page; provide reference number; send confirmation email
-WF-003 | Pay Now — Bank Transfer | actor: User | branch: Payment_Method == Bank Transfer | terminal: Pay Now | on_success: redirect to Booking_Confirmation_Page; provide reference number; send confirmation email
-WF-004 | Pay Now — Wallet/Credits | actor: User | branch: Payment_Method == Wallet/Credits | terminal: Pay Now | on_success: redirect to Booking_Confirmation_Page; provide reference number; send confirmation email
-WF-005 | Retry Payment after failure | actor: User | branch: Payment_Result == Failed | terminal: Retry Payment | on_success: redirect to Booking_Confirmation_Page; provide reference number; send confirmation email
-WF-006 | Download Invoice from Confirmation Page | actor: User | branch: Payment_Result == Success | terminal: Download Invoice | on_success: download invoice PDF for the completed booking
-WF-007 | Download Voucher from Confirmation Page | actor: User | branch: Payment_Result == Success | terminal: Download Voucher | on_success: download voucher PDF for the completed booking
+WF-001 | Pay Now (base) | actor: <role> | branch: none | terminal: Pay Now | on_success: redirects to booking confirmation page with reference number; confirmation email sent
+WF-002 | Pay Now using Credit/Debit Card (card fields revealed) | actor: <role> | branch: Payment_Method == Credit/Debit Card | terminal: Pay Now | on_success: redirects to booking confirmation page with reference number; confirmation email sent
+WF-003 | Retry Payment after failure (base) | actor: <role> | branch: Payment_Last_Attempt == Failed | terminal: Retry Payment | on_success: redirects to booking confirmation page with reference number; confirmation email sent
+WF-004 | Retry Payment using Credit/Debit Card after failure (card fields revealed) | actor: <role> | branch: Payment_Last_Attempt == Failed AND Payment_Method == Credit/Debit Card | terminal: Retry Payment | on_success: redirects to booking confirmation page with reference number; confirmation email sent
+WF-005 | Download Invoice from confirmation | actor: <role> | branch: none | terminal: Download Invoice | on_success: Initiates download of the booking invoice (file downloaded)
+WF-006 | Download Voucher from confirmation | actor: <role> | branch: none | terminal: Download Voucher | on_success: Initiates download of the booking voucher (file downloaded)
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:28:01] Test-Negative - LLM RESPONSE
+[22:36:45] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Payment Processing",
@@ -365,224 +370,158 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": null,
-      "test_case": "Submit without selecting a Payment Method",
+      "wf_ref": "WF-002",
+      "test_case": "Leave Cardholder Name blank when paying with Credit/Debit Card and submit",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary",
-        "User has an active session"
+        "A completed booking/reservation with traveler details and total price is present; payment intent is initiated; user is authenticated or guest info provided",
+        "Payment_Method selectable and set to Credit/Debit Card"
       ],
       "steps": [
-        "1. Navigate to the Payment Page for the prepared booking",
-        "2. Ensure the Payment Method dropdown is left unselected (no option chosen)",
-        "3. Click the 'Pay Now' button"
+        "1. Open the Payment Page for an existing booking",
+        "2. Select Payment Method = Credit/Debit Card",
+        "3. Leave the Cardholder_Name field blank",
+        "4. Enter <valid card number> into Card_Number",
+        "5. Enter <valid expiration date> into Expiration_Date",
+        "6. Enter <valid CVV> into CVV",
+        "7. Click the Pay Now button"
       ],
-      "expected_result": "Payment Method field displays an inline validation error indicating it is required; form does not submit; booking is not confirmed or charged",
+      "expected_result": "Inline validation error appears on the Cardholder_Name field indicating it is required; the form does not submit; the user remains on the Payment Page and booking details are preserved",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-001",
-      "test_case": "Credit/Debit Card flow: leave Cardholder Name blank and submit",
+      "wf_ref": "WF-002",
+      "test_case": "Submit Pay Now with all card fields empty (Credit/Debit Card selected)",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary",
-        "User has an active session",
-        "Payment Method = Credit/Debit Card"
+        "A completed booking/reservation with traveler details and total price is present; payment intent is initiated; user is authenticated or guest info provided",
+        "Payment_Method selectable and set to Credit/Debit Card"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
+        "1. Open the Payment Page for an existing booking",
         "2. Select Payment Method = Credit/Debit Card",
-        "3. Leave the Cardholder Name field blank",
-        "4. Enter valid values into Card Number, Expiration Date, and CVV fields (use placeholders)",
-        "5. Click 'Pay Now'"
+        "3. Ensure Cardholder_Name is blank",
+        "4. Ensure Card_Number is blank",
+        "5. Ensure Expiration_Date is blank",
+        "6. Ensure CVV is blank",
+        "7. Click the Pay Now button"
       ],
-      "expected_result": "Cardholder Name field displays an inline validation error indicating it is required; form does not submit; booking is not confirmed or charged",
+      "expected_result": "Form does not submit; inline validation errors appear on Cardholder_Name, Card_Number, Expiration_Date, and CVV indicating each is required; user remains on the Payment Page and booking details are preserved",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-001",
-      "test_case": "Credit/Debit Card flow: leave Card Number blank and submit",
+      "wf_ref": "WF-002",
+      "test_case": "Enter invalid card number format and attempt Pay Now",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary",
-        "User has an active session",
-        "Payment Method = Credit/Debit Card"
+        "A completed booking/reservation with traveler details and total price is present; payment intent is initiated; user is authenticated or guest info provided",
+        "Payment_Method selectable and set to Credit/Debit Card"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
+        "1. Open the Payment Page for an existing booking",
         "2. Select Payment Method = Credit/Debit Card",
-        "3. Leave the Card Number field blank",
-        "4. Enter valid values into Cardholder Name, Expiration Date, and CVV fields (use placeholders)",
-        "5. Click 'Pay Now'"
+        "3. Enter <invalid card number format> into Card_Number",
+        "4. Enter <valid cardholder name> into Cardholder_Name",
+        "5. Enter <valid expiration date> into Expiration_Date",
+        "6. Enter <valid CVV> into CVV",
+        "7. Click the Pay Now button"
       ],
-      "expected_result": "Card Number field displays an inline validation error indicating it is required; form does not submit; booking is not confirmed or charged",
-      "priority": "high"
+      "expected_result": "Card_Number field displays an inline validation error indicating the card number format is invalid; the form does not submit; the user remains on the Payment Page and booking details are preserved",
+      "priority": "medium"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-001",
-      "test_case": "Credit/Debit Card flow: leave Expiration Date blank and submit",
+      "wf_ref": "WF-002",
+      "test_case": "Enter an invalid/expired expiration date and attempt Pay Now",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary",
-        "User has an active session",
-        "Payment Method = Credit/Debit Card"
+        "A completed booking/reservation with traveler details and total price is present; payment intent is initiated; user is authenticated or guest info provided",
+        "Payment_Method selectable and set to Credit/Debit Card"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
+        "1. Open the Payment Page for an existing booking",
         "2. Select Payment Method = Credit/Debit Card",
-        "3. Leave the Expiration Date field blank",
-        "4. Enter valid values into Cardholder Name, Card Number, and CVV fields (use placeholders)",
-        "5. Click 'Pay Now'"
+        "3. Enter <valid cardholder name> into Cardholder_Name",
+        "4. Enter <valid card number> into Card_Number",
+        "5. Enter <expiration date in the past or otherwise invalid date> into Expiration_Date",
+        "6. Enter <valid CVV> into CVV",
+        "7. Click the Pay Now button"
       ],
-      "expected_result": "Expiration Date field displays an inline validation error indicating it is required; form does not submit; booking is not confirmed or charged",
-      "priority": "high"
+      "expected_result": "Expiration_Date field displays an inline validation error indicating the expiration date is invalid or expired; the form does not submit; the user remains on the Payment Page and booking details are preserved",
+      "priority": "medium"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-001",
-      "test_case": "Credit/Debit Card flow: submit with all required card fields empty",
+      "wf_ref": "WF-002",
+      "test_case": "Enter invalid CVV (non-numeric or wrong length) and attempt Pay Now",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary",
-        "User has an active session",
-        "Payment Method = Credit/Debit Card"
+        "A completed booking/reservation with traveler details and total price is present; payment intent is initiated; user is authenticated or guest info provided",
+        "Payment_Method selectable and set to Credit/Debit Card"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
+        "1. Open the Payment Page for an existing booking",
         "2. Select Payment Method = Credit/Debit Card",
-        "3. Leave Cardholder Name, Card Number, Expiration Date, and CVV all blank",
-        "4. Click 'Pay Now'"
+        "3. Enter <valid cardholder name> into Cardholder_Name",
+        "4. Enter <valid card number> into Card_Number",
+        "5. Enter <valid expiration date> into Expiration_Date",
+        "6. Enter <non-numeric or incorrectly sized CVV> into CVV",
+        "7. Click the Pay Now button"
       ],
-      "expected_result": "Cardholder Name, Card Number, Expiration Date, and CVV fields each display inline validation errors indicating they are required; form does not submit; booking is not confirmed or charged",
-      "priority": "high"
+      "expected_result": "CVV field displays an inline validation error indicating the CVV is invalid; the form does not submit; the user remains on the Payment Page and booking details are preserved",
+      "priority": "medium"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Credit/Debit Card flow: enter non-numeric characters into Card Number",
+      "test_case": "Attempt to access Payment Page or invoke Pay Now when no booking/payment intent exists",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary",
-        "User has an active session",
-        "Payment Method = Credit/Debit Card"
+        "No completed booking/reservation exists and no payment intent has been initiated"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
-        "2. Select Payment Method = Credit/Debit Card",
-        "3. Enter <non-numeric characters> into the Card Number field",
-        "4. Enter valid values into Cardholder Name, Expiration Date, and CVV fields (use placeholders)",
-        "5. Click 'Pay Now'"
+        "1. Ensure there is no active completed booking/reservation in the session",
+        "2. Navigate directly to the Payment Page URL or open the Payment Page entry point",
+        "3. Attempt to locate or click the Pay Now button"
       ],
-      "expected_result": "Card Number field displays an inline validation error indicating invalid card number format; form does not submit; booking is not confirmed or charged",
-      "priority": "medium"
+      "expected_result": "Access to the Payment Page is blocked: the payment form is not displayed and the Pay Now button is not available; the user remains on the previous page or is shown the booking/review step requiring a completed booking (booking details are not lost because none existed)",
+      "priority": "high"
     },
     {
       "tc_id": "N-007",
-      "wf_ref": "WF-001",
-      "test_case": "Credit/Debit Card flow: enter an expired/invalid Expiration Date",
+      "wf_ref": "WF-003",
+      "test_case": "Retry Payment action is not available when previous attempt did not fail",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary",
-        "User has an active session",
-        "Payment Method = Credit/Debit Card"
+        "A completed booking/reservation with traveler details and total price is present; payment intent is initiated; Payment_Last_Attempt is not Failed (e.g., null or Success)"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
-        "2. Select Payment Method = Credit/Debit Card",
-        "3. Enter <expired date> into the Expiration Date field",
-        "4. Enter valid values into Cardholder Name, Card Number, and CVV fields (use placeholders)",
-        "5. Click 'Pay Now'"
+        "1. Open the Payment Page for an existing booking where Payment_Last_Attempt != Failed",
+        "2. Attempt to locate a Retry Payment button or control on the page"
       ],
-      "expected_result": "Expiration Date field displays an inline validation error indicating the card is expired or the date is invalid; form does not submit; booking is not confirmed or charged",
+      "expected_result": "Retry Payment button/control is not visible on the Payment Page when Payment_Last_Attempt != Failed; user cannot initiate a retry action from this state",
       "priority": "medium"
     },
     {
       "tc_id": "N-008",
-      "wf_ref": "WF-004",
-      "test_case": "Wallet/Credits flow: attempt payment when wallet balance is insufficient",
-      "preconditions": [
-        "A prepared booking exists with a finalized price summary",
-        "User has an active session",
-        "Payment Method = Wallet/Credits",
-        "User's wallet balance is less than the booking total"
-      ],
-      "steps": [
-        "1. Open the Payment Page for the prepared booking",
-        "2. Select Payment Method = Wallet/Credits",
-        "3. Confirm displayed wallet balance is less than the total amount due",
-        "4. Click 'Pay Now'"
-      ],
-      "expected_result": "Page displays the error 'Insufficient funds'; booking details are preserved and the user remains on the Payment Page (no redirect to Booking Confirmation); payment is not completed",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-009",
-      "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access the Payment Page",
-      "preconditions": [
-        "A prepared booking exists for a guest/anonymous flow or requires an active session",
-        "User is not authenticated (no active session)"
-      ],
-      "steps": [
-        "1. Navigate to the Payment Page URL for the prepared booking while not logged in",
-        "2. Attempt to click 'Pay Now' (or proceed with payment controls)"
-      ],
-      "expected_result": "Access is blocked: user is redirected to the login/sign-in page or shown a message requiring an active session/guest checkout; payment cannot proceed until authentication or an allowed guest session is established",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-010",
-      "wf_ref": null,
-      "test_case": "Attempt to open Payment Page when no prepared booking exists",
-      "preconditions": [
-        "User has an active session",
-        "No prepared booking exists (no finalized price summary)"
-      ],
-      "steps": [
-        "1. Navigate to the Payment Page URL without having a prepared booking",
-        "2. Observe available UI and attempt to click 'Pay Now' if present"
-      ],
-      "expected_result": "Navigation is blocked or the page displays an error indicating there is no booking to pay (precondition failure); 'Pay Now' cannot be used and no payment may be initiated",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-011",
       "wf_ref": "WF-005",
-      "test_case": "Retry Payment control not available when Payment_Result != Failed",
+      "test_case": "Download Invoice/Voucher actions are not available before successful booking confirmation",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary",
-        "User has an active session",
-        "Payment_Result is Success or unset (not Failed)"
+        "User is on the Payment Page or pre-confirmation state (payment not successful)"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking where Payment_Result is not 'Failed'",
-        "2. Inspect the page for a 'Retry Payment' button or link"
+        "1. Open the Payment Page for an existing booking before completing payment",
+        "2. Attempt to locate the Download Invoice and Download Voucher actions from the Booking Confirmation Actions area"
       ],
-      "expected_result": "'Retry Payment' control is not visible when Payment_Result != Failed; user cannot trigger a retry action from this state",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-012",
-      "wf_ref": "WF-006",
-      "test_case": "Attempt to download Invoice/Voucher when payment is not successful",
-      "preconditions": [
-        "User has an active session",
-        "Payment_Result != Success (payment has not completed successfully)"
-      ],
-      "steps": [
-        "1. Navigate to the Booking Confirmation Page URL or the area where invoice/voucher download would appear without a successful payment",
-        "2. Attempt to click 'Download Invoice' or 'Download Voucher' if controls are present"
-      ],
-      "expected_result": "Download controls are not available or clicking them is blocked; no invoice or voucher is downloaded because payment precondition 'payment must be successful' is not met",
+      "expected_result": "Download Invoice and Download Voucher actions/buttons are not visible prior to a successful booking confirmation; no download is initiated and user remains on the Payment Page",
       "priority": "medium"
     }
   ],
   "summary": {
-    "total": 12,
-    "high_priority": 8,
-    "medium_priority": 4,
+    "total": 8,
+    "high_priority": 3,
+    "medium_priority": 5,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:28:01] Test-Negative - PARSED JSON
+[22:36:45] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Payment Processing",
@@ -590,218 +529,152 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": null,
-      "test_case": "Submit without selecting a Payment Method",
+      "wf_ref": "WF-002",
+      "test_case": "Leave Cardholder Name blank when paying with Credit/Debit Card and submit",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary",
-        "User has an active session"
+        "A completed booking/reservation with traveler details and total price is present; payment intent is initiated; user is authenticated or guest info provided",
+        "Payment_Method selectable and set to Credit/Debit Card"
       ],
       "steps": [
-        "1. Navigate to the Payment Page for the prepared booking",
-        "2. Ensure the Payment Method dropdown is left unselected (no option chosen)",
-        "3. Click the 'Pay Now' button"
+        "1. Open the Payment Page for an existing booking",
+        "2. Select Payment Method = Credit/Debit Card",
+        "3. Leave the Cardholder_Name field blank",
+        "4. Enter <valid card number> into Card_Number",
+        "5. Enter <valid expiration date> into Expiration_Date",
+        "6. Enter <valid CVV> into CVV",
+        "7. Click the Pay Now button"
       ],
-      "expected_result": "Payment Method field displays an inline validation error indicating it is required; form does not submit; booking is not confirmed or charged",
+      "expected_result": "Inline validation error appears on the Cardholder_Name field indicating it is required; the form does not submit; the user remains on the Payment Page and booking details are preserved",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-001",
-      "test_case": "Credit/Debit Card flow: leave Cardholder Name blank and submit",
+      "wf_ref": "WF-002",
+      "test_case": "Submit Pay Now with all card fields empty (Credit/Debit Card selected)",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary",
-        "User has an active session",
-        "Payment Method = Credit/Debit Card"
+        "A completed booking/reservation with traveler details and total price is present; payment intent is initiated; user is authenticated or guest info provided",
+        "Payment_Method selectable and set to Credit/Debit Card"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
+        "1. Open the Payment Page for an existing booking",
         "2. Select Payment Method = Credit/Debit Card",
-        "3. Leave the Cardholder Name field blank",
-        "4. Enter valid values into Card Number, Expiration Date, and CVV fields (use placeholders)",
-        "5. Click 'Pay Now'"
+        "3. Ensure Cardholder_Name is blank",
+        "4. Ensure Card_Number is blank",
+        "5. Ensure Expiration_Date is blank",
+        "6. Ensure CVV is blank",
+        "7. Click the Pay Now button"
       ],
-      "expected_result": "Cardholder Name field displays an inline validation error indicating it is required; form does not submit; booking is not confirmed or charged",
+      "expected_result": "Form does not submit; inline validation errors appear on Cardholder_Name, Card_Number, Expiration_Date, and CVV indicating each is required; user remains on the Payment Page and booking details are preserved",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-001",
-      "test_case": "Credit/Debit Card flow: leave Card Number blank and submit",
+      "wf_ref": "WF-002",
+      "test_case": "Enter invalid card number format and attempt Pay Now",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary",
-        "User has an active session",
-        "Payment Method = Credit/Debit Card"
+        "A completed booking/reservation with traveler details and total price is present; payment intent is initiated; user is authenticated or guest info provided",
+        "Payment_Method selectable and set to Credit/Debit Card"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
+        "1. Open the Payment Page for an existing booking",
         "2. Select Payment Method = Credit/Debit Card",
-        "3. Leave the Card Number field blank",
-        "4. Enter valid values into Cardholder Name, Expiration Date, and CVV fields (use placeholders)",
-        "5. Click 'Pay Now'"
+        "3. Enter <invalid card number format> into Card_Number",
+        "4. Enter <valid cardholder name> into Cardholder_Name",
+        "5. Enter <valid expiration date> into Expiration_Date",
+        "6. Enter <valid CVV> into CVV",
+        "7. Click the Pay Now button"
       ],
-      "expected_result": "Card Number field displays an inline validation error indicating it is required; form does not submit; booking is not confirmed or charged",
-      "priority": "high"
+      "expected_result": "Card_Number field displays an inline validation error indicating the card number format is invalid; the form does not submit; the user remains on the Payment Page and booking details are preserved",
+      "priority": "medium"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-001",
-      "test_case": "Credit/Debit Card flow: leave Expiration Date blank and submit",
+      "wf_ref": "WF-002",
+      "test_case": "Enter an invalid/expired expiration date and attempt Pay Now",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary",
-        "User has an active session",
-        "Payment Method = Credit/Debit Card"
+        "A completed booking/reservation with traveler details and total price is present; payment intent is initiated; user is authenticated or guest info provided",
+        "Payment_Method selectable and set to Credit/Debit Card"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
+        "1. Open the Payment Page for an existing booking",
         "2. Select Payment Method = Credit/Debit Card",
-        "3. Leave the Expiration Date field blank",
-        "4. Enter valid values into Cardholder Name, Card Number, and CVV fields (use placeholders)",
-        "5. Click 'Pay Now'"
+        "3. Enter <valid cardholder name> into Cardholder_Name",
+        "4. Enter <valid card number> into Card_Number",
+        "5. Enter <expiration date in the past or otherwise invalid date> into Expiration_Date",
+        "6. Enter <valid CVV> into CVV",
+        "7. Click the Pay Now button"
       ],
-      "expected_result": "Expiration Date field displays an inline validation error indicating it is required; form does not submit; booking is not confirmed or charged",
-      "priority": "high"
+      "expected_result": "Expiration_Date field displays an inline validation error indicating the expiration date is invalid or expired; the form does not submit; the user remains on the Payment Page and booking details are preserved",
+      "priority": "medium"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-001",
-      "test_case": "Credit/Debit Card flow: submit with all required card fields empty",
+      "wf_ref": "WF-002",
+      "test_case": "Enter invalid CVV (non-numeric or wrong length) and attempt Pay Now",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary",
-        "User has an active session",
-        "Payment Method = Credit/Debit Card"
+        "A completed booking/reservation with traveler details and total price is present; payment intent is initiated; user is authenticated or guest info provided",
+        "Payment_Method selectable and set to Credit/Debit Card"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
+        "1. Open the Payment Page for an existing booking",
         "2. Select Payment Method = Credit/Debit Card",
-        "3. Leave Cardholder Name, Card Number, Expiration Date, and CVV all blank",
-        "4. Click 'Pay Now'"
+        "3. Enter <valid cardholder name> into Cardholder_Name",
+        "4. Enter <valid card number> into Card_Number",
+        "5. Enter <valid expiration date> into Expiration_Date",
+        "6. Enter <non-numeric or incorrectly sized CVV> into CVV",
+        "7. Click the Pay Now button"
       ],
-      "expected_result": "Cardholder Name, Card Number, Expiration Date, and CVV fields each display inline validation errors indicating they are required; form does not submit; booking is not confirmed or charged",
-      "priority": "high"
+      "expected_result": "CVV field displays an inline validation error indicating the CVV is invalid; the form does not submit; the user remains on the Payment Page and booking details are preserved",
+      "priority": "medium"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Credit/Debit Card flow: enter non-numeric characters into Card Number",
+      "test_case": "Attempt to access Payment Page or invoke Pay Now when no booking/payment intent exists",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary",
-        "User has an active session",
-        "Payment Method = Credit/Debit Card"
+        "No completed booking/reservation exists and no payment intent has been initiated"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
-        "2. Select Payment Method = Credit/Debit Card",
-        "3. Enter <non-numeric characters> into the Card Number field",
-        "4. Enter valid values into Cardholder Name, Expiration Date, and CVV fields (use placeholders)",
-        "5. Click 'Pay Now'"
+        "1. Ensure there is no active completed booking/reservation in the session",
+        "2. Navigate directly to the Payment Page URL or open the Payment Page entry point",
+        "3. Attempt to locate or click the Pay Now button"
       ],
-      "expected_result": "Card Number field displays an inline validation error indicating invalid card number format; form does not submit; booking is not confirmed or charged",
-      "priority": "medium"
+      "expected_result": "Access to the Payment Page is blocked: the payment form is not displayed and the Pay Now button is not available; the user remains on the previous page or is shown the booking/review step requiring a completed booking (booking details are not lost because none existed)",
+      "priority": "high"
     },
     {
       "tc_id": "N-007",
-      "wf_ref": "WF-001",
-      "test_case": "Credit/Debit Card flow: enter an expired/invalid Expiration Date",
+      "wf_ref": "WF-003",
+      "test_case": "Retry Payment action is not available when previous attempt did not fail",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary",
-        "User has an active session",
-        "Payment Method = Credit/Debit Card"
+        "A completed booking/reservation with traveler details and total price is present; payment intent is initiated; Payment_Last_Attempt is not Failed (e.g., null or Success)"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking",
-        "2. Select Payment Method = Credit/Debit Card",
-        "3. Enter <expired date> into the Expiration Date field",
-        "4. Enter valid values into Cardholder Name, Card Number, and CVV fields (use placeholders)",
-        "5. Click 'Pay Now'"
+        "1. Open the Payment Page for an existing booking where Payment_Last_Attempt != Failed",
+        "2. Attempt to locate a Retry Payment button or control on the page"
       ],
-      "expected_result": "Expiration Date field displays an inline validation error indicating the card is expired or the date is invalid; form does not submit; booking is not confirmed or charged",
+      "expected_result": "Retry Payment button/control is not visible on the Payment Page when Payment_Last_Attempt != Failed; user cannot initiate a retry action from this state",
       "priority": "medium"
     },
     {
       "tc_id": "N-008",
-      "wf_ref": "WF-004",
-      "test_case": "Wallet/Credits flow: attempt payment when wallet balance is insufficient",
-      "preconditions": [
-        "A prepared booking exists with a finalized price summary",
-        "User has an active session",
-        "Payment Method = Wallet/Credits",
-        "User's wallet balance is less than the booking total"
-      ],
-      "steps": [
-        "1. Open the Payment Page for the prepared booking",
-        "2. Select Payment Method = Wallet/Credits",
-        "3. Confirm displayed wallet balance is less than the total amount due",
-        "4. Click 'Pay Now'"
-      ],
-      "expected_result": "Page displays the error 'Insufficient funds'; booking details are preserved and the user remains on the Payment Page (no redirect to Booking Confirmation); payment is not completed",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-009",
-      "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access the Payment Page",
-      "preconditions": [
-        "A prepared booking exists for a guest/anonymous flow or requires an active session",
-        "User is not authenticated (no active session)"
-      ],
-      "steps": [
-        "1. Navigate to the Payment Page URL for the prepared booking while not logged in",
-        "2. Attempt to click 'Pay Now' (or proceed with payment controls)"
-      ],
-      "expected_result": "Access is blocked: user is redirected to the login/sign-in page or shown a message requiring an active session/guest checkout; payment cannot proceed until authentication or an allowed guest session is established",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-010",
-      "wf_ref": null,
-      "test_case": "Attempt to open Payment Page when no prepared booking exists",
-      "preconditions": [
-        "User has an active session",
-        "No prepared booking exists (no finalized price summary)"
-      ],
-      "steps": [
-        "1. Navigate to the Payment Page URL without having a prepared booking",
-        "2. Observe available UI and attempt to click 'Pay Now' if present"
-      ],
-      "expected_result": "Navigation is blocked or the page displays an error indicating there is no booking to pay (precondition failure); 'Pay Now' cannot be used and no payment may be initiated",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-011",
       "wf_ref": "WF-005",
-      "test_case": "Retry Payment control not available when Payment_Result != Failed",
+      "test_case": "Download Invoice/Voucher actions are not available before successful booking confirmation",
       "preconditions": [
-        "A prepared booking exists with a finalized price summary",
-        "User has an active session",
-        "Payment_Result is Success or unset (not Failed)"
+        "User is on the Payment Page or pre-confirmation state (payment not successful)"
       ],
       "steps": [
-        "1. Open the Payment Page for the prepared booking where Payment_Result is not 'Failed'",
-        "2. Inspect the page for a 'Retry Payment' button or link"
+        "1. Open the Payment Page for an existing booking before completing payment",
+        "2. Attempt to locate the Download Invoice and Download Voucher actions from the Booking Confirmation Actions area"
       ],
-      "expected_result": "'Retry Payment' control is not visible when Payment_Result != Failed; user cannot trigger a retry action from this state",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-012",
-      "wf_ref": "WF-006",
-      "test_case": "Attempt to download Invoice/Voucher when payment is not successful",
-      "preconditions": [
-        "User has an active session",
-        "Payment_Result != Success (payment has not completed successfully)"
-      ],
-      "steps": [
-        "1. Navigate to the Booking Confirmation Page URL or the area where invoice/voucher download would appear without a successful payment",
-        "2. Attempt to click 'Download Invoice' or 'Download Voucher' if controls are present"
-      ],
-      "expected_result": "Download controls are not available or clicking them is blocked; no invoice or voucher is downloaded because payment precondition 'payment must be successful' is not met",
+      "expected_result": "Download Invoice and Download Voucher actions/buttons are not visible prior to a successful booking confirmation; no download is initiated and user remains on the Payment Page",
       "priority": "medium"
     }
   ],
   "summary": {
-    "total": 12,
-    "high_priority": 8,
-    "medium_priority": 4,
+    "total": 8,
+    "high_priority": 3,
+    "medium_priority": 5,
     "low_priority": 0
   }
 }

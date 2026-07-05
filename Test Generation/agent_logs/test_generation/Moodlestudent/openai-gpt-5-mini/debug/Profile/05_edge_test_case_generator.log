@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:34.416592
+DEBUG SESSION STARTED: 2026-07-04T22:41:48.109393
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Edge - SYSTEM PROMPT
+[22:41:48] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Edge - USER PROMPT
+[22:41:48] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 9,
   "module_title": "Profile",
-  "summary": "Displays the user's profile information including contact and privacy details, course links, activity and report summaries, and an editable profile form with collapsible panels for personal data and picture.",
-  "where_it_fits": "Reached from the top navigation user menu (User menu \u2192 Profile) alongside Grades, Calendar, Private Files and Preferences; it is part of the account area that complements Dashboard/My Courses and course-level views by surfacing personal settings and links to enrolled course profiles and reports.",
-  "assumed_state_on_entry": "Active authenticated session (logged in as the user whose profile is being viewed)"
+  "summary": "Displays the student's personal information, activity links, privacy and report summaries, and provides access to an editable profile form with collapsible sections for personal details, picture, and optional fields.",
+  "where_it_fits": "Accessible from the top navigation user menu (Profile) available on every page, the Profile page is part of the user account area alongside Grades, Calendar, and Preferences and is reachable from the home/dashboard context; it complements course-level pages by linking to enrolled course profiles and reporting sections. ",
+  "assumed_state_on_entry": "Authenticated user viewing their own profile (logged in as the profile owner)"
 }
 </module_context>
 
@@ -243,98 +257,86 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Profile",
   "components": {
-    "Profile_Page": {
-      "type": "page",
+    "Profile_Page_Actions": {
+      "type": "action_bar",
       "fields": {
         "Message": {
           "type": "button",
           "action_name": "Message"
+        }
+      }
+    },
+    "User_Details_Card": {
+      "type": "info_card",
+      "fields": {
+        "Edit_Profile": {
+          "type": "link",
+          "action_name": "Edit profile",
+          "opens": "Edit_Profile_Form",
+          "preconditions": [
+            "Authenticated user viewing their own profile (logged in as the profile owner)"
+          ]
+        }
+      }
+    },
+    "Privacy_and_Policies_Card": {
+      "type": "info_card",
+      "fields": {
+        "Data_Retention_Summary": {
+          "type": "link",
+          "action_name": "Data retention summary"
+        }
+      }
+    },
+    "Course_Details": {
+      "type": "repeating_group",
+      "item_fields": {
+        "Course_Profile_Link": {
+          "type": "link"
+        }
+      },
+      "description": "One entry per enrolled course; each item is a link to that course profile"
+    },
+    "Miscellaneous_Card": {
+      "type": "info_card",
+      "fields": {
+        "Blog_Entries": {
+          "type": "link",
+          "action_name": "Blog entries"
         },
-        "User_Details_Card": {
-          "type": "panel",
-          "fields": {
-            "Edit_Profile": {
-              "type": "link",
-              "action_name": "Edit profile",
-              "opens": "Edit_Profile_Form",
-              "preconditions": [
-                "Active authenticated session (logged in as the user whose profile is being viewed)",
-                "user must be the profile owner"
-              ]
-            }
-          }
+        "Forum_Posts": {
+          "type": "link",
+          "action_name": "Forum posts"
         },
-        "Privacy_And_Policies_Card": {
-          "type": "panel",
-          "fields": {
-            "Data_Retention_Summary": {
-              "type": "link",
-              "action_name": "Data retention summary"
-            }
-          }
+        "Forum_Discussions": {
+          "type": "link",
+          "action_name": "Forum discussions"
         },
-        "Course_Details_Card": {
-          "type": "panel",
-          "fields": {
-            "Course_Profile_Links": {
-              "type": "repeating_group",
-              "item_fields": {
-                "Course_Profile_Link": {
-                  "type": "link"
-                }
-              }
-            }
-          }
+        "Learning_Plans": {
+          "type": "link",
+          "action_name": "Learning plans"
+        }
+      }
+    },
+    "Reports_Card": {
+      "type": "info_card",
+      "fields": {
+        "Browser_Sessions": {
+          "type": "link",
+          "action_name": "Browser sessions"
         },
-        "Miscellaneous_Card": {
-          "type": "panel",
-          "fields": {
-            "Blog_Entries_Link": {
-              "type": "link",
-              "action_name": "Blog entries"
-            },
-            "Forum_Posts_Link": {
-              "type": "link",
-              "action_name": "Forum posts"
-            },
-            "Forum_Discussions_Link": {
-              "type": "link",
-              "action_name": "Forum discussions"
-            },
-            "Learning_Plans_Link": {
-              "type": "link",
-              "action_name": "Learning plans"
-            }
-          }
-        },
-        "Reports_Card": {
-          "type": "panel",
-          "fields": {
-            "Browser_Sessions_Link": {
-              "type": "link",
-              "action_name": "Browser sessions"
-            },
-            "Grades_Overview_Link": {
-              "type": "link",
-              "action_name": "Grades overview"
-            }
-          }
-        },
-        "Login_Activity_Card": {
-          "type": "panel",
-          "fields": {}
+        "Grades_Overview": {
+          "type": "link",
+          "action_name": "Grades overview"
         }
       }
     },
     "Edit_Profile_Form": {
       "type": "form",
-      "preconditions": [
-        "Active authenticated session (logged in as the user whose profile is being viewed)",
-        "user must be the profile owner"
-      ],
-      "fields": {
-        "General": {
-          "type": "collapsible_panel",
+      "panels": [
+        {
+          "panel_name": "General",
+          "collapsible": true,
           "fields": {
             "First_Name": {
               "type": "unspecified"
@@ -365,10 +367,11 @@ If a `<workflows>` block is present in the input:
             }
           }
         },
-        "User_Picture": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "User picture",
+          "collapsible": true,
           "fields": {
-            "New_Picture": {
+            "New_Picture_Upload": {
               "type": "file_upload"
             },
             "Picture_Description": {
@@ -376,30 +379,32 @@ If a `<workflows>` block is present in the input:
             }
           }
         },
-        "Additional_Names": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Additional names",
+          "collapsible": true,
           "fields": {}
         },
-        "Interests": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Interests",
+          "collapsible": true,
           "fields": {}
         },
-        "Optional_Fields": {
-          "type": "collapsible_panel",
+        {
+          "panel_name": "Optional fields",
+          "collapsible": true,
           "fields": {}
         }
-      },
+      ],
       "submit_actions": [
         {
           "action_name": "Update profile",
+          "on_success": "saves profile changes",
+          "preconditions": [
+            "Authenticated user viewing their own profile (logged in as the profile owner)"
+          ],
           "constraints": [
             "validates all required fields before saving"
-          ],
-          "preconditions": [
-            "Active authenticated session (logged in as the user whose profile is being viewed)",
-            "user must be the profile owner"
-          ],
-          "on_success": "saves changes to the user's profile"
+          ]
         },
         {
           "action_name": "Cancel",
@@ -421,24 +426,24 @@ The Profile page displays the student's circular initials icon, full name, a "Me
 </description>
 
 <workflows>
-WF-001 | Message button | actor: Profile owner | branch: none | terminal: Message | on_success: opens message composer for this user
-WF-002 | Open Edit profile form | actor: Profile owner | branch: none | terminal: Edit profile | on_success: opens Edit_Profile_Form
-WF-003 | Open Data retention summary | actor: Profile owner | branch: none | terminal: Data retention summary | on_success: navigates to data retention summary
-WF-004 | Open course profile link | actor: Profile owner | branch: none | terminal: Course_Profile_Link | on_success: navigates to the linked course profile
-WF-005 | Open Blog entries | actor: Profile owner | branch: none | terminal: Blog entries | on_success: navigates to blog entries list
-WF-006 | Open Forum posts | actor: Profile owner | branch: none | terminal: Forum posts | on_success: navigates to forum posts list
-WF-007 | Open Forum discussions | actor: Profile owner | branch: none | terminal: Forum discussions | on_success: navigates to forum discussions list
-WF-008 | Open Learning plans | actor: Profile owner | branch: none | terminal: Learning plans | on_success: navigates to learning plans
-WF-009 | Open Browser sessions | actor: Profile owner | branch: none | terminal: Browser sessions | on_success: navigates to browser sessions report
-WF-010 | Open Grades overview | actor: Profile owner | branch: none | terminal: Grades overview | on_success: navigates to grades overview
-WF-011 | Update profile (save changes) | actor: Profile owner | branch: none | terminal: Update profile | on_success: saves changes to the user's profile
-WF-012 | Cancel profile editing | actor: Profile owner | branch: none | terminal: Cancel | on_success: exits without changes
+WF-001 | Click Message button | actor: Authenticated user (profile owner) | branch: none | terminal: Message | on_success: opens messaging composer to send a message
+WF-002 | Open Edit profile form | actor: Authenticated user (profile owner) | branch: none | terminal: Edit profile | on_success: opens Edit_Profile_Form
+WF-003 | Open Data retention summary | actor: Authenticated user (profile owner) | branch: none | terminal: Data retention summary | on_success: opens data retention summary page
+WF-004 | Open Blog entries | actor: Authenticated user (profile owner) | branch: none | terminal: Blog entries | on_success: opens blog entries
+WF-005 | Open Forum posts | actor: Authenticated user (profile owner) | branch: none | terminal: Forum posts | on_success: opens forum posts
+WF-006 | Open Forum discussions | actor: Authenticated user (profile owner) | branch: none | terminal: Forum discussions | on_success: opens forum discussions
+WF-007 | Open Learning plans | actor: Authenticated user (profile owner) | branch: none | terminal: Learning plans | on_success: opens learning plans
+WF-008 | Open Browser sessions report | actor: Authenticated user (profile owner) | branch: none | terminal: Browser sessions | on_success: opens browser sessions report
+WF-009 | Open Grades overview | actor: Authenticated user (profile owner) | branch: none | terminal: Grades overview | on_success: opens grades overview
+WF-010 | Open enrolled course profile | actor: Authenticated user (profile owner) | branch: none | terminal: Course_Profile_Link | on_success: opens course profile page
+WF-011 | Submit Update profile (save changes) | actor: Authenticated user (profile owner) | branch: none | terminal: Update profile | on_success: saves profile changes
+WF-012 | Cancel editing profile (discard changes) | actor: Authenticated user (profile owner) | branch: none | terminal: Cancel | on_success: exits without changes
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:14:22] Test-Edge - LLM RESPONSE
+[22:43:23] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Profile",
@@ -448,113 +453,91 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-011",
       "subcategory": "input_edge",
-      "test_case": "Very long Description in General panel",
+      "test_case": "Very long Description (over typical free-text limits) in General panel",
       "preconditions": [
-        "Active authenticated session (logged in as the user whose profile is being viewed)",
-        "user must be the profile owner"
+        "Authenticated user viewing their own profile (logged in as the profile owner)",
+        "Profile page is loaded"
       ],
       "steps": [
-        "1. Navigate to Profile page",
-        "2. Click the Edit profile link",
-        "3. Expand the General collapsible panel (if collapsed)",
-        "4. Enter a very long string (200+ characters) into the Description field",
-        "5. Click Update profile"
+        "1. Click the 'Edit profile' link on the User details card",
+        "2. If the 'General' panel is collapsed, click to expand the 'General' panel",
+        "3. Enter a text string longer than 200 characters into the Description field",
+        "4. Click the 'Update profile' button"
       ],
-      "expected_result": "Update profile succeeds; profile detail page displays the entered Description (no truncation) or, if the system enforces a maximum length, the UI shows a visible truncation indicator and the profile saves the truncated text.",
+      "expected_result": "Update is blocked; the Description field displays an inline validation error indicating the text exceeds the allowed length (visible error on the form)",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-011",
       "subcategory": "input_edge",
-      "test_case": "First and Last Name with special characters and emoji",
+      "test_case": "Emoji and extended Unicode characters entered into First name",
       "preconditions": [
-        "Active authenticated session (logged in as the user whose profile is being viewed)",
-        "user must be the profile owner"
+        "Authenticated user viewing their own profile (logged in as the profile owner)",
+        "Profile page is loaded"
       ],
       "steps": [
-        "1. Navigate to Profile page",
-        "2. Click the Edit profile link",
-        "3. Expand the General collapsible panel (if collapsed)",
-        "4. Enter a name containing special characters and emoji into the First Name field",
-        "5. Enter a name containing special characters and emoji into the Last Name field",
-        "6. Click Update profile"
+        "1. Click the 'Edit profile' link on the User details card",
+        "2. If the 'General' panel is collapsed, click to expand the 'General' panel",
+        "3. Enter a name containing emoji and extended Unicode characters into the First Name field",
+        "4. Click the 'Update profile' button"
       ],
-      "expected_result": "Update profile succeeds; saved First Name and Last Name display the exact entered special characters and emoji on the profile detail page (no silent stripping).",
-      "priority": "low"
+      "expected_result": "Update is blocked; the First Name field displays an inline validation error indicating invalid characters (visible error on the form)",
+      "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-011",
       "subcategory": "input_edge",
-      "test_case": "Email address with leading and trailing whitespace",
+      "test_case": "Leading and trailing whitespace in City/Town is submitted",
       "preconditions": [
-        "Active authenticated session (logged in as the user whose profile is being viewed)",
-        "user must be the profile owner"
+        "Authenticated user viewing their own profile (logged in as the profile owner)",
+        "Profile page is loaded"
       ],
       "steps": [
-        "1. Navigate to Profile page",
-        "2. Click the Edit profile link",
-        "3. Expand the General collapsible panel (if collapsed)",
-        "4. Enter an otherwise-valid email address with leading and trailing spaces into the Email Address field (e.g. leading and trailing whitespace around the value)",
-        "5. Click Update profile"
+        "1. Click the 'Edit profile' link on the User details card",
+        "2. If the 'General' panel is collapsed, click to expand the 'General' panel",
+        "3. Enter a City/Town value with leading and trailing spaces into the City/Town field",
+        "4. Click the 'Update profile' button",
+        "5. Observe the profile detail view after save"
       ],
-      "expected_result": "Update profile succeeds; the saved Email Address shown on the profile detail page has leading and trailing whitespace trimmed (no stored leading/trailing spaces visible).",
+      "expected_result": "Update succeeds; the profile detail page displays the City/Town value with leading and trailing whitespace removed (trimmed) and no extra spaces are visible",
       "priority": "low"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-011",
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid double-submit of Update profile (idempotency)",
+      "subcategory": "input_edge",
+      "test_case": "Email address entered with surrounding whitespace",
       "preconditions": [
-        "Active authenticated session (logged in as the user whose profile is being viewed)",
-        "user must be the profile owner"
+        "Authenticated user viewing their own profile (logged in as the profile owner)",
+        "Profile page is loaded"
       ],
       "steps": [
-        "1. Navigate to Profile page",
-        "2. Click the Edit profile link",
-        "3. Make a small change to any editable field (e.g. Last Name)",
-        "4. Immediately click Update profile twice in rapid succession (two quick clicks)",
-        "5. Observe the UI after the clicks"
+        "1. Click the 'Edit profile' link on the User details card",
+        "2. If the 'General' panel is collapsed, click to expand the 'General' panel",
+        "3. Enter an otherwise-valid Email Address with leading and trailing spaces into the Email Address field",
+        "4. Click the 'Update profile' button",
+        "5. Observe the profile detail view after save"
       ],
-      "expected_result": "Only a single save operation succeeds; the UI shows a single success confirmation and the profile detail reflects one updated value. The second click is ignored or blocked and does not produce a second save or duplicate side-effect.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-005",
-      "wf_ref": "WF-011",
-      "subcategory": "data_edge",
-      "test_case": "Upload zero-byte file as New Picture",
-      "preconditions": [
-        "Active authenticated session (logged in as the user whose profile is being viewed)",
-        "user must be the profile owner"
-      ],
-      "steps": [
-        "1. Navigate to Profile page",
-        "2. Click the Edit profile link",
-        "3. Expand the User Picture collapsible panel (if collapsed)",
-        "4. Upload a zero-byte file to the New Picture upload control",
-        "5. Click Update profile"
-      ],
-      "expected_result": "Update profile is blocked; an inline error is shown next to the New Picture upload field indicating the upload is invalid/empty and no change to the stored profile picture is saved.",
-      "priority": "medium"
+      "expected_result": "Update succeeds; the profile detail page displays the Email Address without leading or trailing spaces (trimmed) and the email is shown in standard form",
+      "priority": "low"
     }
   ],
   "summary": {
-    "total": 5,
+    "total": 4,
     "boundary": 0,
-    "input_edge": 3,
-    "interaction_edge": 1,
+    "input_edge": 4,
+    "interaction_edge": 0,
     "state_edge": 0,
-    "data_edge": 1,
-    "medium_priority": 3,
+    "data_edge": 0,
+    "medium_priority": 2,
     "low_priority": 2
   }
 }
 
 ------------------------------------------------------------
-[21:14:22] Test-Edge - PARSED JSON
+[22:43:23] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Profile",
@@ -564,107 +547,85 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-011",
       "subcategory": "input_edge",
-      "test_case": "Very long Description in General panel",
+      "test_case": "Very long Description (over typical free-text limits) in General panel",
       "preconditions": [
-        "Active authenticated session (logged in as the user whose profile is being viewed)",
-        "user must be the profile owner"
+        "Authenticated user viewing their own profile (logged in as the profile owner)",
+        "Profile page is loaded"
       ],
       "steps": [
-        "1. Navigate to Profile page",
-        "2. Click the Edit profile link",
-        "3. Expand the General collapsible panel (if collapsed)",
-        "4. Enter a very long string (200+ characters) into the Description field",
-        "5. Click Update profile"
+        "1. Click the 'Edit profile' link on the User details card",
+        "2. If the 'General' panel is collapsed, click to expand the 'General' panel",
+        "3. Enter a text string longer than 200 characters into the Description field",
+        "4. Click the 'Update profile' button"
       ],
-      "expected_result": "Update profile succeeds; profile detail page displays the entered Description (no truncation) or, if the system enforces a maximum length, the UI shows a visible truncation indicator and the profile saves the truncated text.",
+      "expected_result": "Update is blocked; the Description field displays an inline validation error indicating the text exceeds the allowed length (visible error on the form)",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-011",
       "subcategory": "input_edge",
-      "test_case": "First and Last Name with special characters and emoji",
+      "test_case": "Emoji and extended Unicode characters entered into First name",
       "preconditions": [
-        "Active authenticated session (logged in as the user whose profile is being viewed)",
-        "user must be the profile owner"
+        "Authenticated user viewing their own profile (logged in as the profile owner)",
+        "Profile page is loaded"
       ],
       "steps": [
-        "1. Navigate to Profile page",
-        "2. Click the Edit profile link",
-        "3. Expand the General collapsible panel (if collapsed)",
-        "4. Enter a name containing special characters and emoji into the First Name field",
-        "5. Enter a name containing special characters and emoji into the Last Name field",
-        "6. Click Update profile"
+        "1. Click the 'Edit profile' link on the User details card",
+        "2. If the 'General' panel is collapsed, click to expand the 'General' panel",
+        "3. Enter a name containing emoji and extended Unicode characters into the First Name field",
+        "4. Click the 'Update profile' button"
       ],
-      "expected_result": "Update profile succeeds; saved First Name and Last Name display the exact entered special characters and emoji on the profile detail page (no silent stripping).",
-      "priority": "low"
+      "expected_result": "Update is blocked; the First Name field displays an inline validation error indicating invalid characters (visible error on the form)",
+      "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-011",
       "subcategory": "input_edge",
-      "test_case": "Email address with leading and trailing whitespace",
+      "test_case": "Leading and trailing whitespace in City/Town is submitted",
       "preconditions": [
-        "Active authenticated session (logged in as the user whose profile is being viewed)",
-        "user must be the profile owner"
+        "Authenticated user viewing their own profile (logged in as the profile owner)",
+        "Profile page is loaded"
       ],
       "steps": [
-        "1. Navigate to Profile page",
-        "2. Click the Edit profile link",
-        "3. Expand the General collapsible panel (if collapsed)",
-        "4. Enter an otherwise-valid email address with leading and trailing spaces into the Email Address field (e.g. leading and trailing whitespace around the value)",
-        "5. Click Update profile"
+        "1. Click the 'Edit profile' link on the User details card",
+        "2. If the 'General' panel is collapsed, click to expand the 'General' panel",
+        "3. Enter a City/Town value with leading and trailing spaces into the City/Town field",
+        "4. Click the 'Update profile' button",
+        "5. Observe the profile detail view after save"
       ],
-      "expected_result": "Update profile succeeds; the saved Email Address shown on the profile detail page has leading and trailing whitespace trimmed (no stored leading/trailing spaces visible).",
+      "expected_result": "Update succeeds; the profile detail page displays the City/Town value with leading and trailing whitespace removed (trimmed) and no extra spaces are visible",
       "priority": "low"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-011",
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid double-submit of Update profile (idempotency)",
+      "subcategory": "input_edge",
+      "test_case": "Email address entered with surrounding whitespace",
       "preconditions": [
-        "Active authenticated session (logged in as the user whose profile is being viewed)",
-        "user must be the profile owner"
+        "Authenticated user viewing their own profile (logged in as the profile owner)",
+        "Profile page is loaded"
       ],
       "steps": [
-        "1. Navigate to Profile page",
-        "2. Click the Edit profile link",
-        "3. Make a small change to any editable field (e.g. Last Name)",
-        "4. Immediately click Update profile twice in rapid succession (two quick clicks)",
-        "5. Observe the UI after the clicks"
+        "1. Click the 'Edit profile' link on the User details card",
+        "2. If the 'General' panel is collapsed, click to expand the 'General' panel",
+        "3. Enter an otherwise-valid Email Address with leading and trailing spaces into the Email Address field",
+        "4. Click the 'Update profile' button",
+        "5. Observe the profile detail view after save"
       ],
-      "expected_result": "Only a single save operation succeeds; the UI shows a single success confirmation and the profile detail reflects one updated value. The second click is ignored or blocked and does not produce a second save or duplicate side-effect.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "E-005",
-      "wf_ref": "WF-011",
-      "subcategory": "data_edge",
-      "test_case": "Upload zero-byte file as New Picture",
-      "preconditions": [
-        "Active authenticated session (logged in as the user whose profile is being viewed)",
-        "user must be the profile owner"
-      ],
-      "steps": [
-        "1. Navigate to Profile page",
-        "2. Click the Edit profile link",
-        "3. Expand the User Picture collapsible panel (if collapsed)",
-        "4. Upload a zero-byte file to the New Picture upload control",
-        "5. Click Update profile"
-      ],
-      "expected_result": "Update profile is blocked; an inline error is shown next to the New Picture upload field indicating the upload is invalid/empty and no change to the stored profile picture is saved.",
-      "priority": "medium"
+      "expected_result": "Update succeeds; the profile detail page displays the Email Address without leading or trailing spaces (trimmed) and the email is shown in standard form",
+      "priority": "low"
     }
   ],
   "summary": {
-    "total": 5,
+    "total": 4,
     "boundary": 0,
-    "input_edge": 3,
-    "interaction_edge": 1,
+    "input_edge": 4,
+    "interaction_edge": 0,
     "state_edge": 0,
-    "data_edge": 1,
-    "medium_priority": 3,
+    "data_edge": 0,
+    "medium_priority": 2,
     "low_priority": 2
   }
 }

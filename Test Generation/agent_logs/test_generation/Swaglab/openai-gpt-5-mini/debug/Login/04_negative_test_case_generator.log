@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:04:20.721031
+DEBUG SESSION STARTED: 2026-07-04T22:55:35.899438
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Negative - SYSTEM PROMPT
+[22:55:35] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Negative - USER PROMPT
+[22:55:35] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 1,
   "module_title": "Login",
-  "summary": "Handles user authentication by accepting credentials, validating them, displaying relevant error banners for failed attempts, and redirecting authenticated users to the Product Inventory page.",
-  "where_it_fits": "This module is the application's entry point located at the sign-in page; after successful authentication it transitions users into the Product Inventory area where the persistent header and hamburger menu are available. It sits before all shopping flows (Product Detail, Cart, and Checkout steps) and is referenced by the initial navigation path from sign-in \u2192 Product Inventory.",
-  "assumed_state_on_entry": "User is unauthenticated and at the sign-in page with Username and Password fields available."
+  "summary": "Provides the sign-in interface that authenticates users with a username and password, granting access on valid credentials or displaying specific error banners for invalid or locked accounts.",
+  "where_it_fits": "This module is the application's entry point \u2014 users begin on the sign-in page and, upon successful authentication, are redirected to the Product Inventory page; it precedes all product browsing, cart, and checkout flows described in the navigation (Inventory \u2192 Product Detail \u2192 Shopping Cart \u2192 Checkout steps).",
+  "assumed_state_on_entry": "User is unauthenticated and has reached the sign-in page with credentials available to submit."
 }
 </module_context>
 
@@ -262,32 +272,35 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Login_Form": {
       "type": "form",
+      "preconditions": [
+        "User is unauthenticated and has reached the sign-in page with credentials available to submit."
+      ],
       "fields": {
         "Username": {
           "type": "unspecified",
           "required": true,
           "constraints": [
-            "on_empty: show error 'Epic sadface: Username is required.'"
+            "Epic sadface: Username is required."
           ]
         },
         "Password": {
           "type": "password",
           "required": true,
           "constraints": [
-            "on_empty: show error 'Epic sadface: Password is required.'"
+            "Epic sadface: Password is required."
           ]
         }
       },
       "submit_actions": [
         {
           "action_name": "Login",
+          "on_success": "redirects to Product Inventory page",
           "preconditions": [
-            "User is unauthenticated and at the sign-in page with Username and Password fields available."
+            "User is unauthenticated and has reached the sign-in page with credentials available to submit."
           ],
-          "on_success": "redirects to the Product Inventory page",
           "constraints": [
-            "if Username == 'locked_out_user' then show error 'Epic sadface: Sorry, this user has been locked out.'",
-            "if credentials invalid then show error 'Epic sadface: Username and password do not match any user in this service.'"
+            "Epic sadface: Username and password do not match any user in this service.",
+            "Epic sadface: Sorry, this user has been locked out."
           ]
         }
       ]
@@ -304,18 +317,17 @@ The login page contains a Username field, a Password field, and a Login button. 
 </description>
 
 <workflows>
-WF-001 | Successful login with valid credentials | actor: <role> | branch: Username IN {standard_user, problem_user, performance_glitch_user, error_user, visual_user} AND Password == 'secret_sauce' | terminal: Login | on_success: redirects to the Product Inventory page
-WF-002 | Login attempt by locked_out_user | actor: <role> | branch: Username == 'locked_out_user' | terminal: Login | on_success: show error 'Epic sadface: Sorry, this user has been locked out.'
-WF-003 | Login with invalid credentials (unknown username or wrong password) | actor: <role> | branch: NOT(Username IN {standard_user, problem_user, performance_glitch_user, error_user, visual_user} AND Password == 'secret_sauce') AND Username != 'locked_out_user' | terminal: Login | on_success: show error 'Epic sadface: Username and password do not match any user in this service.'
-WF-004 | Submit with Username empty | actor: <role> | branch: Username == '' | terminal: Login | on_success: show error 'Epic sadface: Username is required.'
-WF-005 | Submit with Password empty | actor: <role> | branch: Password == '' | terminal: Login | on_success: show error 'Epic sadface: Password is required.'
-WF-006 | Submit with both Username and Password empty | actor: <role> | branch: Username == '' AND Password == '' | terminal: Login | on_success: show errors 'Epic sadface: Username is required.' AND 'Epic sadface: Password is required.'
+WF-001 | Successful login with valid credentials | actor: User | branch: none | terminal: Login | on_success: redirects to Product Inventory page
+WF-002 | Login attempt with empty Username | actor: User | branch: Username == empty | terminal: Login | on_success: Epic sadface: Username is required.
+WF-003 | Login attempt with empty Password | actor: User | branch: Password == empty | terminal: Login | on_success: Epic sadface: Password is required.
+WF-004 | Login attempt with filled but invalid credentials | actor: User | branch: Username != empty AND Password != empty | terminal: Login | on_success: Epic sadface: Username and password do not match any user in this service.
+WF-005 | Login attempt with locked out user | actor: User | branch: Username == locked_out_user | terminal: Login | on_success: Epic sadface: Sorry, this user has been locked out.
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:04:43] Test-Negative - LLM RESPONSE
+[22:56:05] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Login",
@@ -323,77 +335,77 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": "WF-004",
-      "test_case": "Submit with Username blank (required text field representative)",
+      "wf_ref": "WF-002",
+      "test_case": "Submit with Username blank (required text field)",
       "preconditions": [
-        "User is unauthenticated and at the sign-in page with Username and Password fields available."
+        "User is unauthenticated and has reached the sign-in page with credentials available to submit."
       ],
       "steps": [
         "1. Leave the Username field blank",
-        "2. Enter 'secret_sauce' in the Password field",
+        "2. Enter <valid password> in the Password field",
         "3. Click the Login button"
       ],
-      "expected_result": "Username field displays an inline/banner error: 'Epic sadface: Username is required.'; the form does not submit and the user remains on the sign-in page (no redirect to Product Inventory).",
+      "expected_result": "An error banner displays 'Epic sadface: Username is required.'; the form does not submit; user remains on the sign-in page.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-005",
-      "test_case": "Submit with Password blank (required password field representative)",
+      "wf_ref": "WF-003",
+      "test_case": "Submit with Password blank (required password field)",
       "preconditions": [
-        "User is unauthenticated and at the sign-in page with Username and Password fields available."
+        "User is unauthenticated and has reached the sign-in page with credentials available to submit."
       ],
       "steps": [
-        "1. Enter 'standard_user' in the Username field",
+        "1. Enter <valid username> in the Username field",
         "2. Leave the Password field blank",
         "3. Click the Login button"
       ],
-      "expected_result": "Password field displays an inline/banner error: 'Epic sadface: Password is required.'; the form does not submit and the user remains on the sign-in page (no redirect to Product Inventory).",
+      "expected_result": "An error banner displays 'Epic sadface: Password is required.'; the form does not submit; user remains on the sign-in page.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-006",
-      "test_case": "Submit with both Username and Password blank",
+      "wf_ref": null,
+      "test_case": "Submit with all required fields empty",
       "preconditions": [
-        "User is unauthenticated and at the sign-in page with Username and Password fields available."
+        "User is unauthenticated and has reached the sign-in page with credentials available to submit."
       ],
       "steps": [
         "1. Leave the Username field blank",
         "2. Leave the Password field blank",
         "3. Click the Login button"
       ],
-      "expected_result": "Both fields display errors: Username shows 'Epic sadface: Username is required.' and Password shows 'Epic sadface: Password is required.'; the form does not submit and the user remains on the sign-in page (no redirect).",
+      "expected_result": "Error banners display 'Epic sadface: Username is required.' and 'Epic sadface: Password is required.'; the form does not submit; user remains on the sign-in page.",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-003",
-      "test_case": "Submit with invalid credentials (unknown username or wrong password) shows generic invalid-credentials error",
+      "wf_ref": "WF-004",
+      "test_case": "Submit with filled but invalid credentials (authentication failure)",
       "preconditions": [
-        "User is unauthenticated and at the sign-in page with Username and Password fields available."
+        "User is unauthenticated and has reached the sign-in page with credentials available to submit."
       ],
       "steps": [
-        "1. Enter <unknown username> in the Username field",
-        "2. Enter <any password> in the Password field (not 'secret_sauce' for a valid user)",
+        "1. Enter <invalid username> in the Username field",
+        "2. Enter <invalid password> in the Password field",
         "3. Click the Login button"
       ],
-      "expected_result": "Page displays error banner: 'Epic sadface: Username and password do not match any user in this service.'; the form does not submit and the user remains on the sign-in page (no redirect to Product Inventory).",
+      "expected_result": "An error banner displays 'Epic sadface: Username and password do not match any user in this service.'; login is blocked; user remains on the sign-in page.",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-002",
-      "test_case": "Attempt login with locked_out_user account is blocked with locked-out error",
+      "wf_ref": "WF-005",
+      "test_case": "Attempt login with a locked-out account",
       "preconditions": [
-        "User is unauthenticated and at the sign-in page with Username and Password fields available."
+        "User is unauthenticated and has reached the sign-in page with credentials available to submit."
       ],
       "steps": [
-        "1. Enter 'locked_out_user' in the Username field",
-        "2. Enter 'secret_sauce' in the Password field",
+        "1. Enter <locked_out_user> in the Username field",
+        "2. Enter <valid password> in the Password field",
         "3. Click the Login button"
       ],
-      "expected_result": "Page displays error banner: 'Epic sadface: Sorry, this user has been locked out.'; the form does not submit and the user remains on the sign-in page (no redirect to Product Inventory).",
+      "expected_result": "An error banner displays 'Epic sadface: Sorry, this user has been locked out.'; login is blocked; user remains on the sign-in page.",
       "priority": "high"
     }
   ],
@@ -406,7 +418,7 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
 }
 
 ------------------------------------------------------------
-[21:04:43] Test-Negative - PARSED JSON
+[22:56:05] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Login",
@@ -414,77 +426,77 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": "WF-004",
-      "test_case": "Submit with Username blank (required text field representative)",
+      "wf_ref": "WF-002",
+      "test_case": "Submit with Username blank (required text field)",
       "preconditions": [
-        "User is unauthenticated and at the sign-in page with Username and Password fields available."
+        "User is unauthenticated and has reached the sign-in page with credentials available to submit."
       ],
       "steps": [
         "1. Leave the Username field blank",
-        "2. Enter 'secret_sauce' in the Password field",
+        "2. Enter <valid password> in the Password field",
         "3. Click the Login button"
       ],
-      "expected_result": "Username field displays an inline/banner error: 'Epic sadface: Username is required.'; the form does not submit and the user remains on the sign-in page (no redirect to Product Inventory).",
+      "expected_result": "An error banner displays 'Epic sadface: Username is required.'; the form does not submit; user remains on the sign-in page.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-005",
-      "test_case": "Submit with Password blank (required password field representative)",
+      "wf_ref": "WF-003",
+      "test_case": "Submit with Password blank (required password field)",
       "preconditions": [
-        "User is unauthenticated and at the sign-in page with Username and Password fields available."
+        "User is unauthenticated and has reached the sign-in page with credentials available to submit."
       ],
       "steps": [
-        "1. Enter 'standard_user' in the Username field",
+        "1. Enter <valid username> in the Username field",
         "2. Leave the Password field blank",
         "3. Click the Login button"
       ],
-      "expected_result": "Password field displays an inline/banner error: 'Epic sadface: Password is required.'; the form does not submit and the user remains on the sign-in page (no redirect to Product Inventory).",
+      "expected_result": "An error banner displays 'Epic sadface: Password is required.'; the form does not submit; user remains on the sign-in page.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-006",
-      "test_case": "Submit with both Username and Password blank",
+      "wf_ref": null,
+      "test_case": "Submit with all required fields empty",
       "preconditions": [
-        "User is unauthenticated and at the sign-in page with Username and Password fields available."
+        "User is unauthenticated and has reached the sign-in page with credentials available to submit."
       ],
       "steps": [
         "1. Leave the Username field blank",
         "2. Leave the Password field blank",
         "3. Click the Login button"
       ],
-      "expected_result": "Both fields display errors: Username shows 'Epic sadface: Username is required.' and Password shows 'Epic sadface: Password is required.'; the form does not submit and the user remains on the sign-in page (no redirect).",
+      "expected_result": "Error banners display 'Epic sadface: Username is required.' and 'Epic sadface: Password is required.'; the form does not submit; user remains on the sign-in page.",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-003",
-      "test_case": "Submit with invalid credentials (unknown username or wrong password) shows generic invalid-credentials error",
+      "wf_ref": "WF-004",
+      "test_case": "Submit with filled but invalid credentials (authentication failure)",
       "preconditions": [
-        "User is unauthenticated and at the sign-in page with Username and Password fields available."
+        "User is unauthenticated and has reached the sign-in page with credentials available to submit."
       ],
       "steps": [
-        "1. Enter <unknown username> in the Username field",
-        "2. Enter <any password> in the Password field (not 'secret_sauce' for a valid user)",
+        "1. Enter <invalid username> in the Username field",
+        "2. Enter <invalid password> in the Password field",
         "3. Click the Login button"
       ],
-      "expected_result": "Page displays error banner: 'Epic sadface: Username and password do not match any user in this service.'; the form does not submit and the user remains on the sign-in page (no redirect to Product Inventory).",
+      "expected_result": "An error banner displays 'Epic sadface: Username and password do not match any user in this service.'; login is blocked; user remains on the sign-in page.",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-002",
-      "test_case": "Attempt login with locked_out_user account is blocked with locked-out error",
+      "wf_ref": "WF-005",
+      "test_case": "Attempt login with a locked-out account",
       "preconditions": [
-        "User is unauthenticated and at the sign-in page with Username and Password fields available."
+        "User is unauthenticated and has reached the sign-in page with credentials available to submit."
       ],
       "steps": [
-        "1. Enter 'locked_out_user' in the Username field",
-        "2. Enter 'secret_sauce' in the Password field",
+        "1. Enter <locked_out_user> in the Username field",
+        "2. Enter <valid password> in the Password field",
         "3. Click the Login button"
       ],
-      "expected_result": "Page displays error banner: 'Epic sadface: Sorry, this user has been locked out.'; the form does not submit and the user remains on the sign-in page (no redirect to Product Inventory).",
+      "expected_result": "An error banner displays 'Epic sadface: Sorry, this user has been locked out.'; login is blocked; user remains on the sign-in page.",
       "priority": "high"
     }
   ],

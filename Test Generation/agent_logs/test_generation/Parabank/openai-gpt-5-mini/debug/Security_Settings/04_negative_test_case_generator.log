@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:02:39.106048
+DEBUG SESSION STARTED: 2026-07-04T22:22:17.311135
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Negative - SYSTEM PROMPT
+[22:22:17] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Negative - USER PROMPT
+[22:22:17] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 12,
   "module_title": "Security Settings",
-  "summary": "Provides a form for authenticated users to change their account password by verifying the current password, enforcing a strong-password policy, and updating credentials with validation feedback.",
-  "where_it_fits": "Available from the left-hand navigation after successful login under Security Settings (reachable from the Account Dashboard / Accounts Overview). It is part of the account management and security lifecycle, used to maintain credential integrity for signed-in customers.",
-  "assumed_state_on_entry": "User is logged in with an active authenticated session and has access to the account dashboard/navigation."
+  "summary": "Security Settings provides a form for changing the user's password with current-password verification, strong-password enforcement, match checking, and validation feedback.",
+  "where_it_fits": "Accessible from the left-hand navigation as the 'Security Settings' option (item 10) on the post-login dashboard, this module is part of the account management and security area alongside Update Contact Info, Manage Cards, and Account Statements. It is used during an authenticated user's lifecycle when they need to update credential security.",
+  "assumed_state_on_entry": "User is authenticated and has an active session on their account dashboard"
 }
 </module_context>
 
@@ -270,14 +280,14 @@ If a `<workflows>` block is present in the input:
               "type": "password",
               "required": true,
               "constraints": [
-                "will be verified on submit to ensure it matches the user's current password"
+                "must match the user's current password"
               ]
             },
             "New_Password": {
               "type": "password",
               "required": true,
               "constraints": [
-                "must meet strong-password policy (e.g., minimum length and complexity as defined by system)"
+                "must meet strong-password policy"
               ]
             },
             "Confirm_New_Password": {
@@ -291,14 +301,10 @@ If a `<workflows>` block is present in the input:
           "submit_actions": [
             {
               "action_name": "Change Password",
-              "preconditions": [
-                "User is logged in with an active authenticated session and has access to the account dashboard/navigation."
-              ],
-              "constraints": [
-                "system verifies Current_Password before updating credentials"
-              ],
               "on_success": "Password changed successfully.",
-              "on_failure": "Returns validation errors and highlights the fields with errors."
+              "preconditions": [
+                "User is authenticated and has an active session on their account dashboard"
+              ]
             }
           ]
         }
@@ -315,13 +321,13 @@ The Security Settings page contains a single form under a collapsible panel.The 
 </description>
 
 <workflows>
-WF-001 | Change Password | actor: Authenticated user | branch: none | terminal: Change Password | on_success: Password changed successfully.
+WF-001 | Change password (valid current password, strong new password, matching confirmation) | actor: Authenticated user | branch: none | terminal: Change Password | on_success: Password changed successfully.
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:05:06] Test-Negative - LLM RESPONSE
+[22:24:42] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Security Settings",
@@ -329,115 +335,122 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": "WF-001",
-      "test_case": "Leave Current Password blank (required password field representative)",
+      "wf_ref": null,
+      "test_case": "Submit with all required password fields empty",
       "preconditions": [
-        "User is logged in with an active authenticated session and has access to the account dashboard/navigation."
+        "User is authenticated and has an active session on their account dashboard"
       ],
       "steps": [
-        "1. Navigate to Account Dashboard → Security Settings while authenticated.",
-        "2. Leave the Current Password field blank.",
-        "3. Enter <valid strong new password> in the New Password field.",
-        "4. Enter the same <valid strong new password> in the Confirm New Password field.",
-        "5. Click the Change Password button."
+        "1. Log in as an authenticated user with an active session",
+        "2. Navigate to Security Settings from the left-hand navigation",
+        "3. Click to expand the Change Password panel",
+        "4. Click the Change Password button with all fields left blank"
       ],
-      "expected_result": "Inline validation error appears on the Current Password field indicating it is required; the Change Password action is blocked; no password change occurs and the user remains on the Security Settings form.",
+      "expected_result": "Inline validation errors appear on Current Password, New Password, and Confirm New Password indicating they are required; the form does not submit and the password is not changed; the user remains on the Change Password form.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-001",
-      "test_case": "Submit with all required fields empty",
+      "wf_ref": null,
+      "test_case": "Representative password field left blank (Confirm New Password) and submit",
       "preconditions": [
-        "User is logged in with an active authenticated session and has access to the account dashboard/navigation."
+        "User is authenticated and has an active session on their account dashboard"
       ],
       "steps": [
-        "1. Navigate to Account Dashboard → Security Settings while authenticated.",
-        "2. Leave Current Password blank.",
-        "3. Leave New Password blank.",
-        "4. Leave Confirm New Password blank.",
-        "5. Click the Change Password button."
+        "1. Log in as an authenticated user with an active session",
+        "2. Navigate to Security Settings from the left-hand navigation",
+        "3. Click to expand the Change Password panel",
+        "4. Enter <correct current password> into the Current Password field",
+        "5. Enter <strong new password> into the New Password field",
+        "6. Leave the Confirm New Password field blank",
+        "7. Click the Change Password button"
       ],
-      "expected_result": "Inline validation errors appear on Current Password, New Password, and Confirm New Password indicating each is required; the Change Password action is blocked; no password change occurs and the user remains on the Security Settings form.",
+      "expected_result": "Confirm New Password field displays an inline validation error indicating it is required; the form does not submit and the password is not changed; the user remains on the Change Password form.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Confirm New Password does not match New Password",
+      "test_case": "Submit with incorrect current password (does not match user's current password)",
       "preconditions": [
-        "User is logged in with an active authenticated session and has access to the account dashboard/navigation."
+        "User is authenticated and has an active session on their account dashboard"
       ],
       "steps": [
-        "1. Navigate to Account Dashboard → Security Settings while authenticated.",
-        "2. Enter <valid current password> in the Current Password field.",
-        "3. Enter <strong new password A> in the New Password field.",
-        "4. Enter <different value new password B> in the Confirm New Password field.",
-        "5. Click the Change Password button."
+        "1. Log in as an authenticated user with an active session",
+        "2. Navigate to Security Settings from the left-hand navigation",
+        "3. Click to expand the Change Password panel",
+        "4. Enter <incorrect current password> into the Current Password field",
+        "5. Enter <strong new password> into the New Password field",
+        "6. Enter <same as New Password> into the Confirm New Password field",
+        "7. Click the Change Password button"
       ],
-      "expected_result": "Confirm New Password field displays an inline validation error indicating it does not match the New Password; the Change Password action is blocked; no password change occurs.",
-      "priority": "medium"
+      "expected_result": "Current Password field displays an inline validation error indicating it does not match the user's current password; the form does not submit and the password is not changed; the user remains on the Change Password form.",
+      "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-001",
-      "test_case": "Incorrect Current Password verified on submit",
+      "wf_ref": null,
+      "test_case": "New password fails strong-password policy (weak password) and submit",
       "preconditions": [
-        "User is logged in with an active authenticated session and has access to the account dashboard/navigation."
+        "User is authenticated and has an active session on their account dashboard"
       ],
       "steps": [
-        "1. Navigate to Account Dashboard → Security Settings while authenticated.",
-        "2. Enter <incorrect current password> in the Current Password field.",
-        "3. Enter <valid strong new password> in the New Password field.",
-        "4. Enter the same <valid strong new password> in the Confirm New Password field.",
-        "5. Click the Change Password button."
+        "1. Log in as an authenticated user with an active session",
+        "2. Navigate to Security Settings from the left-hand navigation",
+        "3. Click to expand the Change Password panel",
+        "4. Enter <correct current password> into the Current Password field",
+        "5. Enter <weak password not meeting strong policy> into the New Password field",
+        "6. Enter <same as New Password> into the Confirm New Password field",
+        "7. Click the Change Password button"
       ],
-      "expected_result": "Current Password field displays a validation error indicating the current password is incorrect; the Change Password action is blocked by server-side verification; the account password remains unchanged and the user stays on the form.",
-      "priority": "high"
+      "expected_result": "New Password field displays an inline validation error indicating it does not meet the strong-password policy; the form does not submit and the password is not changed; the user remains on the Change Password form.",
+      "priority": "medium"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-001",
-      "test_case": "New Password violates strong-password policy",
+      "wf_ref": null,
+      "test_case": "Confirm New Password does not match New Password",
       "preconditions": [
-        "User is logged in with an active authenticated session and has access to the account dashboard/navigation."
+        "User is authenticated and has an active session on their account dashboard"
       ],
       "steps": [
-        "1. Navigate to Account Dashboard → Security Settings while authenticated.",
-        "2. Enter <valid current password> in the Current Password field.",
-        "3. Enter <weak new password not meeting complexity> in the New Password field.",
-        "4. Enter the same <weak new password not meeting complexity> in the Confirm New Password field.",
-        "5. Click the Change Password button."
+        "1. Log in as an authenticated user with an active session",
+        "2. Navigate to Security Settings from the left-hand navigation",
+        "3. Click to expand the Change Password panel",
+        "4. Enter <correct current password> into the Current Password field",
+        "5. Enter <strong new password> into the New Password field",
+        "6. Enter <mismatched password> into the Confirm New Password field",
+        "7. Click the Change Password button"
       ],
-      "expected_result": "New Password field displays an inline validation error indicating the password does not meet the system's strong-password policy (e.g., minimum length/complexity); the Change Password action is blocked; no password change occurs.",
-      "priority": "high"
+      "expected_result": "Confirm New Password field displays an inline validation error indicating it must match the New Password field; the form does not submit and the password is not changed; the user remains on the Change Password form.",
+      "priority": "medium"
     },
     {
       "tc_id": "N-006",
-      "wf_ref": "WF-001",
-      "test_case": "Unauthenticated user cannot access Security Settings page",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user attempts to access Security Settings",
       "preconditions": [
-        "User is not authenticated / does not have an active session."
+        "User is logged out / has no active authenticated session"
       ],
       "steps": [
-        "1. Ensure the user is logged out (no active session).",
-        "2. Attempt to navigate directly to the Security Settings page URL.",
-        "3. (Optional) If the page allows rendering, attempt to submit the Change Password form with any values and click Change Password."
+        "1. Ensure the user is logged out (no active session)",
+        "2. Attempt to navigate directly to the Security Settings page URL or click the Security Settings navigation link",
+        "3. Attempt to expand or interact with the Change Password panel"
       ],
-      "expected_result": "Unauthenticated user is redirected to the Login page (or shown a login prompt) and the Change Password form is not accessible; any Change Password submission is blocked and no credential update occurs.",
+      "expected_result": "Access to the Security Settings page is blocked: the Login page or authentication prompt is displayed instead and the Change Password form is not accessible; the Change Password button is not available to the unauthenticated user.",
       "priority": "high"
     }
   ],
   "summary": {
     "total": 6,
-    "high_priority": 5,
-    "medium_priority": 1,
+    "high_priority": 4,
+    "medium_priority": 2,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:05:06] Test-Negative - PARSED JSON
+[22:24:42] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Security Settings",
@@ -445,109 +458,116 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": "WF-001",
-      "test_case": "Leave Current Password blank (required password field representative)",
+      "wf_ref": null,
+      "test_case": "Submit with all required password fields empty",
       "preconditions": [
-        "User is logged in with an active authenticated session and has access to the account dashboard/navigation."
+        "User is authenticated and has an active session on their account dashboard"
       ],
       "steps": [
-        "1. Navigate to Account Dashboard \u2192 Security Settings while authenticated.",
-        "2. Leave the Current Password field blank.",
-        "3. Enter <valid strong new password> in the New Password field.",
-        "4. Enter the same <valid strong new password> in the Confirm New Password field.",
-        "5. Click the Change Password button."
+        "1. Log in as an authenticated user with an active session",
+        "2. Navigate to Security Settings from the left-hand navigation",
+        "3. Click to expand the Change Password panel",
+        "4. Click the Change Password button with all fields left blank"
       ],
-      "expected_result": "Inline validation error appears on the Current Password field indicating it is required; the Change Password action is blocked; no password change occurs and the user remains on the Security Settings form.",
+      "expected_result": "Inline validation errors appear on Current Password, New Password, and Confirm New Password indicating they are required; the form does not submit and the password is not changed; the user remains on the Change Password form.",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-001",
-      "test_case": "Submit with all required fields empty",
+      "wf_ref": null,
+      "test_case": "Representative password field left blank (Confirm New Password) and submit",
       "preconditions": [
-        "User is logged in with an active authenticated session and has access to the account dashboard/navigation."
+        "User is authenticated and has an active session on their account dashboard"
       ],
       "steps": [
-        "1. Navigate to Account Dashboard \u2192 Security Settings while authenticated.",
-        "2. Leave Current Password blank.",
-        "3. Leave New Password blank.",
-        "4. Leave Confirm New Password blank.",
-        "5. Click the Change Password button."
+        "1. Log in as an authenticated user with an active session",
+        "2. Navigate to Security Settings from the left-hand navigation",
+        "3. Click to expand the Change Password panel",
+        "4. Enter <correct current password> into the Current Password field",
+        "5. Enter <strong new password> into the New Password field",
+        "6. Leave the Confirm New Password field blank",
+        "7. Click the Change Password button"
       ],
-      "expected_result": "Inline validation errors appear on Current Password, New Password, and Confirm New Password indicating each is required; the Change Password action is blocked; no password change occurs and the user remains on the Security Settings form.",
+      "expected_result": "Confirm New Password field displays an inline validation error indicating it is required; the form does not submit and the password is not changed; the user remains on the Change Password form.",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Confirm New Password does not match New Password",
+      "test_case": "Submit with incorrect current password (does not match user's current password)",
       "preconditions": [
-        "User is logged in with an active authenticated session and has access to the account dashboard/navigation."
+        "User is authenticated and has an active session on their account dashboard"
       ],
       "steps": [
-        "1. Navigate to Account Dashboard \u2192 Security Settings while authenticated.",
-        "2. Enter <valid current password> in the Current Password field.",
-        "3. Enter <strong new password A> in the New Password field.",
-        "4. Enter <different value new password B> in the Confirm New Password field.",
-        "5. Click the Change Password button."
+        "1. Log in as an authenticated user with an active session",
+        "2. Navigate to Security Settings from the left-hand navigation",
+        "3. Click to expand the Change Password panel",
+        "4. Enter <incorrect current password> into the Current Password field",
+        "5. Enter <strong new password> into the New Password field",
+        "6. Enter <same as New Password> into the Confirm New Password field",
+        "7. Click the Change Password button"
       ],
-      "expected_result": "Confirm New Password field displays an inline validation error indicating it does not match the New Password; the Change Password action is blocked; no password change occurs.",
-      "priority": "medium"
+      "expected_result": "Current Password field displays an inline validation error indicating it does not match the user's current password; the form does not submit and the password is not changed; the user remains on the Change Password form.",
+      "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-001",
-      "test_case": "Incorrect Current Password verified on submit",
+      "wf_ref": null,
+      "test_case": "New password fails strong-password policy (weak password) and submit",
       "preconditions": [
-        "User is logged in with an active authenticated session and has access to the account dashboard/navigation."
+        "User is authenticated and has an active session on their account dashboard"
       ],
       "steps": [
-        "1. Navigate to Account Dashboard \u2192 Security Settings while authenticated.",
-        "2. Enter <incorrect current password> in the Current Password field.",
-        "3. Enter <valid strong new password> in the New Password field.",
-        "4. Enter the same <valid strong new password> in the Confirm New Password field.",
-        "5. Click the Change Password button."
+        "1. Log in as an authenticated user with an active session",
+        "2. Navigate to Security Settings from the left-hand navigation",
+        "3. Click to expand the Change Password panel",
+        "4. Enter <correct current password> into the Current Password field",
+        "5. Enter <weak password not meeting strong policy> into the New Password field",
+        "6. Enter <same as New Password> into the Confirm New Password field",
+        "7. Click the Change Password button"
       ],
-      "expected_result": "Current Password field displays a validation error indicating the current password is incorrect; the Change Password action is blocked by server-side verification; the account password remains unchanged and the user stays on the form.",
-      "priority": "high"
+      "expected_result": "New Password field displays an inline validation error indicating it does not meet the strong-password policy; the form does not submit and the password is not changed; the user remains on the Change Password form.",
+      "priority": "medium"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-001",
-      "test_case": "New Password violates strong-password policy",
+      "wf_ref": null,
+      "test_case": "Confirm New Password does not match New Password",
       "preconditions": [
-        "User is logged in with an active authenticated session and has access to the account dashboard/navigation."
+        "User is authenticated and has an active session on their account dashboard"
       ],
       "steps": [
-        "1. Navigate to Account Dashboard \u2192 Security Settings while authenticated.",
-        "2. Enter <valid current password> in the Current Password field.",
-        "3. Enter <weak new password not meeting complexity> in the New Password field.",
-        "4. Enter the same <weak new password not meeting complexity> in the Confirm New Password field.",
-        "5. Click the Change Password button."
+        "1. Log in as an authenticated user with an active session",
+        "2. Navigate to Security Settings from the left-hand navigation",
+        "3. Click to expand the Change Password panel",
+        "4. Enter <correct current password> into the Current Password field",
+        "5. Enter <strong new password> into the New Password field",
+        "6. Enter <mismatched password> into the Confirm New Password field",
+        "7. Click the Change Password button"
       ],
-      "expected_result": "New Password field displays an inline validation error indicating the password does not meet the system's strong-password policy (e.g., minimum length/complexity); the Change Password action is blocked; no password change occurs.",
-      "priority": "high"
+      "expected_result": "Confirm New Password field displays an inline validation error indicating it must match the New Password field; the form does not submit and the password is not changed; the user remains on the Change Password form.",
+      "priority": "medium"
     },
     {
       "tc_id": "N-006",
-      "wf_ref": "WF-001",
-      "test_case": "Unauthenticated user cannot access Security Settings page",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user attempts to access Security Settings",
       "preconditions": [
-        "User is not authenticated / does not have an active session."
+        "User is logged out / has no active authenticated session"
       ],
       "steps": [
-        "1. Ensure the user is logged out (no active session).",
-        "2. Attempt to navigate directly to the Security Settings page URL.",
-        "3. (Optional) If the page allows rendering, attempt to submit the Change Password form with any values and click Change Password."
+        "1. Ensure the user is logged out (no active session)",
+        "2. Attempt to navigate directly to the Security Settings page URL or click the Security Settings navigation link",
+        "3. Attempt to expand or interact with the Change Password panel"
       ],
-      "expected_result": "Unauthenticated user is redirected to the Login page (or shown a login prompt) and the Change Password form is not accessible; any Change Password submission is blocked and no credential update occurs.",
+      "expected_result": "Access to the Security Settings page is blocked: the Login page or authentication prompt is displayed instead and the Change Password form is not accessible; the Change Password button is not available to the unauthenticated user.",
       "priority": "high"
     }
   ],
   "summary": {
     "total": 6,
-    "high_priority": 5,
-    "medium_priority": 1,
+    "high_priority": 4,
+    "medium_priority": 2,
     "low_priority": 0
   }
 }

@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:13.846418
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.059228
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - SYSTEM PROMPT
+[22:33:07] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - USER PROMPT
+[22:33:07] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 8,
   "module_title": "Flight Booking",
-  "summary": "Presents a full flight itinerary and fare breakdown while collecting validated passenger and lead contact details (including passports, DOB, optional meal and seat preferences) prior to payment.",
-  "where_it_fits": "Reached from the top navigation Flights option or from the Flights Search & Listing results, this module is the booking-step that follows flight selection and precedes Payment Processing within the booking flow.",
-  "assumed_state_on_entry": "A specific flight has been selected from Flights Search & Listing and the session contains the chosen itinerary, passenger count, cabin class, and calculated fares; user session is active (logged-in or guest)."
+  "summary": "Displays the selected flight itinerary, passenger and cabin details with a fare breakdown, and collects validated traveler and lead contact information required for completing the booking.",
+  "where_it_fits": "This module is part of the Flights section and is reached after Flights Search & Listing/Flight Booking in the main navigation; it constitutes the final booking information step that precedes Payment Processing in the booking lifecycle.",
+  "assumed_state_on_entry": "A specific flight itinerary and passenger count have been selected (user may be logged in or proceeding as guest) and the booking flow has advanced from Flights Search & Listing."
 }
 </module_context>
 
@@ -262,15 +272,8 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Flight_Booking_Form": {
       "type": "form",
-      "preconditions": [
-        "session must contain selected itinerary, passenger count, cabin class, and calculated fares",
-        "user session must be active (logged-in or guest)"
-      ],
-      "constraints": [
-        "required fields must be completed and pass validation; invalid or incomplete fields display inline errors and block progression"
-      ],
       "fields": {
-        "Passengers": {
+        "Travelers": {
           "type": "repeating_group",
           "item_fields": {
             "Title": {
@@ -293,10 +296,7 @@ If a `<workflows>` block is present in the input:
             },
             "Date_Of_Birth": {
               "type": "date",
-              "required": true,
-              "constraints": [
-                "must be a valid date"
-              ]
+              "required": true
             },
             "Passport_Number": {
               "type": "unspecified",
@@ -304,12 +304,9 @@ If a `<workflows>` block is present in the input:
             },
             "Passport_Expiry": {
               "type": "date",
-              "required": true,
-              "constraints": [
-                "must be a valid date"
-              ]
+              "required": true
             },
-            "Meal_Preference": {
+            "Meal_Preferences": {
               "type": "unspecified"
             },
             "Seat_Selection": {
@@ -320,11 +317,11 @@ If a `<workflows>` block is present in the input:
         "Lead_Contact": {
           "type": "group",
           "fields": {
-            "Lead_Email": {
-              "type": "unspecified",
+            "Email": {
+              "type": "email",
               "required": true
             },
-            "Lead_Phone": {
+            "Phone": {
               "type": "unspecified",
               "required": true
             }
@@ -334,13 +331,14 @@ If a `<workflows>` block is present in the input:
       "submit_actions": [
         {
           "action_name": "Continue",
-          "on_success": "navigates to Payment Processing page",
+          "on_success": "navigates to Payment Processing",
           "preconditions": [
-            "session must contain selected itinerary, passenger count, cabin class, and calculated fares",
-            "user session must be active (logged-in or guest)"
+            "A specific flight itinerary and passenger count have been selected (user may be logged in or proceeding as guest) and the booking flow has advanced from Flights Search & Listing.",
+            "all required fields valid"
           ],
           "constraints": [
-            "blocks progression if any required or invalid fields are present"
+            "blocks progression if required or invalid fields present",
+            "inline validation errors shown for incomplete or invalid fields"
           ]
         }
       ]
@@ -359,13 +357,13 @@ The flight booking page displays a full itinerary summary, passenger count, cabi
 </description>
 
 <workflows>
-WF-001 | Complete passenger and lead contact details then Continue | actor: <role> | branch: none | terminal: Continue | on_success: navigates to Payment Processing page
+WF-001 | Fill required traveler and lead contact details and continue to payment | actor: <traveler> | branch: none | terminal: Continue | on_success: navigates to Payment Processing
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:26:17] Test-Negative - LLM RESPONSE
+[22:34:44] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Flight Booking",
@@ -374,178 +372,114 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Leave passenger Title (dropdown) blank and attempt to Continue",
+      "test_case": "Submit with all required fields empty",
       "preconditions": [
-        "session contains selected itinerary, passenger count, cabin class, and calculated fares",
-        "user session is active (logged-in or guest)"
+        "Booking flow has advanced from Flights Search & Listing with a specific flight itinerary and passenger count selected",
+        "User is on the Flight Booking page"
       ],
       "steps": [
-        "1. Navigate to the Flight Booking page for the selected itinerary",
-        "2. In Passenger 1, leave the Title field blank",
-        "3. Fill First_Name with <valid first name>",
-        "4. Fill Last_Name with <valid last name>",
-        "5. Fill Date_Of_Birth with <valid date>",
-        "6. Fill Passport_Number with <valid passport number>",
-        "7. Fill Passport_Expiry with <valid date>",
-        "8. Fill Lead_Email with <valid email>",
-        "9. Fill Lead_Phone with <valid phone>",
-        "10. Click Continue"
+        "1. Navigate to the Flight Booking page with a selected itinerary and passenger count",
+        "2. For each traveler item, leave Title, First Name, Last Name, Date of Birth, Passport Number and Passport Expiry blank",
+        "3. Leave Lead Contact Email and Phone blank",
+        "4. Click the Continue button"
       ],
-      "expected_result": "Title field for Passenger 1 displays an inline validation error indicating it is required; the form does not submit and the user remains on the Flight Booking page (does not navigate to Payment Processing).",
+      "expected_result": "Form does not submit; inline validation errors appear on each required field: Title, First Name, Last Name, Date of Birth, Passport Number, Passport Expiry, Email and Phone indicating they are required; user remains on the Flight Booking page and is not navigated to Payment Processing",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Leave passenger First Name (text) blank and attempt to Continue",
+      "test_case": "Leave a required text field blank (representative: Traveler First Name)",
       "preconditions": [
-        "session contains selected itinerary, passenger count, cabin class, and calculated fares",
-        "user session is active (logged-in or guest)"
+        "Booking flow has advanced from Flights Search & Listing with a specific flight itinerary and passenger count selected",
+        "User is on the Flight Booking page with at least one traveler entry"
       ],
       "steps": [
-        "1. Navigate to the Flight Booking page for the selected itinerary",
-        "2. In Passenger 1, leave First_Name blank",
-        "3. Fill Title with <valid title> for Passenger 1",
-        "4. Fill Last_Name with <valid last name>",
-        "5. Fill Date_Of_Birth with <valid date>",
-        "6. Fill Passport_Number with <valid passport number>",
-        "7. Fill Passport_Expiry with <valid date>",
-        "8. Fill Lead_Email with <valid email>",
-        "9. Fill Lead_Phone with <valid phone>",
-        "10. Click Continue"
+        "1. Open the Flight Booking page with a selected itinerary and passenger count",
+        "2. For Traveler 1, leave the First Name field blank",
+        "3. Fill all other required traveler and lead contact fields with valid values (Title, Last Name, Date of Birth, Passport Number, Passport Expiry, Lead Contact Email, Lead Contact Phone)",
+        "4. Click the Continue button"
       ],
-      "expected_result": "First_Name field for Passenger 1 displays an inline validation error indicating it is required; the form does not submit and the user remains on the Flight Booking page (does not navigate to Payment Processing).",
+      "expected_result": "Form does not submit; an inline validation error appears on the First Name field indicating it is required; user remains on the Flight Booking page and is not navigated to Payment Processing",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Leave passenger Date of Birth (date) blank and attempt to Continue",
+      "test_case": "Leave required dropdown blank (Title) for a traveler",
       "preconditions": [
-        "session contains selected itinerary, passenger count, cabin class, and calculated fares",
-        "user session is active (logged-in or guest)"
+        "Booking flow has advanced from Flights Search & Listing with a specific flight itinerary and passenger count selected",
+        "User is on the Flight Booking page with at least one traveler entry"
       ],
       "steps": [
-        "1. Navigate to the Flight Booking page for the selected itinerary",
-        "2. In Passenger 1, leave Date_Of_Birth blank",
-        "3. Fill Title with <valid title> for Passenger 1",
-        "4. Fill First_Name with <valid first name>",
-        "5. Fill Last_Name with <valid last name>",
-        "6. Fill Passport_Number with <valid passport number>",
-        "7. Fill Passport_Expiry with <valid date>",
-        "8. Fill Lead_Email with <valid email>",
-        "9. Fill Lead_Phone with <valid phone>",
-        "10. Click Continue"
+        "1. Open the Flight Booking page with a selected itinerary and passenger count",
+        "2. For Traveler 1, leave the Title dropdown unselected",
+        "3. Fill all other required traveler and lead contact fields with valid values (First Name, Last Name, Date of Birth, Passport Number, Passport Expiry, Lead Contact Email, Lead Contact Phone)",
+        "4. Click the Continue button"
       ],
-      "expected_result": "Date_Of_Birth field for Passenger 1 displays an inline validation error indicating it is required; the form does not submit and the user remains on the Flight Booking page (does not navigate to Payment Processing).",
+      "expected_result": "Form does not submit; an inline validation error appears on the Title field indicating a selection is required; user remains on the Flight Booking page and is not navigated to Payment Processing",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-001",
-      "test_case": "Submit with ALL required passenger and lead contact fields empty",
+      "test_case": "Enter invalid format in Lead Contact Email",
       "preconditions": [
-        "session contains selected itinerary, passenger count, cabin class, and calculated fares",
-        "user session is active (logged-in or guest)"
+        "Booking flow has advanced from Flights Search & Listing with a specific flight itinerary and passenger count selected",
+        "User is on the Flight Booking page"
       ],
       "steps": [
-        "1. Navigate to the Flight Booking page for the selected itinerary",
-        "2. Leave all required fields empty for Passenger 1 (Title, First_Name, Last_Name, Date_Of_Birth, Passport_Number, Passport_Expiry)",
-        "3. Leave Lead_Email blank",
-        "4. Leave Lead_Phone blank",
-        "5. Click Continue"
+        "1. Open the Flight Booking page with a selected itinerary and passenger count",
+        "2. Enter <invalid email format> into the Lead Contact Email field",
+        "3. Fill all other required traveler and lead contact fields with valid values",
+        "4. Click the Continue button"
       ],
-      "expected_result": "Inline validation errors appear on all required fields (Title, First_Name, Last_Name, Date_Of_Birth, Passport_Number, Passport_Expiry, Lead_Email, Lead_Phone) indicating they are required; the form does not submit and the user remains on the Flight Booking page (does not navigate to Payment Processing).",
-      "priority": "high"
+      "expected_result": "Form does not submit; Lead Contact Email field displays an inline validation error indicating the email format is invalid; user remains on the Flight Booking page and is not navigated to Payment Processing",
+      "priority": "medium"
     },
     {
       "tc_id": "N-005",
       "wf_ref": "WF-001",
-      "test_case": "Enter invalid format in Lead Email and attempt to Continue",
+      "test_case": "Enter invalid date in a required date field (Date of Birth)",
       "preconditions": [
-        "session contains selected itinerary, passenger count, cabin class, and calculated fares",
-        "user session is active (logged-in or guest)"
+        "Booking flow has advanced from Flights Search & Listing with a specific flight itinerary and passenger count selected",
+        "User is on the Flight Booking page with at least one traveler entry"
       ],
       "steps": [
-        "1. Navigate to the Flight Booking page for the selected itinerary",
-        "2. Fill Passenger 1 Title with <valid title>",
-        "3. Fill Passenger 1 First_Name with <valid first name>",
-        "4. Fill Passenger 1 Last_Name with <valid last name>",
-        "5. Fill Passenger 1 Date_Of_Birth with <valid date>",
-        "6. Fill Passenger 1 Passport_Number with <valid passport number>",
-        "7. Fill Passenger 1 Passport_Expiry with <valid date>",
-        "8. Fill Lead_Email with <invalid email format>",
-        "9. Fill Lead_Phone with <valid phone>",
-        "10. Click Continue"
+        "1. Open the Flight Booking page with a selected itinerary and passenger count",
+        "2. For Traveler 1, enter <invalid or impossible date> into the Date of Birth field",
+        "3. Fill all other required traveler and lead contact fields with valid values",
+        "4. Click the Continue button"
       ],
-      "expected_result": "Lead_Email field displays an inline validation error indicating the email format is invalid (Lead_Email must be a valid email address); the form does not submit and the user does not navigate to Payment Processing.",
+      "expected_result": "Form does not submit; Date of Birth field displays an inline validation error indicating the date is invalid; user remains on the Flight Booking page and is not navigated to Payment Processing",
       "priority": "medium"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Enter invalid/impossible date in Date Of Birth and attempt to Continue",
+      "test_case": "Attempt Continue when precondition not met (no itinerary or passenger count selected)",
       "preconditions": [
-        "session contains selected itinerary, passenger count, cabin class, and calculated fares",
-        "user session is active (logged-in or guest)"
+        "User is on the Flight Booking page WITHOUT a selected flight itinerary and/or passenger count (booking flow precondition not satisfied)"
       ],
       "steps": [
-        "1. Navigate to the Flight Booking page for the selected itinerary",
-        "2. Fill Passenger 1 Title with <valid title>",
-        "3. Fill Passenger 1 First_Name with <valid first name>",
-        "4. Fill Passenger 1 Last_Name with <valid last name>",
-        "5. Fill Passenger 1 Date_Of_Birth with <invalid/impossible date>",
-        "6. Fill Passenger 1 Passport_Number with <valid passport number>",
-        "7. Fill Passenger 1 Passport_Expiry with <valid date>",
-        "8. Fill Lead_Email with <valid email>",
-        "9. Fill Lead_Phone with <valid phone>",
-        "10. Click Continue"
+        "1. Open the Flight Booking page directly without selecting an itinerary or passenger count",
+        "2. Fill all required traveler and lead contact fields with valid values",
+        "3. Click the Continue button"
       ],
-      "expected_result": "Date_Of_Birth field for Passenger 1 displays an inline validation error: 'must be a valid date' (per field constraint); the form does not submit and the user does not navigate to Payment Processing.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": "WF-001",
-      "test_case": "Attempt to access/Continue without a selected itinerary in session (precondition missing)",
-      "preconditions": [
-        "user session is active (logged-in or guest)",
-        "session does NOT contain selected itinerary, passenger count, cabin class, or calculated fares"
-      ],
-      "steps": [
-        "1. Open the Flight Booking page URL directly without having selected a flight (no itinerary data in session)",
-        "2. Observe displayed page or messaging",
-        "3. If a booking form is shown, attempt to click Continue"
-      ],
-      "expected_result": "Booking cannot proceed because the required itinerary data is missing: the application prevents progression to Payment Processing (no navigation occurs). The user is redirected to Flights Search & Listing (or shown a global error/banner) indicating a selected itinerary is required and the booking form is not usable.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-008",
-      "wf_ref": "WF-001",
-      "test_case": "Unauthenticated user (no active session) attempts to access Flight Booking page",
-      "preconditions": [
-        "no active user session (neither logged-in nor guest)",
-        "no selected itinerary in session"
-      ],
-      "steps": [
-        "1. As an unauthenticated user (no session), navigate to the Flight Booking page URL",
-        "2. Observe the application's response"
-      ],
-      "expected_result": "Access to the Flight Booking page is blocked: the user is redirected to a login/entry point or to Flights Search & Listing and the booking form is not accessible; a session-required or authentication message is displayed and no navigation to Payment Processing is possible.",
+      "expected_result": "Continue is blocked; the page shows an error or page-level indication that a flight itinerary and passenger count must be selected before proceeding (the booking cannot progress); user remains on the Flight Booking page and is not navigated to Payment Processing",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 8,
-    "high_priority": 6,
+    "total": 6,
+    "high_priority": 4,
     "medium_priority": 2,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:26:17] Test-Negative - PARSED JSON
+[22:34:44] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Flight Booking",
@@ -554,171 +488,107 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Leave passenger Title (dropdown) blank and attempt to Continue",
+      "test_case": "Submit with all required fields empty",
       "preconditions": [
-        "session contains selected itinerary, passenger count, cabin class, and calculated fares",
-        "user session is active (logged-in or guest)"
+        "Booking flow has advanced from Flights Search & Listing with a specific flight itinerary and passenger count selected",
+        "User is on the Flight Booking page"
       ],
       "steps": [
-        "1. Navigate to the Flight Booking page for the selected itinerary",
-        "2. In Passenger 1, leave the Title field blank",
-        "3. Fill First_Name with <valid first name>",
-        "4. Fill Last_Name with <valid last name>",
-        "5. Fill Date_Of_Birth with <valid date>",
-        "6. Fill Passport_Number with <valid passport number>",
-        "7. Fill Passport_Expiry with <valid date>",
-        "8. Fill Lead_Email with <valid email>",
-        "9. Fill Lead_Phone with <valid phone>",
-        "10. Click Continue"
+        "1. Navigate to the Flight Booking page with a selected itinerary and passenger count",
+        "2. For each traveler item, leave Title, First Name, Last Name, Date of Birth, Passport Number and Passport Expiry blank",
+        "3. Leave Lead Contact Email and Phone blank",
+        "4. Click the Continue button"
       ],
-      "expected_result": "Title field for Passenger 1 displays an inline validation error indicating it is required; the form does not submit and the user remains on the Flight Booking page (does not navigate to Payment Processing).",
+      "expected_result": "Form does not submit; inline validation errors appear on each required field: Title, First Name, Last Name, Date of Birth, Passport Number, Passport Expiry, Email and Phone indicating they are required; user remains on the Flight Booking page and is not navigated to Payment Processing",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Leave passenger First Name (text) blank and attempt to Continue",
+      "test_case": "Leave a required text field blank (representative: Traveler First Name)",
       "preconditions": [
-        "session contains selected itinerary, passenger count, cabin class, and calculated fares",
-        "user session is active (logged-in or guest)"
+        "Booking flow has advanced from Flights Search & Listing with a specific flight itinerary and passenger count selected",
+        "User is on the Flight Booking page with at least one traveler entry"
       ],
       "steps": [
-        "1. Navigate to the Flight Booking page for the selected itinerary",
-        "2. In Passenger 1, leave First_Name blank",
-        "3. Fill Title with <valid title> for Passenger 1",
-        "4. Fill Last_Name with <valid last name>",
-        "5. Fill Date_Of_Birth with <valid date>",
-        "6. Fill Passport_Number with <valid passport number>",
-        "7. Fill Passport_Expiry with <valid date>",
-        "8. Fill Lead_Email with <valid email>",
-        "9. Fill Lead_Phone with <valid phone>",
-        "10. Click Continue"
+        "1. Open the Flight Booking page with a selected itinerary and passenger count",
+        "2. For Traveler 1, leave the First Name field blank",
+        "3. Fill all other required traveler and lead contact fields with valid values (Title, Last Name, Date of Birth, Passport Number, Passport Expiry, Lead Contact Email, Lead Contact Phone)",
+        "4. Click the Continue button"
       ],
-      "expected_result": "First_Name field for Passenger 1 displays an inline validation error indicating it is required; the form does not submit and the user remains on the Flight Booking page (does not navigate to Payment Processing).",
+      "expected_result": "Form does not submit; an inline validation error appears on the First Name field indicating it is required; user remains on the Flight Booking page and is not navigated to Payment Processing",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Leave passenger Date of Birth (date) blank and attempt to Continue",
+      "test_case": "Leave required dropdown blank (Title) for a traveler",
       "preconditions": [
-        "session contains selected itinerary, passenger count, cabin class, and calculated fares",
-        "user session is active (logged-in or guest)"
+        "Booking flow has advanced from Flights Search & Listing with a specific flight itinerary and passenger count selected",
+        "User is on the Flight Booking page with at least one traveler entry"
       ],
       "steps": [
-        "1. Navigate to the Flight Booking page for the selected itinerary",
-        "2. In Passenger 1, leave Date_Of_Birth blank",
-        "3. Fill Title with <valid title> for Passenger 1",
-        "4. Fill First_Name with <valid first name>",
-        "5. Fill Last_Name with <valid last name>",
-        "6. Fill Passport_Number with <valid passport number>",
-        "7. Fill Passport_Expiry with <valid date>",
-        "8. Fill Lead_Email with <valid email>",
-        "9. Fill Lead_Phone with <valid phone>",
-        "10. Click Continue"
+        "1. Open the Flight Booking page with a selected itinerary and passenger count",
+        "2. For Traveler 1, leave the Title dropdown unselected",
+        "3. Fill all other required traveler and lead contact fields with valid values (First Name, Last Name, Date of Birth, Passport Number, Passport Expiry, Lead Contact Email, Lead Contact Phone)",
+        "4. Click the Continue button"
       ],
-      "expected_result": "Date_Of_Birth field for Passenger 1 displays an inline validation error indicating it is required; the form does not submit and the user remains on the Flight Booking page (does not navigate to Payment Processing).",
+      "expected_result": "Form does not submit; an inline validation error appears on the Title field indicating a selection is required; user remains on the Flight Booking page and is not navigated to Payment Processing",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-001",
-      "test_case": "Submit with ALL required passenger and lead contact fields empty",
+      "test_case": "Enter invalid format in Lead Contact Email",
       "preconditions": [
-        "session contains selected itinerary, passenger count, cabin class, and calculated fares",
-        "user session is active (logged-in or guest)"
+        "Booking flow has advanced from Flights Search & Listing with a specific flight itinerary and passenger count selected",
+        "User is on the Flight Booking page"
       ],
       "steps": [
-        "1. Navigate to the Flight Booking page for the selected itinerary",
-        "2. Leave all required fields empty for Passenger 1 (Title, First_Name, Last_Name, Date_Of_Birth, Passport_Number, Passport_Expiry)",
-        "3. Leave Lead_Email blank",
-        "4. Leave Lead_Phone blank",
-        "5. Click Continue"
+        "1. Open the Flight Booking page with a selected itinerary and passenger count",
+        "2. Enter <invalid email format> into the Lead Contact Email field",
+        "3. Fill all other required traveler and lead contact fields with valid values",
+        "4. Click the Continue button"
       ],
-      "expected_result": "Inline validation errors appear on all required fields (Title, First_Name, Last_Name, Date_Of_Birth, Passport_Number, Passport_Expiry, Lead_Email, Lead_Phone) indicating they are required; the form does not submit and the user remains on the Flight Booking page (does not navigate to Payment Processing).",
-      "priority": "high"
+      "expected_result": "Form does not submit; Lead Contact Email field displays an inline validation error indicating the email format is invalid; user remains on the Flight Booking page and is not navigated to Payment Processing",
+      "priority": "medium"
     },
     {
       "tc_id": "N-005",
       "wf_ref": "WF-001",
-      "test_case": "Enter invalid format in Lead Email and attempt to Continue",
+      "test_case": "Enter invalid date in a required date field (Date of Birth)",
       "preconditions": [
-        "session contains selected itinerary, passenger count, cabin class, and calculated fares",
-        "user session is active (logged-in or guest)"
+        "Booking flow has advanced from Flights Search & Listing with a specific flight itinerary and passenger count selected",
+        "User is on the Flight Booking page with at least one traveler entry"
       ],
       "steps": [
-        "1. Navigate to the Flight Booking page for the selected itinerary",
-        "2. Fill Passenger 1 Title with <valid title>",
-        "3. Fill Passenger 1 First_Name with <valid first name>",
-        "4. Fill Passenger 1 Last_Name with <valid last name>",
-        "5. Fill Passenger 1 Date_Of_Birth with <valid date>",
-        "6. Fill Passenger 1 Passport_Number with <valid passport number>",
-        "7. Fill Passenger 1 Passport_Expiry with <valid date>",
-        "8. Fill Lead_Email with <invalid email format>",
-        "9. Fill Lead_Phone with <valid phone>",
-        "10. Click Continue"
+        "1. Open the Flight Booking page with a selected itinerary and passenger count",
+        "2. For Traveler 1, enter <invalid or impossible date> into the Date of Birth field",
+        "3. Fill all other required traveler and lead contact fields with valid values",
+        "4. Click the Continue button"
       ],
-      "expected_result": "Lead_Email field displays an inline validation error indicating the email format is invalid (Lead_Email must be a valid email address); the form does not submit and the user does not navigate to Payment Processing.",
+      "expected_result": "Form does not submit; Date of Birth field displays an inline validation error indicating the date is invalid; user remains on the Flight Booking page and is not navigated to Payment Processing",
       "priority": "medium"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Enter invalid/impossible date in Date Of Birth and attempt to Continue",
+      "test_case": "Attempt Continue when precondition not met (no itinerary or passenger count selected)",
       "preconditions": [
-        "session contains selected itinerary, passenger count, cabin class, and calculated fares",
-        "user session is active (logged-in or guest)"
+        "User is on the Flight Booking page WITHOUT a selected flight itinerary and/or passenger count (booking flow precondition not satisfied)"
       ],
       "steps": [
-        "1. Navigate to the Flight Booking page for the selected itinerary",
-        "2. Fill Passenger 1 Title with <valid title>",
-        "3. Fill Passenger 1 First_Name with <valid first name>",
-        "4. Fill Passenger 1 Last_Name with <valid last name>",
-        "5. Fill Passenger 1 Date_Of_Birth with <invalid/impossible date>",
-        "6. Fill Passenger 1 Passport_Number with <valid passport number>",
-        "7. Fill Passenger 1 Passport_Expiry with <valid date>",
-        "8. Fill Lead_Email with <valid email>",
-        "9. Fill Lead_Phone with <valid phone>",
-        "10. Click Continue"
+        "1. Open the Flight Booking page directly without selecting an itinerary or passenger count",
+        "2. Fill all required traveler and lead contact fields with valid values",
+        "3. Click the Continue button"
       ],
-      "expected_result": "Date_Of_Birth field for Passenger 1 displays an inline validation error: 'must be a valid date' (per field constraint); the form does not submit and the user does not navigate to Payment Processing.",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": "WF-001",
-      "test_case": "Attempt to access/Continue without a selected itinerary in session (precondition missing)",
-      "preconditions": [
-        "user session is active (logged-in or guest)",
-        "session does NOT contain selected itinerary, passenger count, cabin class, or calculated fares"
-      ],
-      "steps": [
-        "1. Open the Flight Booking page URL directly without having selected a flight (no itinerary data in session)",
-        "2. Observe displayed page or messaging",
-        "3. If a booking form is shown, attempt to click Continue"
-      ],
-      "expected_result": "Booking cannot proceed because the required itinerary data is missing: the application prevents progression to Payment Processing (no navigation occurs). The user is redirected to Flights Search & Listing (or shown a global error/banner) indicating a selected itinerary is required and the booking form is not usable.",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-008",
-      "wf_ref": "WF-001",
-      "test_case": "Unauthenticated user (no active session) attempts to access Flight Booking page",
-      "preconditions": [
-        "no active user session (neither logged-in nor guest)",
-        "no selected itinerary in session"
-      ],
-      "steps": [
-        "1. As an unauthenticated user (no session), navigate to the Flight Booking page URL",
-        "2. Observe the application's response"
-      ],
-      "expected_result": "Access to the Flight Booking page is blocked: the user is redirected to a login/entry point or to Flights Search & Listing and the booking form is not accessible; a session-required or authentication message is displayed and no navigation to Payment Processing is possible.",
+      "expected_result": "Continue is blocked; the page shows an error or page-level indication that a flight itinerary and passenger count must be selected before proceeding (the booking cannot progress); user remains on the Flight Booking page and is not navigated to Payment Processing",
       "priority": "high"
     }
   ],
   "summary": {
-    "total": 8,
-    "high_priority": 6,
+    "total": 6,
+    "high_priority": 4,
     "medium_priority": 2,
     "low_priority": 0
   }

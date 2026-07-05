@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:02:39.072914
+DEBUG SESSION STARTED: 2026-07-04T22:22:17.152854
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Edge - SYSTEM PROMPT
+[22:22:17] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Edge - USER PROMPT
+[22:22:17] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 1,
   "module_title": "Login",
-  "summary": "The Login module provides a credential form that validates Email/Username and Password against the registered-user database and handles successful or failed authentication responses.",
-  "where_it_fits": "This module is the initial sign-in entry point shown to visitors before reaching the Accounts Overview dashboard; upon successful authentication it redirects users into the app where the left-hand navigation (Accounts Overview, Open New Account, Transfer Funds, etc.) becomes available. It sits at the start of the user session lifecycle, gating access to all subsequent modules.",
-  "assumed_state_on_entry": "Visitor is not authenticated and is presented with the sign-in page (no active user session)."
+  "summary": "The Login module authenticates users by validating Email/Username and Password credentials and directing successful sign-ins to the Accounts Overview.",
+  "where_it_fits": "This module is the application's entry point for returning users on the initial sign-in page; upon successful authentication it redirects to the Accounts Overview and unlocks the left-hand navigation (Open New Account, Transfer Funds, Payments, Request Loan, etc.).",
+  "assumed_state_on_entry": "User is unauthenticated and accessing the sign-in page with a registered account credential to provide."
 }
 </module_context>
 
@@ -247,10 +261,10 @@ If a `<workflows>` block is present in the input:
       "type": "form",
       "fields": {
         "Email_Username": {
-          "type": "email",
+          "type": "unspecified",
           "required": true,
           "constraints": [
-            "must be a valid email format"
+            "if value is an email address it must be a valid email format"
           ]
         },
         "Password": {
@@ -264,7 +278,7 @@ If a `<workflows>` block is present in the input:
             "must contain at least one special character"
           ]
         },
-        "Forgot_Password_Link": {
+        "Forgot_Password": {
           "type": "link",
           "action_name": "Forgot Password?"
         }
@@ -273,17 +287,11 @@ If a `<workflows>` block is present in the input:
         {
           "action_name": "Sign In",
           "preconditions": [
-            "Visitor is not authenticated and is presented with the sign-in page (no active user session)."
+            "User is unauthenticated and accessing the sign-in page with a registered account credential to provide."
           ],
-          "server_validation": "validate credentials securely against the registered-user database",
-          "on_success": "flash 'Signed in successfully.' and redirect to Accounts Overview page",
-          "on_failure": {
-            "message": "Incorrect email or password. Please try again.",
-            "clear_fields": [
-              "Password"
-            ],
-            "allow_retry": true
-          }
+          "on_submit": "securely validate credentials against registered-user database",
+          "on_success": "flash 'Signed in successfully.' and redirect to Accounts Overview and unlock left-hand navigation",
+          "on_failure": "show 'Incorrect email or password. Please try again.'; clear Password field and allow retry"
         }
       ]
     }
@@ -298,13 +306,14 @@ The login page contains a login form with two required input fields—Email/User
 </description>
 
 <workflows>
-WF-001 | Sign in with valid credentials | actor: Visitor | branch: none | terminal: Sign In | on_success: flash 'Signed in successfully.' and redirect to Accounts Overview page
+WF-001 | Sign in with valid credentials | actor: User | branch: none | terminal: Sign In | on_success: flash 'Signed in successfully.' and redirect to Accounts Overview and unlock left-hand navigation
+WF-002 | Navigate to Forgot Password (request password reset) | actor: User | branch: none | terminal: Forgot Password? | on_success: redirect to Forgot Password / Password Reset page
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:03:36] Test-Edge - LLM RESPONSE
+[22:22:53] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Login",
@@ -314,118 +323,116 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Sign in with a password that is exactly the minimum length and satisfies all character-class requirements",
+      "test_case": "Password at minimum length with required character classes succeeds",
       "preconditions": [
-        "A registered user exists with an account whose Email/Username is <registered user email> and whose password meets the stated constraints",
-        "Visitor is not authenticated and is on the sign-in page"
+        "User is unauthenticated and on the sign-in page",
+        "There is a registered account whose Email/Username and Password exactly match the credentials to be entered"
       ],
       "steps": [
-        "1. Enter <registered user email> in the Email_Username field",
-        "2. Enter a password that is exactly <minimum length 8> and contains at least one uppercase letter, one lowercase letter, one number, and one special character in the Password field",
+        "1. Enter <registered Email or Username> in the Email_Username field",
+        "2. Enter a Password that is exactly <minimum length> characters and includes at least one uppercase letter, one lowercase letter, one number, and one special character in the Password field",
         "3. Click Sign In"
       ],
-      "expected_result": "Form submits and authentication succeeds: the UI flashes 'Signed in successfully.' and redirects to the Accounts Overview page — succeeds.",
+      "expected_result": "Sign-in succeeds: the UI flashes 'Signed in successfully.' and the Accounts Overview page is displayed with the left-hand navigation unlocked",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Attempt sign in with a password that is one character shorter than the minimum length",
+      "test_case": "Password one character shorter than minimum is blocked (length boundary)",
       "preconditions": [
-        "Visitor is not authenticated and is on the sign-in page"
+        "User is unauthenticated and on the sign-in page"
       ],
       "steps": [
-        "1. Enter <a valid email format> in the Email_Username field",
-        "2. Enter a password that is exactly <one unit below minimum length (7)> but otherwise contains uppercase, lowercase, number, and special character in the Password field",
+        "1. Enter <registered Email or Username> in the Email_Username field",
+        "2. Enter a Password that is exactly <one unit below minimum length> characters but otherwise includes uppercase, lowercase, and a number and special character in the Password field",
         "3. Click Sign In"
       ],
-      "expected_result": "Password field displays an inline error indicating the value is below the minimum allowed length and submission is blocked / error shown.",
+      "expected_result": "Sign-in is blocked: the Password field displays an inline validation error indicating the password does not meet the minimum length requirement and no redirect to Accounts Overview occurs",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Password meets length but is missing the required special character",
+      "test_case": "Password missing required special character is blocked (complexity boundary)",
       "preconditions": [
-        "Visitor is not authenticated and is on the sign-in page"
+        "User is unauthenticated and on the sign-in page"
       ],
       "steps": [
-        "1. Enter <a valid email format> in the Email_Username field",
-        "2. Enter a password of length >= <minimum length 8> that contains at least one uppercase letter, one lowercase letter, and one number but contains no special character in the Password field",
+        "1. Enter <registered Email or Username> in the Email_Username field",
+        "2. Enter a Password that meets the minimum length and contains uppercase, lowercase, and a numeric character but contains no special character in the Password field",
         "3. Click Sign In"
       ],
-      "expected_result": "Password field displays an inline error indicating it 'must contain at least one special character' (or equivalent) and submission is blocked / error shown.",
+      "expected_result": "Sign-in is blocked: the Password field displays an inline validation error indicating the password does not meet complexity requirements and no redirect to Accounts Overview occurs",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": null,
-      "subcategory": "input_edge",
-      "test_case": "Email/Username input with leading and trailing whitespace is trimmed on submit",
+      "wf_ref": "WF-001",
+      "subcategory": "boundary",
+      "test_case": "Email-like value with invalid email format is blocked (email-format boundary)",
       "preconditions": [
-        "Visitor is not authenticated and is on the sign-in page"
+        "User is unauthenticated and on the sign-in page"
       ],
       "steps": [
-        "1. Enter <a valid email format with leading and trailing whitespace> in the Email_Username field",
-        "2. Enter a password that satisfies the stated character and length constraints in the Password field",
+        "1. Enter a value in the Email_Username field that is intended to be an email but is missing a required email component (e.g., missing top-level domain) so it fails valid-email format",
+        "2. Enter a Password that otherwise meets all password constraints in the Password field",
         "3. Click Sign In"
       ],
-      "expected_result": "Leading/trailing whitespace is trimmed from the Email_Username value (visible in the input after blur/submit). The system then attempts authentication using the trimmed email; if credentials for the trimmed email exist the sign in succeeds and the UI flashes 'Signed in successfully.' and redirects to Accounts Overview; if not, the failure message 'Incorrect email or password. Please try again.' is shown and the Password field is cleared.",
-      "priority": "low"
+      "expected_result": "Sign-in is blocked: the Email_Username field displays an inline validation error indicating the value is not a valid email format and no redirect to Accounts Overview occurs",
+      "priority": "medium"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Very long Email/Username input (200+ characters) to check handling/truncation",
+      "test_case": "Leading and trailing whitespace in Email/Username is trimmed and sign-in succeeds",
       "preconditions": [
-        "Visitor is not authenticated and is on the sign-in page"
+        "User is unauthenticated and on the sign-in page",
+        "There is a registered account whose Email/Username and Password match the credentials to be entered (without surrounding whitespace)"
       ],
       "steps": [
-        "1. Enter <a very long email string (200+ characters)> in the Email_Username field",
-        "2. Enter a password that satisfies the stated character and length constraints in the Password field",
+        "1. Enter <registered Email or Username> with leading and trailing whitespace characters in the Email_Username field",
+        "2. Enter a Password that meets all password constraints in the Password field",
         "3. Click Sign In"
       ],
-      "expected_result": "Either the UI displays an inline error indicating the email exceeds maximum allowed length and submission is blocked / error shown, or the input is accepted (no client-side error) and the system attempts authentication; the UI then displays the server response (on success: 'Signed in successfully.' and redirect; on failure: 'Incorrect email or password. Please try again.' and Password cleared).",
+      "expected_result": "Sign-in succeeds: leading/trailing whitespace is trimmed from the Email_Username value before authentication, the UI flashes 'Signed in successfully.' and the Accounts Overview page is displayed",
       "priority": "low"
     },
     {
       "tc_id": "E-006",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Browser Back after a successful sign-in then immediate resubmit from the sign-in page",
+      "test_case": "Rapid double-click of Sign In with valid credentials results in a single successful sign-in UI flow",
       "preconditions": [
-        "A registered user exists with an account whose Email/Username is <registered user email> and whose password meets the stated constraints",
-        "Visitor is not authenticated and is on the sign-in page"
+        "User is unauthenticated and on the sign-in page",
+        "There is a registered account whose Email/Username and Password match the credentials to be entered"
       ],
       "steps": [
-        "1. Enter <registered user email> in the Email_Username field",
-        "2. Enter the correct password for that user in the Password field",
-        "3. Click Sign In",
-        "4. Wait for the UI to flash 'Signed in successfully.' and redirect to the Accounts Overview page",
-        "5. Using the browser, press the Back button",
-        "6. On the sign-in page shown after navigating back, click Sign In without changing any fields"
+        "1. Enter <registered Email or Username> in the Email_Username field",
+        "2. Enter a Password that meets all password constraints in the Password field",
+        "3. Double-click the Sign In button (two quick clicks in succession)"
       ],
-      "expected_result": "Navigating back does not produce a second successful creation event or duplicate success flash. Either the second submission is prevented by the UI (submit disabled) or it re-uses the existing authenticated session such that no additional 'Signed in successfully.' flash is shown and the user remains signed in with Accounts Overview accessible; visually there is no duplicate success notification or duplicate session indicator — user remains authenticated. (Visible: only one 'Signed in successfully.' flash was shown and Accounts Overview remains accessible.)",
+      "expected_result": "Sign-in succeeds once: the UI displays a single flash 'Signed in successfully.' and the Accounts Overview page is loaded; the sign-in form is not re-displayed or submitted a second time",
       "priority": "low"
     }
   ],
   "summary": {
     "total": 6,
-    "boundary": 3,
-    "input_edge": 2,
+    "boundary": 4,
+    "input_edge": 1,
     "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 3,
-    "low_priority": 3
+    "medium_priority": 4,
+    "low_priority": 2
   }
 }
 
 ------------------------------------------------------------
-[21:03:36] Test-Edge - PARSED JSON
+[22:22:53] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Login",
@@ -435,112 +442,110 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Sign in with a password that is exactly the minimum length and satisfies all character-class requirements",
+      "test_case": "Password at minimum length with required character classes succeeds",
       "preconditions": [
-        "A registered user exists with an account whose Email/Username is <registered user email> and whose password meets the stated constraints",
-        "Visitor is not authenticated and is on the sign-in page"
+        "User is unauthenticated and on the sign-in page",
+        "There is a registered account whose Email/Username and Password exactly match the credentials to be entered"
       ],
       "steps": [
-        "1. Enter <registered user email> in the Email_Username field",
-        "2. Enter a password that is exactly <minimum length 8> and contains at least one uppercase letter, one lowercase letter, one number, and one special character in the Password field",
+        "1. Enter <registered Email or Username> in the Email_Username field",
+        "2. Enter a Password that is exactly <minimum length> characters and includes at least one uppercase letter, one lowercase letter, one number, and one special character in the Password field",
         "3. Click Sign In"
       ],
-      "expected_result": "Form submits and authentication succeeds: the UI flashes 'Signed in successfully.' and redirects to the Accounts Overview page \u2014 succeeds.",
+      "expected_result": "Sign-in succeeds: the UI flashes 'Signed in successfully.' and the Accounts Overview page is displayed with the left-hand navigation unlocked",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Attempt sign in with a password that is one character shorter than the minimum length",
+      "test_case": "Password one character shorter than minimum is blocked (length boundary)",
       "preconditions": [
-        "Visitor is not authenticated and is on the sign-in page"
+        "User is unauthenticated and on the sign-in page"
       ],
       "steps": [
-        "1. Enter <a valid email format> in the Email_Username field",
-        "2. Enter a password that is exactly <one unit below minimum length (7)> but otherwise contains uppercase, lowercase, number, and special character in the Password field",
+        "1. Enter <registered Email or Username> in the Email_Username field",
+        "2. Enter a Password that is exactly <one unit below minimum length> characters but otherwise includes uppercase, lowercase, and a number and special character in the Password field",
         "3. Click Sign In"
       ],
-      "expected_result": "Password field displays an inline error indicating the value is below the minimum allowed length and submission is blocked / error shown.",
+      "expected_result": "Sign-in is blocked: the Password field displays an inline validation error indicating the password does not meet the minimum length requirement and no redirect to Accounts Overview occurs",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Password meets length but is missing the required special character",
+      "test_case": "Password missing required special character is blocked (complexity boundary)",
       "preconditions": [
-        "Visitor is not authenticated and is on the sign-in page"
+        "User is unauthenticated and on the sign-in page"
       ],
       "steps": [
-        "1. Enter <a valid email format> in the Email_Username field",
-        "2. Enter a password of length >= <minimum length 8> that contains at least one uppercase letter, one lowercase letter, and one number but contains no special character in the Password field",
+        "1. Enter <registered Email or Username> in the Email_Username field",
+        "2. Enter a Password that meets the minimum length and contains uppercase, lowercase, and a numeric character but contains no special character in the Password field",
         "3. Click Sign In"
       ],
-      "expected_result": "Password field displays an inline error indicating it 'must contain at least one special character' (or equivalent) and submission is blocked / error shown.",
+      "expected_result": "Sign-in is blocked: the Password field displays an inline validation error indicating the password does not meet complexity requirements and no redirect to Accounts Overview occurs",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": null,
-      "subcategory": "input_edge",
-      "test_case": "Email/Username input with leading and trailing whitespace is trimmed on submit",
+      "wf_ref": "WF-001",
+      "subcategory": "boundary",
+      "test_case": "Email-like value with invalid email format is blocked (email-format boundary)",
       "preconditions": [
-        "Visitor is not authenticated and is on the sign-in page"
+        "User is unauthenticated and on the sign-in page"
       ],
       "steps": [
-        "1. Enter <a valid email format with leading and trailing whitespace> in the Email_Username field",
-        "2. Enter a password that satisfies the stated character and length constraints in the Password field",
+        "1. Enter a value in the Email_Username field that is intended to be an email but is missing a required email component (e.g., missing top-level domain) so it fails valid-email format",
+        "2. Enter a Password that otherwise meets all password constraints in the Password field",
         "3. Click Sign In"
       ],
-      "expected_result": "Leading/trailing whitespace is trimmed from the Email_Username value (visible in the input after blur/submit). The system then attempts authentication using the trimmed email; if credentials for the trimmed email exist the sign in succeeds and the UI flashes 'Signed in successfully.' and redirects to Accounts Overview; if not, the failure message 'Incorrect email or password. Please try again.' is shown and the Password field is cleared.",
-      "priority": "low"
+      "expected_result": "Sign-in is blocked: the Email_Username field displays an inline validation error indicating the value is not a valid email format and no redirect to Accounts Overview occurs",
+      "priority": "medium"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "input_edge",
-      "test_case": "Very long Email/Username input (200+ characters) to check handling/truncation",
+      "test_case": "Leading and trailing whitespace in Email/Username is trimmed and sign-in succeeds",
       "preconditions": [
-        "Visitor is not authenticated and is on the sign-in page"
+        "User is unauthenticated and on the sign-in page",
+        "There is a registered account whose Email/Username and Password match the credentials to be entered (without surrounding whitespace)"
       ],
       "steps": [
-        "1. Enter <a very long email string (200+ characters)> in the Email_Username field",
-        "2. Enter a password that satisfies the stated character and length constraints in the Password field",
+        "1. Enter <registered Email or Username> with leading and trailing whitespace characters in the Email_Username field",
+        "2. Enter a Password that meets all password constraints in the Password field",
         "3. Click Sign In"
       ],
-      "expected_result": "Either the UI displays an inline error indicating the email exceeds maximum allowed length and submission is blocked / error shown, or the input is accepted (no client-side error) and the system attempts authentication; the UI then displays the server response (on success: 'Signed in successfully.' and redirect; on failure: 'Incorrect email or password. Please try again.' and Password cleared).",
+      "expected_result": "Sign-in succeeds: leading/trailing whitespace is trimmed from the Email_Username value before authentication, the UI flashes 'Signed in successfully.' and the Accounts Overview page is displayed",
       "priority": "low"
     },
     {
       "tc_id": "E-006",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Browser Back after a successful sign-in then immediate resubmit from the sign-in page",
+      "test_case": "Rapid double-click of Sign In with valid credentials results in a single successful sign-in UI flow",
       "preconditions": [
-        "A registered user exists with an account whose Email/Username is <registered user email> and whose password meets the stated constraints",
-        "Visitor is not authenticated and is on the sign-in page"
+        "User is unauthenticated and on the sign-in page",
+        "There is a registered account whose Email/Username and Password match the credentials to be entered"
       ],
       "steps": [
-        "1. Enter <registered user email> in the Email_Username field",
-        "2. Enter the correct password for that user in the Password field",
-        "3. Click Sign In",
-        "4. Wait for the UI to flash 'Signed in successfully.' and redirect to the Accounts Overview page",
-        "5. Using the browser, press the Back button",
-        "6. On the sign-in page shown after navigating back, click Sign In without changing any fields"
+        "1. Enter <registered Email or Username> in the Email_Username field",
+        "2. Enter a Password that meets all password constraints in the Password field",
+        "3. Double-click the Sign In button (two quick clicks in succession)"
       ],
-      "expected_result": "Navigating back does not produce a second successful creation event or duplicate success flash. Either the second submission is prevented by the UI (submit disabled) or it re-uses the existing authenticated session such that no additional 'Signed in successfully.' flash is shown and the user remains signed in with Accounts Overview accessible; visually there is no duplicate success notification or duplicate session indicator \u2014 user remains authenticated. (Visible: only one 'Signed in successfully.' flash was shown and Accounts Overview remains accessible.)",
+      "expected_result": "Sign-in succeeds once: the UI displays a single flash 'Signed in successfully.' and the Accounts Overview page is loaded; the sign-in form is not re-displayed or submitted a second time",
       "priority": "low"
     }
   ],
   "summary": {
     "total": 6,
-    "boundary": 3,
-    "input_edge": 2,
+    "boundary": 4,
+    "input_edge": 1,
     "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 3,
-    "low_priority": 3
+    "medium_priority": 4,
+    "low_priority": 2
   }
 }

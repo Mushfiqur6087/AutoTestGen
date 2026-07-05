@@ -1,13 +1,13 @@
 # Structural Model Critique — Parabank
 
-Generated: 2026-07-04T15:05:28.327021Z
+Generated: 2026-07-04T16:25:15.026751Z
 
 ## Login
 
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST includes the required form, both input fields with their validation constraints, the Sign In submit action with success/failure behavior, and the Forgot Password link, matching the description.
+The AST includes the two required fields, validation constraints, the Sign In submit action with success/failure behavior, and the Forgot Password link — matching the description.
 
 **Missing:** none
 
@@ -20,7 +20,7 @@ The AST includes the required form, both input fields with their validation cons
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST accurately represents the registration form, required fields, validation constraints, auto-formatting, and submit action with success/failure behavior.
+The AST includes all required form fields, validation constraints, state dropdown options, submit action with precondition, success message and redirect — matching the description.
 
 **Missing:** none
 
@@ -33,7 +33,7 @@ AST accurately represents the registration form, required fields, validation con
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST includes the single interactive element (clickable Account Number row action) described and contains no critical missing items, phantoms, or structural errors.
+The AST captures the single interactive element (clickable Account Number as a row action) and includes appropriate preconditions; no critical elements or structural errors were found.
 
 **Missing:** none
 
@@ -46,9 +46,11 @@ The AST includes the single interactive element (clickable Account Number row ac
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST includes all interactive elements (account type selection, deposit amount, funding source, open button), required validations (minimums per account type, numeric deposit, funding balance), real-time validation flags, and the success redirect, matching the description.
+AST is usable; it captures the required interactive fields, validations, preconditions, and submit behavior, with one minor omission in the Account_Type field type.
 
-**Missing:** none
+**Missing:**
+
+- {'path': 'components.Open_New_Account_Form.fields.Account_Type.type', 'severity': 'minor', 'reason': "The description specifies interactive account-type selection cards (Checking or Savings); the AST includes Account_Type and options but leaves its type as 'unspecified' instead of a selector/card type (e.g., 'card_selector' or 'radio_card')."}
 
 **Phantoms:** none
 
@@ -59,7 +61,7 @@ The AST includes all interactive elements (account type selection, deposit amoun
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST accurately represents the interactive elements, conditionals, validations, and success/failure behaviors described for the Transfer Funds form.
+The AST accurately represents the described interactive elements, conditionals, validations, and submit behavior for the Transfer Funds form.
 
 **Missing:** none
 
@@ -72,7 +74,7 @@ AST accurately represents the interactive elements, conditionals, validations, a
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST accurately captures the interactive form fields, the Pay action, the account-number match constraint, funds-availability constraint, and success/failure behaviors described.
+The AST includes the form, all named interactive fields (including dropdown and number), the Pay submit action, the account-number match and funds-check constraints, and the precondition/on_success/on_failure behavior, so it is acceptable to use as-is.
 
 **Missing:** none
 
@@ -85,7 +87,7 @@ The AST accurately captures the interactive form fields, the Pay action, the acc
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST includes all expected interactive elements (loan type selection, amount, down payment, collateral account), the conditional amount ranges, validation rules, submission simulation, and success/failure outcomes described; no critical issues found.
+AST accurately captures all interactive elements, conditionals, validations, preconditions, and simulated outcomes described for the Request Loan page.
 
 **Missing:** none
 
@@ -98,9 +100,11 @@ The AST includes all expected interactive elements (loan type selection, amount,
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST includes the form, all seven editable fields marked required with format constraints, the Update Profile submit action, and the described precondition, success, and failure behaviors — matching the description.
+AST correctly captures the editable fields, validation, submit action, and success/failure behavior; only minor metadata about pre-filled initial values is missing.
 
-**Missing:** none
+**Missing:**
+
+- {'path': 'components.Update_Contact_Info_Form.fields', 'severity': 'minor', 'reason': 'The description states the form is pre-filled with First Name, Last Name, Street Address, City, State, ZIP Code, and Phone Number; the AST does not include initial_value/prefilled metadata for these fields.'}
 
 **Phantoms:** none
 
@@ -111,7 +115,7 @@ The AST includes the form, all seven editable fields marked required with format
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST includes both forms, all interactive fields, submit actions, validations, and success/failure behaviors described; no critical elements or structural errors found.
+The AST accurately represents the two forms, their interactive fields, validations, submit actions, preconditions, and success/failure behaviors described; no critical elements are missing.
 
 **Missing:** none
 
@@ -124,7 +128,7 @@ AST includes both forms, all interactive fields, submit actions, validations, an
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST includes the expected interactive forms, fields, conditional validations, submit actions, preconditions, and success/error behaviors from the description; no critical issues found.
+The AST includes all interactive fields, conditional validations, submit actions, and on_success behavior described for both forms; no critical elements or structural errors were found.
 
 **Missing:** none
 
@@ -137,7 +141,7 @@ The AST includes the expected interactive forms, fields, conditional validations
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST includes both forms, their interactive fields, conditionals, validations, preconditions, and submit actions as described; no critical issues found.
+AST includes both forms, all interactive fields, conditionals, validations, and submit actions described in the specification; no critical gaps found.
 
 **Missing:** none
 
@@ -150,9 +154,11 @@ The AST includes both forms, their interactive fields, conditionals, validations
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST accurately captures the collapsible panel, form, three password fields, submit action, verification and validation behaviors described.
+AST matches the described interactive elements and constraints; only a minor omission of explicit failure handling for validation feedback.
 
-**Missing:** none
+**Missing:**
+
+- {'path': 'components.Change_Password_Panel.fields.Change_Password_Form.submit_actions[0].on_failure', 'severity': 'minor', 'reason': 'The description states that validation errors highlight the appropriate fields (a failure consequence), but the AST does not include an on_failure or validation_error handling entry mapping failures to field-level feedback.'}
 
 **Phantoms:** none
 
@@ -163,13 +169,9 @@ AST accurately captures the collapsible panel, form, three password fields, subm
 **Verdict:** yes  
 **Forced ship:** no  
 
-All expected interactive elements and submit actions are present; only small type-specific details are missing.
+The AST includes both forms, all interactive fields, specified constraints, submit actions with on_success/on_failure behavior, and matches the described preconditions and validation rules.
 
-**Missing:**
-
-- {'path': 'components.Secure_Message_Form.fields.Message_Body.type', 'severity': 'minor', 'reason': "Description specifies the message body is rich-text; the AST lists Message_Body but its type is 'unspecified'."}
-- {'path': 'components.Secure_Message_Form.fields.Subject.type', 'severity': 'minor', 'reason': "Description references Subject with a length validation (a text input); the AST includes Subject but its type is 'unspecified'."}
-- {'path': 'components.Schedule_Callback_Form.fields.Phone_Number.type', 'severity': 'minor', 'reason': "Description indicates Phone Number is pre-filled and editable with format validation (a phone input); the AST marks it prefilled but leaves type 'unspecified'."}
+**Missing:** none
 
 **Phantoms:** none
 

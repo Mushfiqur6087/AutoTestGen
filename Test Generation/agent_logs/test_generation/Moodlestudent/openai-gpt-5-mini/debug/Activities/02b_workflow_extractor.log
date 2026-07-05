@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:09:37.952598
+DEBUG SESSION STARTED: 2026-07-04T22:39:34.037172
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:09:37] Workflow-Extractor - SYSTEM PROMPT
+[22:39:34] Workflow-Extractor - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Workflow Extractor. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to enumerate every distinct, executable interaction path through this module — one entry per workflow.
 
@@ -54,12 +54,12 @@ Two workflows are **distinct** if they require different user actions to reach t
 
 ## What Paths to Enumerate
 
-Enumerate **all** distinct paths — not one-per-type. The rule: if two paths require the user to do something different to reach the terminal action, they are separate workflows.
+Enumerate **distinct-outcome** paths — not one-per-type, and **not** the cartesian product of every toggle. The rule: two paths are separate workflows only if the user does something different that leads to a **different terminal outcome** (different `on_success`) **or** exercises a **different revealed required-field group** that needs its own coverage.
 
 | AST node type | What to enumerate |
 |---|---|
 | `form` with no conditionals | One workflow per `submit_actions[]` entry |
-| `form` with `visible_when` fields | One workflow per unique combination of conditional branches activated, times each `submit_actions[]` entry |
+| `form` with `visible_when` / toggle fields | One base workflow per `submit_actions[]` entry, PLUS one workflow for **each conditional branch that reveals a distinct required-field group** (e.g. enabling File submissions reveals max-files/size/types). Do **NOT** multiply independent toggles together. |
 | `wizard` | One workflow per distinct step sequence (if all steps are linear, one workflow per `submit_actions[]`; if any step is conditional, enumerate each branch) |
 | `state_bound_action_bar` | One workflow per `available_actions[]` entry per state (state × action = one workflow) |
 | `data_table` | One workflow per `row_actions[]` entry + one per `bulk_actions[]` entry (include View, Edit, Delete, and all others) |
@@ -67,6 +67,20 @@ Enumerate **all** distinct paths — not one-per-type. The rule: if two paths re
 | `repeating_group` | Not a standalone workflow source — it is part of a form workflow that activates it |
 
 **Include all data table row actions** — View, Edit, Delete, and any others. Even read-only row actions (e.g., "View") must be included because they still require a positive test case.
+
+### DO NOT enumerate the cartesian product of toggles (CRITICAL)
+
+A form with independent toggles A, B, C and submit buttons {Save, Save+display, Cancel} must **not** produce 2×2×2×3 = 24 workflows. Independent toggles that do **not** change the terminal outcome are covered **once each**, not in combination:
+- If toggle A (e.g. `File_Submissions`) and toggle B (e.g. `Group_Submissions`) both still reach the same `on_success` ("assignment created"), they are **not** two dimensions to multiply. Emit one workflow that activates A's revealed fields, and one that activates B's revealed fields — not A×B.
+- An `+ Add restriction` / optional-picker step that does not change `on_success` is **not** a separate workflow dimension. Fold it into an existing workflow or add at most one workflow for it.
+
+### Discard / Cancel collapse rule (CRITICAL)
+
+A `Cancel` / `discard` / `abandon` terminal action discards **all** field state, so field/toggle combinations are irrelevant to it. Emit **exactly ONE** Cancel workflow for the module, regardless of how many toggles or revealed-field groups exist. Never produce a Cancel workflow per toggle combination.
+
+**Worked example — Assignment Creation** (toggles: File submissions, Group submissions, Add restriction; buttons: Save and return, Save and display, Cancel):
+- ✅ Correct (~6–8): base Save-and-return, base Save-and-display, one Save covering File-submission revealed fields, one Save covering Group-submission revealed fields, one Save covering an added restriction, one Cancel.
+- ❌ Wrong (24): every `{File}×{Group}×{Restriction}×{Save/Display/Cancel}` combination.
 
 ---
 
@@ -101,9 +115,11 @@ Go through these one by one. If any check fails, fix it before outputting.
 □ 4. Every tab with a form submission in a `tab_container` has one workflow.
 □ 5. `wf_id` numbering is sequential (WF-001, WF-002, ...) with no gaps.
 □ 6. Every `terminal_action` matches an exact `action_name` or `element_name` from the AST.
-□ 7. No two workflows share the same `conditional_branch` AND `terminal_action`.
-□ 8. No workflow crosses module boundaries (steps in another module).
-□ 9. Every `on_success` reflects the AST or description — no generic "success" strings.
+□ 7. No two workflows reach the **same `on_success` via the same code path** — even if their `conditional_branch` strings differ. If they do, merge them (keep the one that activates a distinct revealed required-field group; drop pure toggle-combination duplicates).
+□ 8. There is **at most ONE** `Cancel`/`discard` workflow for the whole module.
+□ 9. No independent toggles are multiplied together — the workflow count is roughly (base submits) + (revealed required-field groups) + 1 Cancel, NOT the product of all toggles × all buttons.
+□ 10. No workflow crosses module boundaries (steps in another module).
+□ 11. Every `on_success` reflects the AST or description — no generic "success" strings.
 
 ---
 
@@ -111,7 +127,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 1. Does each workflow trace back to a specific AST node (`submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`) or an explicit action described in the description text? If no → delete it.
 2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
-3. Are two workflows identical in `conditional_branch` AND `terminal_action`? If yes → merge them into one.
+3. Do two workflows reach the same `on_success` via the same code path (e.g. differing only by an independent toggle that does not change the outcome, or being repeated Cancel variants)? If yes → merge them into one. Keep a separate workflow only when its branch reveals a **distinct required-field group** that needs its own coverage.
 4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
 5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
 
@@ -120,7 +136,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 ## Calibration
 
 - Simple form module (no conditionals, one submit): 1–3 workflows
-- Form with conditionals: 3–8 workflows
+- Form with conditionals/toggles: **(base submit outcomes) + (one per revealed required-field group) + 1 Cancel** — typically 4–8, NOT the product of all toggles × all buttons. A multi-toggle form like Assignment Creation should land near 6–8, never 20+.
 - Module with state machine: add 1 per (state × action) combination
 - Module with data table: add 1 per row_action + 1 per bulk_action
 
@@ -153,15 +169,15 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 
 ------------------------------------------------------------
-[21:09:37] Workflow-Extractor - USER PROMPT
+[22:39:34] Workflow-Extractor - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 8,
   "module_title": "Activities",
-  "summary": "Provides a consolidated, grouped overview of every course activity with collapsible sections and direct links to each activity page.",
-  "where_it_fits": "Accessible from a course's horizontal tab bar under the Activities tab and complements the Course Page and Course Index sidebar by offering an alternative, grouped listing of activities; it appears in the course-level navigation path shown in the breadcrumbs when viewing activities.",
-  "assumed_state_on_entry": "User is logged in and actively viewing a specific course (on the Course Page)"
+  "summary": "Provides a consolidated, type-grouped overview of all course activities with expandable sections and direct links to each activity page.",
+  "where_it_fits": "Accessible from the course-level horizontal tab bar (Course > Activities) when viewing a specific course, and reachable via the Course Index sidebar or activity breadcrumbs; it sits alongside Participants and Grades as a course navigation hub for locating activities. It is part of the course view lifecycle for browsing and jumping into individual activity pages.",
+  "assumed_state_on_entry": "User is logged in and currently viewing a specific course page with course context and enrollment in that course."
 }
 </module_context>
 
@@ -172,28 +188,28 @@ Go through these one by one. If any check fails, fix it before outputting.
   "module_name": "Activities",
   "components": {
     "Activities_Page": {
-      "type": "page",
+      "type": "accordion",
       "preconditions": [
-        "User is logged in",
-        "Viewing a specific course"
+        "User is logged in and currently viewing a specific course page with course context and enrollment in that course."
       ],
       "sections": [
         {
           "section_name": "Assignments",
+          "collapsible": true,
           "expanded": true,
           "fields": {
             "Assignments_Table": {
               "type": "data_table",
+              "columns": [
+                "Name",
+                "Due date",
+                "Submission status"
+              ],
+              "clickable_column": "Name",
               "row_actions": [
                 {
                   "action_name": "Open Activity",
-                  "action_type": "link",
-                  "trigger": "click Name",
-                  "on_success": "navigates to activity page",
-                  "preconditions": [
-                    "User is logged in",
-                    "Viewing a specific course"
-                  ]
+                  "on_success": "navigates to activity page and shows parent section below"
                 }
               ]
             }
@@ -201,84 +217,37 @@ Go through these one by one. If any check fails, fix it before outputting.
         },
         {
           "section_name": "Forums",
+          "collapsible": true,
           "expanded": false,
-          "expand_toggle": {
-            "action_type": "toggle",
-            "trigger": "click arrow",
-            "on_success": "toggle section expansion"
-          },
-          "fields": {
-            "Forums_List": {
-              "type": "data_table",
-              "row_actions": [
-                {
-                  "action_name": "Open Activity",
-                  "action_type": "link",
-                  "trigger": "click Name",
-                  "on_success": "navigates to activity page",
-                  "preconditions": [
-                    "User is logged in",
-                    "Viewing a specific course"
-                  ]
-                }
-              ]
-            }
-          }
+          "fields": {}
         },
         {
           "section_name": "Resources",
+          "collapsible": true,
           "expanded": false,
-          "expand_toggle": {
-            "action_type": "toggle",
-            "trigger": "click arrow",
-            "on_success": "toggle section expansion"
-          },
-          "fields": {
-            "Resources_List": {
-              "type": "data_table",
-              "row_actions": [
-                {
-                  "action_name": "Open Activity",
-                  "action_type": "link",
-                  "trigger": "click Name",
-                  "on_success": "navigates to activity page",
-                  "preconditions": [
-                    "User is logged in",
-                    "Viewing a specific course"
-                  ]
-                }
-              ]
-            }
-          }
+          "fields": {}
         },
         {
-          "section_name": "Other_Sections",
+          "section_name": "Additional Activity Types",
+          "collapsible": true,
           "expanded": false,
           "fields": {
-            "Other_Sections": {
+            "Activity_Type_Sections": {
               "type": "repeating_group",
               "item_fields": {
-                "Expanded": {
-                  "type": "boolean",
-                  "default": false
+                "Activity_Type_Name": {
+                  "type": "unspecified"
                 },
-                "Expand_Toggle": {
-                  "action_type": "toggle",
-                  "trigger": "click arrow",
-                  "on_success": "toggle item expansion"
-                },
-                "Activities": {
+                "Activities_Table": {
                   "type": "data_table",
+                  "columns": [
+                    "Name"
+                  ],
+                  "clickable_column": "Name",
                   "row_actions": [
                     {
                       "action_name": "Open Activity",
-                      "action_type": "link",
-                      "trigger": "click Name",
-                      "on_success": "navigates to activity page",
-                      "preconditions": [
-                        "User is logged in",
-                        "Viewing a specific course"
-                      ]
+                      "on_success": "navigates to activity page"
                     }
                   ]
                 }
@@ -304,512 +273,85 @@ The Activities page provides a consolidated overview of every activity in the co
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:10:01] Workflow-Extractor - LLM RESPONSE
+[22:39:57] Workflow-Extractor - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Activities",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Open activity from Assignments table",
+      "name": "Open assignment from Assignments table",
       "actor": "<role>",
-      "conditional_branch": null,
+      "conditional_branch": "Section == Assignments",
       "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
+      "on_success": "navigates to activity page and shows parent section below"
     },
     {
       "wf_id": "WF-002",
-      "name": "Toggle Forums section expansion",
+      "name": "Open activity from an Additional Activity Types table",
       "actor": "<role>",
-      "conditional_branch": "Forums_Section == Collapsed",
-      "terminal_action": "expand_toggle",
-      "on_success": "toggle section expansion"
+      "conditional_branch": "Section == Additional Activity Types (repeating group item)",
+      "terminal_action": "Open Activity",
+      "on_success": "navigates to activity page"
     },
     {
       "wf_id": "WF-003",
-      "name": "Open activity from Forums table",
+      "name": "Expand Forums section",
       "actor": "<role>",
-      "conditional_branch": "Forums_Section == Expanded",
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
+      "conditional_branch": "Section == Forums AND expanded == false",
+      "terminal_action": "Expand Section",
+      "on_success": "Forums section expands and displays its activities"
     },
     {
       "wf_id": "WF-004",
-      "name": "Toggle Resources section expansion",
+      "name": "Expand Resources section",
       "actor": "<role>",
-      "conditional_branch": "Resources_Section == Collapsed",
-      "terminal_action": "expand_toggle",
-      "on_success": "toggle section expansion"
-    },
-    {
-      "wf_id": "WF-005",
-      "name": "Open activity from Resources table",
-      "actor": "<role>",
-      "conditional_branch": "Resources_Section == Expanded",
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
-    },
-    {
-      "wf_id": "WF-006",
-      "name": "Toggle an Other_Sections item expansion",
-      "actor": "<role>",
-      "conditional_branch": "Other_Section_Item_Expanded == Collapsed",
-      "terminal_action": "Expand_Toggle",
-      "on_success": "toggle item expansion"
-    },
-    {
-      "wf_id": "WF-007",
-      "name": "Open activity from an Other_Sections item",
-      "actor": "<role>",
-      "conditional_branch": "Other_Section_Item_Expanded == Expanded",
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
+      "conditional_branch": "Section == Resources AND expanded == false",
+      "terminal_action": "Expand Section",
+      "on_success": "Resources section expands and displays its activities"
     }
   ],
-  "total": 7
+  "total": 4
 }
 
 ------------------------------------------------------------
-[21:10:01] Workflow-Extractor - PARSED JSON
+[22:39:57] Workflow-Extractor - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Activities",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Open activity from Assignments table",
+      "name": "Open assignment from Assignments table",
       "actor": "<role>",
-      "conditional_branch": null,
+      "conditional_branch": "Section == Assignments",
       "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
+      "on_success": "navigates to activity page and shows parent section below"
     },
     {
       "wf_id": "WF-002",
-      "name": "Toggle Forums section expansion",
+      "name": "Open activity from an Additional Activity Types table",
       "actor": "<role>",
-      "conditional_branch": "Forums_Section == Collapsed",
-      "terminal_action": "expand_toggle",
-      "on_success": "toggle section expansion"
+      "conditional_branch": "Section == Additional Activity Types (repeating group item)",
+      "terminal_action": "Open Activity",
+      "on_success": "navigates to activity page"
     },
     {
       "wf_id": "WF-003",
-      "name": "Open activity from Forums table",
+      "name": "Expand Forums section",
       "actor": "<role>",
-      "conditional_branch": "Forums_Section == Expanded",
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
+      "conditional_branch": "Section == Forums AND expanded == false",
+      "terminal_action": "Expand Section",
+      "on_success": "Forums section expands and displays its activities"
     },
     {
       "wf_id": "WF-004",
-      "name": "Toggle Resources section expansion",
+      "name": "Expand Resources section",
       "actor": "<role>",
-      "conditional_branch": "Resources_Section == Collapsed",
-      "terminal_action": "expand_toggle",
-      "on_success": "toggle section expansion"
-    },
-    {
-      "wf_id": "WF-005",
-      "name": "Open activity from Resources table",
-      "actor": "<role>",
-      "conditional_branch": "Resources_Section == Expanded",
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
-    },
-    {
-      "wf_id": "WF-006",
-      "name": "Toggle an Other_Sections item expansion",
-      "actor": "<role>",
-      "conditional_branch": "Other_Section_Item_Expanded == Collapsed",
-      "terminal_action": "Expand_Toggle",
-      "on_success": "toggle item expansion"
-    },
-    {
-      "wf_id": "WF-007",
-      "name": "Open activity from an Other_Sections item",
-      "actor": "<role>",
-      "conditional_branch": "Other_Section_Item_Expanded == Expanded",
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
+      "conditional_branch": "Section == Resources AND expanded == false",
+      "terminal_action": "Expand Section",
+      "on_success": "Resources section expands and displays its activities"
     }
   ],
-  "total": 7
-}
-
-------------------------------------------------------------
-[21:10:26] Workflow-Extractor - USER PROMPT
-------------------------------------------------------------
-<module_context>
-{
-  "module_id": 8,
-  "module_title": "Activities",
-  "summary": "Provides a consolidated, grouped overview of every course activity with collapsible sections and direct links to each activity page.",
-  "where_it_fits": "Accessible from a course's horizontal tab bar under the Activities tab and complements the Course Page and Course Index sidebar by offering an alternative, grouped listing of activities; it appears in the course-level navigation path shown in the breadcrumbs when viewing activities.",
-  "assumed_state_on_entry": "User is logged in and actively viewing a specific course (on the Course Page)"
-}
-</module_context>
-
-<module_name>Activities</module_name>
-
-<ast>
-{
-  "module_name": "Activities",
-  "components": {
-    "Activities_Page": {
-      "type": "page",
-      "preconditions": [
-        "User is logged in",
-        "Viewing a specific course"
-      ],
-      "sections": [
-        {
-          "section_name": "Assignments",
-          "expanded": true,
-          "fields": {
-            "Assignments_Table": {
-              "type": "data_table",
-              "row_actions": [
-                {
-                  "action_name": "Open Activity",
-                  "action_type": "link",
-                  "trigger": "click Name",
-                  "on_success": "navigates to activity page",
-                  "preconditions": [
-                    "User is logged in",
-                    "Viewing a specific course"
-                  ]
-                }
-              ]
-            }
-          }
-        },
-        {
-          "section_name": "Forums",
-          "expanded": false,
-          "expand_toggle": {
-            "action_type": "toggle",
-            "trigger": "click arrow",
-            "on_success": "toggle section expansion"
-          },
-          "fields": {
-            "Forums_List": {
-              "type": "data_table",
-              "row_actions": [
-                {
-                  "action_name": "Open Activity",
-                  "action_type": "link",
-                  "trigger": "click Name",
-                  "on_success": "navigates to activity page",
-                  "preconditions": [
-                    "User is logged in",
-                    "Viewing a specific course"
-                  ]
-                }
-              ]
-            }
-          }
-        },
-        {
-          "section_name": "Resources",
-          "expanded": false,
-          "expand_toggle": {
-            "action_type": "toggle",
-            "trigger": "click arrow",
-            "on_success": "toggle section expansion"
-          },
-          "fields": {
-            "Resources_List": {
-              "type": "data_table",
-              "row_actions": [
-                {
-                  "action_name": "Open Activity",
-                  "action_type": "link",
-                  "trigger": "click Name",
-                  "on_success": "navigates to activity page",
-                  "preconditions": [
-                    "User is logged in",
-                    "Viewing a specific course"
-                  ]
-                }
-              ]
-            }
-          }
-        },
-        {
-          "section_name": "Other_Sections",
-          "expanded": false,
-          "fields": {
-            "Other_Sections": {
-              "type": "repeating_group",
-              "item_fields": {
-                "Expanded": {
-                  "type": "boolean",
-                  "default": false
-                },
-                "Expand_Toggle": {
-                  "action_type": "toggle",
-                  "trigger": "click arrow",
-                  "on_success": "toggle item expansion"
-                },
-                "Activities": {
-                  "type": "data_table",
-                  "row_actions": [
-                    {
-                      "action_name": "Open Activity",
-                      "action_type": "link",
-                      "trigger": "click Name",
-                      "on_success": "navigates to activity page",
-                      "preconditions": [
-                        "User is logged in",
-                        "Viewing a specific course"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      ]
-    }
-  }
-}
-</ast>
-
-<description>
-
-The Activities page provides a consolidated overview of every activity in the course, grouped by type. The Assignments section is expanded by default and displays a table with columns for Name (clickable link with parent section shown below), Due date, and Submission status. The Forums section and Resources section are collapsed by default and expandable via an arrow. Additional activity types appear as their own collapsible sections. Clicking any activity name navigates directly to that activity's page.
-
----
-
-
-</description>
-
-IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
-
-------------------------------------------------------------
-[21:11:13] Workflow-Extractor - LLM RESPONSE
-------------------------------------------------------------
-{
-  "module": "Activities",
-  "workflows": [
-    {
-      "wf_id": "WF-001",
-      "name": "Open assignment activity (Assignments section, default expanded)",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
-    },
-    {
-      "wf_id": "WF-002",
-      "name": "Expand Forums section (Forums collapsed -> click arrow)",
-      "actor": "<role>",
-      "conditional_branch": "Forums.expanded == false",
-      "terminal_action": "expand_toggle",
-      "on_success": "toggle section expansion"
-    },
-    {
-      "wf_id": "WF-003",
-      "name": "Collapse Forums section (Forums expanded -> click arrow)",
-      "actor": "<role>",
-      "conditional_branch": "Forums.expanded == true",
-      "terminal_action": "expand_toggle",
-      "on_success": "toggle section expansion"
-    },
-    {
-      "wf_id": "WF-004",
-      "name": "Open forum activity when Forums already expanded",
-      "actor": "<role>",
-      "conditional_branch": "Forums.expanded == true",
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
-    },
-    {
-      "wf_id": "WF-005",
-      "name": "Open forum activity when Forums collapsed (toggle then open)",
-      "actor": "<role>",
-      "conditional_branch": "Forums.expanded == false",
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
-    },
-    {
-      "wf_id": "WF-006",
-      "name": "Expand Resources section (Resources collapsed -> click arrow)",
-      "actor": "<role>",
-      "conditional_branch": "Resources.expanded == false",
-      "terminal_action": "expand_toggle",
-      "on_success": "toggle section expansion"
-    },
-    {
-      "wf_id": "WF-007",
-      "name": "Collapse Resources section (Resources expanded -> click arrow)",
-      "actor": "<role>",
-      "conditional_branch": "Resources.expanded == true",
-      "terminal_action": "expand_toggle",
-      "on_success": "toggle section expansion"
-    },
-    {
-      "wf_id": "WF-008",
-      "name": "Open resource activity when Resources already expanded",
-      "actor": "<role>",
-      "conditional_branch": "Resources.expanded == true",
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
-    },
-    {
-      "wf_id": "WF-009",
-      "name": "Open resource activity when Resources collapsed (toggle then open)",
-      "actor": "<role>",
-      "conditional_branch": "Resources.expanded == false",
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
-    },
-    {
-      "wf_id": "WF-010",
-      "name": "Expand Other_Sections item (item collapsed -> click arrow)",
-      "actor": "<role>",
-      "conditional_branch": "Other_Sections.items[<i>].Expanded == false",
-      "terminal_action": "Expand_Toggle",
-      "on_success": "toggle item expansion"
-    },
-    {
-      "wf_id": "WF-011",
-      "name": "Collapse Other_Sections item (item expanded -> click arrow)",
-      "actor": "<role>",
-      "conditional_branch": "Other_Sections.items[<i>].Expanded == true",
-      "terminal_action": "Expand_Toggle",
-      "on_success": "toggle item expansion"
-    },
-    {
-      "wf_id": "WF-012",
-      "name": "Open activity inside an Other_Sections item when item already expanded",
-      "actor": "<role>",
-      "conditional_branch": "Other_Sections.items[<i>].Expanded == true",
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
-    },
-    {
-      "wf_id": "WF-013",
-      "name": "Open activity inside an Other_Sections item when item collapsed (toggle then open)",
-      "actor": "<role>",
-      "conditional_branch": "Other_Sections.items[<i>].Expanded == false",
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
-    }
-  ],
-  "total": 13
-}
-
-------------------------------------------------------------
-[21:11:13] Workflow-Extractor - PARSED JSON
-------------------------------------------------------------
-{
-  "module": "Activities",
-  "workflows": [
-    {
-      "wf_id": "WF-001",
-      "name": "Open assignment activity (Assignments section, default expanded)",
-      "actor": "<role>",
-      "conditional_branch": null,
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
-    },
-    {
-      "wf_id": "WF-002",
-      "name": "Expand Forums section (Forums collapsed -> click arrow)",
-      "actor": "<role>",
-      "conditional_branch": "Forums.expanded == false",
-      "terminal_action": "expand_toggle",
-      "on_success": "toggle section expansion"
-    },
-    {
-      "wf_id": "WF-003",
-      "name": "Collapse Forums section (Forums expanded -> click arrow)",
-      "actor": "<role>",
-      "conditional_branch": "Forums.expanded == true",
-      "terminal_action": "expand_toggle",
-      "on_success": "toggle section expansion"
-    },
-    {
-      "wf_id": "WF-004",
-      "name": "Open forum activity when Forums already expanded",
-      "actor": "<role>",
-      "conditional_branch": "Forums.expanded == true",
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
-    },
-    {
-      "wf_id": "WF-005",
-      "name": "Open forum activity when Forums collapsed (toggle then open)",
-      "actor": "<role>",
-      "conditional_branch": "Forums.expanded == false",
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
-    },
-    {
-      "wf_id": "WF-006",
-      "name": "Expand Resources section (Resources collapsed -> click arrow)",
-      "actor": "<role>",
-      "conditional_branch": "Resources.expanded == false",
-      "terminal_action": "expand_toggle",
-      "on_success": "toggle section expansion"
-    },
-    {
-      "wf_id": "WF-007",
-      "name": "Collapse Resources section (Resources expanded -> click arrow)",
-      "actor": "<role>",
-      "conditional_branch": "Resources.expanded == true",
-      "terminal_action": "expand_toggle",
-      "on_success": "toggle section expansion"
-    },
-    {
-      "wf_id": "WF-008",
-      "name": "Open resource activity when Resources already expanded",
-      "actor": "<role>",
-      "conditional_branch": "Resources.expanded == true",
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
-    },
-    {
-      "wf_id": "WF-009",
-      "name": "Open resource activity when Resources collapsed (toggle then open)",
-      "actor": "<role>",
-      "conditional_branch": "Resources.expanded == false",
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
-    },
-    {
-      "wf_id": "WF-010",
-      "name": "Expand Other_Sections item (item collapsed -> click arrow)",
-      "actor": "<role>",
-      "conditional_branch": "Other_Sections.items[<i>].Expanded == false",
-      "terminal_action": "Expand_Toggle",
-      "on_success": "toggle item expansion"
-    },
-    {
-      "wf_id": "WF-011",
-      "name": "Collapse Other_Sections item (item expanded -> click arrow)",
-      "actor": "<role>",
-      "conditional_branch": "Other_Sections.items[<i>].Expanded == true",
-      "terminal_action": "Expand_Toggle",
-      "on_success": "toggle item expansion"
-    },
-    {
-      "wf_id": "WF-012",
-      "name": "Open activity inside an Other_Sections item when item already expanded",
-      "actor": "<role>",
-      "conditional_branch": "Other_Sections.items[<i>].Expanded == true",
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
-    },
-    {
-      "wf_id": "WF-013",
-      "name": "Open activity inside an Other_Sections item when item collapsed (toggle then open)",
-      "actor": "<role>",
-      "conditional_branch": "Other_Sections.items[<i>].Expanded == false",
-      "terminal_action": "Open Activity",
-      "on_success": "navigates to activity page"
-    }
-  ],
-  "total": 13
+  "total": 4
 }

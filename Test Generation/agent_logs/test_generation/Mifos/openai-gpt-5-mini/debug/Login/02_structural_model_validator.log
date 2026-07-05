@@ -1,0 +1,613 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T22:57:38.726567
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[22:58:09] Structural Model Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Structural Model Validator. You receive (1) a raw functional description and
+(2) a generated Structural Model JSON.
+
+Your single job: decide whether this AST is good enough to use, or whether it should
+be regenerated.
+
+You DO NOT modify the JSON.
+You DO NOT generate a new JSON.
+You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CANONICAL SCOPE — IDENTICAL TO THE GENERATOR'S SCOPE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+IN SCOPE — an element qualifies if a user can:
+  (a) Input or edit a value: form fields, checkboxes, file uploads, search inputs, toggles
+  (b) Trigger an action: buttons, links, row actions, bulk actions, submit actions
+  (c) Navigate: tabs, sub-tabs, wizard steps
+  (d) Action metadata on interactive elements: on_success, preconditions, state
+      transitions, validation constraints
+
+OUT OF SCOPE — do NOT expect these in the AST:
+  - Passive display labels: "the page shows client name, account number, status badge"
+    → 0 expected items. The AST is correct to omit them.
+  - Chip colors, badge styles, decorative icons, visual styling
+  - Read-only info panels with no interactive element
+  - Display-formatting or rendering rules applied to a passive (non-interactive) value —
+    e.g. masking ("showing only last 4 digits"), truncation, currency/number formatting,
+    default sort order of a read-only column → 0 expected items. These are NOT validation
+    constraints. Do not expect a field/column AST node, a "constraints" entry, or a
+    "columns" block created solely to house one of these rules.
+
+STATE (Pending / Active / Closed) is a routing key in state_bound_action_bar.states{},
+NOT a display field. Do not expect it anywhere else.
+
+"Constraint" (as used everywhere below) means a rule that governs INPUT or ACTION
+behavior — required-ness, format, bounds, uniqueness, cross-field ordering, state
+preconditions. A rule that only describes how an already-displayed, non-interactive
+value is rendered (masked, truncated, formatted, sorted) is a display-formatting rule,
+not a constraint, even if the description uses words like "must" or states a concrete
+detail (e.g. "must show only last 4 digits"). Do not upgrade a display-formatting rule
+to CRITICAL missing just because it is stated precisely.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MINOR missing
+  An optional field (no "required": true, no required_when) with no business logic,
+  state transition, or action consequence attached. Losing it doesn't break any flow.
+  Example: an unlabeled optional "Notes" textarea on a secondary form.
+
+MINOR phantom
+  An element not named in the description but so universally implied by the component
+  type that its presence is unsurprising — e.g., a "Cancel" button on a modal the
+  description never explicitly names. Flag it; don't auto-retry for it alone.
+
+CRITICAL missing
+  Any of: a required field, any state key in a state_bound_action_bar, any submit
+  action, any named tab or wizard step, any element with a stated precondition or
+  on_success consequence, any INTERACTIVE field with a stated constraint (see the
+  constraint definition above — a display-formatting rule on a passive field does
+  NOT qualify and must never be flagged as critical missing).
+
+CRITICAL phantom
+  Any of: a field invented inside a generic-name tab (Add_Note in a Notes tab,
+  Upload_Document in a Documents tab) when the description only names the tab;
+  a passive display field appearing as an AST node — including a "columns" block,
+  or any field/column entry, added only to carry a masking/truncation/formatting rule
+  for a non-interactive value; a constraint with no textual anchor; a display_fields
+  block anywhere in the output; "required": false anywhere.
+
+WORKED EXAMPLE — display-formatting rule, NOT a critical missing:
+
+Description: "Each row shows Account Number (clickable but not implemented yet),
+Account Type, Current Balance, Account Status, and Open Date. Account numbers are
+masked for security (showing only last 4 digits as ****5001)."
+
+AST under review:
+{
+  "Accounts_Table": {
+    "type": "data_table",
+    "row_actions": [
+      { "action_name": "Account Number", "constraints": ["clickable but not implemented yet"] }
+    ]
+  }
+}
+
+CORRECT verdict: the masking rule and the other four listed fields (Account Type,
+Current Balance, Account Status, Open Date) are passive display labels — 0 expected
+AST items for them, per the OUT OF SCOPE rule above. The only interactive element is
+the Account Number click, and it is already present. Do NOT flag
+"components.Accounts_Table.columns.Account_Number" (or any columns block) as a
+CRITICAL missing item. Do NOT instruct the generator to add a "columns" block with
+typed entries (e.g. "Open_Date": {"type": "date"}) — that fabricates interactive
+field types for read-only data and will cause downstream test generators to invent
+boundary/date tests against a page that has none.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Step 1 — Walk the description. List every expected interactive element.
+Apply the canonical scope above. A sentence that only displays data produces 0 expected
+items. For each tab or step named with no described fields, expected output is
+"fields": {} — do NOT expect fields there.
+
+Step 2 — Walk the AST. Check for MISSING elements.
+For each expected element from Step 1, confirm it exists at the correct path.
+Classify each missing item as critical or minor using the definitions above.
+
+Step 3 — Walk the AST. Check for PHANTOMS.
+Flag any AST element with no textual anchor in the description.
+Classify each phantom as critical or minor using the definitions above.
+
+Step 4 — Check conditional logic.
+Count a conditional as EXPECTED only if the description contains an explicit trigger
+phrase. Both affirmative and negative phrasings qualify:
+
+  Affirmative: "when X is selected/checked/chosen", "if X then Y", "Y appears when X",
+               "selecting X reveals Y", "required if X", "enabled when X", "only if X",
+               "Y is shown for X"
+  Negative:    "unless X", "except when X", "disabled if X", "not shown when X",
+               "hidden when X", "required for non-X", "only for X users"
+  Abbreviated: "required for minors", "admin only", "international trips only"
+               → treat as conditional even without explicit trigger syntax
+
+If a visible_when / required_when / enabled_when appears in the AST but no trigger
+phrase (affirmative or negative) exists in the description: flag as critical phantom.
+If a trigger phrase exists in the description but no conditional appears in the AST:
+flag as critical missing.
+
+Step 5 — Check structural integrity. Flag any of these as STRUCTURAL ERRORS:
+  - A constraint floating at form/component level when the description attached it to
+    a specific field or action
+  - Sub-tabs or sub-steps described as nested but flattened in the AST
+  - State keys in state_bound_action_bar that don't match exact status names in the
+    description
+  - A display_fields block anywhere in the AST
+  - "required": false appearing anywhere in the AST
+  - Component or field names not in Pascal_Snake_Case
+
+Step 6 — Decide the verdict.
+
+Precondition note: If a `<module_context>` block is present, cross-check any
+`preconditions[]` in the AST against the `assumed_state_on_entry` value. A precondition
+that directly contradicts or wildly exceeds the described entry state is a CRITICAL phantom.
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Step 5)
+                       → fixes must be []
+
+  retry                Any CRITICAL missing element
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any Step 5 structural error
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       element is interactive — not a close call, but truly unresolvable
+                       from the text alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "Component.path.to.element",
+      "severity": "critical | minor",
+      "reason": "<why this element is expected from the description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "Component.path.to.element",
+      "severity": "critical | minor",
+      "reason": "<why this element has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Step 5 violation and its AST path>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact JSON path and required change>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+------------------------------------------------------------
+[22:58:09] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 1,
+  "module_title": "Login",
+  "summary": "Provides the authentication interface for users to sign into Mifos with tenant, username, and password, handling validation and error feedback.",
+  "where_it_fits": "This is the application's entry point before accessing the top navigation (Institution, Accounting, Reports, Admin, etc.) and the left sidebar shortcuts; successful authentication redirects users into the Dashboard and the main application areas described in the navigation overview.",
+  "assumed_state_on_entry": "Unauthenticated user session presenting the login screen with Tenant, Username, and Password available; network connectivity to the authentication backend."
+}
+</module_context>
+
+<description>
+
+The login page has two panels. The left panel displays a background image with the title "Mifos X." The right panel contains the authentication interface with the Mifos logo and a language selector. The login form contains a Tenant dropdown (defaults to "default"), Username, Password, and a Remember me checkbox. The Login button is enabled only after required fields are filled. A "Forgot Password?" link appears below the button. On submission, valid credentials redirect to the Dashboard. Invalid credentials show an error message; empty required fields show inline validation messages.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Login",
+  "components": {
+    "Login_Form": {
+      "type": "form",
+      "fields": {
+        "Language_Selector": {
+          "type": "dropdown"
+        },
+        "Tenant": {
+          "type": "dropdown",
+          "default": "default",
+          "required": true,
+          "constraints": [
+            "must not be empty \u2014 shows inline validation message"
+          ]
+        },
+        "Username": {
+          "type": "unspecified",
+          "required": true,
+          "constraints": [
+            "must not be empty \u2014 shows inline validation message"
+          ]
+        },
+        "Password": {
+          "type": "unspecified",
+          "required": true,
+          "constraints": [
+            "must not be empty \u2014 shows inline validation message"
+          ]
+        },
+        "Remember_Me": {
+          "type": "checkbox"
+        },
+        "Forgot_Password": {
+          "type": "link",
+          "action_name": "Forgot Password?",
+          "navigates_to": "Forgot Password flow"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Login",
+          "enabled_when": "Tenant != '' AND Username != '' AND Password != ''",
+          "preconditions": [
+            "Unauthenticated user session presenting the login screen with Tenant, Username, and Password available; network connectivity to the authentication backend."
+          ],
+          "on_success": "redirects to Dashboard",
+          "on_failure": "shows invalid credentials error"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:00:03] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "AST is mostly complete but has a structural placement error (Language_Selector nested inside the form) and two minor missing type specifications for Username and Password fields.",
+  "missing": [
+    {
+      "path": "components.Login_Form.fields.Username",
+      "severity": "minor",
+      "reason": "The description specifies a Username input; the AST includes the field but its 'type' is 'unspecified' — expect a concrete input type (e.g., 'text')."
+    },
+    {
+      "path": "components.Login_Form.fields.Password",
+      "severity": "minor",
+      "reason": "The description specifies a Password input (implying a masked/password input); the AST lists 'type': 'unspecified' — expect type 'password'."
+    }
+  ],
+  "phantoms": [],
+  "structural_errors": [
+    "components.Login_Form.fields.Language_Selector is placed inside the Login_Form.fields, but the description places the language selector as part of the right panel alongside the logo (separate from the login form). Move Language_Selector out of the form into components as a sibling of Login_Form."
+  ],
+  "fixes": [
+    "Set a concrete type for the username field at components.Login_Form.fields.Username by adding \"type\": \"text\".",
+    "Set a concrete type for the password field at components.Login_Form.fields.Password by adding \"type\": \"password\".",
+    "Remove the Language_Selector node from components.Login_Form.fields.Language_Selector and create a new top-level component at components.Language_Selector with the same properties (e.g., { \"type\": \"dropdown\" }) so the language selector is a sibling component to Login_Form (reflecting that it lives in the right panel outside the form)."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:00:03] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "AST is mostly complete but has a structural placement error (Language_Selector nested inside the form) and two minor missing type specifications for Username and Password fields.",
+  "missing": [
+    {
+      "path": "components.Login_Form.fields.Username",
+      "severity": "minor",
+      "reason": "The description specifies a Username input; the AST includes the field but its 'type' is 'unspecified' \u2014 expect a concrete input type (e.g., 'text')."
+    },
+    {
+      "path": "components.Login_Form.fields.Password",
+      "severity": "minor",
+      "reason": "The description specifies a Password input (implying a masked/password input); the AST lists 'type': 'unspecified' \u2014 expect type 'password'."
+    }
+  ],
+  "phantoms": [],
+  "structural_errors": [
+    "components.Login_Form.fields.Language_Selector is placed inside the Login_Form.fields, but the description places the language selector as part of the right panel alongside the logo (separate from the login form). Move Language_Selector out of the form into components as a sibling of Login_Form."
+  ],
+  "fixes": [
+    "Set a concrete type for the username field at components.Login_Form.fields.Username by adding \"type\": \"text\".",
+    "Set a concrete type for the password field at components.Login_Form.fields.Password by adding \"type\": \"password\".",
+    "Remove the Language_Selector node from components.Login_Form.fields.Language_Selector and create a new top-level component at components.Language_Selector with the same properties (e.g., { \"type\": \"dropdown\" }) so the language selector is a sibling component to Login_Form (reflecting that it lives in the right panel outside the form)."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:01:12] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 1,
+  "module_title": "Login",
+  "summary": "Provides the authentication interface for users to sign into Mifos with tenant, username, and password, handling validation and error feedback.",
+  "where_it_fits": "This is the application's entry point before accessing the top navigation (Institution, Accounting, Reports, Admin, etc.) and the left sidebar shortcuts; successful authentication redirects users into the Dashboard and the main application areas described in the navigation overview.",
+  "assumed_state_on_entry": "Unauthenticated user session presenting the login screen with Tenant, Username, and Password available; network connectivity to the authentication backend."
+}
+</module_context>
+
+<description>
+
+The login page has two panels. The left panel displays a background image with the title "Mifos X." The right panel contains the authentication interface with the Mifos logo and a language selector. The login form contains a Tenant dropdown (defaults to "default"), Username, Password, and a Remember me checkbox. The Login button is enabled only after required fields are filled. A "Forgot Password?" link appears below the button. On submission, valid credentials redirect to the Dashboard. Invalid credentials show an error message; empty required fields show inline validation messages.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Login",
+  "components": {
+    "Language_Selector": {
+      "type": "dropdown"
+    },
+    "Login_Form": {
+      "type": "form",
+      "fields": {
+        "Tenant": {
+          "type": "dropdown",
+          "required": true,
+          "default": "default"
+        },
+        "Username": {
+          "type": "text",
+          "required": true,
+          "constraints": [
+            "shows inline validation message when empty"
+          ]
+        },
+        "Password": {
+          "type": "password",
+          "required": true,
+          "constraints": [
+            "shows inline validation message when empty"
+          ]
+        },
+        "Remember_Me": {
+          "type": "checkbox"
+        },
+        "Forgot_Password": {
+          "type": "link",
+          "action_name": "Forgot Password?"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Login",
+          "enabled_when": "Tenant != '' AND Username != '' AND Password != ''",
+          "on_success": "redirects to Dashboard",
+          "on_failure": "shows invalid credentials error message",
+          "preconditions": [
+            "Unauthenticated user session presenting the login screen with Tenant, Username, and Password available; network connectivity to the authentication backend."
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:01:34] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 2,
+  "summary": "The AST is mostly correct but is missing an inline-validation constraint on the required Tenant field as described.",
+  "missing": [
+    {
+      "path": "components.Login_Form.fields.Tenant",
+      "severity": "critical",
+      "reason": "The description states 'empty required fields show inline validation messages' which applies to Tenant (a required field); the AST omits the inline validation constraint for Tenant."
+    }
+  ],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [
+    "components.Login_Form.fields.Tenant: add a constraint indicating inline validation when empty, e.g. add \"constraints\": [\"shows inline validation message when empty\"]"
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:01:34] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 2,
+  "summary": "The AST is mostly correct but is missing an inline-validation constraint on the required Tenant field as described.",
+  "missing": [
+    {
+      "path": "components.Login_Form.fields.Tenant",
+      "severity": "critical",
+      "reason": "The description states 'empty required fields show inline validation messages' which applies to Tenant (a required field); the AST omits the inline validation constraint for Tenant."
+    }
+  ],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [
+    "components.Login_Form.fields.Tenant: add a constraint indicating inline validation when empty, e.g. add \"constraints\": [\"shows inline validation message when empty\"]"
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:02:03] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 1,
+  "module_title": "Login",
+  "summary": "Provides the authentication interface for users to sign into Mifos with tenant, username, and password, handling validation and error feedback.",
+  "where_it_fits": "This is the application's entry point before accessing the top navigation (Institution, Accounting, Reports, Admin, etc.) and the left sidebar shortcuts; successful authentication redirects users into the Dashboard and the main application areas described in the navigation overview.",
+  "assumed_state_on_entry": "Unauthenticated user session presenting the login screen with Tenant, Username, and Password available; network connectivity to the authentication backend."
+}
+</module_context>
+
+<description>
+
+The login page has two panels. The left panel displays a background image with the title "Mifos X." The right panel contains the authentication interface with the Mifos logo and a language selector. The login form contains a Tenant dropdown (defaults to "default"), Username, Password, and a Remember me checkbox. The Login button is enabled only after required fields are filled. A "Forgot Password?" link appears below the button. On submission, valid credentials redirect to the Dashboard. Invalid credentials show an error message; empty required fields show inline validation messages.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Login",
+  "components": {
+    "Login_Form": {
+      "type": "form",
+      "preconditions": [
+        "Unauthenticated user session presenting the login screen with Tenant, Username, and Password available; network connectivity to the authentication backend."
+      ],
+      "fields": {
+        "Language_Selector": {
+          "type": "dropdown"
+        },
+        "Tenant": {
+          "type": "dropdown",
+          "default": "default",
+          "required": true,
+          "constraints": [
+            "shows inline validation message when empty"
+          ]
+        },
+        "Username": {
+          "type": "unspecified",
+          "required": true,
+          "constraints": [
+            "shows inline validation message when empty"
+          ]
+        },
+        "Password": {
+          "type": "password",
+          "required": true,
+          "constraints": [
+            "shows inline validation message when empty"
+          ]
+        },
+        "Remember_Me": {
+          "type": "checkbox"
+        },
+        "Forgot_Password": {
+          "type": "link",
+          "action_name": "Forgot Password?"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Login",
+          "enabled_when": "Tenant != empty AND Username != empty AND Password != empty",
+          "preconditions": [
+            "Unauthenticated user session presenting the login screen with Tenant, Username, and Password available; network connectivity to the authentication backend."
+          ],
+          "on_success": "redirects to the Dashboard",
+          "on_error": "shows invalid credentials error message"
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:02:17] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 3,
+  "summary": "AST correctly models all interactive elements (Tenant, Username, Password, Remember Me, Language selector, Login button, Forgot Password link), required-field validation, enablement condition, and success/error behaviors; no critical issues found.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:02:17] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 3,
+  "summary": "AST correctly models all interactive elements (Tenant, Username, Password, Remember Me, Language selector, Login button, Forgot Password link), required-field validation, enablement condition, and success/error behaviors; no critical issues found.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}

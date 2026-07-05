@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:13.831303
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.045784
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - SYSTEM PROMPT
+[22:33:07] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - USER PROMPT
+[22:33:07] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 7,
   "module_title": "Flights Search & Listing",
-  "summary": "Provides a search form for flight itineraries and a results listing showing available flights with details, filters, and sorting options.",
-  "where_it_fits": "Accessible from the top navigation under Flights or via the home page search widget tabs, this module sits between initial trip input and booking: users submit flight search criteria here and are shown listings before proceeding to Flight Booking and Payment Processing.",
-  "assumed_state_on_entry": "User has arrived at the Flights section (from Home or top nav) and has entered valid search criteria (trip type, departure/arrival cities, dates, passenger counts, cabin class)."
+  "summary": "Collects flight search criteria and displays a sortable, filterable list of matching flight options with fares, schedules, stops, and expandable details like baggage and fare rules.",
+  "where_it_fits": "Accessible from the site's top navigation under Flights and via the Flights tab of the home page search widget, this module is the discovery layer that sits between the global search entry point and the Flight Booking flow. It connects user-provided search criteria to selectable flight results and passes the chosen option into the booking/payment lifecycle.",
+  "assumed_state_on_entry": "Visitor is on the site (logged in or guest) and has valid flight search inputs provided (trip type, origin/destination, dates, passenger counts, cabin class)."
 }
 </module_context>
 
@@ -262,9 +272,6 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Flights_Search_Form": {
       "type": "form",
-      "preconditions": [
-        "user has entered valid search criteria"
-      ],
       "fields": {
         "Trip_Type": {
           "type": "dropdown",
@@ -286,13 +293,13 @@ If a `<workflows>` block is present in the input:
         "Return_Date": {
           "type": "date"
         },
-        "Passengers_Adults": {
+        "Adults": {
           "type": "number"
         },
-        "Passengers_Children": {
+        "Children": {
           "type": "number"
         },
-        "Passengers_Infants": {
+        "Infants": {
           "type": "number"
         },
         "Cabin_Class": {
@@ -308,18 +315,15 @@ If a `<workflows>` block is present in the input:
       "submit_actions": [
         {
           "action_name": "Search",
-          "on_success": "redirects to listing page",
+          "on_success": "redirects to Listing page",
           "preconditions": [
-            "user has entered valid search criteria"
+            "Visitor is on the site (logged in or guest) and has valid flight search inputs provided (trip type, origin/destination, dates, passenger counts, cabin class)."
           ]
         }
       ]
     },
-    "Flights_Listing": {
+    "Flights_Results_List": {
       "type": "data_table",
-      "preconditions": [
-        "user has entered valid search criteria"
-      ],
       "sortable_columns": [
         "Price",
         "Duration",
@@ -329,27 +333,28 @@ If a `<workflows>` block is present in the input:
       "filterable_columns": [
         "Airline",
         "Stops",
-        "Departure Time Range",
-        "Arrival Time Range",
-        "Price Range"
+        "Departure Time",
+        "Arrival Time",
+        "Price"
       ],
       "row_actions": [
         {
-          "action_name": "Select"
+          "action_name": "Select",
+          "on_success": "passes chosen option into booking flow"
         },
         {
           "action_name": "View Details",
-          "on_success": "expands row to reveal baggage allowance, fare rules, and seat availability"
+          "on_success": "expands result to show baggage allowance, fare rules, and seat availability"
         }
       ]
     },
-    "Flights_Sidebar_Filters": {
+    "Results_Sidebar_Filters": {
       "type": "form",
       "fields": {
         "Airlines": {
-          "type": "dropdown"
+          "type": "unspecified"
         },
-        "Stops": {
+        "Number_of_Stops": {
           "type": "dropdown",
           "options": [
             "Non-stop",
@@ -363,27 +368,20 @@ If a `<workflows>` block is present in the input:
         "Arrival_Time_Range": {
           "type": "unspecified"
         },
-        "Price_Min": {
-          "type": "number"
-        },
-        "Price_Max": {
-          "type": "number"
+        "Price_Range": {
+          "type": "unspecified"
         }
       }
     },
-    "Flights_Sort_Control": {
-      "type": "form",
-      "fields": {
-        "Sort_By": {
-          "type": "dropdown",
-          "options": [
-            "Price",
-            "Duration",
-            "Departure Time",
-            "Arrival Time"
-          ]
-        }
-      }
+    "Results_Sort_Control": {
+      "type": "dropdown",
+      "fields": {},
+      "options": [
+        "Price",
+        "Duration",
+        "Departure Time",
+        "Arrival Time"
+      ]
     }
   }
 }
@@ -399,15 +397,15 @@ The flights search form collects trip type (One-way, Round-trip, Multi-city), de
 </description>
 
 <workflows>
-WF-001 | Submit flight search | actor: User | branch: none | terminal: Search | on_success: redirects to listing page
-WF-002 | Select flight from listing | actor: User | branch: none | terminal: Select | on_success: proceeds to Flight Booking
-WF-003 | View flight details (expand row) | actor: User | branch: none | terminal: View Details | on_success: expands row to reveal baggage allowance, fare rules, and seat availability
+WF-001 | Search flights from Search form | actor: Visitor | branch: none | terminal: Search | on_success: redirects to Listing page
+WF-002 | Select a flight from results | actor: Visitor | branch: none | terminal: Select | on_success: passes chosen option into booking flow
+WF-003 | View details of a flight result (expand) | actor: Visitor | branch: none | terminal: View Details | on_success: expands result to show baggage allowance, fare rules, and seat availability
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:25:55] Test-Negative - LLM RESPONSE
+[22:34:33] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Flights Search & Listing",
@@ -416,162 +414,197 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Submit Search with ALL required fields empty",
-      "preconditions": ["User is on the Flights Search form"],
-      "steps": [
-        "1. Ensure Trip Type, Departure City, Arrival City, Departure Date, Passengers_Adults, and Cabin Class are cleared/empty",
-        "2. Click the Search button"
+      "test_case": "Submit Search with Trip Type left blank",
+      "preconditions": [
+        "Visitor is on the Flights Search page"
       ],
-      "expected_result": "Search does not proceed / page does not redirect to listings; inline validation errors appear on Trip Type, Departure City, Arrival City, Departure Date, Passengers_Adults and Cabin Class indicating they are required; no search results are shown",
+      "steps": [
+        "1. Navigate to the Flights Search page",
+        "2. Leave the Trip_Type field blank",
+        "3. Enter <valid Departure_City> in the Departure_City field",
+        "4. Enter <valid Arrival_City> in the Arrival_City field",
+        "5. Enter <valid Departure_Date> in the Departure_Date field",
+        "6. Enter <valid number> in the Adults field",
+        "7. Select <valid Cabin_Class> in the Cabin_Class field",
+        "8. Click the Search button"
+      ],
+      "expected_result": "Form does not submit or navigate to results; Trip_Type field shows an inline validation error indicating it is required; user remains on the search form",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Leave Departure City blank and submit Search (text field required)",
-      "preconditions": ["User is on the Flights Search form", "All other required fields are filled with valid values"],
-      "steps": [
-        "1. Clear the Departure City field",
-        "2. Click the Search button"
+      "test_case": "Submit Search with Departure City left blank (text/unspecified required field)",
+      "preconditions": [
+        "Visitor is on the Flights Search page"
       ],
-      "expected_result": "Form does not submit; Departure City field displays an inline validation error indicating it is required; user remains on the Flights Search form and no listing is shown",
+      "steps": [
+        "1. Navigate to the Flights Search page",
+        "2. Enter <valid Trip_Type> in the Trip_Type field",
+        "3. Leave the Departure_City field blank",
+        "4. Enter <valid Arrival_City> in the Arrival_City field",
+        "5. Enter <valid Departure_Date> in the Departure_Date field",
+        "6. Enter <valid number> in the Adults field",
+        "7. Select <valid Cabin_Class> in the Cabin_Class field",
+        "8. Click the Search button"
+      ],
+      "expected_result": "Form does not submit or navigate to results; Departure_City field shows an inline validation error indicating it is required; user remains on the search form",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Leave Departure Date blank and submit Search (date required)",
-      "preconditions": ["User is on the Flights Search form", "All other required fields are filled with valid values"],
-      "steps": [
-        "1. Clear the Departure Date field",
-        "2. Click the Search button"
+      "test_case": "Submit Search with Departure Date left blank (date required)",
+      "preconditions": [
+        "Visitor is on the Flights Search page"
       ],
-      "expected_result": "Form does not submit; Departure Date field displays an inline validation error indicating it is required; user remains on the Flights Search form and no listing is shown",
+      "steps": [
+        "1. Navigate to the Flights Search page",
+        "2. Enter <valid Trip_Type> in the Trip_Type field",
+        "3. Enter <valid Departure_City> in the Departure_City field",
+        "4. Enter <valid Arrival_City> in the Arrival_City field",
+        "5. Leave the Departure_Date field blank",
+        "6. Enter <valid number> in the Adults field",
+        "7. Select <valid Cabin_Class> in the Cabin_Class field",
+        "8. Click the Search button"
+      ],
+      "expected_result": "Form does not submit or navigate to results; Departure_Date field shows an inline validation error indicating it is required; user remains on the search form",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-001",
-      "test_case": "Leave Cabin Class blank and submit Search (dropdown required)",
-      "preconditions": ["User is on the Flights Search form", "All other required fields are filled with valid values"],
-      "steps": [
-        "1. Set Cabin Class to empty/unselected",
-        "2. Click the Search button"
+      "test_case": "Submit Search with Adults count left blank (number required)",
+      "preconditions": [
+        "Visitor is on the Flights Search page"
       ],
-      "expected_result": "Form does not submit; Cabin Class field displays an inline validation error indicating selection is required; user remains on the Flights Search form and no listing is shown",
+      "steps": [
+        "1. Navigate to the Flights Search page",
+        "2. Enter <valid Trip_Type> in the Trip_Type field",
+        "3. Enter <valid Departure_City> in the Departure_City field",
+        "4. Enter <valid Arrival_City> in the Arrival_City field",
+        "5. Enter <valid Departure_Date> in the Departure_Date field",
+        "6. Leave the Adults field blank",
+        "7. Select <valid Cabin_Class> in the Cabin_Class field",
+        "8. Click the Search button"
+      ],
+      "expected_result": "Form does not submit or navigate to results; Adults field shows an inline validation error indicating it is required; user remains on the search form",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
       "wf_ref": "WF-001",
-      "test_case": "Leave Passengers (Adults) blank and submit Search (numeric required)",
-      "preconditions": ["User is on the Flights Search form", "All other required fields are filled with valid values"],
-      "steps": [
-        "1. Clear the Passengers_Adults field",
-        "2. Click the Search button"
+      "test_case": "Submit Search with all required fields empty",
+      "preconditions": [
+        "Visitor is on the Flights Search page"
       ],
-      "expected_result": "Form does not submit; Passengers_Adults field displays an inline validation error indicating it is required; user remains on the Flights Search form and no listing is shown",
+      "steps": [
+        "1. Navigate to the Flights Search page",
+        "2. Leave Trip_Type blank",
+        "3. Leave Departure_City blank",
+        "4. Leave Arrival_City blank",
+        "5. Leave Departure_Date blank",
+        "6. Leave Adults blank",
+        "7. Leave Cabin_Class blank",
+        "8. Click the Search button"
+      ],
+      "expected_result": "Form does not submit or navigate to results; inline validation errors appear on Trip_Type, Departure_City, Arrival_City, Departure_Date, Adults, and Cabin_Class indicating they are required; user remains on the search form",
       "priority": "high"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Select Round-trip and leave Return Date blank (conditional required field)",
-      "preconditions": ["User is on the Flights Search form", "All other required fields are filled with valid values"],
-      "steps": [
-        "1. Set Trip Type to <Round-trip>",
-        "2. Ensure Return Date is blank",
-        "3. Click the Search button"
+      "test_case": "Enter invalid/impossible date format in Departure_Date",
+      "preconditions": [
+        "Visitor is on the Flights Search page"
       ],
-      "expected_result": "Form does not submit; Return Date field displays an inline validation error indicating Return Date is required for Round-trip searches; no results are shown and user remains on the Flights Search form",
-      "priority": "high"
+      "steps": [
+        "1. Navigate to the Flights Search page",
+        "2. Enter <valid Trip_Type> in the Trip_Type field",
+        "3. Enter <valid Departure_City> in the Departure_City field",
+        "4. Enter <valid Arrival_City> in the Arrival_City field",
+        "5. Enter <invalid date format> in the Departure_Date field",
+        "6. Enter <valid number> in the Adults field",
+        "7. Select <valid Cabin_Class> in the Cabin_Class field",
+        "8. Click the Search button"
+      ],
+      "expected_result": "Form does not submit or navigate to results; Departure_Date field displays an inline validation error indicating the date is invalid or in an incorrect format; user remains on the search form",
+      "priority": "medium"
     },
     {
       "tc_id": "N-007",
       "wf_ref": "WF-001",
-      "test_case": "Enter non-numeric value in Passengers_Adults (number format violation)",
-      "preconditions": ["User is on the Flights Search form", "All other required fields are filled with valid values"],
-      "steps": [
-        "1. Enter <non-numeric input> into the Passengers_Adults field",
-        "2. Click the Search button"
+      "test_case": "Round-trip with Return Date before Departure Date (date logic constraint)",
+      "preconditions": [
+        "Visitor is on the Flights Search page"
       ],
-      "expected_result": "Form does not submit; Passengers_Adults field displays an inline validation error indicating a numeric value is required; user remains on the Flights Search form",
-      "priority": "medium"
+      "steps": [
+        "1. Navigate to the Flights Search page",
+        "2. Select Round-trip in the Trip_Type field",
+        "3. Enter <valid Departure_City> in the Departure_City field",
+        "4. Enter <valid Arrival_City> in the Arrival_City field",
+        "5. Enter <valid Departure_Date> in the Departure_Date field",
+        "6. Enter <date earlier than Departure_Date> in the Return_Date field",
+        "7. Enter <valid number> in the Adults field",
+        "8. Select <valid Cabin_Class> in the Cabin_Class field",
+        "9. Click the Search button"
+      ],
+      "expected_result": "Form does not submit or navigate to results; Return_Date field displays an inline validation error indicating it must be after the Departure_Date; user remains on the search form",
+      "priority": "high"
     },
     {
       "tc_id": "N-008",
       "wf_ref": "WF-001",
-      "test_case": "Enter invalid date format in Departure Date (date format violation)",
-      "preconditions": ["User is on the Flights Search form", "All other required fields are filled with valid values"],
-      "steps": [
-        "1. Enter <invalid date format> into the Departure Date field",
-        "2. Click the Search button"
+      "test_case": "Enter non-numeric input into a numeric passenger field (Adults)",
+      "preconditions": [
+        "Visitor is on the Flights Search page"
       ],
-      "expected_result": "Form does not submit; Departure Date field displays an inline validation error indicating an invalid date format; user remains on the Flights Search form",
+      "steps": [
+        "1. Navigate to the Flights Search page",
+        "2. Enter <valid Trip_Type> in the Trip_Type field",
+        "3. Enter <valid Departure_City> in the Departure_City field",
+        "4. Enter <valid Arrival_City> in the Arrival_City field",
+        "5. Enter <valid Departure_Date> in the Departure_Date field",
+        "6. Enter <non-numeric input> in the Adults field",
+        "7. Select <valid Cabin_Class> in the Cabin_Class field",
+        "8. Click the Search button"
+      ],
+      "expected_result": "Form does not submit or navigate to results; Adults field displays an inline validation error indicating the value must be numeric; user remains on the search form",
       "priority": "medium"
     },
     {
       "tc_id": "N-009",
-      "wf_ref": null,
-      "test_case": "Apply sidebar filters with Price_Min greater than Price_Max (price range constraint)",
-      "preconditions": ["User has performed a valid search and search results are displayed"],
-      "steps": [
-        "1. Open the Flights Sidebar Filters",
-        "2. Enter <price greater than max> in Price_Min",
-        "3. Enter <price less than min> in Price_Max",
-        "4. Click Apply/Filter"
-      ],
-      "expected_result": "Filters are not applied; Price_Min and/or Price_Max fields display an inline validation error indicating the minimum price cannot be greater than the maximum price; the listing remains unchanged",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-010",
-      "wf_ref": "WF-002",
-      "test_case": "Attempt to access Flights Listing directly without performing a search (precondition not met)",
-      "preconditions": ["User has not entered search criteria and is not on the Search form with valid input"],
-      "steps": [
-        "1. Navigate directly to the Flights Listing page/URL without submitting a search"
-      ],
-      "expected_result": "User is redirected back to the Flights Search form (no listings are shown); the Search form remains visible and required search fields display inline validation indicators (showing that search criteria are required); no listing rows or row actions (Select/View Details) are available",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-011",
       "wf_ref": "WF-001",
-      "test_case": "Enter a Return Date earlier than Departure Date for a Round-trip (date order constraint)",
-      "preconditions": ["User is on the Flights Search form", "Trip Type is set to <Round-trip>", "All other required fields are filled with valid values"],
-      "steps": [
-        "1. Set Departure Date to <valid departure date>",
-        "2. Set Return Date to <earlier return date> (earlier than Departure Date)",
-        "3. Click the Search button"
+      "test_case": "Submit Search with zero passengers (Adults=0, Children=0, Infants=0) violating 'valid flight search inputs' precondition",
+      "preconditions": [
+        "Visitor is on the Flights Search page"
       ],
-      "expected_result": "Form does not submit; Return Date field displays an inline validation error indicating the return date must be after the departure date; user remains on the Flights Search form and no listings are shown",
+      "steps": [
+        "1. Navigate to the Flights Search page",
+        "2. Enter <valid Trip_Type> in the Trip_Type field",
+        "3. Enter <valid Departure_City> in the Departure_City field",
+        "4. Enter <valid Arrival_City> in the Arrival_City field",
+        "5. Enter <valid Departure_Date> in the Departure_Date field",
+        "6. Enter 0 in the Adults field",
+        "7. Enter 0 in the Children field",
+        "8. Enter 0 in the Infants field",
+        "9. Select <valid Cabin_Class> in the Cabin_Class field",
+        "10. Click the Search button"
+      ],
+      "expected_result": "Form does not submit or navigate to results; an inline validation error appears indicating at least one passenger must be selected (error shown on passenger count fields); user remains on the search form",
       "priority": "high"
-    },
-    {
-      "tc_id": "N-012",
-      "wf_ref": null,
-      "test_case": "Enter non-numeric value in Price_Min filter (filter numeric format violation)",
-      "preconditions": ["User has performed a valid search and search results are displayed"],
-      "steps": [
-        "1. Open the Flights Sidebar Filters",
-        "2. Enter <non-numeric input> into Price_Min",
-        "3. Click Apply/Filter"
-      ],
-      "expected_result": "Filters are not applied; Price_Min field displays an inline validation error indicating a numeric value is required; the listing remains unchanged",
-      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 12,
-    "high_priority": 8,
-    "medium_priority": 4,
+    "total": 9,
+    "high_priority": 7,
+    "medium_priority": 2,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:25:55] Test-Negative - PARSED JSON
+[22:34:33] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Flights Search & Listing",
@@ -580,189 +613,191 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": "WF-001",
-      "test_case": "Submit Search with ALL required fields empty",
+      "test_case": "Submit Search with Trip Type left blank",
       "preconditions": [
-        "User is on the Flights Search form"
+        "Visitor is on the Flights Search page"
       ],
       "steps": [
-        "1. Ensure Trip Type, Departure City, Arrival City, Departure Date, Passengers_Adults, and Cabin Class are cleared/empty",
-        "2. Click the Search button"
+        "1. Navigate to the Flights Search page",
+        "2. Leave the Trip_Type field blank",
+        "3. Enter <valid Departure_City> in the Departure_City field",
+        "4. Enter <valid Arrival_City> in the Arrival_City field",
+        "5. Enter <valid Departure_Date> in the Departure_Date field",
+        "6. Enter <valid number> in the Adults field",
+        "7. Select <valid Cabin_Class> in the Cabin_Class field",
+        "8. Click the Search button"
       ],
-      "expected_result": "Search does not proceed / page does not redirect to listings; inline validation errors appear on Trip Type, Departure City, Arrival City, Departure Date, Passengers_Adults and Cabin Class indicating they are required; no search results are shown",
+      "expected_result": "Form does not submit or navigate to results; Trip_Type field shows an inline validation error indicating it is required; user remains on the search form",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Leave Departure City blank and submit Search (text field required)",
+      "test_case": "Submit Search with Departure City left blank (text/unspecified required field)",
       "preconditions": [
-        "User is on the Flights Search form",
-        "All other required fields are filled with valid values"
+        "Visitor is on the Flights Search page"
       ],
       "steps": [
-        "1. Clear the Departure City field",
-        "2. Click the Search button"
+        "1. Navigate to the Flights Search page",
+        "2. Enter <valid Trip_Type> in the Trip_Type field",
+        "3. Leave the Departure_City field blank",
+        "4. Enter <valid Arrival_City> in the Arrival_City field",
+        "5. Enter <valid Departure_Date> in the Departure_Date field",
+        "6. Enter <valid number> in the Adults field",
+        "7. Select <valid Cabin_Class> in the Cabin_Class field",
+        "8. Click the Search button"
       ],
-      "expected_result": "Form does not submit; Departure City field displays an inline validation error indicating it is required; user remains on the Flights Search form and no listing is shown",
+      "expected_result": "Form does not submit or navigate to results; Departure_City field shows an inline validation error indicating it is required; user remains on the search form",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Leave Departure Date blank and submit Search (date required)",
+      "test_case": "Submit Search with Departure Date left blank (date required)",
       "preconditions": [
-        "User is on the Flights Search form",
-        "All other required fields are filled with valid values"
+        "Visitor is on the Flights Search page"
       ],
       "steps": [
-        "1. Clear the Departure Date field",
-        "2. Click the Search button"
+        "1. Navigate to the Flights Search page",
+        "2. Enter <valid Trip_Type> in the Trip_Type field",
+        "3. Enter <valid Departure_City> in the Departure_City field",
+        "4. Enter <valid Arrival_City> in the Arrival_City field",
+        "5. Leave the Departure_Date field blank",
+        "6. Enter <valid number> in the Adults field",
+        "7. Select <valid Cabin_Class> in the Cabin_Class field",
+        "8. Click the Search button"
       ],
-      "expected_result": "Form does not submit; Departure Date field displays an inline validation error indicating it is required; user remains on the Flights Search form and no listing is shown",
+      "expected_result": "Form does not submit or navigate to results; Departure_Date field shows an inline validation error indicating it is required; user remains on the search form",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-001",
-      "test_case": "Leave Cabin Class blank and submit Search (dropdown required)",
+      "test_case": "Submit Search with Adults count left blank (number required)",
       "preconditions": [
-        "User is on the Flights Search form",
-        "All other required fields are filled with valid values"
+        "Visitor is on the Flights Search page"
       ],
       "steps": [
-        "1. Set Cabin Class to empty/unselected",
-        "2. Click the Search button"
+        "1. Navigate to the Flights Search page",
+        "2. Enter <valid Trip_Type> in the Trip_Type field",
+        "3. Enter <valid Departure_City> in the Departure_City field",
+        "4. Enter <valid Arrival_City> in the Arrival_City field",
+        "5. Enter <valid Departure_Date> in the Departure_Date field",
+        "6. Leave the Adults field blank",
+        "7. Select <valid Cabin_Class> in the Cabin_Class field",
+        "8. Click the Search button"
       ],
-      "expected_result": "Form does not submit; Cabin Class field displays an inline validation error indicating selection is required; user remains on the Flights Search form and no listing is shown",
+      "expected_result": "Form does not submit or navigate to results; Adults field shows an inline validation error indicating it is required; user remains on the search form",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
       "wf_ref": "WF-001",
-      "test_case": "Leave Passengers (Adults) blank and submit Search (numeric required)",
+      "test_case": "Submit Search with all required fields empty",
       "preconditions": [
-        "User is on the Flights Search form",
-        "All other required fields are filled with valid values"
+        "Visitor is on the Flights Search page"
       ],
       "steps": [
-        "1. Clear the Passengers_Adults field",
-        "2. Click the Search button"
+        "1. Navigate to the Flights Search page",
+        "2. Leave Trip_Type blank",
+        "3. Leave Departure_City blank",
+        "4. Leave Arrival_City blank",
+        "5. Leave Departure_Date blank",
+        "6. Leave Adults blank",
+        "7. Leave Cabin_Class blank",
+        "8. Click the Search button"
       ],
-      "expected_result": "Form does not submit; Passengers_Adults field displays an inline validation error indicating it is required; user remains on the Flights Search form and no listing is shown",
+      "expected_result": "Form does not submit or navigate to results; inline validation errors appear on Trip_Type, Departure_City, Arrival_City, Departure_Date, Adults, and Cabin_Class indicating they are required; user remains on the search form",
       "priority": "high"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-001",
-      "test_case": "Select Round-trip and leave Return Date blank (conditional required field)",
+      "test_case": "Enter invalid/impossible date format in Departure_Date",
       "preconditions": [
-        "User is on the Flights Search form",
-        "All other required fields are filled with valid values"
+        "Visitor is on the Flights Search page"
       ],
       "steps": [
-        "1. Set Trip Type to <Round-trip>",
-        "2. Ensure Return Date is blank",
-        "3. Click the Search button"
+        "1. Navigate to the Flights Search page",
+        "2. Enter <valid Trip_Type> in the Trip_Type field",
+        "3. Enter <valid Departure_City> in the Departure_City field",
+        "4. Enter <valid Arrival_City> in the Arrival_City field",
+        "5. Enter <invalid date format> in the Departure_Date field",
+        "6. Enter <valid number> in the Adults field",
+        "7. Select <valid Cabin_Class> in the Cabin_Class field",
+        "8. Click the Search button"
       ],
-      "expected_result": "Form does not submit; Return Date field displays an inline validation error indicating Return Date is required for Round-trip searches; no results are shown and user remains on the Flights Search form",
-      "priority": "high"
+      "expected_result": "Form does not submit or navigate to results; Departure_Date field displays an inline validation error indicating the date is invalid or in an incorrect format; user remains on the search form",
+      "priority": "medium"
     },
     {
       "tc_id": "N-007",
       "wf_ref": "WF-001",
-      "test_case": "Enter non-numeric value in Passengers_Adults (number format violation)",
+      "test_case": "Round-trip with Return Date before Departure Date (date logic constraint)",
       "preconditions": [
-        "User is on the Flights Search form",
-        "All other required fields are filled with valid values"
+        "Visitor is on the Flights Search page"
       ],
       "steps": [
-        "1. Enter <non-numeric input> into the Passengers_Adults field",
-        "2. Click the Search button"
+        "1. Navigate to the Flights Search page",
+        "2. Select Round-trip in the Trip_Type field",
+        "3. Enter <valid Departure_City> in the Departure_City field",
+        "4. Enter <valid Arrival_City> in the Arrival_City field",
+        "5. Enter <valid Departure_Date> in the Departure_Date field",
+        "6. Enter <date earlier than Departure_Date> in the Return_Date field",
+        "7. Enter <valid number> in the Adults field",
+        "8. Select <valid Cabin_Class> in the Cabin_Class field",
+        "9. Click the Search button"
       ],
-      "expected_result": "Form does not submit; Passengers_Adults field displays an inline validation error indicating a numeric value is required; user remains on the Flights Search form",
-      "priority": "medium"
+      "expected_result": "Form does not submit or navigate to results; Return_Date field displays an inline validation error indicating it must be after the Departure_Date; user remains on the search form",
+      "priority": "high"
     },
     {
       "tc_id": "N-008",
       "wf_ref": "WF-001",
-      "test_case": "Enter invalid date format in Departure Date (date format violation)",
+      "test_case": "Enter non-numeric input into a numeric passenger field (Adults)",
       "preconditions": [
-        "User is on the Flights Search form",
-        "All other required fields are filled with valid values"
+        "Visitor is on the Flights Search page"
       ],
       "steps": [
-        "1. Enter <invalid date format> into the Departure Date field",
-        "2. Click the Search button"
+        "1. Navigate to the Flights Search page",
+        "2. Enter <valid Trip_Type> in the Trip_Type field",
+        "3. Enter <valid Departure_City> in the Departure_City field",
+        "4. Enter <valid Arrival_City> in the Arrival_City field",
+        "5. Enter <valid Departure_Date> in the Departure_Date field",
+        "6. Enter <non-numeric input> in the Adults field",
+        "7. Select <valid Cabin_Class> in the Cabin_Class field",
+        "8. Click the Search button"
       ],
-      "expected_result": "Form does not submit; Departure Date field displays an inline validation error indicating an invalid date format; user remains on the Flights Search form",
+      "expected_result": "Form does not submit or navigate to results; Adults field displays an inline validation error indicating the value must be numeric; user remains on the search form",
       "priority": "medium"
     },
     {
       "tc_id": "N-009",
-      "wf_ref": null,
-      "test_case": "Apply sidebar filters with Price_Min greater than Price_Max (price range constraint)",
-      "preconditions": [
-        "User has performed a valid search and search results are displayed"
-      ],
-      "steps": [
-        "1. Open the Flights Sidebar Filters",
-        "2. Enter <price greater than max> in Price_Min",
-        "3. Enter <price less than min> in Price_Max",
-        "4. Click Apply/Filter"
-      ],
-      "expected_result": "Filters are not applied; Price_Min and/or Price_Max fields display an inline validation error indicating the minimum price cannot be greater than the maximum price; the listing remains unchanged",
-      "priority": "medium"
-    },
-    {
-      "tc_id": "N-010",
-      "wf_ref": "WF-002",
-      "test_case": "Attempt to access Flights Listing directly without performing a search (precondition not met)",
-      "preconditions": [
-        "User has not entered search criteria and is not on the Search form with valid input"
-      ],
-      "steps": [
-        "1. Navigate directly to the Flights Listing page/URL without submitting a search"
-      ],
-      "expected_result": "User is redirected back to the Flights Search form (no listings are shown); the Search form remains visible and required search fields display inline validation indicators (showing that search criteria are required); no listing rows or row actions (Select/View Details) are available",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-011",
       "wf_ref": "WF-001",
-      "test_case": "Enter a Return Date earlier than Departure Date for a Round-trip (date order constraint)",
+      "test_case": "Submit Search with zero passengers (Adults=0, Children=0, Infants=0) violating 'valid flight search inputs' precondition",
       "preconditions": [
-        "User is on the Flights Search form",
-        "Trip Type is set to <Round-trip>",
-        "All other required fields are filled with valid values"
+        "Visitor is on the Flights Search page"
       ],
       "steps": [
-        "1. Set Departure Date to <valid departure date>",
-        "2. Set Return Date to <earlier return date> (earlier than Departure Date)",
-        "3. Click the Search button"
+        "1. Navigate to the Flights Search page",
+        "2. Enter <valid Trip_Type> in the Trip_Type field",
+        "3. Enter <valid Departure_City> in the Departure_City field",
+        "4. Enter <valid Arrival_City> in the Arrival_City field",
+        "5. Enter <valid Departure_Date> in the Departure_Date field",
+        "6. Enter 0 in the Adults field",
+        "7. Enter 0 in the Children field",
+        "8. Enter 0 in the Infants field",
+        "9. Select <valid Cabin_Class> in the Cabin_Class field",
+        "10. Click the Search button"
       ],
-      "expected_result": "Form does not submit; Return Date field displays an inline validation error indicating the return date must be after the departure date; user remains on the Flights Search form and no listings are shown",
+      "expected_result": "Form does not submit or navigate to results; an inline validation error appears indicating at least one passenger must be selected (error shown on passenger count fields); user remains on the search form",
       "priority": "high"
-    },
-    {
-      "tc_id": "N-012",
-      "wf_ref": null,
-      "test_case": "Enter non-numeric value in Price_Min filter (filter numeric format violation)",
-      "preconditions": [
-        "User has performed a valid search and search results are displayed"
-      ],
-      "steps": [
-        "1. Open the Flights Sidebar Filters",
-        "2. Enter <non-numeric input> into Price_Min",
-        "3. Click Apply/Filter"
-      ],
-      "expected_result": "Filters are not applied; Price_Min field displays an inline validation error indicating a numeric value is required; the listing remains unchanged",
-      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 12,
-    "high_priority": 8,
-    "medium_priority": 4,
+    "total": 9,
+    "high_priority": 7,
+    "medium_priority": 2,
     "low_priority": 0
   }
 }

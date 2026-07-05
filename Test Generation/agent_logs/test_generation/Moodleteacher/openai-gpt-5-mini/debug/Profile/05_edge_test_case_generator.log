@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.243964
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.938292
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Edge - SYSTEM PROMPT
+[22:49:29] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Edge - USER PROMPT
+[22:49:29] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 13,
   "module_title": "Profile",
-  "summary": "Displays the signed-in teacher's personal information, contact controls, activity links, privacy details, and login activity in organized information cards.",
-  "where_it_fits": "Accessible from the top navigation bar user menu (Profile) available on every page, this module provides the user's personal hub alongside other user options like Grades and Preferences and is part of the account-management portion of the application's lifecycle after authentication.",
-  "assumed_state_on_entry": "Logged in as a teacher with an active session"
+  "summary": "Displays the teacher's profile information including name and initials, contact and privacy details, links to related course profiles and content, reports, and login activity.",
+  "where_it_fits": "This page is reached from the top navigation's user menu (which contains links for Profile, Grades, Calendar, Private Files, Reports, and Preferences) and sits within the account-related area of the site alongside other personal pages; it complements course-level pages (e.g., Course Page and Participants) by providing the user's global information and links to their course profiles.",
+  "assumed_state_on_entry": "Authenticated session as a teacher (logged in)"
 }
 </module_context>
 
@@ -243,17 +257,14 @@ If a `<workflows>` block is present in the input:
 {
   "module_name": "Profile",
   "components": {
-    "Profile_Header_Actions": {
+    "Profile_Action_Bar": {
       "type": "action_bar",
-      "preconditions": [
-        "Logged in as a teacher with an active session"
-      ],
       "fields": {
-        "Message": {
+        "Message_Button": {
           "type": "button",
           "action_name": "Message",
           "preconditions": [
-            "Logged in as a teacher with an active session"
+            "Authenticated session as a teacher (logged in)"
           ]
         }
       }
@@ -265,7 +276,7 @@ If a `<workflows>` block is present in the input:
           "type": "link",
           "action_name": "Edit profile",
           "preconditions": [
-            "Logged in as a teacher with an active session"
+            "Authenticated session as a teacher (logged in)"
           ]
         }
       }
@@ -275,29 +286,20 @@ If a `<workflows>` block is present in the input:
       "fields": {
         "Data_Retention_Summary": {
           "type": "link",
-          "action_name": "Data retention summary",
-          "preconditions": [
-            "Logged in as a teacher with an active session"
-          ]
+          "action_name": "Data retention summary"
         }
       }
     },
     "Course_Details_Card": {
       "type": "card",
       "fields": {
-        "Courses": {
+        "Course_Profiles": {
           "type": "repeating_group",
           "item_fields": {
-            "Course_Link": {
-              "type": "link",
-              "preconditions": [
-                "Logged in as a teacher with an active session"
-              ]
+            "Course_Profile_Link": {
+              "type": "link"
             }
-          },
-          "preconditions": [
-            "Logged in as a teacher with an active session"
-          ]
+          }
         }
       }
     },
@@ -306,31 +308,19 @@ If a `<workflows>` block is present in the input:
       "fields": {
         "Blog_Entries": {
           "type": "link",
-          "action_name": "Blog entries",
-          "preconditions": [
-            "Logged in as a teacher with an active session"
-          ]
+          "action_name": "Blog entries"
         },
         "Forum_Posts": {
           "type": "link",
-          "action_name": "Forum posts",
-          "preconditions": [
-            "Logged in as a teacher with an active session"
-          ]
+          "action_name": "Forum posts"
         },
         "Forum_Discussions": {
           "type": "link",
-          "action_name": "Forum discussions",
-          "preconditions": [
-            "Logged in as a teacher with an active session"
-          ]
+          "action_name": "Forum discussions"
         },
         "Learning_Plans": {
           "type": "link",
-          "action_name": "Learning plans",
-          "preconditions": [
-            "Logged in as a teacher with an active session"
-          ]
+          "action_name": "Learning plans"
         }
       }
     },
@@ -339,17 +329,11 @@ If a `<workflows>` block is present in the input:
       "fields": {
         "Browser_Sessions": {
           "type": "link",
-          "action_name": "Browser sessions",
-          "preconditions": [
-            "Logged in as a teacher with an active session"
-          ]
+          "action_name": "Browser sessions"
         },
         "Grades_Overview": {
           "type": "link",
-          "action_name": "Grades overview",
-          "preconditions": [
-            "Logged in as a teacher with an active session"
-          ]
+          "action_name": "Grades overview"
         }
       }
     },
@@ -371,22 +355,22 @@ The Profile page displays the teacher's circular initials icon, full name, a "Me
 </description>
 
 <workflows>
-WF-001 | Open messaging composer via Message button | actor: Teacher | branch: none | terminal: Message | on_success: Opens the messaging composer / messaging interface
+WF-001 | Open messaging composer via Message button | actor: Teacher | branch: none | terminal: Message | on_success: Opens the message composition interface to send a message
 WF-002 | Navigate to Edit profile | actor: Teacher | branch: none | terminal: Edit profile | on_success: Navigates to the Edit profile page
-WF-003 | View Data retention summary | actor: Teacher | branch: none | terminal: Data retention summary | on_success: Navigates to the Data retention summary page
-WF-004 | Open an associated course profile from Course list | actor: Teacher | branch: none | terminal: Course_Link | on_success: Navigates to the associated course profile page
-WF-005 | Open Blog entries | actor: Teacher | branch: none | terminal: Blog entries | on_success: Navigates to the Blog entries list/page
-WF-006 | Open Forum posts | actor: Teacher | branch: none | terminal: Forum posts | on_success: Navigates to the Forum posts list/page
-WF-007 | Open Forum discussions | actor: Teacher | branch: none | terminal: Forum discussions | on_success: Navigates to the Forum discussions list/page
+WF-003 | Open Data retention summary | actor: Teacher | branch: none | terminal: Data retention summary | on_success: Displays the Data retention summary page
+WF-004 | Open a course profile from Course details | actor: Teacher | branch: none | terminal: Course_Profile_Link | on_success: Navigates to the selected course profile page
+WF-005 | View Blog entries | actor: Teacher | branch: none | terminal: Blog entries | on_success: Navigates to the user's Blog entries list
+WF-006 | View Forum posts | actor: Teacher | branch: none | terminal: Forum posts | on_success: Navigates to the user's Forum posts list
+WF-007 | View Forum discussions | actor: Teacher | branch: none | terminal: Forum discussions | on_success: Navigates to the user's Forum discussions list
 WF-008 | Open Learning plans | actor: Teacher | branch: none | terminal: Learning plans | on_success: Navigates to the Learning plans page
-WF-009 | View Browser sessions report | actor: Teacher | branch: none | terminal: Browser sessions | on_success: Navigates to the Browser sessions page
-WF-010 | View Grades overview report | actor: Teacher | branch: none | terminal: Grades overview | on_success: Navigates to the Grades overview page
+WF-009 | Open Browser sessions report | actor: Teacher | branch: none | terminal: Browser sessions | on_success: Navigates to the Browser sessions report
+WF-010 | Open Grades overview report | actor: Teacher | branch: none | terminal: Grades overview | on_success: Navigates to the Grades overview report
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:15:22] Test-Edge - LLM RESPONSE
+[22:51:48] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Profile",
@@ -395,116 +379,70 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "E-001",
       "wf_ref": null,
-      "subcategory": "boundary",
-      "test_case": "Profile displays identical First and Last access when they are the same timestamp",
+      "subcategory": "input_edge",
+      "test_case": "Very long profile description (200+ characters) saved and displayed",
       "preconditions": [
-        "Logged in as a teacher with an active session",
-        "Use a teacher account whose First access and Last access are both set to <same date value>"
+        "Authenticated session as a teacher (logged in)",
+        "On the Profile page"
       ],
       "steps": [
-        "1. Open the user menu from the top navigation bar",
-        "2. Click Profile"
+        "1. Click the Edit profile link on the User details card",
+        "2. Enter a very long string (200+ characters) into the Profile description field",
+        "3. Click the Save changes button",
+        "4. Observe the Profile page and the displayed profile description"
       ],
-      "expected_result": "Profile page loads successfully; Login Activity card shows First access and Last access with the same exact date value <same date value> and both show relative time indicators; view succeeds and no error is shown",
+      "expected_result": "Save completes; the Profile page displays the full entered profile description text (no truncation shown in the visible profile description area)",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": null,
-      "subcategory": "boundary",
-      "test_case": "Profile displays a far-future Last access date and its relative indicator",
+      "subcategory": "input_edge",
+      "test_case": "Profile description accepts emoji and extended Unicode characters",
       "preconditions": [
-        "Logged in as a teacher with an active session",
-        "Use a teacher account whose Last access is set to a <far future date>"
+        "Authenticated session as a teacher (logged in)",
+        "On the Profile page"
       ],
       "steps": [
-        "1. Open the user menu from the top navigation bar",
-        "2. Click Profile"
+        "1. Click the Edit profile link on the User details card",
+        "2. Enter a profile description containing emoji and extended Unicode characters (e.g., multi-codepoint emoji and non-Latin scripts)",
+        "3. Click the Save changes button",
+        "4. Observe the Profile page and the displayed profile description"
       ],
-      "expected_result": "Profile page loads successfully; Login Activity card shows Last access with the exact date value <far future date> and a visible future-oriented relative time indicator (e.g., 'in <n> days'); view succeeds and no error is shown",
-      "priority": "medium"
+      "expected_result": "Save completes; the Profile page displays the profile description showing the emoji and Unicode characters verbatim (no replacement characters or visible encoding errors)",
+      "priority": "low"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-002",
-      "subcategory": "input_edge",
-      "test_case": "Edit profile: very long profile description (>200 characters) is saved and shown on Profile",
-      "preconditions": [
-        "Logged in as a teacher with an active session"
-      ],
-      "steps": [
-        "1. Click the Edit profile link on the User details card",
-        "2. In the profile description field enter a string longer than 200 characters (no other fields changed)",
-        "3. Click Save/Submit on the Edit profile page",
-        "4. Return to the Profile page"
-      ],
-      "expected_result": "Save action succeeds; Profile page displays the profile description area with the full entered string visible (the very long text is shown) and no inline error is shown (succeeds)",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-004",
-      "wf_ref": "WF-002",
-      "subcategory": "input_edge",
-      "test_case": "Edit profile: description containing emoji and special/unicode characters is preserved and displayed",
-      "preconditions": [
-        "Logged in as a teacher with an active session"
-      ],
-      "steps": [
-        "1. Click the Edit profile link on the User details card",
-        "2. In the profile description field enter text containing emoji and a variety of special/unicode characters (e.g., emoji, accented letters, non-Latin script)",
-        "3. Click Save/Submit on the Edit profile page",
-        "4. Return to the Profile page"
-      ],
-      "expected_result": "Save action succeeds; Profile page displays the profile description including the emoji and special/unicode characters exactly as entered (succeeds) and no encoding errors or replacement characters are visible",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-005",
-      "wf_ref": "WF-002",
-      "subcategory": "input_edge",
-      "test_case": "Edit profile: leading and trailing whitespace in description is normalized on display",
-      "preconditions": [
-        "Logged in as a teacher with an active session"
-      ],
-      "steps": [
-        "1. Click the Edit profile link on the User details card",
-        "2. In the profile description field enter a value that includes leading and trailing spaces only around the meaningful text (e.g., '  some text  ')",
-        "3. Click Save/Submit on the Edit profile page",
-        "4. Return to the Profile page"
-      ],
-      "expected_result": "Save action succeeds; Profile page displays the profile description with leading and trailing whitespace removed (trimmed) and the meaningful text shown without extra spaces (succeeds)",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-006",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click of Message button does not open duplicate messaging composers",
+      "test_case": "Rapid double-click on Message button does not open duplicate composers",
       "preconditions": [
-        "Logged in as a teacher with an active session"
+        "Authenticated session as a teacher (logged in)",
+        "On the Profile page"
       ],
       "steps": [
-        "1. Open the user menu from the top navigation bar and click Profile",
-        "2. On the Profile page click the Message button twice in rapid succession (two clicks within under 1 second)"
+        "1. Click the Message button on the Profile action bar",
+        "2. Immediately click the Message button again (second click within a short interval)"
       ],
-      "expected_result": "First click opens the messaging composer successfully; second click does not create a second composer instance — second composer creation is blocked and only one messaging composer window/pane is visible (first action succeeds; duplicate creation is blocked)",
+      "expected_result": "A single message composition interface is visible; the UI does not open a second composer instance and the second click is ignored or disabled (no duplicate composer windows/modals are shown)",
       "priority": "medium"
     }
   ],
   "summary": {
-    "total": 6,
-    "boundary": 2,
-    "input_edge": 3,
+    "total": 3,
+    "boundary": 0,
+    "input_edge": 2,
     "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 3,
-    "low_priority": 3
+    "medium_priority": 2,
+    "low_priority": 1
   }
 }
 
 ------------------------------------------------------------
-[21:15:22] Test-Edge - PARSED JSON
+[22:51:48] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Profile",
@@ -513,110 +451,64 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "E-001",
       "wf_ref": null,
-      "subcategory": "boundary",
-      "test_case": "Profile displays identical First and Last access when they are the same timestamp",
+      "subcategory": "input_edge",
+      "test_case": "Very long profile description (200+ characters) saved and displayed",
       "preconditions": [
-        "Logged in as a teacher with an active session",
-        "Use a teacher account whose First access and Last access are both set to <same date value>"
+        "Authenticated session as a teacher (logged in)",
+        "On the Profile page"
       ],
       "steps": [
-        "1. Open the user menu from the top navigation bar",
-        "2. Click Profile"
+        "1. Click the Edit profile link on the User details card",
+        "2. Enter a very long string (200+ characters) into the Profile description field",
+        "3. Click the Save changes button",
+        "4. Observe the Profile page and the displayed profile description"
       ],
-      "expected_result": "Profile page loads successfully; Login Activity card shows First access and Last access with the same exact date value <same date value> and both show relative time indicators; view succeeds and no error is shown",
+      "expected_result": "Save completes; the Profile page displays the full entered profile description text (no truncation shown in the visible profile description area)",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": null,
-      "subcategory": "boundary",
-      "test_case": "Profile displays a far-future Last access date and its relative indicator",
+      "subcategory": "input_edge",
+      "test_case": "Profile description accepts emoji and extended Unicode characters",
       "preconditions": [
-        "Logged in as a teacher with an active session",
-        "Use a teacher account whose Last access is set to a <far future date>"
+        "Authenticated session as a teacher (logged in)",
+        "On the Profile page"
       ],
       "steps": [
-        "1. Open the user menu from the top navigation bar",
-        "2. Click Profile"
+        "1. Click the Edit profile link on the User details card",
+        "2. Enter a profile description containing emoji and extended Unicode characters (e.g., multi-codepoint emoji and non-Latin scripts)",
+        "3. Click the Save changes button",
+        "4. Observe the Profile page and the displayed profile description"
       ],
-      "expected_result": "Profile page loads successfully; Login Activity card shows Last access with the exact date value <far future date> and a visible future-oriented relative time indicator (e.g., 'in <n> days'); view succeeds and no error is shown",
-      "priority": "medium"
+      "expected_result": "Save completes; the Profile page displays the profile description showing the emoji and Unicode characters verbatim (no replacement characters or visible encoding errors)",
+      "priority": "low"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-002",
-      "subcategory": "input_edge",
-      "test_case": "Edit profile: very long profile description (>200 characters) is saved and shown on Profile",
-      "preconditions": [
-        "Logged in as a teacher with an active session"
-      ],
-      "steps": [
-        "1. Click the Edit profile link on the User details card",
-        "2. In the profile description field enter a string longer than 200 characters (no other fields changed)",
-        "3. Click Save/Submit on the Edit profile page",
-        "4. Return to the Profile page"
-      ],
-      "expected_result": "Save action succeeds; Profile page displays the profile description area with the full entered string visible (the very long text is shown) and no inline error is shown (succeeds)",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-004",
-      "wf_ref": "WF-002",
-      "subcategory": "input_edge",
-      "test_case": "Edit profile: description containing emoji and special/unicode characters is preserved and displayed",
-      "preconditions": [
-        "Logged in as a teacher with an active session"
-      ],
-      "steps": [
-        "1. Click the Edit profile link on the User details card",
-        "2. In the profile description field enter text containing emoji and a variety of special/unicode characters (e.g., emoji, accented letters, non-Latin script)",
-        "3. Click Save/Submit on the Edit profile page",
-        "4. Return to the Profile page"
-      ],
-      "expected_result": "Save action succeeds; Profile page displays the profile description including the emoji and special/unicode characters exactly as entered (succeeds) and no encoding errors or replacement characters are visible",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-005",
-      "wf_ref": "WF-002",
-      "subcategory": "input_edge",
-      "test_case": "Edit profile: leading and trailing whitespace in description is normalized on display",
-      "preconditions": [
-        "Logged in as a teacher with an active session"
-      ],
-      "steps": [
-        "1. Click the Edit profile link on the User details card",
-        "2. In the profile description field enter a value that includes leading and trailing spaces only around the meaningful text (e.g., '  some text  ')",
-        "3. Click Save/Submit on the Edit profile page",
-        "4. Return to the Profile page"
-      ],
-      "expected_result": "Save action succeeds; Profile page displays the profile description with leading and trailing whitespace removed (trimmed) and the meaningful text shown without extra spaces (succeeds)",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-006",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid double-click of Message button does not open duplicate messaging composers",
+      "test_case": "Rapid double-click on Message button does not open duplicate composers",
       "preconditions": [
-        "Logged in as a teacher with an active session"
+        "Authenticated session as a teacher (logged in)",
+        "On the Profile page"
       ],
       "steps": [
-        "1. Open the user menu from the top navigation bar and click Profile",
-        "2. On the Profile page click the Message button twice in rapid succession (two clicks within under 1 second)"
+        "1. Click the Message button on the Profile action bar",
+        "2. Immediately click the Message button again (second click within a short interval)"
       ],
-      "expected_result": "First click opens the messaging composer successfully; second click does not create a second composer instance \u2014 second composer creation is blocked and only one messaging composer window/pane is visible (first action succeeds; duplicate creation is blocked)",
+      "expected_result": "A single message composition interface is visible; the UI does not open a second composer instance and the second click is ignored or disabled (no duplicate composer windows/modals are shown)",
       "priority": "medium"
     }
   ],
   "summary": {
-    "total": 6,
-    "boundary": 2,
-    "input_edge": 3,
+    "total": 3,
+    "boundary": 0,
+    "input_edge": 2,
     "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 3,
-    "low_priority": 3
+    "medium_priority": 2,
+    "low_priority": 1
   }
 }

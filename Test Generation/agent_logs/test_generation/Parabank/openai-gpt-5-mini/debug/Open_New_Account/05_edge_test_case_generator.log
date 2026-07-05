@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:02:39.087097
+DEBUG SESSION STARTED: 2026-07-04T22:22:17.218958
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Edge - SYSTEM PROMPT
+[22:22:17] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Edge - USER PROMPT
+[22:22:17] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 4,
   "module_title": "Open New Account",
-  "summary": "A form-based feature that creates a new Checking or Savings account by selecting an account type, specifying an initial deposit and funding source, and performing real-time validations on inputs and balances.",
-  "where_it_fits": "Accessible from the left-hand navigation under 'Open New Account' after successful sign-in, this module is part of the account onboarding flow in the dashboard and, on success, redirects users back to the Accounts Overview to show the new account.",
-  "assumed_state_on_entry": "User is authenticated and on the dashboard with at least one existing funding account available for the initial deposit"
+  "summary": "Provides a form to open a new Checking or Savings account by selecting an account type, specifying an initial deposit and funding source, and validating requirements before creation.",
+  "where_it_fits": "Accessible from the left-hand navigation under 'Open New Account' after successful sign-in and from the logged-in account dashboard; it is part of the account setup flow and on success redirects the user back to Accounts Overview. It sits alongside other post-login features like Transfer Funds, Bill Pay, and Manage Cards.",
+  "assumed_state_on_entry": "User is logged in and has at least one existing funding account (with sufficient balance) available to fund the new account."
 }
 </module_context>
 
@@ -245,9 +259,14 @@ If a `<workflows>` block is present in the input:
   "components": {
     "Open_New_Account_Form": {
       "type": "form",
+      "preconditions": [
+        "User is logged in",
+        "At least one funding account exists"
+      ],
+      "real_time_validation": true,
       "fields": {
         "Account_Type": {
-          "type": "radio",
+          "type": "unspecified",
           "options": [
             "Checking",
             "Savings"
@@ -257,43 +276,40 @@ If a `<workflows>` block is present in the input:
         "Initial_Deposit_Amount": {
           "type": "number",
           "required": true,
+          "real_time_validation": true,
           "constraints": [
             "must be numeric",
-            "minimum 25 when Account_Type == Checking",
-            "minimum 100 when Account_Type == Savings"
-          ],
-          "validation": {
-            "real_time": true,
-            "triggers": [
-              "input",
-              "change"
-            ]
-          }
+            "must be >= 25 when Account_Type == Checking",
+            "must be >= 100 when Account_Type == Savings"
+          ]
         },
         "Funding_Source_Account": {
           "type": "dropdown",
           "required": true,
+          "real_time_validation": true,
           "constraints": [
-            "selected account must have balance >= Initial_Deposit_Amount"
-          ],
-          "validation": {
-            "real_time": true,
-            "triggers": [
-              "change"
-            ]
-          }
+            "selected funding account must have sufficient balance to cover Initial_Deposit_Amount"
+          ]
         }
       },
+      "constraints": [
+        "Funding_Source_Account balance must be >= Initial_Deposit_Amount"
+      ],
       "submit_actions": [
         {
           "action_name": "Open Account",
           "preconditions": [
-            "User is authenticated and on the dashboard with at least one existing funding account available for the initial deposit"
+            "User is logged in",
+            "At least one funding account exists"
           ],
-          "on_success": "Account opened successfully! Redirect to Accounts Overview",
           "constraints": [
-            "form must pass all field validations before submission"
-          ]
+            "Initial_Deposit_Amount must meet Account_Type minimums",
+            "Funding_Source_Account balance must be >= Initial_Deposit_Amount"
+          ],
+          "on_success": {
+            "message": "Account opened successfully!",
+            "redirect_to": "Accounts Overview"
+          }
         }
       ]
     }
@@ -308,14 +324,13 @@ This page contains an account-opening form with interactive account type selecti
 </description>
 
 <workflows>
-WF-001 | Open Checking account (meets Checking minimum) | actor: Authenticated User | branch: Account_Type == Checking | terminal: Open Account | on_success: Account opened successfully! Redirect to Accounts Overview
-WF-002 | Open Savings account (meets Savings minimum) | actor: Authenticated User | branch: Account_Type == Savings | terminal: Open Account | on_success: Account opened successfully! Redirect to Accounts Overview
+WF-001 | Open Account (valid submission) | actor: <role> | branch: none | terminal: Open Account | on_success: Account opened successfully!; redirect_to: Accounts Overview
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:03:45] Test-Edge - LLM RESPONSE
+[22:23:19] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Open New Account",
@@ -325,147 +340,145 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Checking: Initial deposit exactly at Checking minimum with funding account balance exactly equal",
+      "test_case": "Initial deposit exactly equals Checking minimum succeeds",
       "preconditions": [
-        "User is authenticated and on the Open New Account page",
-        "A funding account exists with balance exactly equal to <minimum for Checking>"
+        "User is logged in",
+        "At least one funding account exists with balance >= <minimum for Checking>"
       ],
       "steps": [
         "1. Select Account_Type = Checking",
-        "2. Enter <minimum for Checking> into Initial_Deposit_Amount",
-        "3. Select Funding_Source_Account that has balance exactly equal to the entered Initial_Deposit_Amount",
-        "4. Click Open Account"
+        "2. Enter Initial_Deposit_Amount = <minimum for Checking>",
+        "3. Select Funding_Source_Account with balance >= <minimum for Checking>",
+        "4. Click the Open Account button"
       ],
-      "expected_result": "Form submits successfully; Account opened successfully! message is shown and user is redirected to Accounts Overview where the new Checking account appears — action succeeds",
+      "expected_result": "Form submission succeeds: 'Account opened successfully!' message is displayed and the user is redirected to Accounts Overview",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Checking: Initial deposit one unit below Checking minimum is rejected",
+      "test_case": "Initial deposit one unit below Checking minimum is blocked",
       "preconditions": [
-        "User is authenticated and on the Open New Account page",
-        "A funding account exists with balance >= the below-minimum amount to isolate deposit validation"
+        "User is logged in",
+        "At least one funding account exists with balance >= <one unit below minimum for Checking>"
       ],
       "steps": [
         "1. Select Account_Type = Checking",
-        "2. Enter <one unit below minimum for Checking> into Initial_Deposit_Amount",
-        "3. Select any Funding_Source_Account with sufficient balance for the entered amount",
-        "4. Click Open Account"
+        "2. Enter Initial_Deposit_Amount = <one unit below minimum for Checking>",
+        "3. Select any Funding_Source_Account",
+        "4. Click the Open Account button"
       ],
-      "expected_result": "Initial_Deposit_Amount displays a real-time validation error indicating the amount must be at least <minimum for Checking>; submission is blocked and the account is not created — is blocked / error shown",
+      "expected_result": "Submission is blocked: an inline validation error is shown on the Initial_Deposit_Amount field indicating the amount is below the required minimum for Checking",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Savings: Initial deposit exactly at Savings minimum with funding account balance exactly equal",
+      "test_case": "Initial deposit exactly equals Savings minimum succeeds",
       "preconditions": [
-        "User is authenticated and on the Open New Account page",
-        "A funding account exists with balance exactly equal to <minimum for Savings>"
+        "User is logged in",
+        "At least one funding account exists with balance >= <minimum for Savings>"
       ],
       "steps": [
         "1. Select Account_Type = Savings",
-        "2. Enter <minimum for Savings> into Initial_Deposit_Amount",
-        "3. Select Funding_Source_Account that has balance exactly equal to the entered Initial_Deposit_Amount",
-        "4. Click Open Account"
+        "2. Enter Initial_Deposit_Amount = <minimum for Savings>",
+        "3. Select Funding_Source_Account with balance >= <minimum for Savings>",
+        "4. Click the Open Account button"
       ],
-      "expected_result": "Form submits successfully; Account opened successfully! message is shown and user is redirected to Accounts Overview where the new Savings account appears — action succeeds",
+      "expected_result": "Form submission succeeds: 'Account opened successfully!' message is displayed and the user is redirected to Accounts Overview",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Savings: Initial deposit one unit below Savings minimum is rejected",
+      "test_case": "Initial deposit one unit below Savings minimum is blocked",
       "preconditions": [
-        "User is authenticated and on the Open New Account page",
-        "A funding account exists with balance >= the below-minimum amount to isolate deposit validation"
+        "User is logged in",
+        "At least one funding account exists"
       ],
       "steps": [
         "1. Select Account_Type = Savings",
-        "2. Enter <one unit below minimum for Savings> into Initial_Deposit_Amount",
-        "3. Select any Funding_Source_Account with sufficient balance for the entered amount",
-        "4. Click Open Account"
+        "2. Enter Initial_Deposit_Amount = <one unit below minimum for Savings>",
+        "3. Select any Funding_Source_Account",
+        "4. Click the Open Account button"
       ],
-      "expected_result": "Initial_Deposit_Amount displays a real-time validation error indicating the amount must be at least <minimum for Savings>; submission is blocked and the account is not created — is blocked / error shown",
+      "expected_result": "Submission is blocked: an inline validation error is shown on the Initial_Deposit_Amount field indicating the amount is below the required minimum for Savings",
       "priority": "medium"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Funding source balance exactly equals a non-minimum deposit amount (cross-field equality)",
+      "test_case": "Funding account balance exactly equals deposit amount succeeds",
       "preconditions": [
-        "User is authenticated and on the Open New Account page",
-        "A funding account exists with balance exactly equal to <chosen deposit amount>"
+        "User is logged in",
+        "At least one funding account exists with balance = <entered deposit amount>"
       ],
       "steps": [
-        "1. Select Account_Type = Checking or Savings such that <chosen deposit amount> is >= that account type's minimum",
-        "2. Enter <chosen deposit amount> into Initial_Deposit_Amount",
-        "3. Select Funding_Source_Account that has balance exactly equal to the entered Initial_Deposit_Amount",
-        "4. Click Open Account"
+        "1. Select Account_Type = Checking",
+        "2. Enter Initial_Deposit_Amount = <minimum for Checking>",
+        "3. Select Funding_Source_Account with balance = <entered deposit amount>",
+        "4. Click the Open Account button"
       ],
-      "expected_result": "Form submits successfully; Account opened successfully! message is shown and user is redirected to Accounts Overview where the new account appears (funding account balance equal to deposit is accepted) — action succeeds",
+      "expected_result": "Form submission succeeds: 'Account opened successfully!' message is displayed and the user is redirected to Accounts Overview",
       "priority": "medium"
     },
     {
       "tc_id": "E-006",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Funding source balance one unit below the deposit amount is rejected (insufficient funds)",
+      "test_case": "Funding account balance one unit less than deposit is blocked",
       "preconditions": [
-        "User is authenticated and on the Open New Account page",
-        "A funding account exists with balance equal to <entered deposit amount minus one unit>"
+        "User is logged in",
+        "At least one funding account exists with balance = <entered deposit amount minus one unit>"
       ],
       "steps": [
-        "1. Select Account_Type = Checking or Savings such that the entered amount meets the account minimum",
-        "2. Enter <deposit amount> into Initial_Deposit_Amount",
-        "3. Select Funding_Source_Account that has balance = <deposit amount minus one unit>",
-        "4. Click Open Account"
+        "1. Select Account_Type = Checking",
+        "2. Enter Initial_Deposit_Amount = <entered deposit amount>",
+        "3. Select Funding_Source_Account with balance = <entered deposit amount minus one unit>",
+        "4. Click the Open Account button"
       ],
-      "expected_result": "Funding_Source_Account field shows a real-time inline error indicating insufficient balance (selected account balance is less than the Initial_Deposit_Amount); submission is blocked and the account is not created — is blocked / error shown",
+      "expected_result": "Submission is blocked: an inline validation error is shown on the Funding_Source_Account field indicating insufficient balance to cover the Initial_Deposit_Amount",
       "priority": "medium"
     },
     {
       "tc_id": "E-007",
       "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Initial_Deposit_Amount entered with higher-than-supported decimal precision",
+      "test_case": "Initial deposit with higher-than-supported decimal precision is rejected",
       "preconditions": [
-        "User is authenticated and on the Open New Account page",
-        "A funding account exists with balance >= the entered amount"
+        "User is logged in",
+        "At least one funding account exists with balance >= <entered deposit amount>"
       ],
       "steps": [
-        "1. Select Account_Type such that the entered amount is >= that account type's minimum",
-        "2. Enter a numeric value into Initial_Deposit_Amount that contains more decimal places than the UI's typical currency precision (e.g., more than two decimals)",
-        "3. Move focus out of Initial_Deposit_Amount (blur) to trigger real-time validation",
-        "4. Click Open Account"
+        "1. Select Account_Type = Checking",
+        "2. Enter Initial_Deposit_Amount using a value with more decimal places than typical currency precision (many decimal places)",
+        "3. Select Funding_Source_Account with sufficient balance",
+        "4. Click the Open Account button"
       ],
-      "expected_result": "On blur the UI displays the Initial_Deposit_Amount rounded to the supported currency precision in the input; the rounded amount is used for validation and the form submits successfully if rounded amount meets minimums and funding account balance — rounded value is shown in the field and the account is opened (action succeeds)",
+      "expected_result": "Submission is blocked: an inline validation error is shown on the Initial_Deposit_Amount field indicating the amount format/precision is not accepted",
       "priority": "low"
     },
     {
       "tc_id": "E-008",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid back-navigation after successful open to attempt duplicate submission",
+      "test_case": "Change Account_Type from Checking to Savings after entering a Checking-boundary amount triggers real-time validation",
       "preconditions": [
-        "User is authenticated and on the Open New Account page",
-        "A funding account exists with balance >= the minimum for Checking"
+        "User is logged in",
+        "At least one funding account exists with balance >= <minimum for Checking>"
       ],
       "steps": [
         "1. Select Account_Type = Checking",
-        "2. Enter <minimum for Checking> into Initial_Deposit_Amount",
-        "3. Select Funding_Source_Account with sufficient balance",
-        "4. Click Open Account and wait for successful redirect to Accounts Overview",
-        "5. Click the browser Back button to return to the Open New Account page",
-        "6. Click Open Account immediately without changing fields"
+        "2. Enter Initial_Deposit_Amount = <minimum for Checking>",
+        "3. Select Funding_Source_Account with balance >= <minimum for Checking>",
+        "4. Change Account_Type to Savings"
       ],
-      "expected_result": "Second submission attempt does not create a duplicate account; either the form is cleared or the UI shows an error/preventive message and Accounts Overview contains only one new account — second creation is blocked / error shown",
-      "priority": "low"
+      "expected_result": "After switching to Savings the Initial_Deposit_Amount field shows an inline validation error indicating the current amount is below the Savings minimum (submission is blocked until amount is increased)",
+      "priority": "medium"
     }
   ],
   "summary": {
@@ -475,13 +488,13 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 6,
-    "low_priority": 2
+    "medium_priority": 7,
+    "low_priority": 1
   }
 }
 
 ------------------------------------------------------------
-[21:03:45] Test-Edge - PARSED JSON
+[22:23:19] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Open New Account",
@@ -491,147 +504,145 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Checking: Initial deposit exactly at Checking minimum with funding account balance exactly equal",
+      "test_case": "Initial deposit exactly equals Checking minimum succeeds",
       "preconditions": [
-        "User is authenticated and on the Open New Account page",
-        "A funding account exists with balance exactly equal to <minimum for Checking>"
+        "User is logged in",
+        "At least one funding account exists with balance >= <minimum for Checking>"
       ],
       "steps": [
         "1. Select Account_Type = Checking",
-        "2. Enter <minimum for Checking> into Initial_Deposit_Amount",
-        "3. Select Funding_Source_Account that has balance exactly equal to the entered Initial_Deposit_Amount",
-        "4. Click Open Account"
+        "2. Enter Initial_Deposit_Amount = <minimum for Checking>",
+        "3. Select Funding_Source_Account with balance >= <minimum for Checking>",
+        "4. Click the Open Account button"
       ],
-      "expected_result": "Form submits successfully; Account opened successfully! message is shown and user is redirected to Accounts Overview where the new Checking account appears \u2014 action succeeds",
+      "expected_result": "Form submission succeeds: 'Account opened successfully!' message is displayed and the user is redirected to Accounts Overview",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Checking: Initial deposit one unit below Checking minimum is rejected",
+      "test_case": "Initial deposit one unit below Checking minimum is blocked",
       "preconditions": [
-        "User is authenticated and on the Open New Account page",
-        "A funding account exists with balance >= the below-minimum amount to isolate deposit validation"
+        "User is logged in",
+        "At least one funding account exists with balance >= <one unit below minimum for Checking>"
       ],
       "steps": [
         "1. Select Account_Type = Checking",
-        "2. Enter <one unit below minimum for Checking> into Initial_Deposit_Amount",
-        "3. Select any Funding_Source_Account with sufficient balance for the entered amount",
-        "4. Click Open Account"
+        "2. Enter Initial_Deposit_Amount = <one unit below minimum for Checking>",
+        "3. Select any Funding_Source_Account",
+        "4. Click the Open Account button"
       ],
-      "expected_result": "Initial_Deposit_Amount displays a real-time validation error indicating the amount must be at least <minimum for Checking>; submission is blocked and the account is not created \u2014 is blocked / error shown",
+      "expected_result": "Submission is blocked: an inline validation error is shown on the Initial_Deposit_Amount field indicating the amount is below the required minimum for Checking",
       "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Savings: Initial deposit exactly at Savings minimum with funding account balance exactly equal",
+      "test_case": "Initial deposit exactly equals Savings minimum succeeds",
       "preconditions": [
-        "User is authenticated and on the Open New Account page",
-        "A funding account exists with balance exactly equal to <minimum for Savings>"
+        "User is logged in",
+        "At least one funding account exists with balance >= <minimum for Savings>"
       ],
       "steps": [
         "1. Select Account_Type = Savings",
-        "2. Enter <minimum for Savings> into Initial_Deposit_Amount",
-        "3. Select Funding_Source_Account that has balance exactly equal to the entered Initial_Deposit_Amount",
-        "4. Click Open Account"
+        "2. Enter Initial_Deposit_Amount = <minimum for Savings>",
+        "3. Select Funding_Source_Account with balance >= <minimum for Savings>",
+        "4. Click the Open Account button"
       ],
-      "expected_result": "Form submits successfully; Account opened successfully! message is shown and user is redirected to Accounts Overview where the new Savings account appears \u2014 action succeeds",
+      "expected_result": "Form submission succeeds: 'Account opened successfully!' message is displayed and the user is redirected to Accounts Overview",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
-      "wf_ref": "WF-002",
+      "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Savings: Initial deposit one unit below Savings minimum is rejected",
+      "test_case": "Initial deposit one unit below Savings minimum is blocked",
       "preconditions": [
-        "User is authenticated and on the Open New Account page",
-        "A funding account exists with balance >= the below-minimum amount to isolate deposit validation"
+        "User is logged in",
+        "At least one funding account exists"
       ],
       "steps": [
         "1. Select Account_Type = Savings",
-        "2. Enter <one unit below minimum for Savings> into Initial_Deposit_Amount",
-        "3. Select any Funding_Source_Account with sufficient balance for the entered amount",
-        "4. Click Open Account"
+        "2. Enter Initial_Deposit_Amount = <one unit below minimum for Savings>",
+        "3. Select any Funding_Source_Account",
+        "4. Click the Open Account button"
       ],
-      "expected_result": "Initial_Deposit_Amount displays a real-time validation error indicating the amount must be at least <minimum for Savings>; submission is blocked and the account is not created \u2014 is blocked / error shown",
+      "expected_result": "Submission is blocked: an inline validation error is shown on the Initial_Deposit_Amount field indicating the amount is below the required minimum for Savings",
       "priority": "medium"
     },
     {
       "tc_id": "E-005",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Funding source balance exactly equals a non-minimum deposit amount (cross-field equality)",
+      "test_case": "Funding account balance exactly equals deposit amount succeeds",
       "preconditions": [
-        "User is authenticated and on the Open New Account page",
-        "A funding account exists with balance exactly equal to <chosen deposit amount>"
+        "User is logged in",
+        "At least one funding account exists with balance = <entered deposit amount>"
       ],
       "steps": [
-        "1. Select Account_Type = Checking or Savings such that <chosen deposit amount> is >= that account type's minimum",
-        "2. Enter <chosen deposit amount> into Initial_Deposit_Amount",
-        "3. Select Funding_Source_Account that has balance exactly equal to the entered Initial_Deposit_Amount",
-        "4. Click Open Account"
+        "1. Select Account_Type = Checking",
+        "2. Enter Initial_Deposit_Amount = <minimum for Checking>",
+        "3. Select Funding_Source_Account with balance = <entered deposit amount>",
+        "4. Click the Open Account button"
       ],
-      "expected_result": "Form submits successfully; Account opened successfully! message is shown and user is redirected to Accounts Overview where the new account appears (funding account balance equal to deposit is accepted) \u2014 action succeeds",
+      "expected_result": "Form submission succeeds: 'Account opened successfully!' message is displayed and the user is redirected to Accounts Overview",
       "priority": "medium"
     },
     {
       "tc_id": "E-006",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "boundary",
-      "test_case": "Funding source balance one unit below the deposit amount is rejected (insufficient funds)",
+      "test_case": "Funding account balance one unit less than deposit is blocked",
       "preconditions": [
-        "User is authenticated and on the Open New Account page",
-        "A funding account exists with balance equal to <entered deposit amount minus one unit>"
+        "User is logged in",
+        "At least one funding account exists with balance = <entered deposit amount minus one unit>"
       ],
       "steps": [
-        "1. Select Account_Type = Checking or Savings such that the entered amount meets the account minimum",
-        "2. Enter <deposit amount> into Initial_Deposit_Amount",
-        "3. Select Funding_Source_Account that has balance = <deposit amount minus one unit>",
-        "4. Click Open Account"
+        "1. Select Account_Type = Checking",
+        "2. Enter Initial_Deposit_Amount = <entered deposit amount>",
+        "3. Select Funding_Source_Account with balance = <entered deposit amount minus one unit>",
+        "4. Click the Open Account button"
       ],
-      "expected_result": "Funding_Source_Account field shows a real-time inline error indicating insufficient balance (selected account balance is less than the Initial_Deposit_Amount); submission is blocked and the account is not created \u2014 is blocked / error shown",
+      "expected_result": "Submission is blocked: an inline validation error is shown on the Funding_Source_Account field indicating insufficient balance to cover the Initial_Deposit_Amount",
       "priority": "medium"
     },
     {
       "tc_id": "E-007",
       "wf_ref": null,
       "subcategory": "input_edge",
-      "test_case": "Initial_Deposit_Amount entered with higher-than-supported decimal precision",
+      "test_case": "Initial deposit with higher-than-supported decimal precision is rejected",
       "preconditions": [
-        "User is authenticated and on the Open New Account page",
-        "A funding account exists with balance >= the entered amount"
+        "User is logged in",
+        "At least one funding account exists with balance >= <entered deposit amount>"
       ],
       "steps": [
-        "1. Select Account_Type such that the entered amount is >= that account type's minimum",
-        "2. Enter a numeric value into Initial_Deposit_Amount that contains more decimal places than the UI's typical currency precision (e.g., more than two decimals)",
-        "3. Move focus out of Initial_Deposit_Amount (blur) to trigger real-time validation",
-        "4. Click Open Account"
+        "1. Select Account_Type = Checking",
+        "2. Enter Initial_Deposit_Amount using a value with more decimal places than typical currency precision (many decimal places)",
+        "3. Select Funding_Source_Account with sufficient balance",
+        "4. Click the Open Account button"
       ],
-      "expected_result": "On blur the UI displays the Initial_Deposit_Amount rounded to the supported currency precision in the input; the rounded amount is used for validation and the form submits successfully if rounded amount meets minimums and funding account balance \u2014 rounded value is shown in the field and the account is opened (action succeeds)",
+      "expected_result": "Submission is blocked: an inline validation error is shown on the Initial_Deposit_Amount field indicating the amount format/precision is not accepted",
       "priority": "low"
     },
     {
       "tc_id": "E-008",
       "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid back-navigation after successful open to attempt duplicate submission",
+      "test_case": "Change Account_Type from Checking to Savings after entering a Checking-boundary amount triggers real-time validation",
       "preconditions": [
-        "User is authenticated and on the Open New Account page",
-        "A funding account exists with balance >= the minimum for Checking"
+        "User is logged in",
+        "At least one funding account exists with balance >= <minimum for Checking>"
       ],
       "steps": [
         "1. Select Account_Type = Checking",
-        "2. Enter <minimum for Checking> into Initial_Deposit_Amount",
-        "3. Select Funding_Source_Account with sufficient balance",
-        "4. Click Open Account and wait for successful redirect to Accounts Overview",
-        "5. Click the browser Back button to return to the Open New Account page",
-        "6. Click Open Account immediately without changing fields"
+        "2. Enter Initial_Deposit_Amount = <minimum for Checking>",
+        "3. Select Funding_Source_Account with balance >= <minimum for Checking>",
+        "4. Change Account_Type to Savings"
       ],
-      "expected_result": "Second submission attempt does not create a duplicate account; either the form is cleared or the UI shows an error/preventive message and Accounts Overview contains only one new account \u2014 second creation is blocked / error shown",
-      "priority": "low"
+      "expected_result": "After switching to Savings the Initial_Deposit_Amount field shows an inline validation error indicating the current amount is below the Savings minimum (submission is blocked until amount is increased)",
+      "priority": "medium"
     }
   ],
   "summary": {
@@ -641,7 +652,7 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     "interaction_edge": 1,
     "state_edge": 0,
     "data_edge": 0,
-    "medium_priority": 6,
-    "low_priority": 2
+    "medium_priority": 7,
+    "low_priority": 1
   }
 }

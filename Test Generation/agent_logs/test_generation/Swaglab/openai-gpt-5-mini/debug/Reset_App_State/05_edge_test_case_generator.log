@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:04:20.747127
+DEBUG SESSION STARTED: 2026-07-04T22:55:36.006624
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Edge - SYSTEM PROMPT
+[22:55:36] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:04:20] Test-Edge - USER PROMPT
+[22:55:36] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 9,
   "module_title": "Reset App State",
-  "summary": "Clears the shopping cart and resets in-app UI state (for example, cart badge and add/remove button states) without logging the user out.",
-  "where_it_fits": "Available from the hamburger menu in the persistent header on post-login pages (e.g., Product Inventory), this option resets the application's runtime state across inventory and cart flows. It is part of the post-login navigation alongside All Items, About, and Logout and is used before or between checkout steps to restore default UI/state.",
-  "assumed_state_on_entry": "User is logged in with an active session and the application has mutable state (e.g., items added to the cart or changed add/remove button states)."
+  "summary": "Resets the in-app state by clearing the shopping cart and restoring UI states (such as cart badge and add/remove button states) without signing the user out.",
+  "where_it_fits": "Accessible from the persistent hamburger menu (item \u2463 Reset App State) available after signing in, this utility sits alongside navigation options like All Items, About, and Logout and is used during the shopping lifecycle to return the app to a clean state without affecting authentication. It is relevant while moving between Product Inventory, Product Detail, Shopping Cart, and Checkout flows when test or user state needs to be cleared.",
+  "assumed_state_on_entry": "User is signed in with an active session and the application has a non-default state (e.g., items in cart or modified add/remove button states)."
 }
 </module_context>
 
@@ -241,16 +255,41 @@ If a `<workflows>` block is present in the input:
 
 <ast>
 {
-  "module_name": "Reset App State",
-  "components": {
-    "Reset_App_State_Menu_Item": {
-      "type": "button",
-      "action_name": "Reset App State",
-      "preconditions": [
-        "User is logged in with an active session and the application has mutable state (e.g., items added to the cart or changed add/remove button states)."
-      ],
-      "ui_location": "hamburger menu in persistent header (post-login navigation)",
-      "on_success": "Clears the shopping cart and resets in-app UI state (for example, cart badge and add/remove button states) without logging the user out."
+  "Module_Name": "Reset App State",
+  "Components": {
+    "Hamburger_Menu": {
+      "Type": "menu",
+      "Visible_When": "user is signed in",
+      "Menu_Items": [
+        {
+          "Item_Name": "All Items",
+          "Type": "link",
+          "Action_Name": "All Items",
+          "Visible_When": "user is signed in"
+        },
+        {
+          "Item_Name": "About",
+          "Type": "link",
+          "Action_Name": "About",
+          "Visible_When": "user is signed in"
+        },
+        {
+          "Item_Name": "Reset App State",
+          "Type": "action",
+          "Action_Name": "Reset App State",
+          "Visible_When": "user is signed in",
+          "Preconditions": [
+            "User is signed in with an active session and the application has a non-default state (e.g., items in cart or modified add/remove button states)."
+          ],
+          "On_Success": "Clears the shopping cart and restores UI states (cart badge and add/remove button states) without signing the user out."
+        },
+        {
+          "Item_Name": "Logout",
+          "Type": "action",
+          "Action_Name": "Logout",
+          "Visible_When": "user is signed in"
+        }
+      ]
     }
   }
 }
@@ -264,13 +303,16 @@ Reset App State clears the cart and resets in-app state (for example, cart badge
 </description>
 
 <workflows>
-WF-001 | Activate Reset App State from hamburger menu | actor: User | branch: none | terminal: Reset App State | on_success: Clears the shopping cart and resets in-app UI state (for example, cart badge and add/remove button states) without logging the user out.
+WF-001 | Invoke Reset App State when app is non-default | actor: User | branch: User is signed in with an active session and the application has a non-default state (e.g., items in cart or modified add/remove button states). | terminal: Reset App State | on_success: Clears the shopping cart and restores UI states (cart badge and add/remove button states) without signing the user out.
+WF-002 | Open All Items from hamburger menu | actor: User | branch: user is signed in | terminal: All Items | on_success: Navigates to the All Items view.
+WF-003 | Open About from hamburger menu | actor: User | branch: user is signed in | terminal: About | on_success: Navigates to the About page.
+WF-004 | Logout from hamburger menu | actor: User | branch: user is signed in | terminal: Logout | on_success: Logs the user out of the application.
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:05:38] Test-Edge - LLM RESPONSE
+[22:57:18] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Reset App State",
@@ -278,85 +320,85 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-001",
-      "subcategory": "state_edge",
-      "test_case": "Activate Reset when cart contains items — verify full state reset without logout",
+      "wf_ref": null,
+      "subcategory": "interaction_edge",
+      "test_case": "Invoke Reset App State when cart is already empty (idempotence)",
       "preconditions": [
-        "User is logged in with an active session",
-        "Shopping cart contains one or more items",
-        "Product list contains at least one item with add/remove state changed from default (e.g., showing Remove)"
+        "User is signed in and hamburger menu is visible (Visible_When: user is signed in).",
+        "Application is in default state: shopping cart is empty and add/remove buttons are in their default (pre-add) state."
       ],
       "steps": [
-        "1. Open the hamburger menu in the persistent header",
-        "2. Click the Reset App State menu item"
+        "1. Open the hamburger menu.",
+        "2. Click the 'Reset App State' menu item."
       ],
-      "expected_result": "Reset succeeds; shopping cart item list is empty (cart shows no items), cart badge is cleared/hidden or shows zero, product list add/remove button states are reverted to default (e.g., 'Add' state), and the user remains logged in (session persists; user is not logged out and logout option remains available).",
-      "priority": "medium"
+      "expected_result": "The Reset App State action succeeds; the cart remains empty (empty-cart UI still visible), cart badge remains absent, UI stays signed in (Logout remains visible in the hamburger menu). No error is shown.",
+      "priority": "low"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-001",
-      "subcategory": "data_edge",
-      "test_case": "Activate Reset when cart is already empty — verify no-op behavior and no error",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-invoke of Reset App State when cart contains items",
       "preconditions": [
-        "User is logged in with an active session",
-        "Shopping cart is already empty and cart badge is absent or zero"
+        "User is signed in and hamburger menu is visible (Visible_When: user is signed in).",
+        "Application is in non-default state: shopping cart contains at least one item."
       ],
       "steps": [
-        "1. Open the hamburger menu in the persistent header",
-        "2. Click the Reset App State menu item"
+        "1. Open the hamburger menu.",
+        "2. Click the 'Reset App State' menu item.",
+        "3. Immediately click the 'Reset App State' menu item again before UI completes the first action."
       ],
-      "expected_result": "Activation succeeds (no-op); cart remains empty and cart badge remains cleared/hidden or zero, no error is shown, product list states remain default, and the user remains logged in.",
-      "priority": "low"
+      "expected_result": "Reset App State succeeds; the first click clears the cart and removes the cart badge. The immediate second click is ignored (no additional visible changes or duplicate confirmations) and does not produce an error. User remains signed in.",
+      "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid double-activation of Reset — verify idempotence and that duplicate activations are blocked/ignored",
+      "subcategory": "data_edge",
+      "test_case": "Invoke Reset App State while on Checkout page with items in cart",
       "preconditions": [
-        "User is logged in with an active session",
-        "Shopping cart contains one or more items"
+        "User is signed in and hamburger menu is visible (Visible_When: user is signed in).",
+        "User is currently on the Checkout page and the cart contains items (non-default state)."
       ],
       "steps": [
-        "1. Open the hamburger menu in the persistent header",
-        "2. Click the Reset App State menu item",
-        "3. Immediately click the Reset App State menu item a second time (before the UI visibly finishes the first reset)"
+        "1. From the Checkout page, open the hamburger menu.",
+        "2. Click the 'Reset App State' menu item."
       ],
-      "expected_result": "First activation succeeds and clears the cart and resets UI state; the second immediate activation is blocked/ignored (no additional state change occurs), there is no application crash, no duplicate side-effects are observed, and the user remains logged in.",
+      "expected_result": "Reset App State succeeds; the Checkout page updates to reflect an empty cart (line items removed or empty-cart UI visible), the cart badge is cleared, and the user remains signed in. No error is shown.",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-001",
       "subcategory": "state_edge",
-      "test_case": "Activate Reset during an in-progress checkout step — observe how checkout state is affected",
+      "test_case": "Invoke Reset App State to restore product-detail add/remove button to default",
       "preconditions": [
-        "User is logged in with an active session",
-        "User is on a checkout page (mid-checkout) with items in the order summary"
+        "User is signed in and hamburger menu is visible (Visible_When: user is signed in).",
+        "A product detail page currently shows a non-default add/remove state indicating the product is in the cart (non-default UI state)."
       ],
       "steps": [
-        "1. While on the checkout page, open the hamburger menu in the persistent header",
-        "2. Click the Reset App State menu item"
+        "1. Open the hamburger menu while on or after visiting the product detail page.",
+        "2. Click the 'Reset App State' menu item.",
+        "3. Navigate to (or refresh) the same product detail page for that product."
       ],
-      "expected_result": "Reset succeeds; shopping cart and order summary are cleared (checkout page reflects an empty cart / no items in order summary), checkout cannot proceed with the previous items (visible indication that the order summary is empty), and the user remains logged in (no logout occurs).",
-      "priority": "medium"
+      "expected_result": "Reset App State succeeds; the product detail page shows the default pre-added button state (add option available), the cart badge is cleared, and the user remains signed in. No error is shown.",
+      "priority": "low"
     }
   ],
   "summary": {
     "total": 4,
     "boundary": 0,
     "input_edge": 0,
-    "interaction_edge": 1,
-    "state_edge": 2,
+    "interaction_edge": 2,
+    "state_edge": 1,
     "data_edge": 1,
-    "medium_priority": 3,
-    "low_priority": 1
+    "medium_priority": 2,
+    "low_priority": 2
   }
 }
 
 ------------------------------------------------------------
-[21:05:38] Test-Edge - PARSED JSON
+[22:57:18] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Reset App State",
@@ -364,79 +406,79 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": "WF-001",
-      "subcategory": "state_edge",
-      "test_case": "Activate Reset when cart contains items \u2014 verify full state reset without logout",
+      "wf_ref": null,
+      "subcategory": "interaction_edge",
+      "test_case": "Invoke Reset App State when cart is already empty (idempotence)",
       "preconditions": [
-        "User is logged in with an active session",
-        "Shopping cart contains one or more items",
-        "Product list contains at least one item with add/remove state changed from default (e.g., showing Remove)"
+        "User is signed in and hamburger menu is visible (Visible_When: user is signed in).",
+        "Application is in default state: shopping cart is empty and add/remove buttons are in their default (pre-add) state."
       ],
       "steps": [
-        "1. Open the hamburger menu in the persistent header",
-        "2. Click the Reset App State menu item"
+        "1. Open the hamburger menu.",
+        "2. Click the 'Reset App State' menu item."
       ],
-      "expected_result": "Reset succeeds; shopping cart item list is empty (cart shows no items), cart badge is cleared/hidden or shows zero, product list add/remove button states are reverted to default (e.g., 'Add' state), and the user remains logged in (session persists; user is not logged out and logout option remains available).",
-      "priority": "medium"
+      "expected_result": "The Reset App State action succeeds; the cart remains empty (empty-cart UI still visible), cart badge remains absent, UI stays signed in (Logout remains visible in the hamburger menu). No error is shown.",
+      "priority": "low"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-001",
-      "subcategory": "data_edge",
-      "test_case": "Activate Reset when cart is already empty \u2014 verify no-op behavior and no error",
+      "subcategory": "interaction_edge",
+      "test_case": "Rapid double-invoke of Reset App State when cart contains items",
       "preconditions": [
-        "User is logged in with an active session",
-        "Shopping cart is already empty and cart badge is absent or zero"
+        "User is signed in and hamburger menu is visible (Visible_When: user is signed in).",
+        "Application is in non-default state: shopping cart contains at least one item."
       ],
       "steps": [
-        "1. Open the hamburger menu in the persistent header",
-        "2. Click the Reset App State menu item"
+        "1. Open the hamburger menu.",
+        "2. Click the 'Reset App State' menu item.",
+        "3. Immediately click the 'Reset App State' menu item again before UI completes the first action."
       ],
-      "expected_result": "Activation succeeds (no-op); cart remains empty and cart badge remains cleared/hidden or zero, no error is shown, product list states remain default, and the user remains logged in.",
-      "priority": "low"
+      "expected_result": "Reset App State succeeds; the first click clears the cart and removes the cart badge. The immediate second click is ignored (no additional visible changes or duplicate confirmations) and does not produce an error. User remains signed in.",
+      "priority": "medium"
     },
     {
       "tc_id": "E-003",
       "wf_ref": "WF-001",
-      "subcategory": "interaction_edge",
-      "test_case": "Rapid double-activation of Reset \u2014 verify idempotence and that duplicate activations are blocked/ignored",
+      "subcategory": "data_edge",
+      "test_case": "Invoke Reset App State while on Checkout page with items in cart",
       "preconditions": [
-        "User is logged in with an active session",
-        "Shopping cart contains one or more items"
+        "User is signed in and hamburger menu is visible (Visible_When: user is signed in).",
+        "User is currently on the Checkout page and the cart contains items (non-default state)."
       ],
       "steps": [
-        "1. Open the hamburger menu in the persistent header",
-        "2. Click the Reset App State menu item",
-        "3. Immediately click the Reset App State menu item a second time (before the UI visibly finishes the first reset)"
+        "1. From the Checkout page, open the hamburger menu.",
+        "2. Click the 'Reset App State' menu item."
       ],
-      "expected_result": "First activation succeeds and clears the cart and resets UI state; the second immediate activation is blocked/ignored (no additional state change occurs), there is no application crash, no duplicate side-effects are observed, and the user remains logged in.",
+      "expected_result": "Reset App State succeeds; the Checkout page updates to reflect an empty cart (line items removed or empty-cart UI visible), the cart badge is cleared, and the user remains signed in. No error is shown.",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-001",
       "subcategory": "state_edge",
-      "test_case": "Activate Reset during an in-progress checkout step \u2014 observe how checkout state is affected",
+      "test_case": "Invoke Reset App State to restore product-detail add/remove button to default",
       "preconditions": [
-        "User is logged in with an active session",
-        "User is on a checkout page (mid-checkout) with items in the order summary"
+        "User is signed in and hamburger menu is visible (Visible_When: user is signed in).",
+        "A product detail page currently shows a non-default add/remove state indicating the product is in the cart (non-default UI state)."
       ],
       "steps": [
-        "1. While on the checkout page, open the hamburger menu in the persistent header",
-        "2. Click the Reset App State menu item"
+        "1. Open the hamburger menu while on or after visiting the product detail page.",
+        "2. Click the 'Reset App State' menu item.",
+        "3. Navigate to (or refresh) the same product detail page for that product."
       ],
-      "expected_result": "Reset succeeds; shopping cart and order summary are cleared (checkout page reflects an empty cart / no items in order summary), checkout cannot proceed with the previous items (visible indication that the order summary is empty), and the user remains logged in (no logout occurs).",
-      "priority": "medium"
+      "expected_result": "Reset App State succeeds; the product detail page shows the default pre-added button state (add option available), the cart badge is cleared, and the user remains signed in. No error is shown.",
+      "priority": "low"
     }
   ],
   "summary": {
     "total": 4,
     "boundary": 0,
     "input_edge": 0,
-    "interaction_edge": 1,
-    "state_edge": 2,
+    "interaction_edge": 2,
+    "state_edge": 1,
     "data_edge": 1,
-    "medium_priority": 3,
-    "low_priority": 1
+    "medium_priority": 2,
+    "low_priority": 2
   }
 }

@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:33.188123
+DEBUG SESSION STARTED: 2026-07-04T22:49:29.897510
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - SYSTEM PROMPT
+[22:49:29] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:33] Test-Negative - USER PROMPT
+[22:49:29] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 9,
   "module_title": "Participants Management",
-  "summary": "Lists and filters users enrolled in a course and provides per-user actions (view profile, edit role, message), bulk actions, and an enrolment dialog to add users with roles and durations.",
-  "where_it_fits": "Opened from a course's horizontal tab bar via the Participants tab (reachable from Home > My Courses > [Course] > Participants), it sits alongside Course, Grades and Activities and is used during course administration to manage enrolled users. The module complements course navigation (breadcrumbs and Course Index sidebar) by focusing on user-level management within a specific course.",
-  "assumed_state_on_entry": "User is logged in and viewing a specific course, with permission to view and manage participants (including enrolling users) when enrollment actions are required."
+  "summary": "Displays and manages the list of users enrolled in a specific course, providing filters, role editing, enrollment dialog, per-user actions, and bulk operations.",
+  "where_it_fits": "Accessible from within a course via the horizontal tab bar as the Participants tab (Course -> Participants) and sits alongside Course, Grades, and Activities in the course management workflow; it is used when managing enrollment and participant settings for a given course.",
+  "assumed_state_on_entry": "User is logged in and viewing a specific course page; the course exists and the user has permissions to view/manage participants (e.g., teacher or manager role) if enrollment or role changes are required."
 }
 </module_context>
 
@@ -259,43 +269,52 @@ If a `<workflows>` block is present in the input:
 <ast>
 {
   "module_name": "Participants Management",
-  "module_id": 9,
   "components": {
-    "Enrolled_Users_Scope_Dropdown": {
-      "type": "dropdown"
-    },
-    "Filters_Form": {
-      "type": "form",
+    "Participants_Page": {
+      "type": "page",
       "fields": {
-        "Any_Toggle": {
-          "type": "checkbox",
-          "label": "Any"
+        "Enrolment_Scope_Dropdown": {
+          "type": "dropdown"
         },
-        "Attribute_Select": {
-          "type": "dropdown",
-          "label": "Select attribute"
-        },
-        "Add_Condition": {
-          "type": "link",
-          "action_name": "+ Add condition"
-        },
-        "Clear_Filters": {
+        "Enrol_Users_Button": {
           "type": "button",
-          "action_name": "Clear filters"
-        }
-      },
-      "submit_actions": [
-        {
-          "action_name": "Apply filters"
-        }
-      ]
-    },
-    "Alphabetical_Filters": {
-      "type": "filter_group",
-      "fields": {
-        "First_Name": {
-          "type": "button_group",
-          "label": "First name",
+          "action_name": "Enrol users",
+          "action": "open_dialog",
+          "opens": "Enrol_Users_Dialog"
+        },
+        "Filters": {
+          "type": "form",
+          "fields": {
+            "Any_Toggle": {
+              "type": "checkbox"
+            },
+            "Attribute_Select": {
+              "type": "dropdown"
+            },
+            "Conditions": {
+              "type": "repeating_group",
+              "add_button_label": "+ Add condition",
+              "item_fields": {
+                "Attribute": {
+                  "type": "dropdown"
+                },
+                "Value": {
+                  "type": "unspecified"
+                }
+              }
+            },
+            "Clear_Filters_Button": {
+              "type": "button",
+              "action_name": "Clear filters"
+            },
+            "Apply_Filters_Button": {
+              "type": "button",
+              "action_name": "Apply filters"
+            }
+          }
+        },
+        "First_Name_Alpha_Filter": {
+          "type": "unspecified",
           "options": [
             "All",
             "A",
@@ -326,9 +345,8 @@ If a `<workflows>` block is present in the input:
             "Z"
           ]
         },
-        "Last_Name": {
-          "type": "button_group",
-          "label": "Last name",
+        "Last_Name_Alpha_Filter": {
+          "type": "unspecified",
           "options": [
             "All",
             "A",
@@ -357,94 +375,91 @@ If a `<workflows>` block is present in the input:
             "X",
             "Y",
             "Z"
+          ]
+        },
+        "Participants_Table": {
+          "type": "data_table",
+          "columns": {
+            "Selection_Checkbox": {
+              "type": "checkbox",
+              "row_selectable": true,
+              "header_select_all": true
+            },
+            "First_Name": {
+              "type": "link",
+              "opens_action": "View profile",
+              "sortable": true
+            },
+            "Last_Name": {
+              "type": "link",
+              "opens_action": "View profile",
+              "sortable": true
+            },
+            "Email_Address": {
+              "type": "unspecified"
+            },
+            "Roles": {
+              "type": "unspecified"
+            },
+            "Groups": {
+              "type": "unspecified"
+            },
+            "Last_Access": {
+              "type": "unspecified"
+            },
+            "Status": {
+              "type": "unspecified"
+            }
+          },
+          "sortable_columns": [
+            "First_Name",
+            "Last_Name"
+          ],
+          "row_actions": [
+            {
+              "action_name": "View profile"
+            },
+            {
+              "action_name": "Edit role"
+            },
+            {
+              "action_name": "Send a message"
+            }
+          ],
+          "bulk_actions": [
+            {
+              "action_name": "With selected users...",
+              "type": "dropdown"
+            }
           ]
         }
       }
     },
-    "Enrol_Users_Button": {
-      "type": "button",
-      "action_name": "Enrol users",
-      "preconditions": [
-        "User is logged in and viewing a specific course, with permission to view and manage participants (including enrolling users) when enrollment actions are required."
-      ],
-      "opens": "Enrol_Users_Dialog"
-    },
-    "Participants_Table": {
-      "type": "data_table",
-      "has_checkbox_column": true,
-      "columns": {
-        "First_Name": {
-          "type": "link",
-          "label": "First name",
-          "action": "View profile",
-          "sortable": true
-        },
-        "Last_Name": {
-          "type": "link",
-          "label": "Last name",
-          "action": "View profile",
-          "sortable": true
-        }
-      },
-      "sortable_columns": [
-        "First name",
-        "Last name"
-      ],
-      "filterable_columns": [
-        "First name",
-        "Last name"
-      ],
-      "row_actions": [
-        {
-          "action_name": "View profile"
-        },
-        {
-          "action_name": "Edit role",
-          "preconditions": [
-            "User is logged in and viewing a specific course, with permission to view and manage participants (including enrolling users) when enrollment actions are required."
-          ]
-        },
-        {
-          "action_name": "Send message",
-          "preconditions": [
-            "User is logged in and viewing a specific course, with permission to view and manage participants (including enrolling users) when enrollment actions are required."
-          ]
-        }
-      ],
-      "bulk_actions": [
-        {
-          "action_name": "With selected users\u2026",
-          "type": "dropdown",
-          "preconditions": [
-            "User is logged in and viewing a specific course, with permission to view and manage participants (including enrolling users) when enrollment actions are required."
-          ]
-        }
-      ]
-    },
     "Enrol_Users_Dialog": {
       "type": "dialog",
+      "title": "Enrol users",
       "fields": {
         "User_Search": {
-          "type": "search",
-          "label": "Search users"
+          "type": "search"
         },
         "Role": {
-          "type": "dropdown",
-          "label": "Role"
+          "type": "dropdown"
         },
         "Enrollment_Duration": {
-          "type": "unspecified",
-          "label": "Enrollment duration",
-          "description": "optional"
+          "type": "unspecified"
         }
       },
       "submit_actions": [
         {
-          "action_name": "Confirm enrollment",
+          "action_name": "Confirm",
           "on_success": "adds the user to the course at the specified role",
           "preconditions": [
-            "User is logged in and viewing a specific course, with permission to view and manage participants (including enrolling users) when enrollment actions are required."
+            "User is logged in and viewing a specific course page; the course exists and the user has permissions to view/manage participants (e.g., teacher or manager role) if enrollment or role changes are required."
           ]
+        },
+        {
+          "action_name": "Cancel",
+          "action": "close_dialog"
         }
       ]
     }
@@ -462,21 +477,21 @@ The Participants page lists all users enrolled in the course. An enrolled-users 
 </description>
 
 <workflows>
-WF-001 | Apply filters | actor: <role> | branch: none | terminal: Apply filters | on_success: Filters applied; participants list updated to match filters
-WF-002 | Clear filters | actor: <role> | branch: none | terminal: Clear filters | on_success: Filters cleared; participants list reset to default
-WF-003 | Add another filter condition | actor: <role> | branch: none | terminal: + Add condition | on_success: Adds a new condition row to the filter builder
-WF-004 | Open enrol users dialog | actor: <role> | branch: none | terminal: Enrol users | on_success: Opens the Enrol users dialog
-WF-005 | Confirm enrollment in Enrol users dialog | actor: <role> | branch: none | terminal: Confirm enrollment | on_success: adds the user to the course at the specified role
-WF-006 | View participant profile (row or name link) | actor: <role> | branch: none | terminal: View profile | on_success: Participant's profile opened
-WF-007 | Edit participant role | actor: <role> | branch: none | terminal: Edit role | on_success: Participant's role editor opened
-WF-008 | Send message to participant | actor: <role> | branch: none | terminal: Send message | on_success: Message composer opened for the selected participant
-WF-009 | Open bulk actions for selected users | actor: <role> | branch: none | terminal: With selected users… | on_success: Bulk actions menu opened for selected users
+WF-001 | Apply filters (no conditions) | actor: <role> | branch: none | terminal: Apply filters | on_success: Filters applied; participants list updated
+WF-002 | Apply filters with added condition | actor: <role> | branch: Conditions contains at least one item | terminal: Apply filters | on_success: Filters applied; participants list updated (including added condition)
+WF-003 | Clear filters | actor: <role> | branch: none | terminal: Clear filters | on_success: Filters cleared; participants list reset
+WF-004 | Enrol users — Confirm | actor: <role> | branch: none | terminal: Confirm | on_success: adds the user to the course at the specified role
+WF-005 | Enrol users — Cancel (close dialog) | actor: <role> | branch: none | terminal: Cancel | on_success: Enrollment dialog closed without changes
+WF-006 | Row action — View profile | actor: <role> | branch: none | terminal: View profile | on_success: User profile opened
+WF-007 | Row action — Edit role | actor: <role> | branch: none | terminal: Edit role | on_success: Role edit interface opened for the selected user
+WF-008 | Row action — Send a message | actor: <role> | branch: none | terminal: Send a message | on_success: Message composer opened addressed to the selected user
+WF-009 | Bulk actions — open dropdown for selected users | actor: <role> | branch: none | terminal: With selected users... | on_success: Bulk actions menu opened for selected users
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:14:34] Test-Negative - LLM RESPONSE
+[22:51:12] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Participants Management",
@@ -485,141 +500,91 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Unauthenticated user cannot access Participants page",
+      "test_case": "Unauthenticated user attempts to access Participants page",
       "preconditions": [
-        "<unauthenticated user>"
+        "User is not logged in",
+        "A specific course exists"
       ],
       "steps": [
-        "1. Navigate to the course Participants page URL (Home > My Courses > <Course> > Participants)"
+        "1. Navigate to the course Participants tab URL as an unauthenticated user"
       ],
-      "expected_result": "User is redirected to the login page; Participants page is not shown and access is blocked (no participants list visible)",
+      "expected_result": "Access is blocked; the user is redirected to the login page or a login prompt is shown and the Participants page is not displayed",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-004",
-      "test_case": "User without manage-participants permission cannot open Enrol users dialog",
+      "test_case": "Confirm enrollment with required dialog field left blank (User search)",
       "preconditions": [
-        "<logged-in user without permission to manage participants>"
+        "User is logged in with permission to manage participants",
+        "Course page is open"
       ],
       "steps": [
-        "1. Navigate to the course Participants page",
-        "2. Attempt to click the 'Enrol users' button"
+        "1. Click the 'Enrol users' button on the Participants page",
+        "2. Do not enter any value into the User Search field in the Enrol users dialog",
+        "3. Select a Role (or leave Role unchanged if preselection exists)",
+        "4. Click the Confirm button in the Enrol users dialog"
       ],
-      "expected_result": "'Enrol users' button is not visible or is disabled for this user; clicking does not open the Enrol users dialog and no enrollment UI appears",
+      "expected_result": "Dialog does not close; enrollment is not performed; an inline validation error appears on the User Search field indicating it must be completed before confirming",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-005",
-      "test_case": "Confirm enrollment blocked when User Search is left blank",
+      "wf_ref": "WF-004",
+      "test_case": "Attempt to confirm enrolment when user lacks manage-participants permission",
       "preconditions": [
-        "<logged-in user with permission to manage participants>"
+        "User is logged in but does NOT have permission to manage participants (e.g., role without enrollment rights)",
+        "Course page is open"
       ],
       "steps": [
-        "1. Navigate to the course Participants page",
-        "2. Click the 'Enrol users' button to open the Enrol users dialog",
-        "3. Leave the User Search field blank",
-        "4. Select <valid Role> in the Role dropdown",
-        "5. Click the 'Confirm enrollment' button"
+        "1. Click the 'Enrol users' button on the Participants page",
+        "2. Enter <search for an existing user> in the User Search field",
+        "3. Select <a role> in the Role dropdown",
+        "4. Click the Confirm button in the Enrol users dialog"
       ],
-      "expected_result": "User Search field displays an inline validation error indicating a user must be selected; the dialog remains open; no user is added to the participants list",
+      "expected_result": "Enrollment is blocked; the Enrol users dialog remains open (or the user stays on the Participants page); a visible permission error or banner is shown on the dialog/page indicating the current account lacks rights to enrol users; no user is added to the participants list",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-005",
-      "test_case": "Confirm enrollment blocked when Role is left blank",
+      "wf_ref": "WF-009",
+      "test_case": "Open 'With selected users...' bulk actions with no rows selected",
       "preconditions": [
-        "<logged-in user with permission to manage participants>",
-        "<a user selected in User Search (choose an existing user)>"
+        "User is logged in and viewing the Participants page"
       ],
       "steps": [
-        "1. Navigate to the course Participants page",
-        "2. Click the 'Enrol users' button to open the Enrol users dialog",
-        "3. Select <existing user> in the User Search field",
-        "4. Leave the Role dropdown unset/blank",
-        "5. Click the 'Confirm enrollment' button"
+        "1. Ensure no participant checkboxes are selected in the Participants table",
+        "2. Click the 'With selected users...' dropdown control at the bottom of the table"
       ],
-      "expected_result": "Role field displays an inline validation error indicating a role must be selected; the dialog remains open; no user is added to the participants list",
-      "priority": "high"
+      "expected_result": "Bulk action is not executed; the dropdown is either disabled or, if it opens, a visible warning/tooltip is shown indicating that at least one user must be selected; no bulk action is applied",
+      "priority": "medium"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-005",
-      "test_case": "Confirm enrollment blocked when all required dialog fields are empty",
-      "preconditions": [
-        "<logged-in user with permission to manage participants>"
-      ],
-      "steps": [
-        "1. Navigate to the course Participants page",
-        "2. Click the 'Enrol users' button to open the Enrol users dialog",
-        "3. Leave User Search blank",
-        "4. Leave Role blank",
-        "5. Click the 'Confirm enrollment' button"
-      ],
-      "expected_result": "Both User Search and Role fields display inline validation errors indicating they are required; the dialog remains open; no enrollment occurs and participants list is unchanged",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-006",
       "wf_ref": "WF-007",
-      "test_case": "Edit role row action blocked for user without permission",
+      "test_case": "Attempt row action 'Edit role' while lacking permission to change roles",
       "preconditions": [
-        "<logged-in user without permission to manage participants>",
-        "<course with at least one enrolled participant>"
+        "User is logged in but does NOT have permission to edit participant roles",
+        "Course page is open and participants list is visible"
       ],
       "steps": [
-        "1. Navigate to the course Participants page",
-        "2. For a participant row, open the row action (three-dot) menu",
-        "3. Attempt to click the 'Edit role' action"
+        "1. Open the row action menu for a participant in the Participants table",
+        "2. Click the 'Edit role' action"
       ],
-      "expected_result": "'Edit role' option is not present in the row action menu or is disabled for this user; clicking does not open a role editor and the participant's role is not changed",
+      "expected_result": "Role edit is blocked; either the 'Edit role' option is not present in the menu or, if selected, a visible permission error is shown and the role editor does not open; the participant's role remains unchanged",
       "priority": "high"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": "WF-008",
-      "test_case": "Send message row action blocked for user without permission",
-      "preconditions": [
-        "<logged-in user without permission to manage participants>",
-        "<course with at least one enrolled participant>"
-      ],
-      "steps": [
-        "1. Navigate to the course Participants page",
-        "2. For a participant row, open the row action (three-dot) menu",
-        "3. Attempt to click the 'Send message' action"
-      ],
-      "expected_result": "'Send message' option is not present in the row action menu or is disabled for this user; clicking does not open a message composer and no message UI appears",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-008",
-      "wf_ref": "WF-009",
-      "test_case": "Bulk actions disabled / blocked when no participants are selected",
-      "preconditions": [
-        "<logged-in user with permission to manage participants>",
-        "<no participant checkboxes selected>"
-      ],
-      "steps": [
-        "1. Navigate to the course Participants page",
-        "2. Ensure no participant checkboxes are checked",
-        "3. Click the 'With selected users…' dropdown"
-      ],
-      "expected_result": "'With selected users…' dropdown is disabled or, if clickable, an inline notice is shown instructing to select at least one participant; no bulk action menu is applied and no changes are made to participants",
-      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 8,
-    "high_priority": 7,
+    "total": 5,
+    "high_priority": 4,
     "medium_priority": 1,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:14:34] Test-Negative - PARSED JSON
+[22:51:12] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Participants Management",
@@ -628,134 +593,84 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Unauthenticated user cannot access Participants page",
+      "test_case": "Unauthenticated user attempts to access Participants page",
       "preconditions": [
-        "<unauthenticated user>"
+        "User is not logged in",
+        "A specific course exists"
       ],
       "steps": [
-        "1. Navigate to the course Participants page URL (Home > My Courses > <Course> > Participants)"
+        "1. Navigate to the course Participants tab URL as an unauthenticated user"
       ],
-      "expected_result": "User is redirected to the login page; Participants page is not shown and access is blocked (no participants list visible)",
+      "expected_result": "Access is blocked; the user is redirected to the login page or a login prompt is shown and the Participants page is not displayed",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-004",
-      "test_case": "User without manage-participants permission cannot open Enrol users dialog",
+      "test_case": "Confirm enrollment with required dialog field left blank (User search)",
       "preconditions": [
-        "<logged-in user without permission to manage participants>"
+        "User is logged in with permission to manage participants",
+        "Course page is open"
       ],
       "steps": [
-        "1. Navigate to the course Participants page",
-        "2. Attempt to click the 'Enrol users' button"
+        "1. Click the 'Enrol users' button on the Participants page",
+        "2. Do not enter any value into the User Search field in the Enrol users dialog",
+        "3. Select a Role (or leave Role unchanged if preselection exists)",
+        "4. Click the Confirm button in the Enrol users dialog"
       ],
-      "expected_result": "'Enrol users' button is not visible or is disabled for this user; clicking does not open the Enrol users dialog and no enrollment UI appears",
+      "expected_result": "Dialog does not close; enrollment is not performed; an inline validation error appears on the User Search field indicating it must be completed before confirming",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-005",
-      "test_case": "Confirm enrollment blocked when User Search is left blank",
+      "wf_ref": "WF-004",
+      "test_case": "Attempt to confirm enrolment when user lacks manage-participants permission",
       "preconditions": [
-        "<logged-in user with permission to manage participants>"
+        "User is logged in but does NOT have permission to manage participants (e.g., role without enrollment rights)",
+        "Course page is open"
       ],
       "steps": [
-        "1. Navigate to the course Participants page",
-        "2. Click the 'Enrol users' button to open the Enrol users dialog",
-        "3. Leave the User Search field blank",
-        "4. Select <valid Role> in the Role dropdown",
-        "5. Click the 'Confirm enrollment' button"
+        "1. Click the 'Enrol users' button on the Participants page",
+        "2. Enter <search for an existing user> in the User Search field",
+        "3. Select <a role> in the Role dropdown",
+        "4. Click the Confirm button in the Enrol users dialog"
       ],
-      "expected_result": "User Search field displays an inline validation error indicating a user must be selected; the dialog remains open; no user is added to the participants list",
+      "expected_result": "Enrollment is blocked; the Enrol users dialog remains open (or the user stays on the Participants page); a visible permission error or banner is shown on the dialog/page indicating the current account lacks rights to enrol users; no user is added to the participants list",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": "WF-005",
-      "test_case": "Confirm enrollment blocked when Role is left blank",
+      "wf_ref": "WF-009",
+      "test_case": "Open 'With selected users...' bulk actions with no rows selected",
       "preconditions": [
-        "<logged-in user with permission to manage participants>",
-        "<a user selected in User Search (choose an existing user)>"
+        "User is logged in and viewing the Participants page"
       ],
       "steps": [
-        "1. Navigate to the course Participants page",
-        "2. Click the 'Enrol users' button to open the Enrol users dialog",
-        "3. Select <existing user> in the User Search field",
-        "4. Leave the Role dropdown unset/blank",
-        "5. Click the 'Confirm enrollment' button"
+        "1. Ensure no participant checkboxes are selected in the Participants table",
+        "2. Click the 'With selected users...' dropdown control at the bottom of the table"
       ],
-      "expected_result": "Role field displays an inline validation error indicating a role must be selected; the dialog remains open; no user is added to the participants list",
-      "priority": "high"
+      "expected_result": "Bulk action is not executed; the dropdown is either disabled or, if it opens, a visible warning/tooltip is shown indicating that at least one user must be selected; no bulk action is applied",
+      "priority": "medium"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-005",
-      "test_case": "Confirm enrollment blocked when all required dialog fields are empty",
-      "preconditions": [
-        "<logged-in user with permission to manage participants>"
-      ],
-      "steps": [
-        "1. Navigate to the course Participants page",
-        "2. Click the 'Enrol users' button to open the Enrol users dialog",
-        "3. Leave User Search blank",
-        "4. Leave Role blank",
-        "5. Click the 'Confirm enrollment' button"
-      ],
-      "expected_result": "Both User Search and Role fields display inline validation errors indicating they are required; the dialog remains open; no enrollment occurs and participants list is unchanged",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-006",
       "wf_ref": "WF-007",
-      "test_case": "Edit role row action blocked for user without permission",
+      "test_case": "Attempt row action 'Edit role' while lacking permission to change roles",
       "preconditions": [
-        "<logged-in user without permission to manage participants>",
-        "<course with at least one enrolled participant>"
+        "User is logged in but does NOT have permission to edit participant roles",
+        "Course page is open and participants list is visible"
       ],
       "steps": [
-        "1. Navigate to the course Participants page",
-        "2. For a participant row, open the row action (three-dot) menu",
-        "3. Attempt to click the 'Edit role' action"
+        "1. Open the row action menu for a participant in the Participants table",
+        "2. Click the 'Edit role' action"
       ],
-      "expected_result": "'Edit role' option is not present in the row action menu or is disabled for this user; clicking does not open a role editor and the participant's role is not changed",
+      "expected_result": "Role edit is blocked; either the 'Edit role' option is not present in the menu or, if selected, a visible permission error is shown and the role editor does not open; the participant's role remains unchanged",
       "priority": "high"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": "WF-008",
-      "test_case": "Send message row action blocked for user without permission",
-      "preconditions": [
-        "<logged-in user without permission to manage participants>",
-        "<course with at least one enrolled participant>"
-      ],
-      "steps": [
-        "1. Navigate to the course Participants page",
-        "2. For a participant row, open the row action (three-dot) menu",
-        "3. Attempt to click the 'Send message' action"
-      ],
-      "expected_result": "'Send message' option is not present in the row action menu or is disabled for this user; clicking does not open a message composer and no message UI appears",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-008",
-      "wf_ref": "WF-009",
-      "test_case": "Bulk actions disabled / blocked when no participants are selected",
-      "preconditions": [
-        "<logged-in user with permission to manage participants>",
-        "<no participant checkboxes selected>"
-      ],
-      "steps": [
-        "1. Navigate to the course Participants page",
-        "2. Ensure no participant checkboxes are checked",
-        "3. Click the 'With selected users\u2026' dropdown"
-      ],
-      "expected_result": "'With selected users\u2026' dropdown is disabled or, if clickable, an inline notice is shown instructing to select at least one participant; no bulk action menu is applied and no changes are made to participants",
-      "priority": "medium"
     }
   ],
   "summary": {
-    "total": 8,
-    "high_priority": 7,
+    "total": 5,
+    "high_priority": 4,
     "medium_priority": 1,
     "low_priority": 0
   }

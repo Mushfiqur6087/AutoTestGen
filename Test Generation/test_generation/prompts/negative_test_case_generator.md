@@ -53,10 +53,15 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+- **A sentence describing WHEN an error appears is not the error's text.** Spec prose like `"invalid or empty credentials show an inline error message"` or `"the system checks subject length ... failures display inline guidance"` states a *condition*, not a quoted UI string — it does NOT license writing `"Invalid or empty credentials"` or `"Subject must be between 1 and 250 characters."` as if the spec had quoted them, and it does NOT license inventing the number (`250`, `200`, etc.) that would make such a sentence sound concrete. Only copy text the spec itself puts in quotation marks.
+- ❌ Spec: `"Invalid or empty credentials show an inline error message"` → fabricating `'Invalid or empty credentials'` as "the configured message" → ✅ `"An inline error message is displayed; the Password field is cleared and the Username is retained"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -98,6 +103,13 @@ Every test must pass ALL three checks:
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
 
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
+
 ---
 
 **WHAT TO GENERATE:**
@@ -123,11 +135,12 @@ For fields with type-specific format rules (from AST type or description):
 
 Only generate if the spec or AST implies format validation for that field.
 
-**3. Numeric bounds and balance violations:**
+**3. Numeric, length, and balance violations:**
 
-If the spec describes minimum/maximum values, amount ranges, or balance checks:
-- One test per distinct bound violation (e.g., amount below minimum, amount above maximum, amount exceeding available balance)
-- Use `<amount below minimum>`, `<amount exceeding available balance>` as placeholders
+If the spec describes minimum/maximum values, amount ranges, balance checks, or an exact max length/word count:
+- One test per distinct bound violation (e.g., amount below minimum, amount above maximum, amount exceeding available balance, text exceeding the stated max length)
+- Use `<amount below minimum>`, `<amount exceeding available balance>`, `<value exceeding the stated maximum length>` as placeholders
+- **Do NOT invent the exact number.** If the spec says a field "checks length" or "has a limit" without stating the number, do not generate a "too long" test at all — there is no boundary to test without a real number. Never write a test that names a specific character count or quoted error string the spec never gave.
 
 Examples across the dataset:
 - Transfer amount > available balance → error

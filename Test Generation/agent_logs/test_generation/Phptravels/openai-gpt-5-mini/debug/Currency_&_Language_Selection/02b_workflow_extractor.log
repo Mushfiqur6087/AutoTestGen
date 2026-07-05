@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:20:32.118832
+DEBUG SESSION STARTED: 2026-07-04T22:30:08.832947
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:20:32] Workflow-Extractor - SYSTEM PROMPT
+[22:30:08] Workflow-Extractor - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Workflow Extractor. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to enumerate every distinct, executable interaction path through this module — one entry per workflow.
 
@@ -54,12 +54,12 @@ Two workflows are **distinct** if they require different user actions to reach t
 
 ## What Paths to Enumerate
 
-Enumerate **all** distinct paths — not one-per-type. The rule: if two paths require the user to do something different to reach the terminal action, they are separate workflows.
+Enumerate **distinct-outcome** paths — not one-per-type, and **not** the cartesian product of every toggle. The rule: two paths are separate workflows only if the user does something different that leads to a **different terminal outcome** (different `on_success`) **or** exercises a **different revealed required-field group** that needs its own coverage.
 
 | AST node type | What to enumerate |
 |---|---|
 | `form` with no conditionals | One workflow per `submit_actions[]` entry |
-| `form` with `visible_when` fields | One workflow per unique combination of conditional branches activated, times each `submit_actions[]` entry |
+| `form` with `visible_when` / toggle fields | One base workflow per `submit_actions[]` entry, PLUS one workflow for **each conditional branch that reveals a distinct required-field group** (e.g. enabling File submissions reveals max-files/size/types). Do **NOT** multiply independent toggles together. |
 | `wizard` | One workflow per distinct step sequence (if all steps are linear, one workflow per `submit_actions[]`; if any step is conditional, enumerate each branch) |
 | `state_bound_action_bar` | One workflow per `available_actions[]` entry per state (state × action = one workflow) |
 | `data_table` | One workflow per `row_actions[]` entry + one per `bulk_actions[]` entry (include View, Edit, Delete, and all others) |
@@ -67,6 +67,20 @@ Enumerate **all** distinct paths — not one-per-type. The rule: if two paths re
 | `repeating_group` | Not a standalone workflow source — it is part of a form workflow that activates it |
 
 **Include all data table row actions** — View, Edit, Delete, and any others. Even read-only row actions (e.g., "View") must be included because they still require a positive test case.
+
+### DO NOT enumerate the cartesian product of toggles (CRITICAL)
+
+A form with independent toggles A, B, C and submit buttons {Save, Save+display, Cancel} must **not** produce 2×2×2×3 = 24 workflows. Independent toggles that do **not** change the terminal outcome are covered **once each**, not in combination:
+- If toggle A (e.g. `File_Submissions`) and toggle B (e.g. `Group_Submissions`) both still reach the same `on_success` ("assignment created"), they are **not** two dimensions to multiply. Emit one workflow that activates A's revealed fields, and one that activates B's revealed fields — not A×B.
+- An `+ Add restriction` / optional-picker step that does not change `on_success` is **not** a separate workflow dimension. Fold it into an existing workflow or add at most one workflow for it.
+
+### Discard / Cancel collapse rule (CRITICAL)
+
+A `Cancel` / `discard` / `abandon` terminal action discards **all** field state, so field/toggle combinations are irrelevant to it. Emit **exactly ONE** Cancel workflow for the module, regardless of how many toggles or revealed-field groups exist. Never produce a Cancel workflow per toggle combination.
+
+**Worked example — Assignment Creation** (toggles: File submissions, Group submissions, Add restriction; buttons: Save and return, Save and display, Cancel):
+- ✅ Correct (~6–8): base Save-and-return, base Save-and-display, one Save covering File-submission revealed fields, one Save covering Group-submission revealed fields, one Save covering an added restriction, one Cancel.
+- ❌ Wrong (24): every `{File}×{Group}×{Restriction}×{Save/Display/Cancel}` combination.
 
 ---
 
@@ -101,9 +115,11 @@ Go through these one by one. If any check fails, fix it before outputting.
 □ 4. Every tab with a form submission in a `tab_container` has one workflow.
 □ 5. `wf_id` numbering is sequential (WF-001, WF-002, ...) with no gaps.
 □ 6. Every `terminal_action` matches an exact `action_name` or `element_name` from the AST.
-□ 7. No two workflows share the same `conditional_branch` AND `terminal_action`.
-□ 8. No workflow crosses module boundaries (steps in another module).
-□ 9. Every `on_success` reflects the AST or description — no generic "success" strings.
+□ 7. No two workflows reach the **same `on_success` via the same code path** — even if their `conditional_branch` strings differ. If they do, merge them (keep the one that activates a distinct revealed required-field group; drop pure toggle-combination duplicates).
+□ 8. There is **at most ONE** `Cancel`/`discard` workflow for the whole module.
+□ 9. No independent toggles are multiplied together — the workflow count is roughly (base submits) + (revealed required-field groups) + 1 Cancel, NOT the product of all toggles × all buttons.
+□ 10. No workflow crosses module boundaries (steps in another module).
+□ 11. Every `on_success` reflects the AST or description — no generic "success" strings.
 
 ---
 
@@ -111,7 +127,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 1. Does each workflow trace back to a specific AST node (`submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`) or an explicit action described in the description text? If no → delete it.
 2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
-3. Are two workflows identical in `conditional_branch` AND `terminal_action`? If yes → merge them into one.
+3. Do two workflows reach the same `on_success` via the same code path (e.g. differing only by an independent toggle that does not change the outcome, or being repeated Cancel variants)? If yes → merge them into one. Keep a separate workflow only when its branch reveals a **distinct required-field group** that needs its own coverage.
 4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
 5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
 
@@ -120,7 +136,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 ## Calibration
 
 - Simple form module (no conditionals, one submit): 1–3 workflows
-- Form with conditionals: 3–8 workflows
+- Form with conditionals/toggles: **(base submit outcomes) + (one per revealed required-field group) + 1 Cancel** — typically 4–8, NOT the product of all toggles × all buttons. A multi-toggle form like Assignment Creation should land near 6–8, never 20+.
 - Module with state machine: add 1 per (state × action) combination
 - Module with data table: add 1 per row_action + 1 per bulk_action
 
@@ -153,15 +169,15 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 
 ------------------------------------------------------------
-[21:20:32] Workflow-Extractor - USER PROMPT
+[22:30:08] Workflow-Extractor - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 17,
   "module_title": "Currency & Language Selection",
-  "summary": "Selection controls for currency and language that update displayed prices and the site interface in real-time and persist preferences to the user profile or session/cookies.",
-  "where_it_fits": "Located in the top navigation bar (right side) and available across the Home, Search, and all section pages; it ties into the Home Page & Search and all booking/listing modules so prices, labels, and content reflect the chosen currency and language throughout the user journey.",
-  "assumed_state_on_entry": "A site page is loaded with the top navigation visible; user is either authenticated (profile available) or a guest with session/cookie support enabled."
+  "summary": "Provides site-wide currency and language preferences that update prices and interface text in real-time and persist to the user profile or session/cookies.",
+  "where_it_fits": "Presented in the top navigation bar as currency and language selectors and available across all primary sections (Home, Hotels, Flights, Tours, Cars, Offers, Blog, Account), affecting search widgets, listings, details, booking flows and the user dashboard. Selections take effect immediately across the site and are applied for the duration of the session or saved to the authenticated user's profile.",
+  "assumed_state_on_entry": "User is browsing the site with an active session on any page; if authenticated, the user account is available for preference persistence, otherwise session/cookies are available to store preferences."
 }
 </module_context>
 
@@ -169,36 +185,30 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 <ast>
 {
+  "module_id": 17,
   "module_name": "Currency & Language Selection",
   "components": {
-    "Top_Nav_Selectors": {
+    "Top_Nav_Preferences": {
       "type": "control_group",
       "preconditions": [
-        "A site page is loaded with the top navigation visible; user is either authenticated (profile available) or a guest with session/cookie support enabled."
+        "User has an active session; if authenticated, the user account is available for preference persistence, otherwise session/cookies are available"
       ],
       "fields": {
         "Currency_Selector": {
-          "type": "unspecified",
+          "type": "dropdown",
           "constraints": [
-            "updates displayed prices in real-time",
-            "retains current search context when changed"
+            "must preserve current search context (do not reset filters, search queries, or navigation state) when updating currency"
           ],
-          "on_change_actions": [
-            {
-              "action_name": "Persist Preference to Profile",
-              "preconditions": [
-                "user is authenticated"
-              ],
-              "on_success": "preference saved to user profile"
-            },
-            {
-              "action_name": "Persist Preference to Session/Cookie",
-              "preconditions": [
-                "user is not authenticated"
-              ],
-              "on_success": "preference saved to session/cookie for current browsing session"
+          "on_change": {
+            "apply_immediately": true,
+            "effects": [
+              "update all displayed prices across the site in real-time"
+            ],
+            "persistence": {
+              "when_authenticated": "save to user profile",
+              "when_unauthenticated": "store in session/cookie"
             }
-          ]
+          }
         },
         "Language_Selector": {
           "type": "dropdown",
@@ -208,29 +218,16 @@ Go through these one by one. If any check fails, fix it before outputting.
             "Spanish",
             "French"
           ],
-          "constraints": [
-            "switches entire site interface (navigation labels, form labels, and content) to the chosen language in real-time"
-          ],
-          "on_change_actions": [
-            {
-              "action_name": "Apply Language Change",
-              "on_success": "site interface updates to selected language immediately"
-            },
-            {
-              "action_name": "Persist Preference to Profile",
-              "preconditions": [
-                "user is authenticated"
-              ],
-              "on_success": "preference saved to user profile"
-            },
-            {
-              "action_name": "Persist Preference to Session/Cookie",
-              "preconditions": [
-                "user is not authenticated"
-              ],
-              "on_success": "preference saved to session/cookie for current browsing session"
+          "on_change": {
+            "apply_immediately": true,
+            "effects": [
+              "switch entire site interface including navigation labels, form labels, and content to the selected language"
+            ],
+            "persistence": {
+              "when_authenticated": "save to user profile",
+              "when_unauthenticated": "store in session/cookie"
             }
-          ]
+          }
         }
       }
     }
@@ -250,117 +247,215 @@ The currency selector updates all prices displayed across the site in real-time 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:21:24] Workflow-Extractor - LLM RESPONSE
+[22:30:40] Workflow-Extractor - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Currency & Language Selection",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Change currency — persist to user profile (authenticated)",
-      "actor": "Authenticated User",
-      "conditional_branch": "user is authenticated",
-      "terminal_action": "Persist Preference to Profile",
-      "on_success": "preference saved to user profile"
+      "name": "Change currency (authenticated user)",
+      "actor": "User",
+      "conditional_branch": "User_Authenticated == true",
+      "terminal_action": "Currency_Selector",
+      "on_success": "Update all displayed prices across the site in real-time; preserve current search context (do not reset filters or search queries); save selected currency to user profile"
     },
     {
       "wf_id": "WF-002",
-      "name": "Change currency — persist to session/cookie (unauthenticated)",
-      "actor": "Unauthenticated User",
-      "conditional_branch": "user is not authenticated",
-      "terminal_action": "Persist Preference to Session/Cookie",
-      "on_success": "preference saved to session/cookie for current browsing session"
+      "name": "Change currency (unauthenticated user)",
+      "actor": "User",
+      "conditional_branch": "User_Authenticated == false",
+      "terminal_action": "Currency_Selector",
+      "on_success": "Update all displayed prices across the site in real-time; preserve current search context (do not reset filters or search queries); store selected currency in session/cookie"
     },
     {
       "wf_id": "WF-003",
-      "name": "Change language — apply change (authenticated)",
-      "actor": "Authenticated User",
-      "conditional_branch": "user is authenticated",
-      "terminal_action": "Apply Language Change",
-      "on_success": "site interface updates to selected language immediately"
+      "name": "Change language (authenticated user)",
+      "actor": "User",
+      "conditional_branch": "User_Authenticated == true",
+      "terminal_action": "Language_Selector",
+      "on_success": "Switch entire site interface (navigation labels, form labels, content) to the selected language immediately; save selected language to user profile"
     },
     {
       "wf_id": "WF-004",
-      "name": "Change language — persist to user profile (authenticated)",
-      "actor": "Authenticated User",
-      "conditional_branch": "user is authenticated",
-      "terminal_action": "Persist Preference to Profile",
-      "on_success": "preference saved to user profile"
-    },
-    {
-      "wf_id": "WF-005",
-      "name": "Change language — apply change (unauthenticated)",
-      "actor": "Unauthenticated User",
-      "conditional_branch": "user is not authenticated",
-      "terminal_action": "Apply Language Change",
-      "on_success": "site interface updates to selected language immediately"
-    },
-    {
-      "wf_id": "WF-006",
-      "name": "Change language — persist to session/cookie (unauthenticated)",
-      "actor": "Unauthenticated User",
-      "conditional_branch": "user is not authenticated",
-      "terminal_action": "Persist Preference to Session/Cookie",
-      "on_success": "preference saved to session/cookie for current browsing session"
+      "name": "Change language (unauthenticated user)",
+      "actor": "User",
+      "conditional_branch": "User_Authenticated == false",
+      "terminal_action": "Language_Selector",
+      "on_success": "Switch entire site interface (navigation labels, form labels, content) to the selected language immediately; store selected language in session/cookie"
     }
   ],
-  "total": 6
+  "total": 4
 }
 
 ------------------------------------------------------------
-[21:21:24] Workflow-Extractor - PARSED JSON
+[22:30:40] Workflow-Extractor - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Currency & Language Selection",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Change currency \u2014 persist to user profile (authenticated)",
-      "actor": "Authenticated User",
-      "conditional_branch": "user is authenticated",
-      "terminal_action": "Persist Preference to Profile",
-      "on_success": "preference saved to user profile"
+      "name": "Change currency (authenticated user)",
+      "actor": "User",
+      "conditional_branch": "User_Authenticated == true",
+      "terminal_action": "Currency_Selector",
+      "on_success": "Update all displayed prices across the site in real-time; preserve current search context (do not reset filters or search queries); save selected currency to user profile"
     },
     {
       "wf_id": "WF-002",
-      "name": "Change currency \u2014 persist to session/cookie (unauthenticated)",
-      "actor": "Unauthenticated User",
-      "conditional_branch": "user is not authenticated",
-      "terminal_action": "Persist Preference to Session/Cookie",
-      "on_success": "preference saved to session/cookie for current browsing session"
+      "name": "Change currency (unauthenticated user)",
+      "actor": "User",
+      "conditional_branch": "User_Authenticated == false",
+      "terminal_action": "Currency_Selector",
+      "on_success": "Update all displayed prices across the site in real-time; preserve current search context (do not reset filters or search queries); store selected currency in session/cookie"
     },
     {
       "wf_id": "WF-003",
-      "name": "Change language \u2014 apply change (authenticated)",
-      "actor": "Authenticated User",
-      "conditional_branch": "user is authenticated",
-      "terminal_action": "Apply Language Change",
-      "on_success": "site interface updates to selected language immediately"
+      "name": "Change language (authenticated user)",
+      "actor": "User",
+      "conditional_branch": "User_Authenticated == true",
+      "terminal_action": "Language_Selector",
+      "on_success": "Switch entire site interface (navigation labels, form labels, content) to the selected language immediately; save selected language to user profile"
     },
     {
       "wf_id": "WF-004",
-      "name": "Change language \u2014 persist to user profile (authenticated)",
-      "actor": "Authenticated User",
-      "conditional_branch": "user is authenticated",
-      "terminal_action": "Persist Preference to Profile",
-      "on_success": "preference saved to user profile"
-    },
-    {
-      "wf_id": "WF-005",
-      "name": "Change language \u2014 apply change (unauthenticated)",
-      "actor": "Unauthenticated User",
-      "conditional_branch": "user is not authenticated",
-      "terminal_action": "Apply Language Change",
-      "on_success": "site interface updates to selected language immediately"
-    },
-    {
-      "wf_id": "WF-006",
-      "name": "Change language \u2014 persist to session/cookie (unauthenticated)",
-      "actor": "Unauthenticated User",
-      "conditional_branch": "user is not authenticated",
-      "terminal_action": "Persist Preference to Session/Cookie",
-      "on_success": "preference saved to session/cookie for current browsing session"
+      "name": "Change language (unauthenticated user)",
+      "actor": "User",
+      "conditional_branch": "User_Authenticated == false",
+      "terminal_action": "Language_Selector",
+      "on_success": "Switch entire site interface (navigation labels, form labels, content) to the selected language immediately; store selected language in session/cookie"
     }
   ],
-  "total": 6
+  "total": 4
+}
+
+------------------------------------------------------------
+[22:31:27] Workflow-Extractor - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 17,
+  "module_title": "Currency & Language Selection",
+  "summary": "Provides site-wide currency and language preferences that update prices and interface text in real-time and persist to the user profile or session/cookies.",
+  "where_it_fits": "Presented in the top navigation bar as currency and language selectors and available across all primary sections (Home, Hotels, Flights, Tours, Cars, Offers, Blog, Account), affecting search widgets, listings, details, booking flows and the user dashboard. Selections take effect immediately across the site and are applied for the duration of the session or saved to the authenticated user's profile.",
+  "assumed_state_on_entry": "User is browsing the site with an active session on any page; if authenticated, the user account is available for preference persistence, otherwise session/cookies are available to store preferences."
+}
+</module_context>
+
+<module_name>Currency & Language Selection</module_name>
+
+<ast>
+{
+  "module_id": 17,
+  "module_name": "Currency & Language Selection",
+  "components": {
+    "Top_Nav_Preferences": {
+      "type": "control_group",
+      "preconditions": [
+        "User has an active session; if authenticated, the user account is available for preference persistence, otherwise session/cookies are available"
+      ],
+      "fields": {
+        "Currency_Selector": {
+          "type": "dropdown",
+          "constraints": [
+            "must preserve current search context (do not reset filters, search queries, or navigation state) when updating currency"
+          ],
+          "on_change": {
+            "apply_immediately": true,
+            "effects": [
+              "update all displayed prices across the site in real-time"
+            ],
+            "persistence": {
+              "when_authenticated": "save to user profile",
+              "when_unauthenticated": "store in session/cookie"
+            }
+          }
+        },
+        "Language_Selector": {
+          "type": "dropdown",
+          "options": [
+            "English",
+            "Arabic",
+            "Spanish",
+            "French"
+          ],
+          "on_change": {
+            "apply_immediately": true,
+            "effects": [
+              "switch entire site interface including navigation labels, form labels, and content to the selected language"
+            ],
+            "persistence": {
+              "when_authenticated": "save to user profile",
+              "when_unauthenticated": "store in session/cookie"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+</ast>
+
+<description>
+
+The currency selector updates all prices displayed across the site in real-time without losing the user's current search context. The language selector switches the entire site interface — including navigation labels, form labels, and content — to the chosen language (e.g., English, Arabic, Spanish, French). For authenticated users, both preferences are saved to their profile; for unauthenticated users, preferences are stored in session/cookies for the current browsing session.
+
+---
+
+
+</description>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[22:31:50] Workflow-Extractor - LLM RESPONSE
+------------------------------------------------------------
+{
+  "module": "Currency & Language Selection",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Change currency (preserve search context)",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Currency_Selector",
+      "on_success": "Apply immediately: update all displayed prices across the site in real-time while preserving the current search context (do not reset filters, search queries, or navigation state). If authenticated: save to user profile; otherwise: store in session/cookie."
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Change language (switch site interface)",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Language_Selector",
+      "on_success": "Apply immediately: switch entire site interface including navigation labels, form labels, and content to the selected language. If authenticated: save to user profile; otherwise: store in session/cookie."
+    }
+  ],
+  "total": 2
+}
+
+------------------------------------------------------------
+[22:31:50] Workflow-Extractor - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Currency & Language Selection",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Change currency (preserve search context)",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Currency_Selector",
+      "on_success": "Apply immediately: update all displayed prices across the site in real-time while preserving the current search context (do not reset filters, search queries, or navigation state). If authenticated: save to user profile; otherwise: store in session/cookie."
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Change language (switch site interface)",
+      "actor": "<role>",
+      "conditional_branch": null,
+      "terminal_action": "Language_Selector",
+      "on_success": "Apply immediately: switch entire site interface including navigation labels, form labels, and content to the selected language. If authenticated: save to user profile; otherwise: store in session/cookie."
+    }
+  ],
+  "total": 2
 }

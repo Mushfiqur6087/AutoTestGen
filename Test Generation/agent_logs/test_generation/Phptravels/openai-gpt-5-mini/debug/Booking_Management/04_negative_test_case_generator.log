@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:13.965753
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.129600
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - SYSTEM PROMPT
+[22:33:07] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:13] Test-Negative - USER PROMPT
+[22:33:07] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 15,
   "module_title": "Booking Management",
-  "summary": "Displays detailed information for a specific booking (confirmation number, service and traveler details, payment and status) and provides options to modify or cancel the booking where permitted, with automated email notifications for status changes.",
-  "where_it_fits": "Accessible from the User Dashboard/Booking Management area after authentication, this module is part of the post-booking lifecycle for managing existing reservations discovered via the main navigation (Account/Login \u2192 Dashboard \u2192 Booking Management). It complements listing and detail flows for Hotels, Flights, Tours, and Cars by handling downstream changes and cancellations.",
-  "assumed_state_on_entry": "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)"
+  "summary": "Shows detailed information for an individual booking including confirmation number, service and traveler details, payment information, current status, and available modify or cancel actions when allowed.",
+  "where_it_fits": "Located within the User Dashboard/Booking Management area that is accessible after authentication via Account/Login; it is reached from the dashboard booking history or profile account links while the main navigation remains available (Home, Hotels, Flights, Tours, Cars, Visa, Offers, Blog, Account/Login).",
+  "assumed_state_on_entry": "Authenticated user with at least one existing booking (a specific booking selected or accessed from booking history)"
 }
 </module_context>
 
@@ -258,82 +268,83 @@ If a `<workflows>` block is present in the input:
 
 <ast>
 {
+  "module_id": 15,
   "module_name": "Booking Management",
   "components": {
     "Booking_Detail_Actions": {
       "type": "action_bar",
-      "available_actions": [
-        {
-          "action_name": "Modify",
+      "actions": {
+        "Modify": {
+          "type": "button",
           "preconditions": [
-            "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
-            "modification permitted by booking type and cancellation policy"
+            "user must be authenticated",
+            "booking type permits modification",
+            "cancellation policy permits modification"
           ],
-          "fields": {
-            "New_Travel_Dates": {
-              "type": "date",
-              "constraints": [
-                "subject to availability",
-                "may incur change fees"
-              ]
-            },
-            "Special_Requests": {
-              "type": "unspecified"
-            },
-            "Traveler_Updates": {
-              "type": "repeating_group",
-              "item_fields": {
-                "Traveler_Identifier": {
-                  "type": "unspecified"
-                },
-                "Update_Details": {
-                  "type": "unspecified"
-                }
+          "opens": "Modify_Modal",
+          "modal": {
+            "type": "modal",
+            "title": "Modify Booking",
+            "fields": {
+              "Travel_Dates": {
+                "type": "date"
+              },
+              "Special_Requests": {
+                "type": "unspecified"
+              },
+              "Update_Traveler_Info": {
+                "type": "link",
+                "action": "edit_travelers"
               }
-            }
+            },
+            "submit_actions": [
+              {
+                "action_name": "Save Changes",
+                "on_success": [
+                  "apply_modifications",
+                  "send_email_notification"
+                ],
+                "constraints": [
+                  "subject to availability checks",
+                  "applicable fees may apply"
+                ]
+              }
+            ]
           },
-          "submit_actions": [
-            {
-              "action_name": "Submit Changes",
-              "on_success": "updates booking and sends email notification for modification",
-              "constraints": [
-                "changes are subject to availability and applicable fees"
-              ],
-              "preconditions": [
-                "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
-                "modification permitted by booking type and cancellation policy"
-              ]
-            }
-          ]
-        },
-        {
-          "action_name": "Cancel",
-          "preconditions": [
-            "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
-            "cancellation permitted by booking type and cancellation policy"
+          "constraints": [
+            "subject to availability",
+            "applicable fees may apply"
           ],
-          "fields": {
-            "Confirm_Cancellation": {
-              "type": "checkbox",
+          "on_success": "send_email_notification"
+        },
+        "Cancel": {
+          "type": "button",
+          "preconditions": [
+            "user must be authenticated",
+            "cancellation policy permits cancellation"
+          ],
+          "on_click": "open_confirmation_dialog",
+          "Confirmation_Dialog": {
+            "type": "confirmation_dialog",
+            "title": "Confirm Cancellation",
+            "Confirm_Button": {
+              "type": "button",
+              "action": "confirm_cancellation",
+              "required": true,
+              "on_success": [
+                "process_cancellation",
+                "initiate_refund_to_original_payment_method",
+                "send_email_notification"
+              ]
+            },
+            "Cancel_Button": {
+              "type": "button",
+              "action": "dismiss_confirmation",
               "required": true
             }
-          },
-          "submit_actions": [
-            {
-              "action_name": "Confirm Cancellation",
-              "on_success": "processes cancellation, initiates refund to original payment method, and sends email notification for cancellation",
-              "constraints": [
-                "refund amount determined by applicable cancellation policy"
-              ],
-              "preconditions": [
-                "Authenticated user with at least one existing booking selected (booking details available and subject to type-specific modification/cancellation rules)",
-                "cancellation permitted by booking type and cancellation policy",
-                "Confirm_Cancellation == true"
-              ]
-            }
-          ]
+          }
         }
-      ]
+      }
     }
   }
 }
@@ -349,14 +360,15 @@ Each booking's detail view shows confirmation number, full service information, 
 </description>
 
 <workflows>
-WF-001 | Modify booking and submit changes | actor: Authenticated user | branch: none | terminal: Submit Changes | on_success: updates booking and sends email notification for modification
-WF-002 | Confirm cancellation (user checked confirmation) | actor: Authenticated user | branch: Confirm_Cancellation == true | terminal: Confirm Cancellation | on_success: processes cancellation, initiates refund to original payment method, and sends email notification for cancellation
+WF-001 | Modify booking and save changes | actor: Authenticated user | branch: none | terminal: Save Changes | on_success: apply_modifications; send_email_notification
+WF-002 | Cancel booking — confirm cancellation | actor: Authenticated user | branch: none | terminal: confirm_cancellation | on_success: process_cancellation; initiate_refund_to_original_payment_method; send_email_notification
+WF-003 | Cancel booking — dismiss confirmation dialog | actor: Authenticated user | branch: none | terminal: dismiss_confirmation | on_success: confirmation dialog dismissed; no cancellation processed
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:27:37] Test-Negative - LLM RESPONSE
+[22:36:24] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Booking Management",
@@ -367,149 +379,93 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "wf_ref": null,
       "test_case": "Unauthenticated user cannot access Booking Detail page",
       "preconditions": [
-        "User is not authenticated",
-        "Booking exists in system for a different user"
+        "User is not authenticated"
       ],
       "steps": [
-        "1. Navigate to the Booking Detail URL for an existing booking"
+        "1. As an unauthenticated user, navigate to the Booking Detail page URL for <a booking>"
       ],
-      "expected_result": "User is redirected to the login page and cannot view booking details; Booking Detail view is not displayed and Modify/Cancel actions are not visible",
+      "expected_result": "Browser redirects to the Login page; the Booking Detail view is not displayed and a sign-in prompt is shown (booking information is not visible).",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": null,
-      "test_case": "Modify action blocked when modification is not permitted by booking type/policy (blocked at dialog open)",
+      "wf_ref": "WF-001",
+      "test_case": "Modify button not available when booking type prohibits modification",
       "preconditions": [
         "Authenticated user",
-        "Booking selected where modification is not permitted by booking type or cancellation policy"
+        "Selected booking has a booking type that does NOT permit modification"
       ],
       "steps": [
-        "1. Click the Modify button on the Booking Detail view"
+        "1. Sign in as an authenticated user",
+        "2. Navigate to the Booking Detail for <booking with modification prohibited>",
+        "3. Inspect the Booking Detail action bar"
       ],
-      "expected_result": "Modify dialog does not open; an inline or modal message is shown on the Booking Detail view indicating modification is not permitted by booking type/cancellation policy; no fields are editable and no changes can be submitted; booking remains unchanged",
+      "expected_result": "The Modify button is not visible in the Booking Detail action bar; no Modify Booking modal can be opened for this booking (no modification UI is shown).",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-001",
-      "test_case": "Submit Changes blocked when New Travel Dates are unavailable (availability constraint)",
+      "wf_ref": "WF-002",
+      "test_case": "Cancel button not available when cancellation policy prohibits cancellation",
       "preconditions": [
         "Authenticated user",
-        "Booking selected where modification is permitted",
-        "Requested new travel dates are not available"
+        "Selected booking has a cancellation policy that does NOT permit cancellation"
       ],
       "steps": [
-        "1. Click the Modify button on the Booking Detail view",
-        "2. Enter <unavailable dates> into the New Travel Dates field",
-        "3. Click Submit Changes"
+        "1. Sign in as an authenticated user",
+        "2. Navigate to the Booking Detail for <booking with cancellation prohibited>",
+        "3. Inspect the Booking Detail action bar"
       ],
-      "expected_result": "New Travel Dates field displays an inline validation error indicating the selected dates are unavailable; Submit Changes does not complete; booking is not updated; no modification email is sent",
+      "expected_result": "The Cancel button is not visible in the Booking Detail action bar; no cancellation confirmation dialog can be opened for this booking (no cancellation UI is shown).",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-001",
-      "test_case": "Invalid date format rejected in New Travel Dates",
+      "test_case": "Modify attempt blocked when selected travel dates are unavailable",
       "preconditions": [
         "Authenticated user",
-        "Booking selected where modification is permitted"
+        "Selected booking permits modification (booking type and cancellation policy permit)"
       ],
       "steps": [
-        "1. Click the Modify button on the Booking Detail view",
-        "2. Enter <invalid date format> into the New Travel Dates field",
-        "3. Click Submit Changes"
+        "1. Sign in as an authenticated user",
+        "2. Navigate to the Booking Detail for <modifiable booking>",
+        "3. Click the Modify button to open the Modify Booking modal",
+        "4. Enter <unavailable travel dates> into the Travel_Dates field",
+        "5. Click the Save Changes button"
       ],
-      "expected_result": "New Travel Dates field displays an inline validation error indicating an invalid date format / 'Enter a valid date'; form does not submit; booking is not updated",
-      "priority": "medium"
+      "expected_result": "Travel_Dates field displays an inline validation error indicating the selected dates are not available; the Modify Booking modal remains open; no 'modifications saved' confirmation appears and the booking details on the Booking Detail view remain unchanged.",
+      "priority": "high"
     },
     {
       "tc_id": "N-005",
       "wf_ref": "WF-001",
-      "test_case": "Submit Changes blocked when modification precondition fails at submit time",
+      "test_case": "Modify blocked when Travel_Dates contains an invalid/impossible date",
       "preconditions": [
         "Authenticated user",
-        "Booking selected (booking type that may allow opening Modify but policy disallows final modification)"
+        "Selected booking permits modification"
       ],
       "steps": [
-        "1. Click the Modify button on the Booking Detail view",
-        "2. Enter valid values into editable fields (e.g., New Travel Dates = <valid available dates> if available, Special Requests = <text>)",
-        "3. Click Submit Changes"
+        "1. Sign in as an authenticated user",
+        "2. Navigate to the Booking Detail for <modifiable booking>",
+        "3. Click the Modify button to open the Modify Booking modal",
+        "4. Enter <invalid/impossible date> into the Travel_Dates field",
+        "5. Click the Save Changes button"
       ],
-      "expected_result": "Submission is rejected due to precondition failure (modification not permitted by booking type/cancellation policy); a clear error message is displayed (e.g., banner or dialog) stating modification is not permitted; booking remains unchanged and no modification email is sent",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-006",
-      "wf_ref": null,
-      "test_case": "Cancel dialog shows immediate block when cancellation is not permitted by policy (timing test)",
-      "preconditions": [
-        "Authenticated user",
-        "Booking selected where cancellation is not permitted by booking type or cancellation policy"
-      ],
-      "steps": [
-        "1. Click the Cancel button on the Booking Detail view"
-      ],
-      "expected_result": "Cancellation dialog opens (or a modal/inline message appears) showing a clear message that cancellation is not permitted by booking type/cancellation policy; the Confirm Cancellation checkbox and/or Confirm button are disabled or hidden; user cannot proceed and booking remains unchanged",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": "WF-002",
-      "test_case": "Confirm Cancellation blocked when required Confirm_Cancellation checkbox is not checked",
-      "preconditions": [
-        "Authenticated user",
-        "Booking selected where cancellation is permitted"
-      ],
-      "steps": [
-        "1. Click the Cancel button on the Booking Detail view",
-        "2. Ensure the Confirm_Cancellation checkbox remains unchecked",
-        "3. Click the Confirm Cancellation submit action"
-      ],
-      "expected_result": "Inline validation error appears on the Confirm_Cancellation checkbox indicating it is required; cancellation is not processed; booking status does not change; no refund is initiated; no cancellation email is sent",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-008",
-      "wf_ref": "WF-002",
-      "test_case": "Confirm Cancellation fails at submit when cancellation precondition is false (submit-time block)",
-      "preconditions": [
-        "Authenticated user",
-        "Booking selected where cancellation is not permitted by policy (precondition false) but UI allowed checking the box"
-      ],
-      "steps": [
-        "1. Click the Cancel button on the Booking Detail view",
-        "2. Check the Confirm_Cancellation checkbox",
-        "3. Click the Confirm Cancellation submit action"
-      ],
-      "expected_result": "Submission is rejected due to precondition failure (cancellation not permitted by booking type/cancellation policy); a clear error is displayed explaining cancellation is not allowed; booking remains unchanged; no refund or cancellation email is initiated",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-009",
-      "wf_ref": null,
-      "test_case": "Modify action not allowed when no booking is selected",
-      "preconditions": [
-        "Authenticated user",
-        "No booking is selected in the Booking Management area"
-      ],
-      "steps": [
-        "1. Attempt to click the Modify button from the Booking Management area without selecting a booking"
-      ],
-      "expected_result": "Modify action is disabled or clicking it shows an inline message 'No booking selected' (or equivalent); no Modify dialog opens; user cannot proceed and no changes occur",
+      "expected_result": "Travel_Dates field displays an inline validation error indicating the date is invalid or impossible; the form does not submit and the Modify Booking modal remains open; booking details remain unchanged.",
       "priority": "medium"
     }
   ],
   "summary": {
-    "total": 9,
-    "high_priority": 7,
-    "medium_priority": 2,
+    "total": 5,
+    "high_priority": 4,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:27:37] Test-Negative - PARSED JSON
+[22:36:24] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Booking Management",
@@ -520,143 +476,87 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "wf_ref": null,
       "test_case": "Unauthenticated user cannot access Booking Detail page",
       "preconditions": [
-        "User is not authenticated",
-        "Booking exists in system for a different user"
+        "User is not authenticated"
       ],
       "steps": [
-        "1. Navigate to the Booking Detail URL for an existing booking"
+        "1. As an unauthenticated user, navigate to the Booking Detail page URL for <a booking>"
       ],
-      "expected_result": "User is redirected to the login page and cannot view booking details; Booking Detail view is not displayed and Modify/Cancel actions are not visible",
+      "expected_result": "Browser redirects to the Login page; the Booking Detail view is not displayed and a sign-in prompt is shown (booking information is not visible).",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": null,
-      "test_case": "Modify action blocked when modification is not permitted by booking type/policy (blocked at dialog open)",
+      "wf_ref": "WF-001",
+      "test_case": "Modify button not available when booking type prohibits modification",
       "preconditions": [
         "Authenticated user",
-        "Booking selected where modification is not permitted by booking type or cancellation policy"
+        "Selected booking has a booking type that does NOT permit modification"
       ],
       "steps": [
-        "1. Click the Modify button on the Booking Detail view"
+        "1. Sign in as an authenticated user",
+        "2. Navigate to the Booking Detail for <booking with modification prohibited>",
+        "3. Inspect the Booking Detail action bar"
       ],
-      "expected_result": "Modify dialog does not open; an inline or modal message is shown on the Booking Detail view indicating modification is not permitted by booking type/cancellation policy; no fields are editable and no changes can be submitted; booking remains unchanged",
+      "expected_result": "The Modify button is not visible in the Booking Detail action bar; no Modify Booking modal can be opened for this booking (no modification UI is shown).",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-001",
-      "test_case": "Submit Changes blocked when New Travel Dates are unavailable (availability constraint)",
+      "wf_ref": "WF-002",
+      "test_case": "Cancel button not available when cancellation policy prohibits cancellation",
       "preconditions": [
         "Authenticated user",
-        "Booking selected where modification is permitted",
-        "Requested new travel dates are not available"
+        "Selected booking has a cancellation policy that does NOT permit cancellation"
       ],
       "steps": [
-        "1. Click the Modify button on the Booking Detail view",
-        "2. Enter <unavailable dates> into the New Travel Dates field",
-        "3. Click Submit Changes"
+        "1. Sign in as an authenticated user",
+        "2. Navigate to the Booking Detail for <booking with cancellation prohibited>",
+        "3. Inspect the Booking Detail action bar"
       ],
-      "expected_result": "New Travel Dates field displays an inline validation error indicating the selected dates are unavailable; Submit Changes does not complete; booking is not updated; no modification email is sent",
+      "expected_result": "The Cancel button is not visible in the Booking Detail action bar; no cancellation confirmation dialog can be opened for this booking (no cancellation UI is shown).",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
       "wf_ref": "WF-001",
-      "test_case": "Invalid date format rejected in New Travel Dates",
+      "test_case": "Modify attempt blocked when selected travel dates are unavailable",
       "preconditions": [
         "Authenticated user",
-        "Booking selected where modification is permitted"
+        "Selected booking permits modification (booking type and cancellation policy permit)"
       ],
       "steps": [
-        "1. Click the Modify button on the Booking Detail view",
-        "2. Enter <invalid date format> into the New Travel Dates field",
-        "3. Click Submit Changes"
+        "1. Sign in as an authenticated user",
+        "2. Navigate to the Booking Detail for <modifiable booking>",
+        "3. Click the Modify button to open the Modify Booking modal",
+        "4. Enter <unavailable travel dates> into the Travel_Dates field",
+        "5. Click the Save Changes button"
       ],
-      "expected_result": "New Travel Dates field displays an inline validation error indicating an invalid date format / 'Enter a valid date'; form does not submit; booking is not updated",
-      "priority": "medium"
+      "expected_result": "Travel_Dates field displays an inline validation error indicating the selected dates are not available; the Modify Booking modal remains open; no 'modifications saved' confirmation appears and the booking details on the Booking Detail view remain unchanged.",
+      "priority": "high"
     },
     {
       "tc_id": "N-005",
       "wf_ref": "WF-001",
-      "test_case": "Submit Changes blocked when modification precondition fails at submit time",
+      "test_case": "Modify blocked when Travel_Dates contains an invalid/impossible date",
       "preconditions": [
         "Authenticated user",
-        "Booking selected (booking type that may allow opening Modify but policy disallows final modification)"
+        "Selected booking permits modification"
       ],
       "steps": [
-        "1. Click the Modify button on the Booking Detail view",
-        "2. Enter valid values into editable fields (e.g., New Travel Dates = <valid available dates> if available, Special Requests = <text>)",
-        "3. Click Submit Changes"
+        "1. Sign in as an authenticated user",
+        "2. Navigate to the Booking Detail for <modifiable booking>",
+        "3. Click the Modify button to open the Modify Booking modal",
+        "4. Enter <invalid/impossible date> into the Travel_Dates field",
+        "5. Click the Save Changes button"
       ],
-      "expected_result": "Submission is rejected due to precondition failure (modification not permitted by booking type/cancellation policy); a clear error message is displayed (e.g., banner or dialog) stating modification is not permitted; booking remains unchanged and no modification email is sent",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-006",
-      "wf_ref": null,
-      "test_case": "Cancel dialog shows immediate block when cancellation is not permitted by policy (timing test)",
-      "preconditions": [
-        "Authenticated user",
-        "Booking selected where cancellation is not permitted by booking type or cancellation policy"
-      ],
-      "steps": [
-        "1. Click the Cancel button on the Booking Detail view"
-      ],
-      "expected_result": "Cancellation dialog opens (or a modal/inline message appears) showing a clear message that cancellation is not permitted by booking type/cancellation policy; the Confirm Cancellation checkbox and/or Confirm button are disabled or hidden; user cannot proceed and booking remains unchanged",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-007",
-      "wf_ref": "WF-002",
-      "test_case": "Confirm Cancellation blocked when required Confirm_Cancellation checkbox is not checked",
-      "preconditions": [
-        "Authenticated user",
-        "Booking selected where cancellation is permitted"
-      ],
-      "steps": [
-        "1. Click the Cancel button on the Booking Detail view",
-        "2. Ensure the Confirm_Cancellation checkbox remains unchecked",
-        "3. Click the Confirm Cancellation submit action"
-      ],
-      "expected_result": "Inline validation error appears on the Confirm_Cancellation checkbox indicating it is required; cancellation is not processed; booking status does not change; no refund is initiated; no cancellation email is sent",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-008",
-      "wf_ref": "WF-002",
-      "test_case": "Confirm Cancellation fails at submit when cancellation precondition is false (submit-time block)",
-      "preconditions": [
-        "Authenticated user",
-        "Booking selected where cancellation is not permitted by policy (precondition false) but UI allowed checking the box"
-      ],
-      "steps": [
-        "1. Click the Cancel button on the Booking Detail view",
-        "2. Check the Confirm_Cancellation checkbox",
-        "3. Click the Confirm Cancellation submit action"
-      ],
-      "expected_result": "Submission is rejected due to precondition failure (cancellation not permitted by booking type/cancellation policy); a clear error is displayed explaining cancellation is not allowed; booking remains unchanged; no refund or cancellation email is initiated",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-009",
-      "wf_ref": null,
-      "test_case": "Modify action not allowed when no booking is selected",
-      "preconditions": [
-        "Authenticated user",
-        "No booking is selected in the Booking Management area"
-      ],
-      "steps": [
-        "1. Attempt to click the Modify button from the Booking Management area without selecting a booking"
-      ],
-      "expected_result": "Modify action is disabled or clicking it shows an inline message 'No booking selected' (or equivalent); no Modify dialog opens; user cannot proceed and no changes occur",
+      "expected_result": "Travel_Dates field displays an inline validation error indicating the date is invalid or impossible; the form does not submit and the Modify Booking modal remains open; booking details remain unchanged.",
       "priority": "medium"
     }
   ],
   "summary": {
-    "total": 9,
-    "high_priority": 7,
-    "medium_priority": 2,
+    "total": 5,
+    "high_priority": 4,
+    "medium_priority": 1,
     "low_priority": 0
   }
 }

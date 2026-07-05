@@ -1,0 +1,646 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T23:04:00.772881
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[23:05:08] Workflow-Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Workflow Validator. You receive (1) a raw functional description, (2) a Structural Model JSON, and (3) a generated workflow list for one module.
+
+Your single job: decide whether this workflow list is complete and correct, or whether it must be regenerated. Be strict — when in doubt, retry.
+
+You DO NOT modify the workflow list. You DO NOT generate new workflows. You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+<workflows>
+{workflows}
+</workflows>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**WHAT A WORKFLOW IS:**
+
+A workflow is one complete, executable interaction path through the module — from entry to one terminal action. Two workflows are distinct if they require different user actions to reach the terminal (different conditional branch, different state, different terminal button).
+
+MINOR missing
+  A non-critical row action (e.g., "View" on a data table) where omission does not
+  break any downstream state transition or form submission. Flag it; don't auto-retry
+  for it alone.
+
+CRITICAL missing
+  Any of: a form submit_action with no matching workflow, a state × action pair with
+  no workflow, a bulk_action with no workflow, any submit path through a conditional
+  branch with no workflow.
+
+MINOR phantom
+  A workflow whose terminal_action is not literally named in the AST but is so
+  universally implied by the component type that its presence is unsurprising
+  (e.g., a "Search" workflow when the table has `searchable: true`). Flag it;
+  don't auto-retry for it alone.
+
+CRITICAL phantom
+  A workflow whose terminal_action cannot be traced to any AST node's
+  submit_actions[], available_actions[], row_actions[], or bulk_actions[] —
+  and is not an explicit action verb in the description text.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD — Seven Checks
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Check 1 — Missing form workflows.**
+Walk every `form` node in the AST. For each entry in `submit_actions[]`, there must be at least one workflow with a matching `terminal_action`. If the form has `visible_when` or `required_when` fields, there must be one workflow per unique condition combination × submit action. Flag any missing combinations. Classify each as critical or minor.
+
+**Check 2 — Missing state-machine workflows.**
+Walk every `state_bound_action_bar` node. For each state key in `states{}`, for each entry in `available_actions[]`, there must be one workflow with `terminal_action` matching that action and `conditional_branch` containing `entity_state == <state>`. Flag any missing state × action pairs. Classify each as critical.
+If a `<module_context>` block is present, use its `assumed_state_on_entry` to confirm that the entry state named in the context is represented as a workflow's starting condition where applicable.
+
+**Check 3 — Missing data table workflows.**
+Walk every `data_table` node. For each entry in `row_actions[]` and `bulk_actions[]`, there must be one workflow with `terminal_action` matching that action. Flag any missing entries. This includes read-only actions like View/Details. Classify bulk_actions as critical; row_actions as minor if read-only, critical otherwise.
+
+**Check 4 — Phantom workflows.**
+A workflow is a phantom if its `terminal_action` cannot be found in any AST node's `submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`, or as an explicit action verb in the description text. Classify each as critical or minor per the definitions above.
+
+**Check 5 — Wrong conditional branch.**
+If a workflow has a non-null `conditional_branch`, verify the condition references a real field name that appears in the AST under `visible_when`, `required_when`, or a real state key in `state_bound_action_bar`. Flag any condition that references a field or state that does not exist. Classify as structural error.
+
+**Check 6 — Empty or generic on_success.**
+If a workflow's `on_success` is empty, null, "success", "done", or any single-word generic string, and the AST has a concrete `on_success` value for that action, flag it. The `on_success` must reflect what the AST or description says actually happens. Classify as structural error.
+
+**Check 7 — Zero workflows when module clearly has actions.**
+If the workflow list is empty (total = 0) but the AST contains any `form`, `wizard`, `state_bound_action_bar`, or `data_table` component, that is a critical failure — flag it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERDICT RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Check 5, 6)
+                       AND Check 7 passes
+                       → fixes must be []
+
+  retry                Any CRITICAL missing workflow
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any structural error (wrong conditional, generic on_success)
+                       OR Check 7 failure
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       interaction path exists — not a close call, but truly unresolvable
+                       from the text and AST alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "AST path or state×action pair",
+      "severity": "critical | minor",
+      "reason": "<why this workflow is expected from the AST/description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "WF-NNN terminal_action=X",
+      "severity": "critical | minor",
+      "reason": "<why this workflow has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Check 5/6 violation and the affected workflow>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact missing path or phantom to remove>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+
+------------------------------------------------------------
+[23:05:08] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 21,
+  "module_title": "Provisioning",
+  "summary": "Manages provisioning criteria for categorizing overdue loans and generates provisioning journal entries that record calculated provisions per loan product and category.",
+  "where_it_fits": "Located within the Accounting area of the application (accessible from the top navigation Accounting menu and relevant accounting pages in the left sidebar), this module provides both the configuration of provisioning rules and the operational generation/review of provisioning journal entries as part of month-end or provisioning workflows tied to the loan portfolio lifecycle.",
+  "assumed_state_on_entry": "Logged in with accounting/administrative privileges, a populated Chart of Accounts (GL accounts) exists, and the loan portfolio (including overdue loans) is present in the system."
+}
+</module_context>
+
+<description>
+
+The Provisioning Criteria page displays a data table with columns for Criteria Name (clickable link) and Created Date. A "+ Create" button opens the creation form containing Criteria Name (required) and a Definitions table where each row specifies Loan Product, Category (STANDARD, SUB-STANDARD, DOUBTFUL, LOSS), Minimum Age (overdue days), Maximum Age (overdue days), Provisioning Percentage (percentage of outstanding principal), Liability Account (GL account dropdown), and Expense Account (GL account dropdown). Multiple rows can be added to cover different overdue ranges and product combinations.
+
+The Provisioning Entries page lists all generated provisioning journal entries with columns for Entry Date, Journal Entry Created, Created By, and action buttons. A "+ Create Provisioning Entry" button generates new provisioning entries based on the current loan portfolio status and configured criteria; the system calculates the required provision amount for each loan category and creates the corresponding journal entries. Each entry can be reviewed (showing a detailed breakdown by loan product and category) or recreated.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Provisioning",
+  "components": {
+    "Provisioning_Criteria_Table": {
+      "type": "data_table",
+      "columns": [
+        "Criteria_Name",
+        "Created_Date"
+      ],
+      "actions": [
+        {
+          "action_name": "+ Create",
+          "type": "button",
+          "on_click": "opens Provisioning_Criteria_Form",
+          "on_success": "opens blank Provisioning_Criteria_Form ready for input"
+        }
+      ],
+      "row_actions": [
+        {
+          "action_name": "Edit",
+          "on_click": "opens Provisioning_Criteria_Form for edit",
+          "on_success": "loads selected criteria into Provisioning_Criteria_Form"
+        }
+      ]
+    },
+    "Provisioning_Criteria_Form": {
+      "type": "form",
+      "fields": {
+        "Criteria_Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Definitions": {
+          "type": "repeating_group",
+          "allow_add": true,
+          "actions": [
+            {
+              "action_name": "Add Row",
+              "type": "button",
+              "on_click": "adds a new Definitions row"
+            },
+            {
+              "action_name": "Remove Row",
+              "type": "row_action",
+              "on_click": "removes this Definitions row"
+            }
+          ],
+          "item_fields": {
+            "Loan_Product": {
+              "type": "unspecified"
+            },
+            "Category": {
+              "type": "dropdown",
+              "options": [
+                "STANDARD",
+                "SUB-STANDARD",
+                "DOUBTFUL",
+                "LOSS"
+              ]
+            },
+            "Minimum_Age": {
+              "type": "number"
+            },
+            "Maximum_Age": {
+              "type": "number"
+            },
+            "Provisioning_Percentage": {
+              "type": "number"
+            },
+            "Liability_Account": {
+              "type": "dropdown"
+            },
+            "Expense_Account": {
+              "type": "dropdown"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create",
+          "on_success": "saves criteria and returns to Provisioning Criteria listing",
+          "preconditions": [
+            "user must be logged in with accounting/administrative privileges"
+          ]
+        }
+      ]
+    },
+    "Provisioning_Entries_Table": {
+      "type": "data_table",
+      "columns": [
+        "Entry_Date",
+        "Journal_Entry_Created",
+        "Created_By"
+      ],
+      "actions": [
+        {
+          "action_name": "+ Create Provisioning Entry",
+          "type": "button",
+          "on_click": "generates new provisioning entries based on current loan portfolio and configured criteria",
+          "on_success": "creates provisioning journal entries and refreshes the entries listing",
+          "preconditions": [
+            "user must be logged in with accounting/administrative privileges",
+            "Chart of Accounts must be present"
+          ]
+        }
+      ],
+      "row_actions": [
+        {
+          "action_name": "Review",
+          "on_click": "opens Provisioning_Entry_Detail_View",
+          "on_success": "shows detailed breakdown by loan product and category"
+        },
+        {
+          "action_name": "Recreate",
+          "on_click": "recreates provisioning entry",
+          "on_success": "generates provisioning journal entries for the entry and updates the listing"
+        }
+      ]
+    },
+    "Provisioning_Entry_Detail_View": {
+      "type": "detail_view",
+      "fields": {}
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Open Provisioning Criteria creation form",
+    "actor": "Accounting/Administrative user",
+    "conditional_branch": null,
+    "terminal_action": "+ Create",
+    "on_success": "opens blank Provisioning_Criteria_Form ready for input"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Edit existing Provisioning Criteria",
+    "actor": "Accounting/Administrative user",
+    "conditional_branch": null,
+    "terminal_action": "Edit",
+    "on_success": "loads selected criteria into Provisioning_Criteria_Form"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Create Provisioning Criteria (save form)",
+    "actor": "Accounting/Administrative user",
+    "conditional_branch": "user_role == Accounting_Admin",
+    "terminal_action": "Create",
+    "on_success": "saves criteria and returns to Provisioning Criteria listing"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Generate new provisioning journal entries",
+    "actor": "Accounting/Administrative user",
+    "conditional_branch": "user_role == Accounting_Admin AND Chart_of_Accounts == Present",
+    "terminal_action": "+ Create Provisioning Entry",
+    "on_success": "creates provisioning journal entries and refreshes the entries listing"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Review a provisioning entry (view detail)",
+    "actor": "Accounting/Administrative user",
+    "conditional_branch": null,
+    "terminal_action": "Review",
+    "on_success": "shows detailed breakdown by loan product and category"
+  },
+  {
+    "wf_id": "WF-006",
+    "name": "Recreate a provisioning entry",
+    "actor": "Accounting/Administrative user",
+    "conditional_branch": null,
+    "terminal_action": "Recreate",
+    "on_success": "generates provisioning journal entries for the entry and updates the listing"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:06:27] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "Workflows cover the AST actions but two workflows use conditional_branch expressions that reference fields/states not present in the AST, which is a structural error requiring regeneration or AST/workflow alignment.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "WF-003 has conditional_branch 'user_role == Accounting_Admin' but the AST contains no field named 'user_role' under visible_when/required_when nor any state key; conditional expressions must reference real AST fields or state keys.",
+    "WF-004 has conditional_branch 'user_role == Accounting_Admin AND Chart_of_Accounts == Present' but neither 'user_role' nor 'Chart_of_Accounts' appear as fields under visible_when/required_when or as state keys in the AST; conditional expressions must reference real AST fields or state keys."
+  ],
+  "fixes": [
+    "For WF-003: Either remove the conditional_branch (so the workflow simply represents the Provisioning_Criteria_Form 'Create' submit action as declared in the AST) or update the AST to include a field/state named 'user_role' (and a visible_when/required_when rule) that the conditional can reference; alternatively change the conditional_branch to reference an existing AST field/state.",
+    "For WF-004: Either remove the conditional_branch (so the workflow represents the '+ Create Provisioning Entry' button action as declared in the AST) or update the AST to include fields/states named 'user_role' and/or 'Chart_of_Accounts' (with appropriate visible_when/required_when entries) that the conditional can reference; alternatively change the conditional_branch to reference existing AST fields/states or to mirror the AST's textual preconditions."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:06:27] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "Workflows cover the AST actions but two workflows use conditional_branch expressions that reference fields/states not present in the AST, which is a structural error requiring regeneration or AST/workflow alignment.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [
+    "WF-003 has conditional_branch 'user_role == Accounting_Admin' but the AST contains no field named 'user_role' under visible_when/required_when nor any state key; conditional expressions must reference real AST fields or state keys.",
+    "WF-004 has conditional_branch 'user_role == Accounting_Admin AND Chart_of_Accounts == Present' but neither 'user_role' nor 'Chart_of_Accounts' appear as fields under visible_when/required_when or as state keys in the AST; conditional expressions must reference real AST fields or state keys."
+  ],
+  "fixes": [
+    "For WF-003: Either remove the conditional_branch (so the workflow simply represents the Provisioning_Criteria_Form 'Create' submit action as declared in the AST) or update the AST to include a field/state named 'user_role' (and a visible_when/required_when rule) that the conditional can reference; alternatively change the conditional_branch to reference an existing AST field/state.",
+    "For WF-004: Either remove the conditional_branch (so the workflow represents the '+ Create Provisioning Entry' button action as declared in the AST) or update the AST to include fields/states named 'user_role' and/or 'Chart_of_Accounts' (with appropriate visible_when/required_when entries) that the conditional can reference; alternatively change the conditional_branch to reference existing AST fields/states or to mirror the AST's textual preconditions."
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:06:43] Workflow-Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 21,
+  "module_title": "Provisioning",
+  "summary": "Manages provisioning criteria for categorizing overdue loans and generates provisioning journal entries that record calculated provisions per loan product and category.",
+  "where_it_fits": "Located within the Accounting area of the application (accessible from the top navigation Accounting menu and relevant accounting pages in the left sidebar), this module provides both the configuration of provisioning rules and the operational generation/review of provisioning journal entries as part of month-end or provisioning workflows tied to the loan portfolio lifecycle.",
+  "assumed_state_on_entry": "Logged in with accounting/administrative privileges, a populated Chart of Accounts (GL accounts) exists, and the loan portfolio (including overdue loans) is present in the system."
+}
+</module_context>
+
+<description>
+
+The Provisioning Criteria page displays a data table with columns for Criteria Name (clickable link) and Created Date. A "+ Create" button opens the creation form containing Criteria Name (required) and a Definitions table where each row specifies Loan Product, Category (STANDARD, SUB-STANDARD, DOUBTFUL, LOSS), Minimum Age (overdue days), Maximum Age (overdue days), Provisioning Percentage (percentage of outstanding principal), Liability Account (GL account dropdown), and Expense Account (GL account dropdown). Multiple rows can be added to cover different overdue ranges and product combinations.
+
+The Provisioning Entries page lists all generated provisioning journal entries with columns for Entry Date, Journal Entry Created, Created By, and action buttons. A "+ Create Provisioning Entry" button generates new provisioning entries based on the current loan portfolio status and configured criteria; the system calculates the required provision amount for each loan category and creates the corresponding journal entries. Each entry can be reviewed (showing a detailed breakdown by loan product and category) or recreated.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Provisioning",
+  "components": {
+    "Provisioning_Criteria_Table": {
+      "type": "data_table",
+      "columns": [
+        "Criteria_Name",
+        "Created_Date"
+      ],
+      "actions": [
+        {
+          "action_name": "+ Create",
+          "type": "button",
+          "on_click": "opens Provisioning_Criteria_Form",
+          "on_success": "opens blank Provisioning_Criteria_Form ready for input"
+        }
+      ],
+      "row_actions": [
+        {
+          "action_name": "Edit",
+          "on_click": "opens Provisioning_Criteria_Form for edit",
+          "on_success": "loads selected criteria into Provisioning_Criteria_Form"
+        }
+      ]
+    },
+    "Provisioning_Criteria_Form": {
+      "type": "form",
+      "fields": {
+        "Criteria_Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Definitions": {
+          "type": "repeating_group",
+          "allow_add": true,
+          "actions": [
+            {
+              "action_name": "Add Row",
+              "type": "button",
+              "on_click": "adds a new Definitions row"
+            },
+            {
+              "action_name": "Remove Row",
+              "type": "row_action",
+              "on_click": "removes this Definitions row"
+            }
+          ],
+          "item_fields": {
+            "Loan_Product": {
+              "type": "unspecified"
+            },
+            "Category": {
+              "type": "dropdown",
+              "options": [
+                "STANDARD",
+                "SUB-STANDARD",
+                "DOUBTFUL",
+                "LOSS"
+              ]
+            },
+            "Minimum_Age": {
+              "type": "number"
+            },
+            "Maximum_Age": {
+              "type": "number"
+            },
+            "Provisioning_Percentage": {
+              "type": "number"
+            },
+            "Liability_Account": {
+              "type": "dropdown"
+            },
+            "Expense_Account": {
+              "type": "dropdown"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create",
+          "on_success": "saves criteria and returns to Provisioning Criteria listing",
+          "preconditions": [
+            "user must be logged in with accounting/administrative privileges"
+          ]
+        }
+      ]
+    },
+    "Provisioning_Entries_Table": {
+      "type": "data_table",
+      "columns": [
+        "Entry_Date",
+        "Journal_Entry_Created",
+        "Created_By"
+      ],
+      "actions": [
+        {
+          "action_name": "+ Create Provisioning Entry",
+          "type": "button",
+          "on_click": "generates new provisioning entries based on current loan portfolio and configured criteria",
+          "on_success": "creates provisioning journal entries and refreshes the entries listing",
+          "preconditions": [
+            "user must be logged in with accounting/administrative privileges",
+            "Chart of Accounts must be present"
+          ]
+        }
+      ],
+      "row_actions": [
+        {
+          "action_name": "Review",
+          "on_click": "opens Provisioning_Entry_Detail_View",
+          "on_success": "shows detailed breakdown by loan product and category"
+        },
+        {
+          "action_name": "Recreate",
+          "on_click": "recreates provisioning entry",
+          "on_success": "generates provisioning journal entries for the entry and updates the listing"
+        }
+      ]
+    },
+    "Provisioning_Entry_Detail_View": {
+      "type": "detail_view",
+      "fields": {}
+    }
+  }
+}
+</ast>
+
+<workflows>
+[
+  {
+    "wf_id": "WF-001",
+    "name": "Open Create Provisioning Criteria form",
+    "actor": "accounting/administrative",
+    "conditional_branch": null,
+    "terminal_action": "+ Create",
+    "on_success": "opens blank Provisioning_Criteria_Form ready for input"
+  },
+  {
+    "wf_id": "WF-002",
+    "name": "Create Provisioning Criteria (submit)",
+    "actor": "accounting/administrative",
+    "conditional_branch": null,
+    "terminal_action": "Create",
+    "on_success": "saves criteria and returns to Provisioning Criteria listing"
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Edit existing Provisioning Criteria (row action)",
+    "actor": "accounting/administrative",
+    "conditional_branch": null,
+    "terminal_action": "Edit",
+    "on_success": "loads selected criteria into Provisioning_Criteria_Form"
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Generate new Provisioning Entry (create entries)",
+    "actor": "accounting/administrative",
+    "conditional_branch": null,
+    "terminal_action": "+ Create Provisioning Entry",
+    "on_success": "creates provisioning journal entries and refreshes the entries listing"
+  },
+  {
+    "wf_id": "WF-005",
+    "name": "Review a Provisioning Entry (row action)",
+    "actor": "accounting/administrative",
+    "conditional_branch": null,
+    "terminal_action": "Review",
+    "on_success": "shows detailed breakdown by loan product and category"
+  },
+  {
+    "wf_id": "WF-006",
+    "name": "Recreate a Provisioning Entry (row action)",
+    "actor": "accounting/administrative",
+    "conditional_branch": null,
+    "terminal_action": "Recreate",
+    "on_success": "generates provisioning journal entries for the entry and updates the listing"
+  }
+]
+</workflows>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:06:55] Workflow-Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "The provided workflows cover all form submit actions, data table actions, and row actions present in the AST; no missing or phantom workflows or structural errors were found.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:06:55] Workflow-Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "The provided workflows cover all form submit actions, data table actions, and row actions present in the AST; no missing or phantom workflows or structural errors were found.",
+  "missing": [],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}

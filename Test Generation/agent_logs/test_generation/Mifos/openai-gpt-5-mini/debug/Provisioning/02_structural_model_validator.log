@@ -1,0 +1,658 @@
+================================================================================
+DEBUG SESSION STARTED: 2026-07-04T22:57:38.854434
+Model: openai/gpt-5-mini
+================================================================================
+
+
+------------------------------------------------------------
+[22:59:10] Structural Model Validator - SYSTEM PROMPT
+------------------------------------------------------------
+You are a Structural Model Validator. You receive (1) a raw functional description and
+(2) a generated Structural Model JSON.
+
+Your single job: decide whether this AST is good enough to use, or whether it should
+be regenerated.
+
+You DO NOT modify the JSON.
+You DO NOT generate a new JSON.
+You ONLY audit.
+
+Attempt: 1 of 3
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<module_context>
+{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
+</module_context>
+
+<description>
+{description}
+</description>
+
+<ast>
+{ast}
+</ast>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CANONICAL SCOPE — IDENTICAL TO THE GENERATOR'S SCOPE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+IN SCOPE — an element qualifies if a user can:
+  (a) Input or edit a value: form fields, checkboxes, file uploads, search inputs, toggles
+  (b) Trigger an action: buttons, links, row actions, bulk actions, submit actions
+  (c) Navigate: tabs, sub-tabs, wizard steps
+  (d) Action metadata on interactive elements: on_success, preconditions, state
+      transitions, validation constraints
+
+OUT OF SCOPE — do NOT expect these in the AST:
+  - Passive display labels: "the page shows client name, account number, status badge"
+    → 0 expected items. The AST is correct to omit them.
+  - Chip colors, badge styles, decorative icons, visual styling
+  - Read-only info panels with no interactive element
+  - Display-formatting or rendering rules applied to a passive (non-interactive) value —
+    e.g. masking ("showing only last 4 digits"), truncation, currency/number formatting,
+    default sort order of a read-only column → 0 expected items. These are NOT validation
+    constraints. Do not expect a field/column AST node, a "constraints" entry, or a
+    "columns" block created solely to house one of these rules.
+
+STATE (Pending / Active / Closed) is a routing key in state_bound_action_bar.states{},
+NOT a display field. Do not expect it anywhere else.
+
+"Constraint" (as used everywhere below) means a rule that governs INPUT or ACTION
+behavior — required-ness, format, bounds, uniqueness, cross-field ordering, state
+preconditions. A rule that only describes how an already-displayed, non-interactive
+value is rendered (masked, truncated, formatted, sorted) is a display-formatting rule,
+not a constraint, even if the description uses words like "must" or states a concrete
+detail (e.g. "must show only last 4 digits"). Do not upgrade a display-formatting rule
+to CRITICAL missing just because it is stated precisely.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MINOR missing
+  An optional field (no "required": true, no required_when) with no business logic,
+  state transition, or action consequence attached. Losing it doesn't break any flow.
+  Example: an unlabeled optional "Notes" textarea on a secondary form.
+
+MINOR phantom
+  An element not named in the description but so universally implied by the component
+  type that its presence is unsurprising — e.g., a "Cancel" button on a modal the
+  description never explicitly names. Flag it; don't auto-retry for it alone.
+
+CRITICAL missing
+  Any of: a required field, any state key in a state_bound_action_bar, any submit
+  action, any named tab or wizard step, any element with a stated precondition or
+  on_success consequence, any INTERACTIVE field with a stated constraint (see the
+  constraint definition above — a display-formatting rule on a passive field does
+  NOT qualify and must never be flagged as critical missing).
+
+CRITICAL phantom
+  Any of: a field invented inside a generic-name tab (Add_Note in a Notes tab,
+  Upload_Document in a Documents tab) when the description only names the tab;
+  a passive display field appearing as an AST node — including a "columns" block,
+  or any field/column entry, added only to carry a masking/truncation/formatting rule
+  for a non-interactive value; a constraint with no textual anchor; a display_fields
+  block anywhere in the output; "required": false anywhere.
+
+WORKED EXAMPLE — display-formatting rule, NOT a critical missing:
+
+Description: "Each row shows Account Number (clickable but not implemented yet),
+Account Type, Current Balance, Account Status, and Open Date. Account numbers are
+masked for security (showing only last 4 digits as ****5001)."
+
+AST under review:
+{
+  "Accounts_Table": {
+    "type": "data_table",
+    "row_actions": [
+      { "action_name": "Account Number", "constraints": ["clickable but not implemented yet"] }
+    ]
+  }
+}
+
+CORRECT verdict: the masking rule and the other four listed fields (Account Type,
+Current Balance, Account Status, Open Date) are passive display labels — 0 expected
+AST items for them, per the OUT OF SCOPE rule above. The only interactive element is
+the Account Number click, and it is already present. Do NOT flag
+"components.Accounts_Table.columns.Account_Number" (or any columns block) as a
+CRITICAL missing item. Do NOT instruct the generator to add a "columns" block with
+typed entries (e.g. "Open_Date": {"type": "date"}) — that fabricates interactive
+field types for read-only data and will cause downstream test generators to invent
+boundary/date tests against a page that has none.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METHOD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Step 1 — Walk the description. List every expected interactive element.
+Apply the canonical scope above. A sentence that only displays data produces 0 expected
+items. For each tab or step named with no described fields, expected output is
+"fields": {} — do NOT expect fields there.
+
+Step 2 — Walk the AST. Check for MISSING elements.
+For each expected element from Step 1, confirm it exists at the correct path.
+Classify each missing item as critical or minor using the definitions above.
+
+Step 3 — Walk the AST. Check for PHANTOMS.
+Flag any AST element with no textual anchor in the description.
+Classify each phantom as critical or minor using the definitions above.
+
+Step 4 — Check conditional logic.
+Count a conditional as EXPECTED only if the description contains an explicit trigger
+phrase. Both affirmative and negative phrasings qualify:
+
+  Affirmative: "when X is selected/checked/chosen", "if X then Y", "Y appears when X",
+               "selecting X reveals Y", "required if X", "enabled when X", "only if X",
+               "Y is shown for X"
+  Negative:    "unless X", "except when X", "disabled if X", "not shown when X",
+               "hidden when X", "required for non-X", "only for X users"
+  Abbreviated: "required for minors", "admin only", "international trips only"
+               → treat as conditional even without explicit trigger syntax
+
+If a visible_when / required_when / enabled_when appears in the AST but no trigger
+phrase (affirmative or negative) exists in the description: flag as critical phantom.
+If a trigger phrase exists in the description but no conditional appears in the AST:
+flag as critical missing.
+
+Step 5 — Check structural integrity. Flag any of these as STRUCTURAL ERRORS:
+  - A constraint floating at form/component level when the description attached it to
+    a specific field or action
+  - Sub-tabs or sub-steps described as nested but flattened in the AST
+  - State keys in state_bound_action_bar that don't match exact status names in the
+    description
+  - A display_fields block anywhere in the AST
+  - "required": false appearing anywhere in the AST
+  - Component or field names not in Pascal_Snake_Case
+
+Step 6 — Decide the verdict.
+
+Precondition note: If a `<module_context>` block is present, cross-check any
+`preconditions[]` in the AST against the `assumed_state_on_entry` value. A precondition
+that directly contradicts or wildly exceeds the described entry state is a CRITICAL phantom.
+
+  yes                  Missing: 0–2 MINOR only
+                       AND Phantoms: 0–2 MINOR only
+                       AND No structural errors (Step 5)
+                       → fixes must be []
+
+  retry                Any CRITICAL missing element
+                       OR any CRITICAL phantom
+                       OR 3+ minor missing
+                       OR 3+ minor phantoms
+                       OR any Step 5 structural error
+                       → fixes must be populated
+
+  needs_clarification  The description is genuinely ambiguous about whether a specific
+                       element is interactive — not a close call, but truly unresolvable
+                       from the text alone — AND resolving it would change the verdict.
+                       → Use sparingly. fixes must be [].
+                       → clarifications must name the exact ambiguous phrase.
+
+When in doubt between yes and retry: retry.
+When in doubt between retry and needs_clarification: retry.
+needs_clarification is for broken source text, not for judgment calls.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — JSON only, no prose, no markdown fencing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "verdict": "yes | retry | needs_clarification",
+  "attempt": 1,
+  "summary": "<one sentence explaining the decision>",
+  "missing": [
+    {
+      "path": "Component.path.to.element",
+      "severity": "critical | minor",
+      "reason": "<why this element is expected from the description>"
+    }
+  ],
+  "phantoms": [
+    {
+      "path": "Component.path.to.element",
+      "severity": "critical | minor",
+      "reason": "<why this element has no textual anchor>"
+    }
+  ],
+  "structural_errors": [
+    "<description of the Step 5 violation and its AST path>"
+  ],
+  "fixes": [
+    "<actionable instruction referencing the exact JSON path and required change>"
+  ],
+  "clarifications": [
+    "<exact quoted phrase from description that is genuinely ambiguous>"
+  ]
+}
+
+Constraints on output fields:
+  If verdict is "yes":                 fixes: [],  clarifications: []
+  If verdict is "retry":               clarifications: []
+  If verdict is "needs_clarification": fixes: []
+
+Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
+
+------------------------------------------------------------
+[22:59:10] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 21,
+  "module_title": "Provisioning",
+  "summary": "Manages provisioning criteria for categorizing overdue loans and generates provisioning journal entries that record calculated provisions per loan product and category.",
+  "where_it_fits": "Located within the Accounting area of the application (accessible from the top navigation Accounting menu and relevant accounting pages in the left sidebar), this module provides both the configuration of provisioning rules and the operational generation/review of provisioning journal entries as part of month-end or provisioning workflows tied to the loan portfolio lifecycle.",
+  "assumed_state_on_entry": "Logged in with accounting/administrative privileges, a populated Chart of Accounts (GL accounts) exists, and the loan portfolio (including overdue loans) is present in the system."
+}
+</module_context>
+
+<description>
+
+The Provisioning Criteria page displays a data table with columns for Criteria Name (clickable link) and Created Date. A "+ Create" button opens the creation form containing Criteria Name (required) and a Definitions table where each row specifies Loan Product, Category (STANDARD, SUB-STANDARD, DOUBTFUL, LOSS), Minimum Age (overdue days), Maximum Age (overdue days), Provisioning Percentage (percentage of outstanding principal), Liability Account (GL account dropdown), and Expense Account (GL account dropdown). Multiple rows can be added to cover different overdue ranges and product combinations.
+
+The Provisioning Entries page lists all generated provisioning journal entries with columns for Entry Date, Journal Entry Created, Created By, and action buttons. A "+ Create Provisioning Entry" button generates new provisioning entries based on the current loan portfolio status and configured criteria; the system calculates the required provision amount for each loan category and creates the corresponding journal entries. Each entry can be reviewed (showing a detailed breakdown by loan product and category) or recreated.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Provisioning",
+  "components": {
+    "Provisioning_Criteria_Table": {
+      "type": "data_table",
+      "row_actions": [
+        {
+          "action_name": "View"
+        }
+      ],
+      "actions": [
+        {
+          "action_name": "+ Create",
+          "type": "button",
+          "on_click": "opens Provisioning_Criteria_Form",
+          "preconditions": [
+            "Logged in with accounting/administrative privileges",
+            "A populated Chart of Accounts (GL accounts) exists",
+            "The loan portfolio (including overdue loans) is present in the system"
+          ]
+        }
+      ]
+    },
+    "Provisioning_Criteria_Form": {
+      "type": "form",
+      "preconditions": [
+        "Logged in with accounting/administrative privileges",
+        "A populated Chart of Accounts (GL accounts) exists",
+        "The loan portfolio (including overdue loans) is present in the system"
+      ],
+      "fields": {
+        "Criteria_Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Definitions": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Loan_Product": {
+              "type": "unspecified"
+            },
+            "Category": {
+              "type": "dropdown",
+              "options": [
+                "STANDARD",
+                "SUB-STANDARD",
+                "DOUBTFUL",
+                "LOSS"
+              ]
+            },
+            "Minimum_Age": {
+              "type": "number",
+              "description": "overdue days"
+            },
+            "Maximum_Age": {
+              "type": "number",
+              "description": "overdue days"
+            },
+            "Provisioning_Percentage": {
+              "type": "number",
+              "description": "percentage of outstanding principal"
+            },
+            "Liability_Account": {
+              "type": "dropdown",
+              "description": "GL account"
+            },
+            "Expense_Account": {
+              "type": "dropdown",
+              "description": "GL account"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Save",
+          "on_success": "creates provisioning criteria"
+        }
+      ]
+    },
+    "Provisioning_Entries_Table": {
+      "type": "data_table",
+      "row_actions": [
+        {
+          "action_name": "Review"
+        },
+        {
+          "action_name": "Recreate"
+        }
+      ],
+      "actions": [
+        {
+          "action_name": "+ Create Provisioning Entry",
+          "type": "button",
+          "on_click": "generates provisioning journal entries based on current loan portfolio and configured criteria",
+          "on_success": "system calculates required provision amounts and creates corresponding journal entries",
+          "preconditions": [
+            "Logged in with accounting/administrative privileges",
+            "A populated Chart of Accounts (GL accounts) exists",
+            "The loan portfolio (including overdue loans) is present in the system"
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:00:40] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "AST is missing explicit action consequences for row actions and the repeating-group add-row control described in the text.",
+  "missing": [
+    {
+      "path": "components.Provisioning_Entries_Table.row_actions[0]",
+      "severity": "critical",
+      "reason": "The description says each provisioning entry can be reviewed and that review shows a detailed breakdown by loan product and category; the 'Review' row action exists but has no on_click/on_success behavior documenting opening the detailed view."
+    },
+    {
+      "path": "components.Provisioning_Entries_Table.row_actions[1]",
+      "severity": "critical",
+      "reason": "The description states entries can be recreated; the 'Recreate' row action exists but lacks on_click/on_success behavior to perform the recreation."
+    },
+    {
+      "path": "components.Provisioning_Criteria_Table.row_actions[0]",
+      "severity": "critical",
+      "reason": "The description specifies Criteria Name is a clickable link (to open the criteria); the AST lists a 'View' row action but does not document its on_click/on_success (e.g., opening the Provisioning_Criteria_Form for review/edit)."
+    },
+    {
+      "path": "components.Provisioning_Criteria_Form.fields.Definitions",
+      "severity": "minor",
+      "reason": "The description explicitly says multiple definition rows can be added; the repeating_group is present but the AST lacks an explicit 'add row'/'remove row' control or a flag indicating multiple rows are supported."
+    }
+  ],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [
+    "components.Provisioning_Entries_Table.row_actions[0]: add an on_click/on_success pair, e.g. \"on_click\": \"opens Provisioning_Entry_Detail_View\", \"on_success\": \"shows detailed breakdown by loan product and category\"",
+    "components.Provisioning_Entries_Table.row_actions[1]: add an on_click/on_success pair, e.g. \"on_click\": \"recreates provisioning entry\", \"on_success\": \"generates provisioning journal entries for the entry and updates the listing\"",
+    "components.Provisioning_Criteria_Table.row_actions[0]: add an on_click/on_success pair, e.g. \"on_click\": \"opens Provisioning_Criteria_Form for edit\", \"on_success\": \"loads selected criteria into Provisioning_Criteria_Form\"",
+    "components.Provisioning_Criteria_Form.fields.Definitions: add explicit repeating-group controls, e.g. add key \"allow_add\": true and/or \"actions\": [{\"action_name\": \"Add Row\", \"type\": \"button\", \"on_click\": \"adds a new Definitions row\"}, {\"action_name\": \"Remove Row\", \"type\": \"row_action\", \"on_click\": \"removes this Definitions row\"}]"
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:00:40] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "retry",
+  "attempt": 1,
+  "summary": "AST is missing explicit action consequences for row actions and the repeating-group add-row control described in the text.",
+  "missing": [
+    {
+      "path": "components.Provisioning_Entries_Table.row_actions[0]",
+      "severity": "critical",
+      "reason": "The description says each provisioning entry can be reviewed and that review shows a detailed breakdown by loan product and category; the 'Review' row action exists but has no on_click/on_success behavior documenting opening the detailed view."
+    },
+    {
+      "path": "components.Provisioning_Entries_Table.row_actions[1]",
+      "severity": "critical",
+      "reason": "The description states entries can be recreated; the 'Recreate' row action exists but lacks on_click/on_success behavior to perform the recreation."
+    },
+    {
+      "path": "components.Provisioning_Criteria_Table.row_actions[0]",
+      "severity": "critical",
+      "reason": "The description specifies Criteria Name is a clickable link (to open the criteria); the AST lists a 'View' row action but does not document its on_click/on_success (e.g., opening the Provisioning_Criteria_Form for review/edit)."
+    },
+    {
+      "path": "components.Provisioning_Criteria_Form.fields.Definitions",
+      "severity": "minor",
+      "reason": "The description explicitly says multiple definition rows can be added; the repeating_group is present but the AST lacks an explicit 'add row'/'remove row' control or a flag indicating multiple rows are supported."
+    }
+  ],
+  "phantoms": [],
+  "structural_errors": [],
+  "fixes": [
+    "components.Provisioning_Entries_Table.row_actions[0]: add an on_click/on_success pair, e.g. \"on_click\": \"opens Provisioning_Entry_Detail_View\", \"on_success\": \"shows detailed breakdown by loan product and category\"",
+    "components.Provisioning_Entries_Table.row_actions[1]: add an on_click/on_success pair, e.g. \"on_click\": \"recreates provisioning entry\", \"on_success\": \"generates provisioning journal entries for the entry and updates the listing\"",
+    "components.Provisioning_Criteria_Table.row_actions[0]: add an on_click/on_success pair, e.g. \"on_click\": \"opens Provisioning_Criteria_Form for edit\", \"on_success\": \"loads selected criteria into Provisioning_Criteria_Form\"",
+    "components.Provisioning_Criteria_Form.fields.Definitions: add explicit repeating-group controls, e.g. add key \"allow_add\": true and/or \"actions\": [{\"action_name\": \"Add Row\", \"type\": \"button\", \"on_click\": \"adds a new Definitions row\"}, {\"action_name\": \"Remove Row\", \"type\": \"row_action\", \"on_click\": \"removes this Definitions row\"}]"
+  ],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:01:52] Structural Model Validator - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 21,
+  "module_title": "Provisioning",
+  "summary": "Manages provisioning criteria for categorizing overdue loans and generates provisioning journal entries that record calculated provisions per loan product and category.",
+  "where_it_fits": "Located within the Accounting area of the application (accessible from the top navigation Accounting menu and relevant accounting pages in the left sidebar), this module provides both the configuration of provisioning rules and the operational generation/review of provisioning journal entries as part of month-end or provisioning workflows tied to the loan portfolio lifecycle.",
+  "assumed_state_on_entry": "Logged in with accounting/administrative privileges, a populated Chart of Accounts (GL accounts) exists, and the loan portfolio (including overdue loans) is present in the system."
+}
+</module_context>
+
+<description>
+
+The Provisioning Criteria page displays a data table with columns for Criteria Name (clickable link) and Created Date. A "+ Create" button opens the creation form containing Criteria Name (required) and a Definitions table where each row specifies Loan Product, Category (STANDARD, SUB-STANDARD, DOUBTFUL, LOSS), Minimum Age (overdue days), Maximum Age (overdue days), Provisioning Percentage (percentage of outstanding principal), Liability Account (GL account dropdown), and Expense Account (GL account dropdown). Multiple rows can be added to cover different overdue ranges and product combinations.
+
+The Provisioning Entries page lists all generated provisioning journal entries with columns for Entry Date, Journal Entry Created, Created By, and action buttons. A "+ Create Provisioning Entry" button generates new provisioning entries based on the current loan portfolio status and configured criteria; the system calculates the required provision amount for each loan category and creates the corresponding journal entries. Each entry can be reviewed (showing a detailed breakdown by loan product and category) or recreated.
+
+---
+
+
+</description>
+
+<ast>
+{
+  "module_name": "Provisioning",
+  "components": {
+    "Provisioning_Criteria_Table": {
+      "type": "data_table",
+      "columns": [
+        "Criteria_Name",
+        "Created_Date"
+      ],
+      "actions": [
+        {
+          "action_name": "+ Create",
+          "type": "button",
+          "on_click": "opens Provisioning_Criteria_Form",
+          "on_success": "opens blank Provisioning_Criteria_Form ready for input"
+        }
+      ],
+      "row_actions": [
+        {
+          "action_name": "Edit",
+          "on_click": "opens Provisioning_Criteria_Form for edit",
+          "on_success": "loads selected criteria into Provisioning_Criteria_Form"
+        }
+      ]
+    },
+    "Provisioning_Criteria_Form": {
+      "type": "form",
+      "fields": {
+        "Criteria_Name": {
+          "type": "unspecified",
+          "required": true
+        },
+        "Definitions": {
+          "type": "repeating_group",
+          "allow_add": true,
+          "actions": [
+            {
+              "action_name": "Add Row",
+              "type": "button",
+              "on_click": "adds a new Definitions row"
+            },
+            {
+              "action_name": "Remove Row",
+              "type": "row_action",
+              "on_click": "removes this Definitions row"
+            }
+          ],
+          "item_fields": {
+            "Loan_Product": {
+              "type": "unspecified"
+            },
+            "Category": {
+              "type": "dropdown",
+              "options": [
+                "STANDARD",
+                "SUB-STANDARD",
+                "DOUBTFUL",
+                "LOSS"
+              ]
+            },
+            "Minimum_Age": {
+              "type": "number"
+            },
+            "Maximum_Age": {
+              "type": "number"
+            },
+            "Provisioning_Percentage": {
+              "type": "number"
+            },
+            "Liability_Account": {
+              "type": "dropdown"
+            },
+            "Expense_Account": {
+              "type": "dropdown"
+            }
+          }
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Create",
+          "on_success": "saves criteria and returns to Provisioning Criteria listing",
+          "preconditions": [
+            "user must be logged in with accounting/administrative privileges"
+          ]
+        }
+      ]
+    },
+    "Provisioning_Entries_Table": {
+      "type": "data_table",
+      "columns": [
+        "Entry_Date",
+        "Journal_Entry_Created",
+        "Created_By"
+      ],
+      "actions": [
+        {
+          "action_name": "+ Create Provisioning Entry",
+          "type": "button",
+          "on_click": "generates new provisioning entries based on current loan portfolio and configured criteria",
+          "on_success": "creates provisioning journal entries and refreshes the entries listing",
+          "preconditions": [
+            "user must be logged in with accounting/administrative privileges",
+            "Chart of Accounts must be present"
+          ]
+        }
+      ],
+      "row_actions": [
+        {
+          "action_name": "Review",
+          "on_click": "opens Provisioning_Entry_Detail_View",
+          "on_success": "shows detailed breakdown by loan product and category"
+        },
+        {
+          "action_name": "Recreate",
+          "on_click": "recreates provisioning entry",
+          "on_success": "generates provisioning journal entries for the entry and updates the listing"
+        }
+      ]
+    },
+    "Provisioning_Entry_Detail_View": {
+      "type": "detail_view",
+      "fields": {}
+    }
+  }
+}
+</ast>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[23:02:20] Structural Model Validator - LLM RESPONSE
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "AST accurately captures the interactive elements described; only a couple of minor, unsurprising actions are present that have no explicit textual anchor.",
+  "missing": [],
+  "phantoms": [
+    {
+      "path": "components.Provisioning_Criteria_Table.row_actions.Edit",
+      "severity": "minor",
+      "reason": "The description states the Criteria Name is a clickable link (to open the criteria) but does not explicitly name an 'Edit' row action; an Edit action is a reasonable inferred interaction but is not textually anchored."
+    },
+    {
+      "path": "components.Provisioning_Criteria_Form.fields.Definitions.actions.[1]",
+      "severity": "minor",
+      "reason": "The AST includes a 'Remove Row' row_action for Definitions rows; the description mentions adding multiple rows but does not explicitly state a remove/delete action. Removal is a plausible inferred action but is not explicitly described."
+    }
+  ],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}
+
+------------------------------------------------------------
+[23:02:20] Structural Model Validator - PARSED JSON
+------------------------------------------------------------
+{
+  "verdict": "yes",
+  "attempt": 2,
+  "summary": "AST accurately captures the interactive elements described; only a couple of minor, unsurprising actions are present that have no explicit textual anchor.",
+  "missing": [],
+  "phantoms": [
+    {
+      "path": "components.Provisioning_Criteria_Table.row_actions.Edit",
+      "severity": "minor",
+      "reason": "The description states the Criteria Name is a clickable link (to open the criteria) but does not explicitly name an 'Edit' row action; an Edit action is a reasonable inferred interaction but is not textually anchored."
+    },
+    {
+      "path": "components.Provisioning_Criteria_Form.fields.Definitions.actions.[1]",
+      "severity": "minor",
+      "reason": "The AST includes a 'Remove Row' row_action for Definitions rows; the description mentions adding multiple rows but does not explicitly state a remove/delete action. Removal is a plausible inferred action but is not explicitly described."
+    }
+  ],
+  "structural_errors": [],
+  "fixes": [],
+  "clarifications": []
+}

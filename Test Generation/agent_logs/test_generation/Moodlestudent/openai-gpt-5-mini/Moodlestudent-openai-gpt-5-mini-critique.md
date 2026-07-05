@@ -1,13 +1,13 @@
 # Structural Model Critique — Moodlestudent
 
-Generated: 2026-07-04T15:14:26.537266Z
+Generated: 2026-07-04T16:43:47.207188Z
 
 ## Login
 
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST accurately captures all interactive elements and their behaviors described for the login page; no critical issues found.
+The AST includes all expected interactive elements (Username, Password, Log in, Lost password? link disabled, Access as a guest, Cookies notice) and captures the described success/failure behaviors and preconditions.
 
 **Missing:** none
 
@@ -20,7 +20,7 @@ AST accurately captures all interactive elements and their behaviors described f
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST includes all interactive elements and conditionals described (timeline controls, calendar filters/navigation/links, edit-mode controls, and the block chooser page) with no structural errors.
+AST includes all interactive elements and conditionals described (timeline controls, calendar controls, edit-mode toggle and edit-only controls, block menus and move icons, and links), with no critical omissions or phantoms.
 
 **Missing:** none
 
@@ -33,7 +33,7 @@ The AST includes all interactive elements and conditionals described (timeline c
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST matches the described interactive elements (filters, search, sort, layout, course link navigation, per-card menu actions) and precondition; no critical issues found.
+The AST includes all interactive controls (status dropdown with correct options, search, sort, layout), the clickable course name navigation, and the two three-dot menu actions; there are no missing interactive elements, phantoms, or structural errors.
 
 **Missing:** none
 
@@ -46,7 +46,7 @@ AST matches the described interactive elements (filters, search, sort, layout, c
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST accurately captures the interactive elements described (tab navigation, collapsible sections with per-section toggle, a 'Collapse all' link, and clickable activity links) with no critical omissions or phantoms.
+AST accurately captures the interactive elements described (tab bar, Collapse all link, collapsible section toggles and clickable activity names) with no critical omissions or phantoms.
 
 **Missing:** none
 
@@ -59,7 +59,7 @@ The AST accurately captures the interactive elements described (tab navigation, 
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST covers the interactive filters, alphabetical controls, and table interactions described; no critical elements are missing and no phantoms or structural errors found.
+The AST accurately represents the interactive elements described (filter builder with Any toggle, attribute select, add condition, clear/apply buttons; alphabetical first/last filters; searchable/selectable participants table with sortable name columns and profile link; instructor-only enrolment actions) and contains no critical missing items or structural errors.
 
 **Missing:** none
 
@@ -72,7 +72,7 @@ AST covers the interactive filters, alphabetical controls, and table interaction
 **Verdict:** yes  
 **Forced ship:** no  
 
-AST matches the description: a student-scoped data table with a collapsible course header is present and preconditions reflect the student/course context; no required interactive elements are missing.
+The AST captures the single interactive element (collapsible course header showing indented graded activities) and includes the student precondition; no required interactive elements are missing and there are no phantoms or structural errors.
 
 **Missing:** none
 
@@ -85,7 +85,7 @@ AST matches the description: a student-scoped data table with a collapsible cour
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST correctly models the Add submission flow, the conditional submission form fields, the Submit action, and the state-bound actions (View/Edit submission, Graded) with the described preconditions; no missing or phantom interactive elements were found.
+The AST includes the submission form (text and file inputs with configuration-driven visibility), submit action, and state-bound action bar with Add/View/Edit actions and appropriate preconditions/visibility — matching the described interactive elements.
 
 **Missing:** none
 
@@ -98,7 +98,7 @@ The AST correctly models the Add submission flow, the conditional submission for
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST accurately captures the described interactive elements: Assignments table with clickable Name link, Forums and Resources collapsed with arrow toggles, and additional collapsible activity sections; no critical issues found.
+AST matches the described interactive elements (accordion sections, default expand/collapse states, tables with clickable Name column, and navigation behavior) and contains no critical missing items or structural errors.
 
 **Missing:** none
 
@@ -111,7 +111,7 @@ The AST accurately captures the described interactive elements: Assignments tabl
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST correctly captures all interactive elements and preconditions described (message button, Edit profile link, form with collapsible panels and submit actions); passive display-only items were appropriately omitted.
+The AST includes all interactive elements described (Message button, Edit profile link and form with collapsible panels and fields, course and misc links, report links, submit actions with validation and cancel) and contains no structural errors or critical phantoms.
 
 **Missing:** none
 
@@ -124,7 +124,7 @@ The AST correctly captures all interactive elements and preconditions described 
 **Verdict:** yes  
 **Forced ship:** no  
 
-The AST correctly models the single interactive 'Log out' menu item with its precondition and on_success consequence; no missing or phantom elements were found.
+The AST correctly represents the interactive elements described: a user menu dropdown accessible from the initials icon with a Log out button that has the stated precondition and on_success consequence.
 
 **Missing:** none
 

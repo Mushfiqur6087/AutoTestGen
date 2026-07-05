@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:14.003092
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.230874
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:14] Test-Edge - SYSTEM PROMPT
+[22:33:07] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:14] Test-Edge - USER PROMPT
+[22:33:07] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 17,
   "module_title": "Currency & Language Selection",
-  "summary": "Selection controls for currency and language that update displayed prices and the site interface in real-time and persist preferences to the user profile or session/cookies.",
-  "where_it_fits": "Located in the top navigation bar (right side) and available across the Home, Search, and all section pages; it ties into the Home Page & Search and all booking/listing modules so prices, labels, and content reflect the chosen currency and language throughout the user journey.",
-  "assumed_state_on_entry": "A site page is loaded with the top navigation visible; user is either authenticated (profile available) or a guest with session/cookie support enabled."
+  "summary": "Provides site-wide currency and language preferences that update prices and interface text in real-time and persist to the user profile or session/cookies.",
+  "where_it_fits": "Presented in the top navigation bar as currency and language selectors and available across all primary sections (Home, Hotels, Flights, Tours, Cars, Offers, Blog, Account), affecting search widgets, listings, details, booking flows and the user dashboard. Selections take effect immediately across the site and are applied for the duration of the session or saved to the authenticated user's profile.",
+  "assumed_state_on_entry": "User is browsing the site with an active session on any page; if authenticated, the user account is available for preference persistence, otherwise session/cookies are available to store preferences."
 }
 </module_context>
 
@@ -241,36 +255,30 @@ If a `<workflows>` block is present in the input:
 
 <ast>
 {
+  "module_id": 17,
   "module_name": "Currency & Language Selection",
   "components": {
-    "Top_Nav_Selectors": {
+    "Top_Nav_Preferences": {
       "type": "control_group",
       "preconditions": [
-        "A site page is loaded with the top navigation visible; user is either authenticated (profile available) or a guest with session/cookie support enabled."
+        "User has an active session; if authenticated, the user account is available for preference persistence, otherwise session/cookies are available"
       ],
       "fields": {
         "Currency_Selector": {
-          "type": "unspecified",
+          "type": "dropdown",
           "constraints": [
-            "updates displayed prices in real-time",
-            "retains current search context when changed"
+            "must preserve current search context (do not reset filters, search queries, or navigation state) when updating currency"
           ],
-          "on_change_actions": [
-            {
-              "action_name": "Persist Preference to Profile",
-              "preconditions": [
-                "user is authenticated"
-              ],
-              "on_success": "preference saved to user profile"
-            },
-            {
-              "action_name": "Persist Preference to Session/Cookie",
-              "preconditions": [
-                "user is not authenticated"
-              ],
-              "on_success": "preference saved to session/cookie for current browsing session"
+          "on_change": {
+            "apply_immediately": true,
+            "effects": [
+              "update all displayed prices across the site in real-time"
+            ],
+            "persistence": {
+              "when_authenticated": "save to user profile",
+              "when_unauthenticated": "store in session/cookie"
             }
-          ]
+          }
         },
         "Language_Selector": {
           "type": "dropdown",
@@ -280,29 +288,16 @@ If a `<workflows>` block is present in the input:
             "Spanish",
             "French"
           ],
-          "constraints": [
-            "switches entire site interface (navigation labels, form labels, and content) to the chosen language in real-time"
-          ],
-          "on_change_actions": [
-            {
-              "action_name": "Apply Language Change",
-              "on_success": "site interface updates to selected language immediately"
-            },
-            {
-              "action_name": "Persist Preference to Profile",
-              "preconditions": [
-                "user is authenticated"
-              ],
-              "on_success": "preference saved to user profile"
-            },
-            {
-              "action_name": "Persist Preference to Session/Cookie",
-              "preconditions": [
-                "user is not authenticated"
-              ],
-              "on_success": "preference saved to session/cookie for current browsing session"
+          "on_change": {
+            "apply_immediately": true,
+            "effects": [
+              "switch entire site interface including navigation labels, form labels, and content to the selected language"
+            ],
+            "persistence": {
+              "when_authenticated": "save to user profile",
+              "when_unauthenticated": "store in session/cookie"
             }
-          ]
+          }
         }
       }
     }
@@ -320,18 +315,14 @@ The currency selector updates all prices displayed across the site in real-time 
 </description>
 
 <workflows>
-WF-001 | Change currency — persist to user profile (authenticated) | actor: Authenticated User | branch: user is authenticated | terminal: Persist Preference to Profile | on_success: preference saved to user profile
-WF-002 | Change currency — persist to session/cookie (unauthenticated) | actor: Unauthenticated User | branch: user is not authenticated | terminal: Persist Preference to Session/Cookie | on_success: preference saved to session/cookie for current browsing session
-WF-003 | Change language — apply change (authenticated) | actor: Authenticated User | branch: user is authenticated | terminal: Apply Language Change | on_success: site interface updates to selected language immediately
-WF-004 | Change language — persist to user profile (authenticated) | actor: Authenticated User | branch: user is authenticated | terminal: Persist Preference to Profile | on_success: preference saved to user profile
-WF-005 | Change language — apply change (unauthenticated) | actor: Unauthenticated User | branch: user is not authenticated | terminal: Apply Language Change | on_success: site interface updates to selected language immediately
-WF-006 | Change language — persist to session/cookie (unauthenticated) | actor: Unauthenticated User | branch: user is not authenticated | terminal: Persist Preference to Session/Cookie | on_success: preference saved to session/cookie for current browsing session
+WF-001 | Change currency (preserve search context) | actor: <role> | branch: none | terminal: Currency_Selector | on_success: Apply immediately: update all displayed prices across the site in real-time while preserving the current search context (do not reset filters, search queries, or navigation state). If authenticated: save to user profile; otherwise: store in session/cookie.
+WF-002 | Change language (switch site interface) | actor: <role> | branch: none | terminal: Language_Selector | on_success: Apply immediately: switch entire site interface including navigation labels, form labels, and content to the selected language. If authenticated: save to user profile; otherwise: store in session/cookie.
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:28:05] Test-Edge - LLM RESPONSE
+[22:36:32] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Currency & Language Selection",
@@ -339,108 +330,87 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid alternating currency selections — final selection applied without mixed prices",
+      "test_case": "Change currency while on a filtered, paginated search results page preserves search context",
       "preconditions": [
-        "A site page is loaded with the top navigation visible and price elements rendered",
-        "User is either authenticated or unauthenticated (does not matter for this test)"
+        "User has an active session (authenticated or unauthenticated)",
+        "User is on a search results page with at least one filter applied and the results pagination set to a page that is not the first page"
       ],
       "steps": [
-        "1. Click the Currency selector in the top navigation",
-        "2. Select a different currency (Currency B)",
-        "3. Within one second, open the Currency selector again",
-        "4. Select a different currency (Currency C)",
-        "5. Observe the price display elements across the page"
+        "1. Observe and note the currently selected currency and one visible price on the page",
+        "2. Verify at least one filter chip is selected and the pagination control shows a page number > 1",
+        "3. Open the Currency_Selector dropdown in the top navigation",
+        "4. Select a different currency from the dropdown"
       ],
-      "expected_result": "Interaction succeeds: after the rapid toggles the UI shows prices only in the final selected currency (Currency C) across all visible price elements; there are no visible mixed-currency labels or stale price elements left in the previous currency.",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-002",
-      "wf_ref": null,
-      "subcategory": "boundary",
-      "test_case": "Change currency on a search results page with filters/pagination — search context retained",
-      "preconditions": [
-        "A site Search results page is loaded with active filters, a non-first results page (pagination), and visible price values"
-      ],
-      "steps": [
-        "1. On the Search results page, note the active filters and current pagination page",
-        "2. Click the Currency selector in the top navigation",
-        "3. Select a different currency",
-        "4. Observe the Search results page state (filters, sorting, pagination) and the displayed prices"
-      ],
-      "expected_result": "Currency change succeeds: the Search page retains the same filters, sorting and pagination state exactly as before; only the displayed prices update to the newly selected currency (no change to the search context is visible).",
+      "expected_result": "Succeeds — prices visible on the page update immediately to the newly selected currency (visible price values change formatting/amount), the applied filter chips remain selected and visible, and the pagination control remains on the same page number (no reset to first page or removal of filters).",
       "priority": "medium"
     },
     {
-      "tc_id": "E-003",
-      "wf_ref": "WF-004",
-      "subcategory": "boundary",
-      "test_case": "Authenticated user selects Arabic — immediate RTL interface update and preference persisted to profile",
+      "tc_id": "E-002",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Selecting the already-active currency is a no-op with no visible reload",
       "preconditions": [
-        "User is authenticated and signed in",
-        "A site page is loaded with the top navigation visible"
+        "User has an active session on any page",
+        "A currency is already selected and shown in the top navigation"
       ],
       "steps": [
-        "1. Click the Language selector in the top navigation",
-        "2. Select 'Arabic' from the Language dropdown",
-        "3. Observe the site interface (navigation labels, form labels, and content) update",
-        "4. Open the user Profile / Preferences page"
+        "1. Note the currently displayed selected currency in the Currency_Selector",
+        "2. Open the Currency_Selector dropdown",
+        "3. Select the same currency value that is currently active"
       ],
-      "expected_result": "Language change succeeds: the site interface updates immediately to Arabic including RTL layout (navigation and form labels are rendered in Arabic and layout flips to right-to-left); the user's profile preferences page shows the language preference stored as 'Arabic' indicating the preference was persisted to the user profile.",
+      "expected_result": "Succeeds — the UI remains on the same page without a visible full-page reload or navigation; displayed prices and the selected currency indicator remain unchanged (no visible fluctuation or reset of search/context state).",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-003",
+      "wf_ref": "WF-002",
+      "subcategory": "data_edge",
+      "test_case": "Switch to Arabic language (RTL) on a content-heavy page and verify interface flip and preserved context",
+      "preconditions": [
+        "User has an active session on a page with navigation labels, form labels, and content (for example a search results or listing page) and visible UI controls such as filters and pagination"
+      ],
+      "steps": [
+        "1. Open the Language_Selector dropdown in the top navigation",
+        "2. Select 'Arabic' from the Language_Selector"
+      ],
+      "expected_result": "Succeeds — the entire visible interface switches to Arabic and the page layout direction visibly changes to right-to-left (text alignment and navigation placement flip); navigation labels, form labels and other interface text become Arabic where translations exist. Visible user context (applied filters, search query, and pagination state) remains unchanged and visible in the interface after the language switch.",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-002",
-      "subcategory": "state_edge",
-      "test_case": "Unauthenticated user changes currency — preference persists across tabs in same session via cookie/session",
+      "subcategory": "interaction_edge",
+      "test_case": "Authenticated language selection persists to the user's profile preferences and is shown in Account preferences UI",
       "preconditions": [
-        "User is not authenticated (guest) and session/cookie support is enabled",
-        "A site page is loaded with the top navigation visible"
+        "User is authenticated and on any page with an active session",
+        "Account/Preferences page is available to the user"
       ],
       "steps": [
-        "1. Click the Currency selector in the top navigation",
-        "2. Select a different currency while still unauthenticated",
-        "3. Open a new browser tab and navigate to the site Home page within the same browser session",
-        "4. Observe the currency used to display prices on the Home page"
+        "1. Open the Language_Selector dropdown in the top navigation",
+        "2. Select a language different from the current site language",
+        "3. Navigate to the Account or Preferences page from the top navigation",
+        "4. Observe the language preference shown on the Account/Preferences page"
       ],
-      "expected_result": "Preference persistence succeeds: the currency selection made as an unauthenticated user is applied in the new tab (prices display in the selected currency), showing the preference was stored in session/cookie for the current browsing session.",
+      "expected_result": "Succeeds — the Account/Preferences page visibly shows the newly selected language as the saved preference (the preference UI displays the chosen language) and the site continues to display the chosen language across pages.",
       "priority": "medium"
-    },
-    {
-      "tc_id": "E-005",
-      "wf_ref": "WF-003",
-      "subcategory": "input_edge",
-      "test_case": "Select a language with accented characters (French) — interface displays accented characters correctly",
-      "preconditions": [
-        "A site page is loaded with the top navigation visible",
-        "User is authenticated or unauthenticated (both paths should be covered separately if needed)"
-      ],
-      "steps": [
-        "1. Click the Language selector in the top navigation",
-        "2. Select 'French' from the Language dropdown",
-        "3. Observe navigation labels, form labels and content that contain accented characters"
-      ],
-      "expected_result": "Language change succeeds: UI text elements that include accented characters display correctly (no replacement characters or mojibake) and navigation/form labels render the expected accented characters; for authenticated users the preference is also saved to the profile per workflow.",
-      "priority": "low"
     }
   ],
   "summary": {
-    "total": 5,
-    "boundary": 3,
-    "input_edge": 1,
-    "interaction_edge": 1,
-    "state_edge": 1,
-    "data_edge": 0,
+    "total": 4,
+    "boundary": 0,
+    "input_edge": 0,
+    "interaction_edge": 3,
+    "state_edge": 0,
+    "data_edge": 1,
     "medium_priority": 3,
-    "low_priority": 2
+    "low_priority": 1
   }
 }
 
 ------------------------------------------------------------
-[21:28:05] Test-Edge - PARSED JSON
+[22:36:32] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Currency & Language Selection",
@@ -448,102 +418,81 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "E-001",
-      "wf_ref": null,
+      "wf_ref": "WF-001",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid alternating currency selections \u2014 final selection applied without mixed prices",
+      "test_case": "Change currency while on a filtered, paginated search results page preserves search context",
       "preconditions": [
-        "A site page is loaded with the top navigation visible and price elements rendered",
-        "User is either authenticated or unauthenticated (does not matter for this test)"
+        "User has an active session (authenticated or unauthenticated)",
+        "User is on a search results page with at least one filter applied and the results pagination set to a page that is not the first page"
       ],
       "steps": [
-        "1. Click the Currency selector in the top navigation",
-        "2. Select a different currency (Currency B)",
-        "3. Within one second, open the Currency selector again",
-        "4. Select a different currency (Currency C)",
-        "5. Observe the price display elements across the page"
+        "1. Observe and note the currently selected currency and one visible price on the page",
+        "2. Verify at least one filter chip is selected and the pagination control shows a page number > 1",
+        "3. Open the Currency_Selector dropdown in the top navigation",
+        "4. Select a different currency from the dropdown"
       ],
-      "expected_result": "Interaction succeeds: after the rapid toggles the UI shows prices only in the final selected currency (Currency C) across all visible price elements; there are no visible mixed-currency labels or stale price elements left in the previous currency.",
-      "priority": "low"
-    },
-    {
-      "tc_id": "E-002",
-      "wf_ref": null,
-      "subcategory": "boundary",
-      "test_case": "Change currency on a search results page with filters/pagination \u2014 search context retained",
-      "preconditions": [
-        "A site Search results page is loaded with active filters, a non-first results page (pagination), and visible price values"
-      ],
-      "steps": [
-        "1. On the Search results page, note the active filters and current pagination page",
-        "2. Click the Currency selector in the top navigation",
-        "3. Select a different currency",
-        "4. Observe the Search results page state (filters, sorting, pagination) and the displayed prices"
-      ],
-      "expected_result": "Currency change succeeds: the Search page retains the same filters, sorting and pagination state exactly as before; only the displayed prices update to the newly selected currency (no change to the search context is visible).",
+      "expected_result": "Succeeds \u2014 prices visible on the page update immediately to the newly selected currency (visible price values change formatting/amount), the applied filter chips remain selected and visible, and the pagination control remains on the same page number (no reset to first page or removal of filters).",
       "priority": "medium"
     },
     {
-      "tc_id": "E-003",
-      "wf_ref": "WF-004",
-      "subcategory": "boundary",
-      "test_case": "Authenticated user selects Arabic \u2014 immediate RTL interface update and preference persisted to profile",
+      "tc_id": "E-002",
+      "wf_ref": "WF-001",
+      "subcategory": "interaction_edge",
+      "test_case": "Selecting the already-active currency is a no-op with no visible reload",
       "preconditions": [
-        "User is authenticated and signed in",
-        "A site page is loaded with the top navigation visible"
+        "User has an active session on any page",
+        "A currency is already selected and shown in the top navigation"
       ],
       "steps": [
-        "1. Click the Language selector in the top navigation",
-        "2. Select 'Arabic' from the Language dropdown",
-        "3. Observe the site interface (navigation labels, form labels, and content) update",
-        "4. Open the user Profile / Preferences page"
+        "1. Note the currently displayed selected currency in the Currency_Selector",
+        "2. Open the Currency_Selector dropdown",
+        "3. Select the same currency value that is currently active"
       ],
-      "expected_result": "Language change succeeds: the site interface updates immediately to Arabic including RTL layout (navigation and form labels are rendered in Arabic and layout flips to right-to-left); the user's profile preferences page shows the language preference stored as 'Arabic' indicating the preference was persisted to the user profile.",
+      "expected_result": "Succeeds \u2014 the UI remains on the same page without a visible full-page reload or navigation; displayed prices and the selected currency indicator remain unchanged (no visible fluctuation or reset of search/context state).",
+      "priority": "low"
+    },
+    {
+      "tc_id": "E-003",
+      "wf_ref": "WF-002",
+      "subcategory": "data_edge",
+      "test_case": "Switch to Arabic language (RTL) on a content-heavy page and verify interface flip and preserved context",
+      "preconditions": [
+        "User has an active session on a page with navigation labels, form labels, and content (for example a search results or listing page) and visible UI controls such as filters and pagination"
+      ],
+      "steps": [
+        "1. Open the Language_Selector dropdown in the top navigation",
+        "2. Select 'Arabic' from the Language_Selector"
+      ],
+      "expected_result": "Succeeds \u2014 the entire visible interface switches to Arabic and the page layout direction visibly changes to right-to-left (text alignment and navigation placement flip); navigation labels, form labels and other interface text become Arabic where translations exist. Visible user context (applied filters, search query, and pagination state) remains unchanged and visible in the interface after the language switch.",
       "priority": "medium"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-002",
-      "subcategory": "state_edge",
-      "test_case": "Unauthenticated user changes currency \u2014 preference persists across tabs in same session via cookie/session",
+      "subcategory": "interaction_edge",
+      "test_case": "Authenticated language selection persists to the user's profile preferences and is shown in Account preferences UI",
       "preconditions": [
-        "User is not authenticated (guest) and session/cookie support is enabled",
-        "A site page is loaded with the top navigation visible"
+        "User is authenticated and on any page with an active session",
+        "Account/Preferences page is available to the user"
       ],
       "steps": [
-        "1. Click the Currency selector in the top navigation",
-        "2. Select a different currency while still unauthenticated",
-        "3. Open a new browser tab and navigate to the site Home page within the same browser session",
-        "4. Observe the currency used to display prices on the Home page"
+        "1. Open the Language_Selector dropdown in the top navigation",
+        "2. Select a language different from the current site language",
+        "3. Navigate to the Account or Preferences page from the top navigation",
+        "4. Observe the language preference shown on the Account/Preferences page"
       ],
-      "expected_result": "Preference persistence succeeds: the currency selection made as an unauthenticated user is applied in the new tab (prices display in the selected currency), showing the preference was stored in session/cookie for the current browsing session.",
+      "expected_result": "Succeeds \u2014 the Account/Preferences page visibly shows the newly selected language as the saved preference (the preference UI displays the chosen language) and the site continues to display the chosen language across pages.",
       "priority": "medium"
-    },
-    {
-      "tc_id": "E-005",
-      "wf_ref": "WF-003",
-      "subcategory": "input_edge",
-      "test_case": "Select a language with accented characters (French) \u2014 interface displays accented characters correctly",
-      "preconditions": [
-        "A site page is loaded with the top navigation visible",
-        "User is authenticated or unauthenticated (both paths should be covered separately if needed)"
-      ],
-      "steps": [
-        "1. Click the Language selector in the top navigation",
-        "2. Select 'French' from the Language dropdown",
-        "3. Observe navigation labels, form labels and content that contain accented characters"
-      ],
-      "expected_result": "Language change succeeds: UI text elements that include accented characters display correctly (no replacement characters or mojibake) and navigation/form labels render the expected accented characters; for authenticated users the preference is also saved to the profile per workflow.",
-      "priority": "low"
     }
   ],
   "summary": {
-    "total": 5,
-    "boundary": 3,
-    "input_edge": 1,
-    "interaction_edge": 1,
-    "state_edge": 1,
-    "data_edge": 0,
+    "total": 4,
+    "boundary": 0,
+    "input_edge": 0,
+    "interaction_edge": 3,
+    "state_edge": 0,
+    "data_edge": 1,
     "medium_priority": 3,
-    "low_priority": 2
+    "low_priority": 1
   }
 }

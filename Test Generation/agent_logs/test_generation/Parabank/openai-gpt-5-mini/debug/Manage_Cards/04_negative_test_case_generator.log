@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:02:39.098089
+DEBUG SESSION STARTED: 2026-07-04T22:22:17.282451
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Negative - SYSTEM PROMPT
+[22:22:17] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:02:39] Test-Negative - USER PROMPT
+[22:22:17] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 9,
   "module_title": "Manage Cards",
-  "summary": "Provides card issuance requests and card-control settings so customers can request new debit or credit cards and update spending limits, travel notices, and card status.",
-  "where_it_fits": "Accessible from the left-hand navigation after successful log-in via the \"Manage Cards\" menu option, this module is part of post-login account management functionality alongside Accounts Overview, Open New Account, Transfer Funds, and other account services. It is used during the account lifecycle when customers need to request new cards or manage existing card controls.",
-  "assumed_state_on_entry": "Authenticated customer session with at least one existing account eligible for card linkage"
+  "summary": "Provides customers the ability to request new debit or credit cards and to modify controls on existing cards such as spending limits, travel notices, and card status.",
+  "where_it_fits": "Accessible from the left-hand navigation as Manage Cards after a successful sign-in and landing on the account dashboard (left menu item \u2466 Manage Cards). It is part of post-login account management alongside options like Accounts Overview and Security Settings for managing payment instruments and related controls.",
+  "assumed_state_on_entry": "Authenticated customer session with at least one active account; existing card(s) present if the user intends to update controls."
 }
 </module_context>
 
@@ -268,16 +278,18 @@ If a `<workflows>` block is present in the input:
           "options": [
             "Debit",
             "Credit"
-          ]
+          ],
+          "required": true
         },
         "Account_To_Link": {
-          "type": "unspecified"
+          "type": "unspecified",
+          "required": true
         },
         "Shipping_Address": {
           "type": "unspecified",
           "required": true,
           "constraints": [
-            "must be complete"
+            "address must be complete"
           ]
         }
       },
@@ -285,13 +297,14 @@ If a `<workflows>` block is present in the input:
         {
           "action_name": "Request Card",
           "preconditions": [
-            "Authenticated customer session with at least one existing account eligible for card linkage"
+            "Authenticated customer session with at least one active account"
           ],
-          "constraints": [
-            "verifies selected account's standing"
+          "side_effects": [
+            "verify_account_standing",
+            "open_card_request_ticket"
           ],
-          "on_success": "Opens a card-request ticket; Card request submitted successfully. Returns tracking ID.",
-          "on_failure": "Shows validation errors; form remains editable."
+          "on_success": "Card request submitted successfully. Opens card-request ticket and returns tracking ID.",
+          "on_failure": "Shows inline validation errors; form remains editable."
         }
       ]
     },
@@ -309,13 +322,16 @@ If a `<workflows>` block is present in the input:
           ]
         },
         "Travel_Notice": {
-          "type": "unspecified",
+          "type": "group",
           "fields": {
             "Start_Date": {
               "type": "date"
             },
             "End_Date": {
-              "type": "date"
+              "type": "date",
+              "constraints": [
+                "must be on or after Start_Date"
+              ]
             },
             "Destinations": {
               "type": "repeating_group",
@@ -325,10 +341,7 @@ If a `<workflows>` block is present in the input:
                 }
               }
             }
-          },
-          "constraints": [
-            "End_Date must be the same as or after Start_Date"
-          ]
+          }
         },
         "Card_Status": {
           "type": "dropdown",
@@ -337,7 +350,7 @@ If a `<workflows>` block is present in the input:
             "Frozen"
           ],
           "constraints": [
-            "must follow allowable card-status transitions"
+            "transitions must be allowable per policy"
           ]
         }
       },
@@ -345,15 +358,15 @@ If a `<workflows>` block is present in the input:
         {
           "action_name": "Update Controls",
           "preconditions": [
-            "Authenticated customer session with at least one existing account eligible for card linkage"
+            "Authenticated customer session with at least one active account; existing card(s) present if the user intends to update controls."
           ],
           "constraints": [
-            "validates numeric limits",
-            "validates date ranges",
-            "validates allowable card-status transitions"
+            "validate numeric limits (New_Spending_Limit) and surface inline errors",
+            "validate date ranges in Travel_Notice (Start_Date/End_Date)",
+            "enforce allowable card-status transitions"
           ],
           "on_success": "Card controls updated successfully.",
-          "on_failure": "Shows inline validation errors; form remains editable."
+          "on_failure": "Validation failures appear inline; form remains editable."
         }
       ]
     }
@@ -368,15 +381,14 @@ The Manage Cards page contains two separate forms presented in stacked cards.The
 </description>
 
 <workflows>
-WF-001 | Request new card | actor: Authenticated Customer | branch: none | terminal: Request Card | on_success: Opens a card-request ticket; Card request submitted successfully. Returns tracking ID.
-WF-002 | Update card controls (no travel notice) | actor: Authenticated Customer | branch: Travel_Notice == Not_Provided | terminal: Update Controls | on_success: Card controls updated successfully.
-WF-003 | Update card controls (with travel notice) | actor: Authenticated Customer | branch: Travel_Notice == Provided | terminal: Update Controls | on_success: Card controls updated successfully.
+WF-001 | Request new card | actor: Authenticated customer | branch: none | terminal: Request Card | on_success: Card request submitted successfully. Opens card-request ticket and returns tracking ID.
+WF-002 | Update card controls | actor: Authenticated customer | branch: none | terminal: Update Controls | on_success: Card controls updated successfully.
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:04:51] Test-Negative - LLM RESPONSE
+[22:24:22] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Manage Cards",
@@ -384,148 +396,183 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": "WF-001",
-      "test_case": "Request Card — leave required Shipping Address blank",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user cannot access Manage Cards page",
       "preconditions": [
-        "Authenticated customer session with at least one existing account eligible for card linkage"
+        "User is not signed in"
       ],
       "steps": [
-        "1. Log in as an authenticated customer with an eligible account",
-        "2. Navigate to Manage Cards",
-        "3. In the Card Request form, select <Account to link>",
-        "4. Leave the Shipping Address field blank",
-        "5. Click the 'Request Card' button"
+        "1. In a browser with no authenticated session, navigate to the Manage Cards page URL",
+        "2. Observe the page load / redirect behavior"
       ],
-      "expected_result": "Shipping Address field displays an inline validation error: 'Shipping address must be complete' (or equivalent); the form remains editable; no card-request ticket is opened; no tracking ID is returned",
+      "expected_result": "Access is blocked: user is redirected to the login page or shown an access denied screen; Manage Cards UI is not displayed and no card-request or card-controls actions are available",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Request Card — submit with all required fields empty",
+      "test_case": "Request Card — required dropdown (Card Type) left blank",
       "preconditions": [
-        "Authenticated customer session with at least one existing account eligible for card linkage"
+        "Authenticated customer session with at least one active account"
       ],
       "steps": [
-        "1. Log in as an authenticated customer with an eligible account",
+        "1. Sign in as an authenticated customer",
         "2. Navigate to Manage Cards",
-        "3. Leave all required fields in the Card Request form empty (e.g., Shipping Address)",
-        "4. Click the 'Request Card' button"
+        "3. In the Card Request form, leave the Card_Type field blank",
+        "4. Enter <valid account selection> in Account_To_Link",
+        "5. Enter <complete shipping address> in Shipping_Address",
+        "6. Click the Request Card button"
       ],
-      "expected_result": "Shipping Address field (the required field) displays an inline validation error: 'Shipping address must be complete'; the form does not submit; no card-request ticket is opened and no tracking ID is returned",
+      "expected_result": "Inline validation error appears on the Card_Type field indicating it is required; the form does not submit, the page remains on the Card Request form (no tracking ID or success message is shown) and the form remains editable",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Request Card — selected account is not in good standing (account-standing constraint)",
+      "test_case": "Request Card — required unspecified field (Account to Link) left blank",
       "preconditions": [
-        "Authenticated customer session",
-        "Selected account exists but is not in good standing for card issuance (e.g., closed or otherwise ineligible)"
+        "Authenticated customer session with at least one active account"
       ],
       "steps": [
-        "1. Log in as an authenticated customer",
+        "1. Sign in as an authenticated customer",
         "2. Navigate to Manage Cards",
-        "3. In the Card Request form, select <Account to link> that is not in good standing",
-        "4. Enter a complete Shipping Address in the Shipping Address field",
-        "5. Click the 'Request Card' button"
+        "3. In the Card Request form, leave the Account_To_Link field blank",
+        "4. Select Debit or Credit in Card_Type",
+        "5. Enter <complete shipping address> in Shipping_Address",
+        "6. Click the Request Card button"
       ],
-      "expected_result": "An inline validation error appears on the Account_To_Link field stating the selected account is not eligible for card linkage (e.g., 'Selected account is not eligible for card linkage'); the form remains editable; no card-request ticket is opened and no tracking ID is returned",
+      "expected_result": "Inline validation error appears on the Account_To_Link field indicating it is required; the form does not submit, no card-request ticket/tracking ID is shown, and the form remains editable",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": null,
-      "test_case": "Access Manage Cards while unauthenticated",
+      "wf_ref": "WF-001",
+      "test_case": "Request Card — submit with all required fields empty",
       "preconditions": [
-        "User is not authenticated (no active session)"
+        "Authenticated customer session with at least one active account"
       ],
       "steps": [
-        "1. In a browser with no active login session, navigate to the Manage Cards page URL"
+        "1. Sign in as an authenticated customer",
+        "2. Navigate to Manage Cards",
+        "3. In the Card Request form, leave Card_Type blank",
+        "4. Leave Account_To_Link blank",
+        "5. Leave Shipping_Address blank",
+        "6. Click the Request Card button"
       ],
-      "expected_result": "User is redirected to the login page (access to Manage Cards is blocked); Manage Cards UI is not accessible without authentication",
+      "expected_result": "Inline validation errors appear on Card_Type, Account_To_Link, and Shipping_Address indicating they are required; the form does not submit, no tracking ID or success message is shown, and the Card Request form remains editable",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-002",
-      "test_case": "Update Controls — enter non-numeric value in New Spending Limit",
+      "wf_ref": "WF-001",
+      "test_case": "Request Card — incomplete shipping address violates 'address must be complete' constraint",
       "preconditions": [
-        "Authenticated customer session with at least one existing card selectable in 'Select Existing Card'"
+        "Authenticated customer session with at least one active account"
       ],
       "steps": [
-        "1. Log in as an authenticated customer",
+        "1. Sign in as an authenticated customer",
         "2. Navigate to Manage Cards",
-        "3. In the Card Controls form, select <Existing Card>",
-        "4. Enter <non-numeric value> into the New Spending Limit field",
-        "5. Click the 'Update Controls' button"
+        "3. In the Card Request form, select a Card_Type and Account_To_Link",
+        "4. Enter <incomplete address (missing required address components)> in Shipping_Address",
+        "5. Click the Request Card button"
       ],
-      "expected_result": "New Spending Limit field displays an inline validation error: 'must be numeric'; the form remains editable; card controls are not updated",
-      "priority": "medium"
+      "expected_result": "Inline validation error appears on the Shipping_Address field indicating the address must be complete; the form does not submit, no card-request ticket/tracking ID is shown, and the form remains editable",
+      "priority": "high"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-002",
-      "test_case": "Update Controls — set spending limit above policy limits",
+      "test_case": "Update Controls — New_Spending_Limit non-numeric input rejected",
       "preconditions": [
-        "Authenticated customer session with at least one existing card selectable in 'Select Existing Card'"
+        "Authenticated customer session with at least one active account and at least one existing card"
       ],
       "steps": [
-        "1. Log in as an authenticated customer",
+        "1. Sign in as an authenticated customer",
         "2. Navigate to Manage Cards",
-        "3. In the Card Controls form, select <Existing Card>",
-        "4. Enter <amount exceeding policy limits> into the New Spending Limit field",
-        "5. Click the 'Update Controls' button"
+        "3. In the Card Controls form, select an existing card in Select_Existing_Card",
+        "4. Enter <non-numeric input> into New_Spending_Limit",
+        "5. Click the Update Controls button"
       ],
-      "expected_result": "New Spending Limit field displays an inline validation error: 'must be within policy limits'; the form remains editable; card controls are not updated",
+      "expected_result": "Inline validation error appears on the New_Spending_Limit field indicating it must be numeric; the form does not submit and remains editable; no 'Card controls updated' confirmation is shown",
       "priority": "medium"
     },
     {
       "tc_id": "N-007",
-      "wf_ref": "WF-003",
-      "test_case": "Update Controls — Travel Notice End_Date earlier than Start_Date",
+      "wf_ref": "WF-002",
+      "test_case": "Update Controls — New_Spending_Limit exceeds policy limits",
       "preconditions": [
-        "Authenticated customer session with at least one existing card selectable in 'Select Existing Card'"
+        "Authenticated customer session with at least one active account and at least one existing card"
       ],
       "steps": [
-        "1. Log in as an authenticated customer",
+        "1. Sign in as an authenticated customer",
         "2. Navigate to Manage Cards",
-        "3. In the Card Controls form, select <Existing Card>",
-        "4. In the Travel Notice section, set Start_Date to <date A>",
-        "5. Set End_Date to <date earlier than date A>",
-        "6. Click the 'Update Controls' button"
+        "3. In the Card Controls form, select an existing card in Select_Existing_Card",
+        "4. Enter <amount exceeding policy limit> into New_Spending_Limit",
+        "5. Click the Update Controls button"
       ],
-      "expected_result": "Travel Notice End_Date field displays an inline validation error: 'End_Date must be the same as or after Start_Date'; the form remains editable; travel notice and other controls are not saved",
-      "priority": "medium"
+      "expected_result": "Inline validation error appears on the New_Spending_Limit field indicating the entered limit is outside policy limits; the form does not submit and remains editable; no 'Card controls updated' confirmation is shown",
+      "priority": "high"
     },
     {
       "tc_id": "N-008",
       "wf_ref": "WF-002",
-      "test_case": "Update Controls — attempt a disallowed card-status transition",
+      "test_case": "Update Controls — Travel Notice End_Date before Start_Date",
       "preconditions": [
-        "Authenticated customer session with at least one existing card whose current status is <Frozen>"
+        "Authenticated customer session with at least one active account and at least one existing card"
       ],
       "steps": [
-        "1. Log in as an authenticated customer",
+        "1. Sign in as an authenticated customer",
         "2. Navigate to Manage Cards",
-        "3. In the Card Controls form, select <Existing Card> currently in status <Frozen>",
-        "4. Change Card_Status to 'Active'",
-        "5. Click the 'Update Controls' button"
+        "3. In the Card Controls form, select an existing card in Select_Existing_Card",
+        "4. Enter <valid Start_Date> in Travel_Notice.Start_Date",
+        "5. Enter <End_Date earlier than Start_Date> in Travel_Notice.End_Date",
+        "6. Click the Update Controls button"
       ],
-      "expected_result": "Card_Status field displays an inline validation error indicating the selected status change violates allowable card-status transitions (e.g., 'Selected status change is not allowed'); the form remains editable; the card's status remains unchanged",
+      "expected_result": "Inline validation error appears on the Travel_Notice End_Date field indicating it must be on or after the Start_Date; the form does not submit and remains editable; no 'Card controls updated' confirmation is shown",
       "priority": "medium"
+    },
+    {
+      "tc_id": "N-009",
+      "wf_ref": "WF-002",
+      "test_case": "Update Controls blocked when user has no existing cards (precondition violation)",
+      "preconditions": [
+        "Authenticated customer session with at least one active account and zero existing cards"
+      ],
+      "steps": [
+        "1. Sign in as an authenticated customer who has no cards",
+        "2. Navigate to Manage Cards",
+        "3. Observe the Card Controls form area and attempt to interact with Update Controls (e.g., select a card or click Update Controls)"
+      ],
+      "expected_result": "Update Controls action is blocked: the UI indicates no existing cards are available to update (for example the Select_Existing_Card dropdown is empty or a notice is shown) and the Update Controls button cannot be used; no update is performed and no success message is shown",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-010",
+      "wf_ref": "WF-002",
+      "test_case": "Update Controls — disallowed card-status transition is rejected (attempting transition not allowed by policy)",
+      "preconditions": [
+        "Authenticated customer session with at least one active account and at least one existing card whose current Card_Status is Active"
+      ],
+      "steps": [
+        "1. Sign in as an authenticated customer",
+        "2. Navigate to Manage Cards",
+        "3. In the Card Controls form, select an existing card that is currently Active",
+        "4. Choose Card_Status = Active (no-op / same-as-current) and click Update Controls"
+      ],
+      "expected_result": "Inline validation error appears indicating the requested card-status transition is not allowed by policy; the form does not submit, the card status remains unchanged, and no 'Card controls updated' confirmation is shown",
+      "priority": "high"
     }
   ],
   "summary": {
-    "total": 8,
-    "high_priority": 4,
-    "medium_priority": 4,
+    "total": 10,
+    "high_priority": 8,
+    "medium_priority": 2,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:04:51] Test-Negative - PARSED JSON
+[22:24:22] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Manage Cards",
@@ -533,142 +580,177 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
   "test_cases": [
     {
       "tc_id": "N-001",
-      "wf_ref": "WF-001",
-      "test_case": "Request Card \u2014 leave required Shipping Address blank",
+      "wf_ref": null,
+      "test_case": "Unauthenticated user cannot access Manage Cards page",
       "preconditions": [
-        "Authenticated customer session with at least one existing account eligible for card linkage"
+        "User is not signed in"
       ],
       "steps": [
-        "1. Log in as an authenticated customer with an eligible account",
-        "2. Navigate to Manage Cards",
-        "3. In the Card Request form, select <Account to link>",
-        "4. Leave the Shipping Address field blank",
-        "5. Click the 'Request Card' button"
+        "1. In a browser with no authenticated session, navigate to the Manage Cards page URL",
+        "2. Observe the page load / redirect behavior"
       ],
-      "expected_result": "Shipping Address field displays an inline validation error: 'Shipping address must be complete' (or equivalent); the form remains editable; no card-request ticket is opened; no tracking ID is returned",
+      "expected_result": "Access is blocked: user is redirected to the login page or shown an access denied screen; Manage Cards UI is not displayed and no card-request or card-controls actions are available",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
       "wf_ref": "WF-001",
-      "test_case": "Request Card \u2014 submit with all required fields empty",
+      "test_case": "Request Card \u2014 required dropdown (Card Type) left blank",
       "preconditions": [
-        "Authenticated customer session with at least one existing account eligible for card linkage"
+        "Authenticated customer session with at least one active account"
       ],
       "steps": [
-        "1. Log in as an authenticated customer with an eligible account",
+        "1. Sign in as an authenticated customer",
         "2. Navigate to Manage Cards",
-        "3. Leave all required fields in the Card Request form empty (e.g., Shipping Address)",
-        "4. Click the 'Request Card' button"
+        "3. In the Card Request form, leave the Card_Type field blank",
+        "4. Enter <valid account selection> in Account_To_Link",
+        "5. Enter <complete shipping address> in Shipping_Address",
+        "6. Click the Request Card button"
       ],
-      "expected_result": "Shipping Address field (the required field) displays an inline validation error: 'Shipping address must be complete'; the form does not submit; no card-request ticket is opened and no tracking ID is returned",
+      "expected_result": "Inline validation error appears on the Card_Type field indicating it is required; the form does not submit, the page remains on the Card Request form (no tracking ID or success message is shown) and the form remains editable",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
       "wf_ref": "WF-001",
-      "test_case": "Request Card \u2014 selected account is not in good standing (account-standing constraint)",
+      "test_case": "Request Card \u2014 required unspecified field (Account to Link) left blank",
       "preconditions": [
-        "Authenticated customer session",
-        "Selected account exists but is not in good standing for card issuance (e.g., closed or otherwise ineligible)"
+        "Authenticated customer session with at least one active account"
       ],
       "steps": [
-        "1. Log in as an authenticated customer",
+        "1. Sign in as an authenticated customer",
         "2. Navigate to Manage Cards",
-        "3. In the Card Request form, select <Account to link> that is not in good standing",
-        "4. Enter a complete Shipping Address in the Shipping Address field",
-        "5. Click the 'Request Card' button"
+        "3. In the Card Request form, leave the Account_To_Link field blank",
+        "4. Select Debit or Credit in Card_Type",
+        "5. Enter <complete shipping address> in Shipping_Address",
+        "6. Click the Request Card button"
       ],
-      "expected_result": "An inline validation error appears on the Account_To_Link field stating the selected account is not eligible for card linkage (e.g., 'Selected account is not eligible for card linkage'); the form remains editable; no card-request ticket is opened and no tracking ID is returned",
+      "expected_result": "Inline validation error appears on the Account_To_Link field indicating it is required; the form does not submit, no card-request ticket/tracking ID is shown, and the form remains editable",
       "priority": "high"
     },
     {
       "tc_id": "N-004",
-      "wf_ref": null,
-      "test_case": "Access Manage Cards while unauthenticated",
+      "wf_ref": "WF-001",
+      "test_case": "Request Card \u2014 submit with all required fields empty",
       "preconditions": [
-        "User is not authenticated (no active session)"
+        "Authenticated customer session with at least one active account"
       ],
       "steps": [
-        "1. In a browser with no active login session, navigate to the Manage Cards page URL"
+        "1. Sign in as an authenticated customer",
+        "2. Navigate to Manage Cards",
+        "3. In the Card Request form, leave Card_Type blank",
+        "4. Leave Account_To_Link blank",
+        "5. Leave Shipping_Address blank",
+        "6. Click the Request Card button"
       ],
-      "expected_result": "User is redirected to the login page (access to Manage Cards is blocked); Manage Cards UI is not accessible without authentication",
+      "expected_result": "Inline validation errors appear on Card_Type, Account_To_Link, and Shipping_Address indicating they are required; the form does not submit, no tracking ID or success message is shown, and the Card Request form remains editable",
       "priority": "high"
     },
     {
       "tc_id": "N-005",
-      "wf_ref": "WF-002",
-      "test_case": "Update Controls \u2014 enter non-numeric value in New Spending Limit",
+      "wf_ref": "WF-001",
+      "test_case": "Request Card \u2014 incomplete shipping address violates 'address must be complete' constraint",
       "preconditions": [
-        "Authenticated customer session with at least one existing card selectable in 'Select Existing Card'"
+        "Authenticated customer session with at least one active account"
       ],
       "steps": [
-        "1. Log in as an authenticated customer",
+        "1. Sign in as an authenticated customer",
         "2. Navigate to Manage Cards",
-        "3. In the Card Controls form, select <Existing Card>",
-        "4. Enter <non-numeric value> into the New Spending Limit field",
-        "5. Click the 'Update Controls' button"
+        "3. In the Card Request form, select a Card_Type and Account_To_Link",
+        "4. Enter <incomplete address (missing required address components)> in Shipping_Address",
+        "5. Click the Request Card button"
       ],
-      "expected_result": "New Spending Limit field displays an inline validation error: 'must be numeric'; the form remains editable; card controls are not updated",
-      "priority": "medium"
+      "expected_result": "Inline validation error appears on the Shipping_Address field indicating the address must be complete; the form does not submit, no card-request ticket/tracking ID is shown, and the form remains editable",
+      "priority": "high"
     },
     {
       "tc_id": "N-006",
       "wf_ref": "WF-002",
-      "test_case": "Update Controls \u2014 set spending limit above policy limits",
+      "test_case": "Update Controls \u2014 New_Spending_Limit non-numeric input rejected",
       "preconditions": [
-        "Authenticated customer session with at least one existing card selectable in 'Select Existing Card'"
+        "Authenticated customer session with at least one active account and at least one existing card"
       ],
       "steps": [
-        "1. Log in as an authenticated customer",
+        "1. Sign in as an authenticated customer",
         "2. Navigate to Manage Cards",
-        "3. In the Card Controls form, select <Existing Card>",
-        "4. Enter <amount exceeding policy limits> into the New Spending Limit field",
-        "5. Click the 'Update Controls' button"
+        "3. In the Card Controls form, select an existing card in Select_Existing_Card",
+        "4. Enter <non-numeric input> into New_Spending_Limit",
+        "5. Click the Update Controls button"
       ],
-      "expected_result": "New Spending Limit field displays an inline validation error: 'must be within policy limits'; the form remains editable; card controls are not updated",
+      "expected_result": "Inline validation error appears on the New_Spending_Limit field indicating it must be numeric; the form does not submit and remains editable; no 'Card controls updated' confirmation is shown",
       "priority": "medium"
     },
     {
       "tc_id": "N-007",
-      "wf_ref": "WF-003",
-      "test_case": "Update Controls \u2014 Travel Notice End_Date earlier than Start_Date",
+      "wf_ref": "WF-002",
+      "test_case": "Update Controls \u2014 New_Spending_Limit exceeds policy limits",
       "preconditions": [
-        "Authenticated customer session with at least one existing card selectable in 'Select Existing Card'"
+        "Authenticated customer session with at least one active account and at least one existing card"
       ],
       "steps": [
-        "1. Log in as an authenticated customer",
+        "1. Sign in as an authenticated customer",
         "2. Navigate to Manage Cards",
-        "3. In the Card Controls form, select <Existing Card>",
-        "4. In the Travel Notice section, set Start_Date to <date A>",
-        "5. Set End_Date to <date earlier than date A>",
-        "6. Click the 'Update Controls' button"
+        "3. In the Card Controls form, select an existing card in Select_Existing_Card",
+        "4. Enter <amount exceeding policy limit> into New_Spending_Limit",
+        "5. Click the Update Controls button"
       ],
-      "expected_result": "Travel Notice End_Date field displays an inline validation error: 'End_Date must be the same as or after Start_Date'; the form remains editable; travel notice and other controls are not saved",
-      "priority": "medium"
+      "expected_result": "Inline validation error appears on the New_Spending_Limit field indicating the entered limit is outside policy limits; the form does not submit and remains editable; no 'Card controls updated' confirmation is shown",
+      "priority": "high"
     },
     {
       "tc_id": "N-008",
       "wf_ref": "WF-002",
-      "test_case": "Update Controls \u2014 attempt a disallowed card-status transition",
+      "test_case": "Update Controls \u2014 Travel Notice End_Date before Start_Date",
       "preconditions": [
-        "Authenticated customer session with at least one existing card whose current status is <Frozen>"
+        "Authenticated customer session with at least one active account and at least one existing card"
       ],
       "steps": [
-        "1. Log in as an authenticated customer",
+        "1. Sign in as an authenticated customer",
         "2. Navigate to Manage Cards",
-        "3. In the Card Controls form, select <Existing Card> currently in status <Frozen>",
-        "4. Change Card_Status to 'Active'",
-        "5. Click the 'Update Controls' button"
+        "3. In the Card Controls form, select an existing card in Select_Existing_Card",
+        "4. Enter <valid Start_Date> in Travel_Notice.Start_Date",
+        "5. Enter <End_Date earlier than Start_Date> in Travel_Notice.End_Date",
+        "6. Click the Update Controls button"
       ],
-      "expected_result": "Card_Status field displays an inline validation error indicating the selected status change violates allowable card-status transitions (e.g., 'Selected status change is not allowed'); the form remains editable; the card's status remains unchanged",
+      "expected_result": "Inline validation error appears on the Travel_Notice End_Date field indicating it must be on or after the Start_Date; the form does not submit and remains editable; no 'Card controls updated' confirmation is shown",
       "priority": "medium"
+    },
+    {
+      "tc_id": "N-009",
+      "wf_ref": "WF-002",
+      "test_case": "Update Controls blocked when user has no existing cards (precondition violation)",
+      "preconditions": [
+        "Authenticated customer session with at least one active account and zero existing cards"
+      ],
+      "steps": [
+        "1. Sign in as an authenticated customer who has no cards",
+        "2. Navigate to Manage Cards",
+        "3. Observe the Card Controls form area and attempt to interact with Update Controls (e.g., select a card or click Update Controls)"
+      ],
+      "expected_result": "Update Controls action is blocked: the UI indicates no existing cards are available to update (for example the Select_Existing_Card dropdown is empty or a notice is shown) and the Update Controls button cannot be used; no update is performed and no success message is shown",
+      "priority": "high"
+    },
+    {
+      "tc_id": "N-010",
+      "wf_ref": "WF-002",
+      "test_case": "Update Controls \u2014 disallowed card-status transition is rejected (attempting transition not allowed by policy)",
+      "preconditions": [
+        "Authenticated customer session with at least one active account and at least one existing card whose current Card_Status is Active"
+      ],
+      "steps": [
+        "1. Sign in as an authenticated customer",
+        "2. Navigate to Manage Cards",
+        "3. In the Card Controls form, select an existing card that is currently Active",
+        "4. Choose Card_Status = Active (no-op / same-as-current) and click Update Controls"
+      ],
+      "expected_result": "Inline validation error appears indicating the requested card-status transition is not allowed by policy; the form does not submit, the card status remains unchanged, and no 'Card controls updated' confirmation is shown",
+      "priority": "high"
     }
   ],
   "summary": {
-    "total": 8,
-    "high_priority": 4,
-    "medium_priority": 4,
+    "total": 10,
+    "high_priority": 8,
+    "medium_priority": 2,
     "low_priority": 0
   }
 }

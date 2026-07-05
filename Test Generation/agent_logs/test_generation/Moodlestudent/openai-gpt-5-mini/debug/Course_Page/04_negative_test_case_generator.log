@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:12:34.363396
+DEBUG SESSION STARTED: 2026-07-04T22:41:48.036217
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Negative - SYSTEM PROMPT
+[22:41:48] Test-Negative - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Negative Test Case Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY negative test cases — tests where invalid input is provided or business rules are violated, and the system correctly rejects or blocks the action.
 
@@ -62,10 +62,13 @@ Never write a vague expected result. Always specify what the tester sees.
 - ✅ `"<Field Name> field displays an error: 'Must be a valid email address'"`
 - ✅ `"Submit button remains disabled / form does not submit; <Field> is highlighted"`
 
-**Rule B — Quote exact error text when the spec provides it.**
-If the description quotes a specific error string, copy it verbatim into the expected_result.
+**Rule B — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description quotes a specific error string, copy it verbatim into the expected_result. If the spec does **not** provide an exact string, describe the error generically — do NOT invent a quoted message. Quotation marks in an expected_result are reserved for text copied from the spec.
 - ❌ `"incorrect credentials error shown"` when spec says `"Incorrect email or password. Please try again."`
 - ✅ `"Page displays 'Incorrect email or password. Please try again.' and the Password field is cleared"`
+- ❌ Inventing `"an error 'Attribute is required.' is shown"` when the spec quotes no such string → ✅ `"an inline validation error indicating the Attribute is required is shown on the Attribute field"`
+
+**Rule B2 — Do not paste `on_success`/behavior tokens.** If you reference an AST `on_success` token, rewrite it into a visible screen state; and never assert a non-visible backend side effect (email sent, refund initiated, saved to profile, balance updated) — assert only the visible blocking behavior on the current screen.
 
 **Rule C — Assert the blocking behavior, not just the error.**
 The expected_result must confirm the action was blocked: the entity was not created, the status did not change, the user was not redirected.
@@ -106,6 +109,13 @@ Every test must pass ALL three checks:
 3. **Not a positive test in disguise:** Display-only behavior ("the page shows X") produces positive tests, not negative ones.
 
 Do NOT generate tests for: backend data integrity, security vulnerabilities, infrastructure failures, race conditions, or anything not described in the spec.
+
+**Out-of-scope ban list (never generate these — they are not single-page, deterministic UI tests):**
+- Multi-tab / second-tab scenarios ("log out in one tab, act in another", "open protected URL in a new tab")
+- "Close the browser tab mid-request" / server-side completion checks
+- Race conditions / "in-flight request interrupted" / concurrent submissions
+- Server-side session-expiry / idle-timeout simulation
+- Cookie/session-storage-disabled scenarios (unless the spec explicitly describes that behavior)
 
 ---
 
@@ -242,15 +252,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:12:34] Test-Negative - USER PROMPT
+[22:41:48] Test-Negative - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 4,
   "module_title": "Course Page",
-  "summary": "Displays a course's content organized into collapsible sections with listed activities and resources under each section.",
-  "where_it_fits": "This module is the main course view reached from the top navigation (My Courses, Dashboard, or Home) and sits below the course title where the horizontal tab bar (Course, Participants, Grades, Activities, Competencies) and Course Index sidebar appear; it is the central place users use to browse course sections and activities during normal course navigation.",
-  "assumed_state_on_entry": "User is logged in and enrolled in the selected course; course exists and contains sections/activities."
+  "summary": "Displays the full course content organized into collapsible sections that list activities and resources with type icons and clickable names.",
+  "where_it_fits": "Accessible from the top navigation (Home \u2192 Dashboard \u2192 My Courses) when a user opens a specific course, the Course Page appears beneath the course title with the horizontal tab bar (Course, Participants, Grades, Activities, Competencies) and is used during course viewing alongside the Course Index sidebar.",
+  "assumed_state_on_entry": "Logged-in user who is enrolled in and has opened a specific course"
 }
 </module_context>
 
@@ -261,62 +271,83 @@ If a `<workflows>` block is present in the input:
   "module_name": "Course Page",
   "components": {
     "Course_Page_Tabs": {
-      "type": "tab_container",
+      "type": "tab_bar",
       "tabs": [
         {
           "tab_name": "Course",
-          "fields": {
-            "Course_Content_Sections": {
-              "type": "collapsible_sections",
-              "preconditions": [
-                "User is logged in and enrolled in the selected course; course exists and contains sections/activities."
-              ],
-              "actions": [
-                {
-                  "action_name": "Collapse all",
-                  "type": "link",
-                  "preconditions": [
-                    "User is logged in and enrolled in the selected course; course exists and contains sections/activities."
-                  ]
-                }
-              ],
-              "Sections": {
-                "type": "repeating_group",
-                "item_fields": {
-                  "Toggle_Section": {
-                    "type": "button",
-                    "action_name": "Toggle Section"
-                  },
-                  "Activities": {
-                    "type": "item_list",
-                    "item_fields": {
-                      "Activity_Link": {
-                        "type": "link"
-                      }
-                    }
-                  }
-                }
-              }
-            }
+          "action": {
+            "action_name": "Navigate to Course Tab",
+            "type": "link"
           }
         },
         {
           "tab_name": "Participants",
-          "fields": {}
+          "action": {
+            "action_name": "Navigate to Participants Tab",
+            "type": "link"
+          }
         },
         {
           "tab_name": "Grades",
-          "fields": {}
+          "action": {
+            "action_name": "Navigate to Grades Tab",
+            "type": "link"
+          }
         },
         {
           "tab_name": "Activities",
-          "fields": {}
+          "action": {
+            "action_name": "Navigate to Activities Tab",
+            "type": "link"
+          }
         },
         {
           "tab_name": "Competencies",
-          "fields": {}
+          "action": {
+            "action_name": "Navigate to Competencies Tab",
+            "type": "link"
+          }
         }
       ]
+    },
+    "Course_Page_Actions": {
+      "type": "action_bar",
+      "actions": [
+        {
+          "action_name": "Collapse all",
+          "type": "link",
+          "on_success": "all sections collapsed",
+          "preconditions": [
+            "user must be logged in",
+            "user must be enrolled in the course",
+            "course must be opened"
+          ]
+        }
+      ]
+    },
+    "Course_Content_Sections": {
+      "type": "repeating_group",
+      "item_fields": {
+        "Section_Toggle": {
+          "type": "button",
+          "action_name": "Toggle Section",
+          "on_success": "toggles expanded/collapsed state of this section"
+        },
+        "Section_Name_Link": {
+          "type": "link",
+          "action_name": "Open Section",
+          "on_success": "toggles expanded/collapsed state of this section"
+        },
+        "Activities": {
+          "type": "repeating_group",
+          "item_fields": {
+            "Activity_Name": {
+              "type": "link",
+              "action_name": "Open Activity"
+            }
+          }
+        }
+      }
     }
   }
 }
@@ -332,15 +363,22 @@ The Course page displays the full course content organized into collapsible sect
 </description>
 
 <workflows>
-WF-001 | Collapse all sections | actor: <role> | branch: none | terminal: Collapse all | on_success: All course sections are collapsed.
-WF-002 | Toggle a single section (expand or collapse) | actor: <role> | branch: none | terminal: Toggle Section | on_success: The targeted section is expanded if it was collapsed, or collapsed if it was expanded.
-WF-003 | Open an activity or resource from a section | actor: <role> | branch: none | terminal: Activity_Link | on_success: Navigates to the selected activity or resource page.
+WF-001 | Navigate to Course tab | actor: Enrolled user | branch: none | terminal: Navigate to Course Tab | on_success: Navigated to Course tab; course tab content displayed
+WF-002 | Navigate to Participants tab | actor: Enrolled user | branch: none | terminal: Navigate to Participants Tab | on_success: Navigated to Participants tab; participants list displayed
+WF-003 | Navigate to Grades tab | actor: Enrolled user | branch: none | terminal: Navigate to Grades Tab | on_success: Navigated to Grades tab; grades content displayed
+WF-004 | Navigate to Activities tab | actor: Enrolled user | branch: none | terminal: Navigate to Activities Tab | on_success: Navigated to Activities tab; activities content displayed
+WF-005 | Navigate to Competencies tab | actor: Enrolled user | branch: none | terminal: Navigate to Competencies Tab | on_success: Navigated to Competencies tab; competencies content displayed
+WF-006 | Collapse all sections | actor: Enrolled user | branch: none | terminal: Collapse all | on_success: all sections collapsed
+WF-007 | Toggle a section via chevron | actor: Enrolled user | branch: none | terminal: Toggle Section | on_success: toggles expanded/collapsed state of this section
+WF-008 | Open (toggle) a section via its name link | actor: Enrolled user | branch: none | terminal: Open Section | on_success: toggles expanded/collapsed state of this section
+WF-009 | Open an activity from a section | actor: Enrolled user | branch: none | terminal: Open Activity | on_success: Activity opened (navigates to the activity or displays activity content)
+WF-010 | Open an activity via its clickable name (alternate item in repeating group) | actor: Enrolled user | branch: none | terminal: Open Activity | on_success: Activity opened (navigates to the activity or displays activity content)
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:13:30] Test-Negative - LLM RESPONSE
+[22:42:47] Test-Negative - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Course Page",
@@ -349,88 +387,60 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access Course Page",
+      "test_case": "Unauthenticated user cannot access Course Page",
       "preconditions": [
-        "User is not authenticated"
+        "User is not logged in"
       ],
       "steps": [
-        "1. In a fresh browser session with no authenticated user, navigate to the <Course Page URL> for an existing course"
+        "1. In a browser session where the user is not authenticated, navigate directly to the Course Page URL for a specific course"
       ],
-      "expected_result": "The user is redirected to the login page; the Course page content (course title, tab bar, sections) is not displayed and access to course content is blocked",
+      "expected_result": "User is redirected to the login page or shown a login prompt; the Course page heading, tab bar, and course content are not displayed (the Course Page is not accessible while unauthenticated).",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-001",
-      "test_case": "Logged-in user not enrolled attempts to use 'Collapse all' (precondition not met)",
+      "wf_ref": "WF-006",
+      "test_case": "Logged-in user who is not enrolled cannot use 'Collapse all' action",
       "preconditions": [
-        "User is logged in as <logged-in user not enrolled in the course>"
+        "User is logged in",
+        "User is NOT enrolled in the target course"
       ],
       "steps": [
-        "1. Log in as <logged-in user not enrolled in the course>",
-        "2. Navigate to the <Course Page URL>",
-        "3. Locate and click the 'Collapse all' link"
+        "1. Log in as a user account that is not enrolled in the course",
+        "2. Navigate to the Course Page URL for that course",
+        "3. Attempt to locate and click the 'Collapse all' link in the course header"
       ],
-      "expected_result": "'Collapse all' action is blocked: an access-denied notice or enrollment-required banner is displayed indicating the user is not enrolled; no section expand/collapse state changes occur and the course content remains inaccessible",
+      "expected_result": "The 'Collapse all' link is not visible or is not actionable for a non-enrolled user; clicking does not collapse sections and the section expanded/collapsed states remain unchanged (the 'Collapse all' action is blocked because the user is not enrolled).",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-002",
-      "test_case": "Logged-in user not enrolled attempts to toggle a single section (precondition not met)",
-      "preconditions": [
-        "User is logged in as <logged-in user not enrolled in the course>"
-      ],
-      "steps": [
-        "1. Log in as <logged-in user not enrolled in the course>",
-        "2. Navigate to the <Course Page URL>",
-        "3. Click the chevron or 'Toggle Section' button for a specific section"
-      ],
-      "expected_result": "Toggle action is blocked: an access-denied or enrollment-required message is displayed and the targeted section does not expand or collapse; no change to section state occurs",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-004",
-      "wf_ref": "WF-003",
-      "test_case": "Logged-in user not enrolled attempts to open an activity link from a section",
-      "preconditions": [
-        "User is logged in as <logged-in user not enrolled in the course>"
-      ],
-      "steps": [
-        "1. Log in as <logged-in user not enrolled in the course>",
-        "2. Navigate to the <Course Page URL>",
-        "3. Click an Activity_Link under any section"
-      ],
-      "expected_result": "Navigation to the activity/resource is blocked: an access-denied or enrollment-required banner/modal is displayed and the user is not navigated to the activity page (the current Course page remains shown)",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-005",
       "wf_ref": null,
-      "test_case": "Student role attempts to enable Edit mode (feature restricted)",
+      "test_case": "Enrolled student cannot enable Edit mode on Course Page",
       "preconditions": [
-        "User is logged in as <student role enrolled or not enrolled>"
+        "User is logged in",
+        "User is enrolled in the course",
+        "User has the Student role"
       ],
       "steps": [
-        "1. Log in as <student role>",
-        "2. Navigate to the <Course Page URL>",
-        "3. Look for an 'Edit mode' toggle or button on the Course page",
-        "4. If an 'Edit mode' control is visible, attempt to enable it by clicking it"
+        "1. Log in as an enrolled user with the Student role",
+        "2. Open the Course Page for the course",
+        "3. Attempt to enable Edit mode (attempt to locate and toggle any 'Edit mode' / 'Turn editing on' control)"
       ],
-      "expected_result": "Edit mode is not available to the student: the 'Edit mode' control is not present or is disabled; if an attempt is made to enable it, the action is blocked and an access-denied indication is shown and no edit controls or edit UI are presented",
-      "priority": "medium"
+      "expected_result": "No Edit mode control is available or it is disabled for the Student role; the Course Page remains in view-only mode and no editing controls or editable fields are revealed (students cannot enable Edit mode).",
+      "priority": "high"
     }
   ],
   "summary": {
-    "total": 5,
-    "high_priority": 4,
-    "medium_priority": 1,
+    "total": 3,
+    "high_priority": 3,
+    "medium_priority": 0,
     "low_priority": 0
   }
 }
 
 ------------------------------------------------------------
-[21:13:30] Test-Negative - PARSED JSON
+[22:42:47] Test-Negative - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Course Page",
@@ -439,82 +449,54 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "tc_id": "N-001",
       "wf_ref": null,
-      "test_case": "Unauthenticated user attempts to access Course Page",
+      "test_case": "Unauthenticated user cannot access Course Page",
       "preconditions": [
-        "User is not authenticated"
+        "User is not logged in"
       ],
       "steps": [
-        "1. In a fresh browser session with no authenticated user, navigate to the <Course Page URL> for an existing course"
+        "1. In a browser session where the user is not authenticated, navigate directly to the Course Page URL for a specific course"
       ],
-      "expected_result": "The user is redirected to the login page; the Course page content (course title, tab bar, sections) is not displayed and access to course content is blocked",
+      "expected_result": "User is redirected to the login page or shown a login prompt; the Course page heading, tab bar, and course content are not displayed (the Course Page is not accessible while unauthenticated).",
       "priority": "high"
     },
     {
       "tc_id": "N-002",
-      "wf_ref": "WF-001",
-      "test_case": "Logged-in user not enrolled attempts to use 'Collapse all' (precondition not met)",
+      "wf_ref": "WF-006",
+      "test_case": "Logged-in user who is not enrolled cannot use 'Collapse all' action",
       "preconditions": [
-        "User is logged in as <logged-in user not enrolled in the course>"
+        "User is logged in",
+        "User is NOT enrolled in the target course"
       ],
       "steps": [
-        "1. Log in as <logged-in user not enrolled in the course>",
-        "2. Navigate to the <Course Page URL>",
-        "3. Locate and click the 'Collapse all' link"
+        "1. Log in as a user account that is not enrolled in the course",
+        "2. Navigate to the Course Page URL for that course",
+        "3. Attempt to locate and click the 'Collapse all' link in the course header"
       ],
-      "expected_result": "'Collapse all' action is blocked: an access-denied notice or enrollment-required banner is displayed indicating the user is not enrolled; no section expand/collapse state changes occur and the course content remains inaccessible",
+      "expected_result": "The 'Collapse all' link is not visible or is not actionable for a non-enrolled user; clicking does not collapse sections and the section expanded/collapsed states remain unchanged (the 'Collapse all' action is blocked because the user is not enrolled).",
       "priority": "high"
     },
     {
       "tc_id": "N-003",
-      "wf_ref": "WF-002",
-      "test_case": "Logged-in user not enrolled attempts to toggle a single section (precondition not met)",
-      "preconditions": [
-        "User is logged in as <logged-in user not enrolled in the course>"
-      ],
-      "steps": [
-        "1. Log in as <logged-in user not enrolled in the course>",
-        "2. Navigate to the <Course Page URL>",
-        "3. Click the chevron or 'Toggle Section' button for a specific section"
-      ],
-      "expected_result": "Toggle action is blocked: an access-denied or enrollment-required message is displayed and the targeted section does not expand or collapse; no change to section state occurs",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-004",
-      "wf_ref": "WF-003",
-      "test_case": "Logged-in user not enrolled attempts to open an activity link from a section",
-      "preconditions": [
-        "User is logged in as <logged-in user not enrolled in the course>"
-      ],
-      "steps": [
-        "1. Log in as <logged-in user not enrolled in the course>",
-        "2. Navigate to the <Course Page URL>",
-        "3. Click an Activity_Link under any section"
-      ],
-      "expected_result": "Navigation to the activity/resource is blocked: an access-denied or enrollment-required banner/modal is displayed and the user is not navigated to the activity page (the current Course page remains shown)",
-      "priority": "high"
-    },
-    {
-      "tc_id": "N-005",
       "wf_ref": null,
-      "test_case": "Student role attempts to enable Edit mode (feature restricted)",
+      "test_case": "Enrolled student cannot enable Edit mode on Course Page",
       "preconditions": [
-        "User is logged in as <student role enrolled or not enrolled>"
+        "User is logged in",
+        "User is enrolled in the course",
+        "User has the Student role"
       ],
       "steps": [
-        "1. Log in as <student role>",
-        "2. Navigate to the <Course Page URL>",
-        "3. Look for an 'Edit mode' toggle or button on the Course page",
-        "4. If an 'Edit mode' control is visible, attempt to enable it by clicking it"
+        "1. Log in as an enrolled user with the Student role",
+        "2. Open the Course Page for the course",
+        "3. Attempt to enable Edit mode (attempt to locate and toggle any 'Edit mode' / 'Turn editing on' control)"
       ],
-      "expected_result": "Edit mode is not available to the student: the 'Edit mode' control is not present or is disabled; if an attempt is made to enable it, the action is blocked and an access-denied indication is shown and no edit controls or edit UI are presented",
-      "priority": "medium"
+      "expected_result": "No Edit mode control is available or it is disabled for the Student role; the Course Page remains in view-only mode and no editing controls or editable fields are revealed (students cannot enable Edit mode).",
+      "priority": "high"
     }
   ],
   "summary": {
-    "total": 5,
-    "high_priority": 4,
-    "medium_priority": 1,
+    "total": 3,
+    "high_priority": 3,
+    "medium_priority": 0,
     "low_priority": 0
   }
 }

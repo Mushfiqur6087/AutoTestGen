@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:20:32.008916
+DEBUG SESSION STARTED: 2026-07-04T22:30:08.739329
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:20:57] Workflow-Validator - SYSTEM PROMPT
+[22:30:31] Workflow-Validator - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Workflow Validator. You receive (1) a raw functional description, (2) a Structural Model JSON, and (3) a generated workflow list for one module.
 
@@ -162,15 +162,15 @@ Output ONLY the JSON object. No explanation. No markdown fencing. No preamble.
 
 
 ------------------------------------------------------------
-[21:20:57] Workflow-Validator - USER PROMPT
+[22:30:31] Workflow-Validator - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 4,
   "module_title": "Forgot Password",
-  "summary": "Allows users to request a password reset by submitting their email so the system sends a 24-hour time-limited reset link if the address exists.",
-  "where_it_fits": "Accessible from the top navigation's Account/Login area, this module is part of the authentication lifecycle alongside User Login and User Registration and leads to the password reset page and back to Login after completion.",
-  "assumed_state_on_entry": "User is unauthenticated and has access to the Account/Login area and the email address associated with their account (or is attempting recovery for an unknown address)."
+  "summary": "Allows an unauthenticated user to request a password reset by submitting their account email so a time-limited reset link is sent.",
+  "where_it_fits": "Accessible from the top navigation's Account/Login path, this module is part of the authentication flow tied to Login/Signup and precedes the Password Reset page reached via the emailed link; it sits outside booking flows and is used to regain account access before reaching the User Dashboard or booking management.",
+  "assumed_state_on_entry": "Unauthenticated user attempting account recovery who knows (or enters) the registered email address."
 }
 </module_context>
 
@@ -191,17 +191,18 @@ The page presents an Email field and a Reset Password button. If the email exist
       "type": "form",
       "fields": {
         "Email": {
-          "type": "email"
+          "type": "email",
+          "required": true
         }
       },
       "submit_actions": [
         {
           "action_name": "Reset Password",
           "preconditions": [
-            "User is unauthenticated and has access to the Account/Login area"
+            "Unauthenticated user attempting account recovery who knows (or enters) the registered email address."
           ],
-          "on_success": "sends a password reset link to the provided email (link expires after 24 hours) and shows a confirmation message",
-          "on_failure": "shows an error if the email is not found and keeps the form editable"
+          "on_success": "If the email exists, send a time-limited reset link (expires after 24 hours) to that address and show a confirmation message.",
+          "on_failure": "If the email is not found, show an error and keep the form editable."
         }
       ]
     },
@@ -212,7 +213,7 @@ The page presents an Email field and a Reset Password button. If the email exist
           "type": "password",
           "required": true
         },
-        "Confirm_New_Password": {
+        "Confirm_Password": {
           "type": "password",
           "required": true,
           "constraints": [
@@ -224,9 +225,10 @@ The page presents an Email field and a Reset Password button. If the email exist
         {
           "action_name": "Change Password",
           "preconditions": [
-            "reset link (token) must be valid and not expired"
+            "reset link must be valid and not expired"
           ],
-          "on_success": "updates the user's password and redirects to the Login page with a success message"
+          "on_success": "Change password succeeds \u2192 redirect to the login page with a success message.",
+          "on_failure": "If the reset link is invalid or expired, show an error and do not change the password."
         }
       ]
     }
@@ -238,19 +240,35 @@ The page presents an Email field and a Reset Password button. If the email exist
 [
   {
     "wf_id": "WF-001",
-    "name": "Request password reset by email",
+    "name": "Request password reset (email exists)",
     "actor": "Unauthenticated user",
-    "conditional_branch": null,
+    "conditional_branch": "Email_Exists == true",
     "terminal_action": "Reset Password",
-    "on_success": "sends a password reset link to the provided email (link expires after 24 hours) and shows a confirmation message"
+    "on_success": "If the email exists, send a time-limited reset link (expires after 24 hours) to that address and show a confirmation message."
   },
   {
     "wf_id": "WF-002",
-    "name": "Change password using valid reset link",
+    "name": "Request password reset (email not found)",
     "actor": "Unauthenticated user",
-    "conditional_branch": "reset link (token) must be valid and not expired",
+    "conditional_branch": "Email_Exists == false",
+    "terminal_action": "Reset Password",
+    "on_success": "If the email is not found, show an error and keep the form editable."
+  },
+  {
+    "wf_id": "WF-003",
+    "name": "Change password via valid reset link",
+    "actor": "Unauthenticated user",
+    "conditional_branch": "reset_link_state == valid",
     "terminal_action": "Change Password",
-    "on_success": "updates the user's password and redirects to the Login page with a success message"
+    "on_success": "Change password succeeds \u0010\u0010\u0010\u0010\u0010\u0010\u0010\u0010\u0010\u0010\u0010\u0010redirect to the login page with a success message."
+  },
+  {
+    "wf_id": "WF-004",
+    "name": "Attempt change password with invalid/expired link",
+    "actor": "Unauthenticated user",
+    "conditional_branch": "reset_link_state == invalid_or_expired",
+    "terminal_action": "Change Password",
+    "on_success": "If the reset link is invalid or expired, show an error and do not change the password."
   }
 ]
 </workflows>
@@ -258,55 +276,67 @@ The page presents an Email field and a Reset Password button. If the email exist
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:21:36] Workflow-Validator - LLM RESPONSE
+[22:31:29] Workflow-Validator - LLM RESPONSE
 ------------------------------------------------------------
 {
   "verdict": "retry",
   "attempt": 1,
-  "summary": "WF-002 includes a non-null conditional_branch that does not reference any visible_when/required_when field or state key in the AST (Check 5), so the workflows must be corrected.",
+  "summary": "Workflows reference conditional branches that do not map to any field/state in the AST (structural errors) and one workflow has a corrupted on_success string — workflows must be corrected or AST extended.",
   "missing": [],
   "phantoms": [],
   "structural_errors": [
-    "WF-002: conditional_branch 'reset link (token) must be valid and not expired' does not reference a visible_when/required_when field or a state key in the AST; conditional_branch must reference a real field or state as defined in the AST."
+    "WF-001 conditional_branch 'Email_Exists == true' references 'Email_Exists' which does not appear in the AST under visible_when/required_when or as a state key; conditional branches must reference existing AST fields or states.",
+    "WF-002 conditional_branch 'Email_Exists == false' references 'Email_Exists' which does not appear in the AST under visible_when/required_when or as a state key; conditional branches must reference existing AST fields or states.",
+    "WF-003 conditional_branch 'reset_link_state == valid' references 'reset_link_state' which is not defined in the AST (no state_bound_action_bar or visible/required field named so).",
+    "WF-004 conditional_branch 'reset_link_state == invalid_or_expired' references 'reset_link_state' which is not defined in the AST (no state_bound_action_bar or visible/required field named so).",
+    "WF-003 on_success contains corrupted/non-matching characters and does not match the AST's on_success for Change Password ('Change password succeeds → redirect to the login page with a success message.')."
   ],
   "fixes": [
-    "Edit workflow WF-002 (wf_id WF-002) to remove or set conditional_branch to null so the submit precondition in components.Password_Reset_Form.submit_actions[0] ('reset link (token) must be valid and not expired') is used instead.",
-    "Or, if a conditional_branch is required, add a corresponding condition to the AST (for example, add components.Password_Reset_Form.visible_when or required_when with a concrete field such as 'token_valid') and then change WF-002.conditional_branch to reference that field exactly (e.g., 'token_valid == true').",
-    "Or model token validity as a state: add a state_bound_action_bar with an appropriate state key (e.g., 'token_valid') in the AST and then change WF-002.conditional_branch to reference that state (e.g., 'entity_state == token_valid')."
+    "WF-001: Remove or correct conditional_branch 'Email_Exists == true' so it references an actual AST field/state. Either (a) add a corresponding field/state to the AST (e.g., define Email_Exists under a state or visible_when), or (b) remove conditional_branch and rely on the form's on_success/on_failure text for branching.",
+    "WF-002: Remove or correct conditional_branch 'Email_Exists == false' so it references an actual AST field/state. Either (a) add a corresponding field/state to the AST (e.g., define Email_Exists), or (b) remove conditional_branch and rely on the form's on_success/on_failure text for branching.",
+    "WF-003: Replace conditional_branch 'reset_link_state == valid' with a condition that references an AST-defined state or remove it and enforce the submit precondition ('reset link must be valid and not expired') through routing/validation instead. Alternatively add a state_bound_action_bar or equivalent AST entry that defines 'reset_link_state' with state 'valid'.",
+    "WF-004: Replace conditional_branch 'reset_link_state == invalid_or_expired' with a condition that references an AST-defined state or remove it and handle invalid/expired link as a submit failure. Alternatively add a state_bound_action_bar or equivalent AST entry that defines 'reset_link_state' with state 'invalid_or_expired'.",
+    "WF-003 on_success: Fix the on_success string to exactly match AST.components.Password_Reset_Form.submit_actions[0].on_success: 'Change password succeeds → redirect to the login page with a success message.'"
   ],
   "clarifications": []
 }
 
 ------------------------------------------------------------
-[21:21:36] Workflow-Validator - PARSED JSON
+[22:31:29] Workflow-Validator - PARSED JSON
 ------------------------------------------------------------
 {
   "verdict": "retry",
   "attempt": 1,
-  "summary": "WF-002 includes a non-null conditional_branch that does not reference any visible_when/required_when field or state key in the AST (Check 5), so the workflows must be corrected.",
+  "summary": "Workflows reference conditional branches that do not map to any field/state in the AST (structural errors) and one workflow has a corrupted on_success string \u2014 workflows must be corrected or AST extended.",
   "missing": [],
   "phantoms": [],
   "structural_errors": [
-    "WF-002: conditional_branch 'reset link (token) must be valid and not expired' does not reference a visible_when/required_when field or a state key in the AST; conditional_branch must reference a real field or state as defined in the AST."
+    "WF-001 conditional_branch 'Email_Exists == true' references 'Email_Exists' which does not appear in the AST under visible_when/required_when or as a state key; conditional branches must reference existing AST fields or states.",
+    "WF-002 conditional_branch 'Email_Exists == false' references 'Email_Exists' which does not appear in the AST under visible_when/required_when or as a state key; conditional branches must reference existing AST fields or states.",
+    "WF-003 conditional_branch 'reset_link_state == valid' references 'reset_link_state' which is not defined in the AST (no state_bound_action_bar or visible/required field named so).",
+    "WF-004 conditional_branch 'reset_link_state == invalid_or_expired' references 'reset_link_state' which is not defined in the AST (no state_bound_action_bar or visible/required field named so).",
+    "WF-003 on_success contains corrupted/non-matching characters and does not match the AST's on_success for Change Password ('Change password succeeds \u2192 redirect to the login page with a success message.')."
   ],
   "fixes": [
-    "Edit workflow WF-002 (wf_id WF-002) to remove or set conditional_branch to null so the submit precondition in components.Password_Reset_Form.submit_actions[0] ('reset link (token) must be valid and not expired') is used instead.",
-    "Or, if a conditional_branch is required, add a corresponding condition to the AST (for example, add components.Password_Reset_Form.visible_when or required_when with a concrete field such as 'token_valid') and then change WF-002.conditional_branch to reference that field exactly (e.g., 'token_valid == true').",
-    "Or model token validity as a state: add a state_bound_action_bar with an appropriate state key (e.g., 'token_valid') in the AST and then change WF-002.conditional_branch to reference that state (e.g., 'entity_state == token_valid')."
+    "WF-001: Remove or correct conditional_branch 'Email_Exists == true' so it references an actual AST field/state. Either (a) add a corresponding field/state to the AST (e.g., define Email_Exists under a state or visible_when), or (b) remove conditional_branch and rely on the form's on_success/on_failure text for branching.",
+    "WF-002: Remove or correct conditional_branch 'Email_Exists == false' so it references an actual AST field/state. Either (a) add a corresponding field/state to the AST (e.g., define Email_Exists), or (b) remove conditional_branch and rely on the form's on_success/on_failure text for branching.",
+    "WF-003: Replace conditional_branch 'reset_link_state == valid' with a condition that references an AST-defined state or remove it and enforce the submit precondition ('reset link must be valid and not expired') through routing/validation instead. Alternatively add a state_bound_action_bar or equivalent AST entry that defines 'reset_link_state' with state 'valid'.",
+    "WF-004: Replace conditional_branch 'reset_link_state == invalid_or_expired' with a condition that references an AST-defined state or remove it and handle invalid/expired link as a submit failure. Alternatively add a state_bound_action_bar or equivalent AST entry that defines 'reset_link_state' with state 'invalid_or_expired'.",
+    "WF-003 on_success: Fix the on_success string to exactly match AST.components.Password_Reset_Form.submit_actions[0].on_success: 'Change password succeeds \u2192 redirect to the login page with a success message.'"
   ],
   "clarifications": []
 }
 
 ------------------------------------------------------------
-[21:21:58] Workflow-Validator - USER PROMPT
+[22:32:04] Workflow-Validator - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 4,
   "module_title": "Forgot Password",
-  "summary": "Allows users to request a password reset by submitting their email so the system sends a 24-hour time-limited reset link if the address exists.",
-  "where_it_fits": "Accessible from the top navigation's Account/Login area, this module is part of the authentication lifecycle alongside User Login and User Registration and leads to the password reset page and back to Login after completion.",
-  "assumed_state_on_entry": "User is unauthenticated and has access to the Account/Login area and the email address associated with their account (or is attempting recovery for an unknown address)."
+  "summary": "Allows an unauthenticated user to request a password reset by submitting their account email so a time-limited reset link is sent.",
+  "where_it_fits": "Accessible from the top navigation's Account/Login path, this module is part of the authentication flow tied to Login/Signup and precedes the Password Reset page reached via the emailed link; it sits outside booking flows and is used to regain account access before reaching the User Dashboard or booking management.",
+  "assumed_state_on_entry": "Unauthenticated user attempting account recovery who knows (or enters) the registered email address."
 }
 </module_context>
 
@@ -327,17 +357,18 @@ The page presents an Email field and a Reset Password button. If the email exist
       "type": "form",
       "fields": {
         "Email": {
-          "type": "email"
+          "type": "email",
+          "required": true
         }
       },
       "submit_actions": [
         {
           "action_name": "Reset Password",
           "preconditions": [
-            "User is unauthenticated and has access to the Account/Login area"
+            "Unauthenticated user attempting account recovery who knows (or enters) the registered email address."
           ],
-          "on_success": "sends a password reset link to the provided email (link expires after 24 hours) and shows a confirmation message",
-          "on_failure": "shows an error if the email is not found and keeps the form editable"
+          "on_success": "If the email exists, send a time-limited reset link (expires after 24 hours) to that address and show a confirmation message.",
+          "on_failure": "If the email is not found, show an error and keep the form editable."
         }
       ]
     },
@@ -348,7 +379,7 @@ The page presents an Email field and a Reset Password button. If the email exist
           "type": "password",
           "required": true
         },
-        "Confirm_New_Password": {
+        "Confirm_Password": {
           "type": "password",
           "required": true,
           "constraints": [
@@ -360,9 +391,10 @@ The page presents an Email field and a Reset Password button. If the email exist
         {
           "action_name": "Change Password",
           "preconditions": [
-            "reset link (token) must be valid and not expired"
+            "reset link must be valid and not expired"
           ],
-          "on_success": "updates the user's password and redirects to the Login page with a success message"
+          "on_success": "Change password succeeds \u2192 redirect to the login page with a success message.",
+          "on_failure": "If the reset link is invalid or expired, show an error and do not change the password."
         }
       ]
     }
@@ -374,19 +406,19 @@ The page presents an Email field and a Reset Password button. If the email exist
 [
   {
     "wf_id": "WF-001",
-    "name": "Request password reset via email",
+    "name": "Request password reset (enter email and submit)",
     "actor": "Unauthenticated user",
     "conditional_branch": null,
     "terminal_action": "Reset Password",
-    "on_success": "sends a password reset link to the provided email (link expires after 24 hours) and shows a confirmation message"
+    "on_success": "If the email exists, send a time-limited reset link (expires after 24 hours) to that address and show a confirmation message."
   },
   {
     "wf_id": "WF-002",
-    "name": "Change password using valid reset link",
+    "name": "Change password via valid reset link",
     "actor": "Unauthenticated user",
     "conditional_branch": null,
     "terminal_action": "Change Password",
-    "on_success": "updates the user's password and redirects to the Login page with a success message"
+    "on_success": "Change password succeeds \u2192 redirect to the login page with a success message."
   }
 ]
 </workflows>
@@ -394,12 +426,12 @@ The page presents an Email field and a Reset Password button. If the email exist
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:22:07] Workflow-Validator - LLM RESPONSE
+[22:32:09] Workflow-Validator - LLM RESPONSE
 ------------------------------------------------------------
 {
   "verdict": "yes",
   "attempt": 2,
-  "summary": "All form submit actions in the AST have matching workflows, no state/data-table actions are present or missing, and there are no structural errors.",
+  "summary": "Workflows cover both form submit actions ('Reset Password' and 'Change Password'); no missing or phantom workflows and no structural errors detected.",
   "missing": [],
   "phantoms": [],
   "structural_errors": [],
@@ -408,12 +440,12 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
 }
 
 ------------------------------------------------------------
-[21:22:07] Workflow-Validator - PARSED JSON
+[22:32:09] Workflow-Validator - PARSED JSON
 ------------------------------------------------------------
 {
   "verdict": "yes",
   "attempt": 2,
-  "summary": "All form submit actions in the AST have matching workflows, no state/data-table actions are present or missing, and there are no structural errors.",
+  "summary": "Workflows cover both form submit actions ('Reset Password' and 'Change Password'); no missing or phantom workflows and no structural errors detected.",
   "missing": [],
   "phantoms": [],
   "structural_errors": [],

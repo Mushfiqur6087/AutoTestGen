@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:24:14.023592
+DEBUG SESSION STARTED: 2026-07-04T22:33:07.324373
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:24:14] Test-Edge - SYSTEM PROMPT
+[22:33:07] Test-Edge - SYSTEM PROMPT
 ------------------------------------------------------------
 You are an Edge Case and Boundary Test Generator. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to produce ONLY boundary and edge case tests — scenarios at the limits of valid/invalid input and unusual-but-plausible user behaviors.
 
@@ -53,20 +53,23 @@ You are NOT producing happy paths (positive prompt) or standard validation failu
 
 **ASSERTION STYLE (CRITICAL):**
 
-**Rule A — State clearly whether the boundary value should PASS or FAIL.**
-Every boundary test expected_result must contain the word "succeeds" or "is blocked / error shown".
+**Rule A — State clearly whether the boundary value should PASS or FAIL (HARD REQUIREMENT).**
+Every boundary/edge test expected_result must commit to a **single** outcome — it must contain "succeeds" OR "is blocked / error shown", never both.
 - ❌ `"System handles the input"` — ambiguous
+- ❌ **Hedged / dual outcome (REJECT and rewrite):** `"Either the input is accepted or an error is shown"`, `"succeeds if X, otherwise blocked"`, `"if credentials exist … if not …"`. A test whose expected_result allows both opposite outcomes can never fail. Pick the single most-likely outcome per the spec and assert it; if genuinely unknowable, choose the conservative outcome and state it definitively.
 - ✅ `"Form submits successfully; entity is created with the <minimum value>"`
 - ✅ `"<Field> displays an error indicating the value is below the minimum allowed"`
 
 **Rule B — For edge cases, describe the precise visible outcome.**
 Same rule as the positive/negative prompts — name the UI element that changes.
 - ❌ `"Edge case handled correctly"`
+- ❌ **`on_success` token pasted verbatim** (`"navigates to activity page"`, `"updates results and result count"`) → rewrite to name the visible screen state
+- ❌ **Backend side effect** (`"email sent"`, `"refund initiated"`, `"saved to profile"`, `"balance updated"`) → assert only a visible on-screen confirmation, or drop it
 - ✅ `"Second submission attempt is blocked; only one record appears in the table"`
 - ✅ `"Leading/trailing whitespace is trimmed; saved value shown in detail page has no extra spaces"`
 
-**Rule C — Quote exact error text when the spec provides it.**
-If the description states a specific error string for a boundary violation, use it verbatim.
+**Rule C — Quote exact error text ONLY when the spec provides it; never fabricate a quoted string.**
+If the description states a specific error string for a boundary violation, use it verbatim. If the spec provides no exact string, describe the error generically — quotation marks are reserved for spec-sourced text.
 
 ---
 
@@ -99,6 +102,17 @@ Every test must pass ALL three checks:
 1. **Spec-traceable:** Which exact constraint, field type, or behavior in the description/AST justifies this test? If none → delete it.
 2. **UI-executable:** Triggerable by clicking, typing, or navigating in a browser — no dev tools, no DOM inspection, no API calls, no concurrent users.
 3. **Threshold-specific (not a standard validation failure):** This test targets the exact boundary of a limit — not a clearly invalid value. If ambiguous, err toward including it.
+
+**Do NOT invent a boundary where the spec/AST states no threshold (CRITICAL).**
+If a field has **no** numeric/date/count threshold stated in the spec or AST `constraints`, do NOT fabricate one:
+- ❌ No past-date/"yesterday is blocked" or "today succeeds" tests unless the spec says past dates are rejected.
+- ❌ No "check-out must be ≥1 day after check-in", no minimum-passenger/`Adults = 0 blocked`, no minimum-driver-age, no Feb-29-rejected — unless the spec states that rule.
+- ✅ Legitimate boundary (keep): a spec/AST that DOES state a threshold — e.g. "grade values outside the configured range block saving", "$25 minimum deposit", "at least 8 characters". Test AT and JUST-PAST those real limits.
+When the spec is silent on a threshold, prefer a generic input edge (long text / special chars) or generate nothing for that field.
+
+**Out-of-scope ban list (never generate — not single-page, deterministic UI tests):**
+- Multi-tab / second-tab, "close tab mid-request", server-side completion/session-expiry, race conditions, "in-flight request interrupted", concurrent submissions, cookie/session-storage-disabled (unless the spec describes it).
+- **Curb low-value filler:** at most ONE duplicate-submit ("rapid double-click") edge per form module; do NOT generate animation-timing tests ("click the link while the section is mid-collapse", "rapid toggle parity") — they are not deterministically UI-executable.
 
 ---
 
@@ -225,15 +239,15 @@ If a `<workflows>` block is present in the input:
 
 
 ------------------------------------------------------------
-[21:24:14] Test-Edge - USER PROMPT
+[22:33:07] Test-Edge - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 19,
   "module_title": "Reviews & Ratings",
-  "summary": "Displays aggregate scores and individual guest reviews for listings, including category-specific ratings, written comments, photos, and filtering by rating, date, or traveler type.",
-  "where_it_fits": "Accessible from listing and detail pages within the Hotels/Flights/Tours/Cars sections of the main navigation and exposed on detail pages as a dedicated Reviews section; review submission is also reachable via the user Dashboard or post-stay email prompts after bookings. It complements search/listing workflows by surfacing social proof and post-stay feedback during the booking lifecycle.",
-  "assumed_state_on_entry": "Viewing: public access (no login required); Submitting: authenticated user with a completed/recorded booking (post-stay)."
+  "summary": "Presents aggregated scores and individual guest reviews with category-specific ratings, filters, and photo attachments, and supports post-stay review submissions by eligible users.",
+  "where_it_fits": "Appears on listing pages and item detail pages accessed from the main navigation (Home \u2192 Hotels/Flights/Tours/Cars) and integrates with the User Dashboard and post-stay email workflow; it is part of the post-booking feedback and discovery experience used to inform future bookings. It complements search/listing content by providing social proof and detailed guest feedback within the booking lifecycle.",
+  "assumed_state_on_entry": "Viewing: a listing or detail page exists (with review data available); Submitting: user is authenticated and has a completed booking eligible for review."
 }
 </module_context>
 
@@ -247,12 +261,12 @@ If a `<workflows>` block is present in the input:
       "type": "form",
       "fields": {
         "Rating_Filter": {
-          "type": "unspecified"
+          "type": "dropdown"
         },
         "Date_Filter": {
           "type": "date"
         },
-        "Traveler_Type_Filter": {
+        "Traveler_Type": {
           "type": "dropdown"
         }
       },
@@ -265,33 +279,25 @@ If a `<workflows>` block is present in the input:
         }
       ]
     },
-    "Review_Submission_Form": {
+    "Submit_Review_Form": {
       "type": "form",
-      "preconditions": [
-        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
-      ],
       "fields": {
         "Overall_Rating": {
-          "type": "unspecified",
-          "required": true
+          "type": "unspecified"
         },
         "Category_Ratings": {
           "type": "repeating_group",
           "item_fields": {
             "Category_Name": {
-              "type": "unspecified",
-              "required": true
+              "type": "unspecified"
             },
-            "Category_Rating": {
-              "type": "unspecified",
-              "required": true
+            "Rating": {
+              "type": "unspecified"
             }
-          },
-          "options_note": "e.g., Cleanliness, Service, Location for hotels (partial \u2014 others not specified)"
+          }
         },
-        "Written_Comments": {
-          "type": "unspecified",
-          "required": true
+        "Written_Feedback": {
+          "type": "unspecified"
         },
         "Photos": {
           "type": "file_upload"
@@ -300,25 +306,23 @@ If a `<workflows>` block is present in the input:
       "submit_actions": [
         {
           "action_name": "Submit Review",
-          "on_success": "review submitted"
+          "preconditions": [
+            "Submitting: user is authenticated and has a completed booking eligible for review."
+          ]
         }
       ]
     },
-    "Dashboard_Submit_Review": {
-      "type": "button",
-      "action_name": "Submit Review",
-      "preconditions": [
-        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
-      ],
-      "on_success": "opens Review_Submission_Form"
-    },
-    "Email_Submit_Link": {
+    "Submit_Review_From_Dashboard": {
       "type": "link",
-      "action_name": "Submit Review",
       "preconditions": [
-        "Submitting: authenticated user with a completed/recorded booking (post-stay)"
-      ],
-      "on_success": "opens Review_Submission_Form"
+        "Submitting: user is authenticated and has a completed booking eligible for review."
+      ]
+    },
+    "Submit_Review_From_Email": {
+      "type": "link",
+      "preconditions": [
+        "Submitting: user is authenticated and has a completed booking eligible for review."
+      ]
     }
   }
 }
@@ -334,17 +338,15 @@ Listing pages show an aggregate rating score and total review count for each ite
 </description>
 
 <workflows>
-WF-001 | Apply Filters | actor: Public User | branch: none | terminal: Apply Filters | on_success: Filters applied; review list updated
-WF-002 | Clear Filters | actor: Public User | branch: none | terminal: Clear Filters | on_success: Filters cleared; review list reset
-WF-003 | Submit Review (from Review Submission Form) | actor: Authenticated Post-stay User | branch: source_component == Review_Submission_Form | terminal: Submit Review | on_success: review submitted
-WF-004 | Open Review Form (Dashboard button) | actor: Authenticated Post-stay User | branch: source_component == Dashboard_Submit_Review | terminal: Submit Review | on_success: opens Review_Submission_Form
-WF-005 | Open Review Form (Post-stay Email link) | actor: Authenticated Post-stay User | branch: source_component == Email_Submit_Link | terminal: Submit Review | on_success: opens Review_Submission_Form
+WF-001 | Apply review filters | actor: <role> | branch: none | terminal: Apply Filters | on_success: Reviews filtered according to selected criteria; list updated
+WF-002 | Clear review filters | actor: <role> | branch: none | terminal: Clear Filters | on_success: Filters cleared; reviews list reset to default
+WF-003 | Submit a post-stay review | actor: Authenticated user | branch: none | terminal: Submit Review | on_success: Review submitted; saved and associated with the listing
 </workflows>
 
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:28:33] Test-Edge - LLM RESPONSE
+[22:37:09] Test-Edge - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Reviews & Ratings",
@@ -354,98 +356,93 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-003",
       "subcategory": "input_edge",
-      "test_case": "Very long written comment (200+ chars) on review submission",
+      "test_case": "Very long written feedback (200+ chars) submitted",
       "preconditions": [
-        "User is authenticated and has a completed/recorded booking",
-        "Review_Submission_Form is opened (via Dashboard button or Email link)"
+        "User is authenticated and has a completed booking eligible for review",
+        "Listing detail page with Reviews section is open"
       ],
       "steps": [
-        "1. Click the Dashboard 'Submit Review' button",
-        "2. Enter <valid overall rating> into Overall_Rating",
-        "3. Click 'Add Category' to add a Category_Ratings item",
-        "4. Enter <Category_Name> into Category_Name for the first category",
-        "5. Enter <Category_Rating> into Category_Rating for the first category",
-        "6. Enter a very long string (200+ characters) into Written_Comments",
-        "7. Click the 'Submit Review' button"
+        "1. Click the control to open the Submit Review form from the listing detail page",
+        "2. Enter an Overall_Rating value",
+        "3. Enter a rating for at least one Category_Ratings item",
+        "4. Enter a Written_Feedback value longer than 200 characters",
+        "5. Click the Submit Review button"
       ],
-      "expected_result": "Submit Review succeeds; the new review appears in the Reviews list. The Written_Comments shown on the Reviews list/detail page displays the full 200+ character text (if the UI truncates comments a visible truncation indicator or '...read more' control is shown).",
+      "expected_result": "Submission is blocked; an inline validation error is shown adjacent to the Written_Feedback field indicating the feedback exceeds the maximum allowed length",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-003",
       "subcategory": "input_edge",
-      "test_case": "Written comment containing emoji and extended Unicode / special characters",
+      "test_case": "Written feedback contains special characters and emoji",
       "preconditions": [
-        "User is authenticated and has a completed/recorded booking",
-        "Review_Submission_Form is opened"
+        "User is authenticated and has a completed booking eligible for review",
+        "Listing detail page with Reviews section is open"
       ],
       "steps": [
-        "1. Click the Dashboard 'Submit Review' button",
-        "2. Enter <valid overall rating> into Overall_Rating",
-        "3. Click 'Add Category' to add a Category_Ratings item",
-        "4. Enter <Category_Name> into Category_Name",
-        "5. Enter <Category_Rating> into Category_Rating",
-        "6. Enter a comment containing emoji and extended Unicode characters (e.g., non-Latin scripts, emoji) into Written_Comments",
-        "7. Click the 'Submit Review' button"
+        "1. Click the control to open the Submit Review form from the listing detail page",
+        "2. Enter an Overall_Rating value",
+        "3. Enter a rating for at least one Category_Ratings item",
+        "4. Enter Written_Feedback containing special characters, symbols, and emoji",
+        "5. Click the Submit Review button"
       ],
-      "expected_result": "Submit Review succeeds; the new review appears in the Reviews list and the Written_Comments renders the emoji and extended Unicode characters correctly. If the system rejects unsupported characters, an inline error is shown and submission is blocked with a visible error message.",
-      "priority": "low"
+      "expected_result": "Review submits successfully; the new review appears in the Reviews list and the Written_Feedback displayed on the detail page preserves the special characters and emoji exactly as entered",
+      "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-001",
-      "subcategory": "data_edge",
-      "test_case": "Apply a far-future date in Reviews Date_Filter",
+      "wf_ref": "WF-003",
+      "subcategory": "input_edge",
+      "test_case": "Written feedback with leading and trailing whitespace is submitted",
       "preconditions": [
-        "Public user is viewing a listing or detail page with the Reviews section visible"
+        "User is authenticated and has a completed booking eligible for review",
+        "Listing detail page with Reviews section is open"
       ],
       "steps": [
-        "1. In the Reviews section, click the Date_Filter control",
-        "2. Enter/select a far-future date in Date_Filter (significantly after all existing review dates)",
-        "3. Click the 'Apply Filters' button"
+        "1. Click the control to open the Submit Review form from the listing detail page",
+        "2. Enter an Overall_Rating value",
+        "3. Enter a rating for at least one Category_Ratings item",
+        "4. Enter Written_Feedback with leading and trailing whitespace surrounding the visible text",
+        "5. Click the Submit Review button"
       ],
-      "expected_result": "Apply Filters succeeds; the Reviews list updates. Because the selected date is in the future, the UI shows an updated list reflecting the filter (typically an empty list) and a visible 'no reviews match' message or empty-state display. The Date_Filter control visibly contains the chosen future date.",
-      "priority": "medium"
+      "expected_result": "Review submits successfully; the Written_Feedback displayed in the Reviews list/detail trims leading and trailing whitespace so no extra spaces are visible",
+      "priority": "low"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-003",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid back-navigation and duplicate submission attempt after successful review submission",
+      "test_case": "Rapid double-click of Submit Review (duplicate-submit attempt)",
       "preconditions": [
-        "User is authenticated and has a completed/recorded booking",
-        "Review_Submission_Form is opened"
+        "User is authenticated and has a completed booking eligible for review",
+        "Listing detail page with Reviews section is open"
       ],
       "steps": [
-        "1. Click the Dashboard 'Submit Review' button",
-        "2. Enter <valid overall rating> into Overall_Rating",
-        "3. Click 'Add Category' to add a Category_Ratings item",
-        "4. Enter <Category_Name> into Category_Name",
-        "5. Enter <Category_Rating> into Category_Rating",
-        "6. Enter <valid short comment> into Written_Comments",
-        "7. Click the 'Submit Review' button",
-        "8. On the success redirect (reviews list/detail), immediately click the browser Back button",
-        "9. On the review form shown after Back, click the 'Submit Review' button again to attempt a duplicate submission"
+        "1. Click the control to open the Submit Review form from the listing detail page",
+        "2. Enter an Overall_Rating value",
+        "3. Enter a rating for at least one Category_Ratings item",
+        "4. Enter a non-empty Written_Feedback value",
+        "5. Click the Submit Review button twice in rapid succession"
       ],
-      "expected_result": "The initial submission succeeds and the new review appears in the Reviews list. The second submission attempt is blocked; no duplicate review is created. The Reviews list contains only one instance of the review. If the UI prevents re-submission in another way (submit button disabled or visible message), that visible behavior is shown.",
+      "expected_result": "Second submission attempt is blocked; only one new review appears in the Reviews list after the action",
       "priority": "medium"
     }
   ],
   "summary": {
     "total": 4,
     "boundary": 0,
-    "input_edge": 2,
+    "input_edge": 3,
     "interaction_edge": 1,
     "state_edge": 0,
-    "data_edge": 1,
+    "data_edge": 0,
     "medium_priority": 3,
     "low_priority": 1
   }
 }
 
 ------------------------------------------------------------
-[21:28:33] Test-Edge - PARSED JSON
+[22:37:09] Test-Edge - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Reviews & Ratings",
@@ -455,91 +452,86 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "tc_id": "E-001",
       "wf_ref": "WF-003",
       "subcategory": "input_edge",
-      "test_case": "Very long written comment (200+ chars) on review submission",
+      "test_case": "Very long written feedback (200+ chars) submitted",
       "preconditions": [
-        "User is authenticated and has a completed/recorded booking",
-        "Review_Submission_Form is opened (via Dashboard button or Email link)"
+        "User is authenticated and has a completed booking eligible for review",
+        "Listing detail page with Reviews section is open"
       ],
       "steps": [
-        "1. Click the Dashboard 'Submit Review' button",
-        "2. Enter <valid overall rating> into Overall_Rating",
-        "3. Click 'Add Category' to add a Category_Ratings item",
-        "4. Enter <Category_Name> into Category_Name for the first category",
-        "5. Enter <Category_Rating> into Category_Rating for the first category",
-        "6. Enter a very long string (200+ characters) into Written_Comments",
-        "7. Click the 'Submit Review' button"
+        "1. Click the control to open the Submit Review form from the listing detail page",
+        "2. Enter an Overall_Rating value",
+        "3. Enter a rating for at least one Category_Ratings item",
+        "4. Enter a Written_Feedback value longer than 200 characters",
+        "5. Click the Submit Review button"
       ],
-      "expected_result": "Submit Review succeeds; the new review appears in the Reviews list. The Written_Comments shown on the Reviews list/detail page displays the full 200+ character text (if the UI truncates comments a visible truncation indicator or '...read more' control is shown).",
+      "expected_result": "Submission is blocked; an inline validation error is shown adjacent to the Written_Feedback field indicating the feedback exceeds the maximum allowed length",
       "priority": "medium"
     },
     {
       "tc_id": "E-002",
       "wf_ref": "WF-003",
       "subcategory": "input_edge",
-      "test_case": "Written comment containing emoji and extended Unicode / special characters",
+      "test_case": "Written feedback contains special characters and emoji",
       "preconditions": [
-        "User is authenticated and has a completed/recorded booking",
-        "Review_Submission_Form is opened"
+        "User is authenticated and has a completed booking eligible for review",
+        "Listing detail page with Reviews section is open"
       ],
       "steps": [
-        "1. Click the Dashboard 'Submit Review' button",
-        "2. Enter <valid overall rating> into Overall_Rating",
-        "3. Click 'Add Category' to add a Category_Ratings item",
-        "4. Enter <Category_Name> into Category_Name",
-        "5. Enter <Category_Rating> into Category_Rating",
-        "6. Enter a comment containing emoji and extended Unicode characters (e.g., non-Latin scripts, emoji) into Written_Comments",
-        "7. Click the 'Submit Review' button"
+        "1. Click the control to open the Submit Review form from the listing detail page",
+        "2. Enter an Overall_Rating value",
+        "3. Enter a rating for at least one Category_Ratings item",
+        "4. Enter Written_Feedback containing special characters, symbols, and emoji",
+        "5. Click the Submit Review button"
       ],
-      "expected_result": "Submit Review succeeds; the new review appears in the Reviews list and the Written_Comments renders the emoji and extended Unicode characters correctly. If the system rejects unsupported characters, an inline error is shown and submission is blocked with a visible error message.",
-      "priority": "low"
+      "expected_result": "Review submits successfully; the new review appears in the Reviews list and the Written_Feedback displayed on the detail page preserves the special characters and emoji exactly as entered",
+      "priority": "medium"
     },
     {
       "tc_id": "E-003",
-      "wf_ref": "WF-001",
-      "subcategory": "data_edge",
-      "test_case": "Apply a far-future date in Reviews Date_Filter",
+      "wf_ref": "WF-003",
+      "subcategory": "input_edge",
+      "test_case": "Written feedback with leading and trailing whitespace is submitted",
       "preconditions": [
-        "Public user is viewing a listing or detail page with the Reviews section visible"
+        "User is authenticated and has a completed booking eligible for review",
+        "Listing detail page with Reviews section is open"
       ],
       "steps": [
-        "1. In the Reviews section, click the Date_Filter control",
-        "2. Enter/select a far-future date in Date_Filter (significantly after all existing review dates)",
-        "3. Click the 'Apply Filters' button"
+        "1. Click the control to open the Submit Review form from the listing detail page",
+        "2. Enter an Overall_Rating value",
+        "3. Enter a rating for at least one Category_Ratings item",
+        "4. Enter Written_Feedback with leading and trailing whitespace surrounding the visible text",
+        "5. Click the Submit Review button"
       ],
-      "expected_result": "Apply Filters succeeds; the Reviews list updates. Because the selected date is in the future, the UI shows an updated list reflecting the filter (typically an empty list) and a visible 'no reviews match' message or empty-state display. The Date_Filter control visibly contains the chosen future date.",
-      "priority": "medium"
+      "expected_result": "Review submits successfully; the Written_Feedback displayed in the Reviews list/detail trims leading and trailing whitespace so no extra spaces are visible",
+      "priority": "low"
     },
     {
       "tc_id": "E-004",
       "wf_ref": "WF-003",
       "subcategory": "interaction_edge",
-      "test_case": "Rapid back-navigation and duplicate submission attempt after successful review submission",
+      "test_case": "Rapid double-click of Submit Review (duplicate-submit attempt)",
       "preconditions": [
-        "User is authenticated and has a completed/recorded booking",
-        "Review_Submission_Form is opened"
+        "User is authenticated and has a completed booking eligible for review",
+        "Listing detail page with Reviews section is open"
       ],
       "steps": [
-        "1. Click the Dashboard 'Submit Review' button",
-        "2. Enter <valid overall rating> into Overall_Rating",
-        "3. Click 'Add Category' to add a Category_Ratings item",
-        "4. Enter <Category_Name> into Category_Name",
-        "5. Enter <Category_Rating> into Category_Rating",
-        "6. Enter <valid short comment> into Written_Comments",
-        "7. Click the 'Submit Review' button",
-        "8. On the success redirect (reviews list/detail), immediately click the browser Back button",
-        "9. On the review form shown after Back, click the 'Submit Review' button again to attempt a duplicate submission"
+        "1. Click the control to open the Submit Review form from the listing detail page",
+        "2. Enter an Overall_Rating value",
+        "3. Enter a rating for at least one Category_Ratings item",
+        "4. Enter a non-empty Written_Feedback value",
+        "5. Click the Submit Review button twice in rapid succession"
       ],
-      "expected_result": "The initial submission succeeds and the new review appears in the Reviews list. The second submission attempt is blocked; no duplicate review is created. The Reviews list contains only one instance of the review. If the UI prevents re-submission in another way (submit button disabled or visible message), that visible behavior is shown.",
+      "expected_result": "Second submission attempt is blocked; only one new review appears in the Reviews list after the action",
       "priority": "medium"
     }
   ],
   "summary": {
     "total": 4,
     "boundary": 0,
-    "input_edge": 2,
+    "input_edge": 3,
     "interaction_edge": 1,
     "state_edge": 0,
-    "data_edge": 1,
+    "data_edge": 0,
     "medium_priority": 3,
     "low_priority": 1
   }

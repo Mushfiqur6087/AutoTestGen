@@ -1,11 +1,11 @@
 ================================================================================
-DEBUG SESSION STARTED: 2026-07-04T21:20:32.030651
+DEBUG SESSION STARTED: 2026-07-04T22:30:08.754210
 Model: openai/gpt-5-mini
 ================================================================================
 
 
 ------------------------------------------------------------
-[21:20:32] Workflow-Extractor - SYSTEM PROMPT
+[22:30:08] Workflow-Extractor - SYSTEM PROMPT
 ------------------------------------------------------------
 You are a Workflow Extractor. You receive (1) a Structural Model JSON for one module and (2) the original functional description. Your job is to enumerate every distinct, executable interaction path through this module — one entry per workflow.
 
@@ -54,12 +54,12 @@ Two workflows are **distinct** if they require different user actions to reach t
 
 ## What Paths to Enumerate
 
-Enumerate **all** distinct paths — not one-per-type. The rule: if two paths require the user to do something different to reach the terminal action, they are separate workflows.
+Enumerate **distinct-outcome** paths — not one-per-type, and **not** the cartesian product of every toggle. The rule: two paths are separate workflows only if the user does something different that leads to a **different terminal outcome** (different `on_success`) **or** exercises a **different revealed required-field group** that needs its own coverage.
 
 | AST node type | What to enumerate |
 |---|---|
 | `form` with no conditionals | One workflow per `submit_actions[]` entry |
-| `form` with `visible_when` fields | One workflow per unique combination of conditional branches activated, times each `submit_actions[]` entry |
+| `form` with `visible_when` / toggle fields | One base workflow per `submit_actions[]` entry, PLUS one workflow for **each conditional branch that reveals a distinct required-field group** (e.g. enabling File submissions reveals max-files/size/types). Do **NOT** multiply independent toggles together. |
 | `wizard` | One workflow per distinct step sequence (if all steps are linear, one workflow per `submit_actions[]`; if any step is conditional, enumerate each branch) |
 | `state_bound_action_bar` | One workflow per `available_actions[]` entry per state (state × action = one workflow) |
 | `data_table` | One workflow per `row_actions[]` entry + one per `bulk_actions[]` entry (include View, Edit, Delete, and all others) |
@@ -67,6 +67,20 @@ Enumerate **all** distinct paths — not one-per-type. The rule: if two paths re
 | `repeating_group` | Not a standalone workflow source — it is part of a form workflow that activates it |
 
 **Include all data table row actions** — View, Edit, Delete, and any others. Even read-only row actions (e.g., "View") must be included because they still require a positive test case.
+
+### DO NOT enumerate the cartesian product of toggles (CRITICAL)
+
+A form with independent toggles A, B, C and submit buttons {Save, Save+display, Cancel} must **not** produce 2×2×2×3 = 24 workflows. Independent toggles that do **not** change the terminal outcome are covered **once each**, not in combination:
+- If toggle A (e.g. `File_Submissions`) and toggle B (e.g. `Group_Submissions`) both still reach the same `on_success` ("assignment created"), they are **not** two dimensions to multiply. Emit one workflow that activates A's revealed fields, and one that activates B's revealed fields — not A×B.
+- An `+ Add restriction` / optional-picker step that does not change `on_success` is **not** a separate workflow dimension. Fold it into an existing workflow or add at most one workflow for it.
+
+### Discard / Cancel collapse rule (CRITICAL)
+
+A `Cancel` / `discard` / `abandon` terminal action discards **all** field state, so field/toggle combinations are irrelevant to it. Emit **exactly ONE** Cancel workflow for the module, regardless of how many toggles or revealed-field groups exist. Never produce a Cancel workflow per toggle combination.
+
+**Worked example — Assignment Creation** (toggles: File submissions, Group submissions, Add restriction; buttons: Save and return, Save and display, Cancel):
+- ✅ Correct (~6–8): base Save-and-return, base Save-and-display, one Save covering File-submission revealed fields, one Save covering Group-submission revealed fields, one Save covering an added restriction, one Cancel.
+- ❌ Wrong (24): every `{File}×{Group}×{Restriction}×{Save/Display/Cancel}` combination.
 
 ---
 
@@ -101,9 +115,11 @@ Go through these one by one. If any check fails, fix it before outputting.
 □ 4. Every tab with a form submission in a `tab_container` has one workflow.
 □ 5. `wf_id` numbering is sequential (WF-001, WF-002, ...) with no gaps.
 □ 6. Every `terminal_action` matches an exact `action_name` or `element_name` from the AST.
-□ 7. No two workflows share the same `conditional_branch` AND `terminal_action`.
-□ 8. No workflow crosses module boundaries (steps in another module).
-□ 9. Every `on_success` reflects the AST or description — no generic "success" strings.
+□ 7. No two workflows reach the **same `on_success` via the same code path** — even if their `conditional_branch` strings differ. If they do, merge them (keep the one that activates a distinct revealed required-field group; drop pure toggle-combination duplicates).
+□ 8. There is **at most ONE** `Cancel`/`discard` workflow for the whole module.
+□ 9. No independent toggles are multiplied together — the workflow count is roughly (base submits) + (revealed required-field groups) + 1 Cancel, NOT the product of all toggles × all buttons.
+□ 10. No workflow crosses module boundaries (steps in another module).
+□ 11. Every `on_success` reflects the AST or description — no generic "success" strings.
 
 ---
 
@@ -111,7 +127,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 1. Does each workflow trace back to a specific AST node (`submit_actions[]`, `available_actions[]`, `row_actions[]`, `bulk_actions[]`) or an explicit action described in the description text? If no → delete it.
 2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
-3. Are two workflows identical in `conditional_branch` AND `terminal_action`? If yes → merge them into one.
+3. Do two workflows reach the same `on_success` via the same code path (e.g. differing only by an independent toggle that does not change the outcome, or being repeated Cancel variants)? If yes → merge them into one. Keep a separate workflow only when its branch reveals a **distinct required-field group** that needs its own coverage.
 4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
 5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
 
@@ -120,7 +136,7 @@ Go through these one by one. If any check fails, fix it before outputting.
 ## Calibration
 
 - Simple form module (no conditionals, one submit): 1–3 workflows
-- Form with conditionals: 3–8 workflows
+- Form with conditionals/toggles: **(base submit outcomes) + (one per revealed required-field group) + 1 Cancel** — typically 4–8, NOT the product of all toggles × all buttons. A multi-toggle form like Assignment Creation should land near 6–8, never 20+.
 - Module with state machine: add 1 per (state × action) combination
 - Module with data table: add 1 per row_action + 1 per bulk_action
 
@@ -153,15 +169,15 @@ Go through these one by one. If any check fails, fix it before outputting.
 
 
 ------------------------------------------------------------
-[21:20:32] Workflow-Extractor - USER PROMPT
+[22:30:08] Workflow-Extractor - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 6,
   "module_title": "Hotel Details & Booking",
-  "summary": "Displays comprehensive hotel information (gallery, description, location, room types, pricing, reviews, and policies) and presents a room selection and booking form with a detailed price breakdown.",
-  "where_it_fits": "Accessible from the top navigation via Hotels and from the Home Page search results, this module is the step after Hotels Search & Listing and precedes Payment Processing in the booking lifecycle; it feeds selected room and guest details into the payment flow and links to the User Dashboard for booking history after completion.",
-  "assumed_state_on_entry": "A specific hotel has been selected from Hotels Search & Listing (stay dates and guest count chosen); user authentication is required to complete the booking (viewing details may not require login)."
+  "summary": "Displays comprehensive hotel information (photos, description, map), room options with pricing and policies, guest reviews, and a booking form that captures guest details and price breakdown prior to payment.",
+  "where_it_fits": "Accessible from the main navigation via Home -> Hotels or Hotels Search & Listing, this module is the detailed property view users reach after searching for hotels and selecting a result; it precedes Payment Processing and Booking Management in the booking lifecycle.",
+  "assumed_state_on_entry": "User has performed a hotel search and selected a specific hotel and stay dates (guest count and room selection available); booking completion requires an authenticated (logged-in) user."
 }
 </module_context>
 
@@ -176,37 +192,41 @@ Go through these one by one. If any check fails, fix it before outputting.
       "row_actions": [
         {
           "action_name": "Select Room",
-          "on_success": "sets Selected_Room_Type and reveals booking form"
+          "on_success": "opens Booking_Form with selected room prefilled; sets Room_Selected == true"
         }
       ]
     },
     "Booking_Form": {
       "type": "form",
-      "visible_when": "Selected_Room_Type is set",
+      "visible_when": "Room_Selected == true",
       "fields": {
         "First_Name": {
-          "type": "unspecified"
+          "type": "text",
+          "required": true
         },
         "Last_Name": {
-          "type": "unspecified"
+          "type": "text",
+          "required": true
         },
         "Email": {
-          "type": "unspecified"
+          "type": "email",
+          "required": true
         },
         "Phone_Number": {
-          "type": "unspecified"
+          "type": "tel",
+          "required": true
         },
         "Special_Requests": {
-          "type": "unspecified"
+          "type": "textarea"
         }
       },
       "submit_actions": [
         {
           "action_name": "Book Now",
+          "on_success": "navigates to Payment Processing",
           "preconditions": [
             "user must be logged in"
-          ],
-          "on_success": "proceeds to the payment page"
+          ]
         }
       ]
     }
@@ -226,67 +246,67 @@ The hotel details page displays a photo gallery, full property description, loca
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:20:58] Workflow-Extractor - LLM RESPONSE
+[22:30:21] Workflow-Extractor - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Hotel Details & Booking",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Select a room from the room types list",
-      "actor": "user",
+      "name": "Select Room from Room Types list",
+      "actor": "User",
       "conditional_branch": null,
       "terminal_action": "Select Room",
-      "on_success": "sets Selected_Room_Type and reveals booking form"
+      "on_success": "opens Booking_Form with selected room prefilled; sets Room_Selected == true"
     },
     {
       "wf_id": "WF-002",
-      "name": "Book Now with a selected room while logged in",
-      "actor": "user",
-      "conditional_branch": "Selected_Room_Type is set AND user_logged_in == true",
+      "name": "Submit Booking Form via Book Now (authenticated)",
+      "actor": "Authenticated User",
+      "conditional_branch": "Room_Selected == true AND user_logged_in == true",
       "terminal_action": "Book Now",
-      "on_success": "proceeds to the payment page"
+      "on_success": "navigates to Payment Processing"
     }
   ],
   "total": 2
 }
 
 ------------------------------------------------------------
-[21:20:58] Workflow-Extractor - PARSED JSON
+[22:30:21] Workflow-Extractor - PARSED JSON
 ------------------------------------------------------------
 {
   "module": "Hotel Details & Booking",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Select a room from the room types list",
-      "actor": "user",
+      "name": "Select Room from Room Types list",
+      "actor": "User",
       "conditional_branch": null,
       "terminal_action": "Select Room",
-      "on_success": "sets Selected_Room_Type and reveals booking form"
+      "on_success": "opens Booking_Form with selected room prefilled; sets Room_Selected == true"
     },
     {
       "wf_id": "WF-002",
-      "name": "Book Now with a selected room while logged in",
-      "actor": "user",
-      "conditional_branch": "Selected_Room_Type is set AND user_logged_in == true",
+      "name": "Submit Booking Form via Book Now (authenticated)",
+      "actor": "Authenticated User",
+      "conditional_branch": "Room_Selected == true AND user_logged_in == true",
       "terminal_action": "Book Now",
-      "on_success": "proceeds to the payment page"
+      "on_success": "navigates to Payment Processing"
     }
   ],
   "total": 2
 }
 
 ------------------------------------------------------------
-[21:21:45] Workflow-Extractor - USER PROMPT
+[22:31:12] Workflow-Extractor - USER PROMPT
 ------------------------------------------------------------
 <module_context>
 {
   "module_id": 6,
   "module_title": "Hotel Details & Booking",
-  "summary": "Displays comprehensive hotel information (gallery, description, location, room types, pricing, reviews, and policies) and presents a room selection and booking form with a detailed price breakdown.",
-  "where_it_fits": "Accessible from the top navigation via Hotels and from the Home Page search results, this module is the step after Hotels Search & Listing and precedes Payment Processing in the booking lifecycle; it feeds selected room and guest details into the payment flow and links to the User Dashboard for booking history after completion.",
-  "assumed_state_on_entry": "A specific hotel has been selected from Hotels Search & Listing (stay dates and guest count chosen); user authentication is required to complete the booking (viewing details may not require login)."
+  "summary": "Displays comprehensive hotel information (photos, description, map), room options with pricing and policies, guest reviews, and a booking form that captures guest details and price breakdown prior to payment.",
+  "where_it_fits": "Accessible from the main navigation via Home -> Hotels or Hotels Search & Listing, this module is the detailed property view users reach after searching for hotels and selecting a result; it precedes Payment Processing and Booking Management in the booking lifecycle.",
+  "assumed_state_on_entry": "User has performed a hotel search and selected a specific hotel and stay dates (guest count and room selection available); booking completion requires an authenticated (logged-in) user."
 }
 </module_context>
 
@@ -301,37 +321,41 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
       "row_actions": [
         {
           "action_name": "Select Room",
-          "on_success": "sets Selected_Room_Type and reveals booking form"
+          "on_success": "opens Booking_Form with selected room prefilled; sets Room_Selected == true"
         }
       ]
     },
     "Booking_Form": {
       "type": "form",
-      "visible_when": "Selected_Room_Type is set",
+      "visible_when": "Room_Selected == true",
       "fields": {
         "First_Name": {
-          "type": "unspecified"
+          "type": "text",
+          "required": true
         },
         "Last_Name": {
-          "type": "unspecified"
+          "type": "text",
+          "required": true
         },
         "Email": {
-          "type": "unspecified"
+          "type": "email",
+          "required": true
         },
         "Phone_Number": {
-          "type": "unspecified"
+          "type": "tel",
+          "required": true
         },
         "Special_Requests": {
-          "type": "unspecified"
+          "type": "textarea"
         }
       },
       "submit_actions": [
         {
           "action_name": "Book Now",
+          "on_success": "navigates to Payment Processing",
           "preconditions": [
             "user must be logged in"
-          ],
-          "on_success": "proceeds to the payment page"
+          ]
         }
       ]
     }
@@ -351,33 +375,152 @@ The hotel details page displays a photo gallery, full property description, loca
 IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
 
 ------------------------------------------------------------
-[21:22:05] Workflow-Extractor - LLM RESPONSE
+[22:31:48] Workflow-Extractor - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Hotel Details & Booking",
   "workflows": [
     {
       "wf_id": "WF-001",
-      "name": "Select a room from the room types list",
-      "actor": "<role>",
+      "name": "Select Room from Room Types List",
+      "actor": "User",
       "conditional_branch": null,
       "terminal_action": "Select Room",
-      "on_success": "sets Selected_Room_Type and reveals booking form"
+      "on_success": "opens Booking_Form with selected room prefilled; sets Room_Selected == true"
     },
     {
       "wf_id": "WF-002",
-      "name": "Book Now after selecting a room",
-      "actor": "<role>",
-      "conditional_branch": "Selected_Room_Type is set",
+      "name": "Book Now (authenticated user proceeds to payment)",
+      "actor": "Authenticated User",
+      "conditional_branch": "Room_Selected == true",
       "terminal_action": "Book Now",
-      "on_success": "proceeds to the payment page"
+      "on_success": "navigates to Payment Processing"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Book Now (unauthenticated user redirected to login)",
+      "actor": "Unauthenticated User",
+      "conditional_branch": "Room_Selected == true AND user_logged_in == false",
+      "terminal_action": "Book Now",
+      "on_success": "redirects to Login/Authentication flow (then return to Booking_Form)"
     }
   ],
-  "total": 2
+  "total": 3
 }
 
 ------------------------------------------------------------
-[21:22:05] Workflow-Extractor - PARSED JSON
+[22:31:48] Workflow-Extractor - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Hotel Details & Booking",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Select Room from Room Types List",
+      "actor": "User",
+      "conditional_branch": null,
+      "terminal_action": "Select Room",
+      "on_success": "opens Booking_Form with selected room prefilled; sets Room_Selected == true"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Book Now (authenticated user proceeds to payment)",
+      "actor": "Authenticated User",
+      "conditional_branch": "Room_Selected == true",
+      "terminal_action": "Book Now",
+      "on_success": "navigates to Payment Processing"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Book Now (unauthenticated user redirected to login)",
+      "actor": "Unauthenticated User",
+      "conditional_branch": "Room_Selected == true AND user_logged_in == false",
+      "terminal_action": "Book Now",
+      "on_success": "redirects to Login/Authentication flow (then return to Booking_Form)"
+    }
+  ],
+  "total": 3
+}
+
+------------------------------------------------------------
+[22:32:15] Workflow-Extractor - USER PROMPT
+------------------------------------------------------------
+<module_context>
+{
+  "module_id": 6,
+  "module_title": "Hotel Details & Booking",
+  "summary": "Displays comprehensive hotel information (photos, description, map), room options with pricing and policies, guest reviews, and a booking form that captures guest details and price breakdown prior to payment.",
+  "where_it_fits": "Accessible from the main navigation via Home -> Hotels or Hotels Search & Listing, this module is the detailed property view users reach after searching for hotels and selecting a result; it precedes Payment Processing and Booking Management in the booking lifecycle.",
+  "assumed_state_on_entry": "User has performed a hotel search and selected a specific hotel and stay dates (guest count and room selection available); booking completion requires an authenticated (logged-in) user."
+}
+</module_context>
+
+<module_name>Hotel Details & Booking</module_name>
+
+<ast>
+{
+  "module_name": "Hotel Details & Booking",
+  "components": {
+    "Room_Types_List": {
+      "type": "data_table",
+      "row_actions": [
+        {
+          "action_name": "Select Room",
+          "on_success": "opens Booking_Form with selected room prefilled; sets Room_Selected == true"
+        }
+      ]
+    },
+    "Booking_Form": {
+      "type": "form",
+      "visible_when": "Room_Selected == true",
+      "fields": {
+        "First_Name": {
+          "type": "text",
+          "required": true
+        },
+        "Last_Name": {
+          "type": "text",
+          "required": true
+        },
+        "Email": {
+          "type": "email",
+          "required": true
+        },
+        "Phone_Number": {
+          "type": "tel",
+          "required": true
+        },
+        "Special_Requests": {
+          "type": "textarea"
+        }
+      },
+      "submit_actions": [
+        {
+          "action_name": "Book Now",
+          "on_success": "navigates to Payment Processing",
+          "preconditions": [
+            "user must be logged in"
+          ]
+        }
+      ]
+    }
+  }
+}
+</ast>
+
+<description>
+
+The hotel details page displays a photo gallery, full property description, location map, room types with pricing and maximum occupancy, guest reviews and aggregate rating, and hotel policies including cancellation policy and check-in/check-out times. After selecting a room, a booking form shows the selected hotel and room type, stay dates, guest count, and a price breakdown (room rate, taxes, fees, and total). The user provides First Name, Last Name, Email, Phone Number, and optional Special Requests. Clicking Book Now requires the user to be logged in and proceeds to the payment page.
+
+---
+
+
+</description>
+
+IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks, just pure JSON.
+
+------------------------------------------------------------
+[22:32:31] Workflow-Extractor - LLM RESPONSE
 ------------------------------------------------------------
 {
   "module": "Hotel Details & Booking",
@@ -385,19 +528,61 @@ IMPORTANT: Return your response as valid JSON only. No markdown, no code blocks,
     {
       "wf_id": "WF-001",
       "name": "Select a room from the room types list",
-      "actor": "<role>",
+      "actor": "User",
       "conditional_branch": null,
       "terminal_action": "Select Room",
-      "on_success": "sets Selected_Room_Type and reveals booking form"
+      "on_success": "opens Booking_Form with selected room prefilled; sets Room_Selected == true"
     },
     {
       "wf_id": "WF-002",
-      "name": "Book Now after selecting a room",
-      "actor": "<role>",
-      "conditional_branch": "Selected_Room_Type is set",
+      "name": "Book Now when a room is selected and user is logged in",
+      "actor": "User",
+      "conditional_branch": "Room_Selected == true AND user_logged_in == true",
       "terminal_action": "Book Now",
-      "on_success": "proceeds to the payment page"
+      "on_success": "navigates to Payment Processing"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Book Now when a room is selected but user is not logged in",
+      "actor": "User",
+      "conditional_branch": "Room_Selected == true AND user_logged_in == false",
+      "terminal_action": "Book Now",
+      "on_success": "redirects to Login"
     }
   ],
-  "total": 2
+  "total": 3
+}
+
+------------------------------------------------------------
+[22:32:31] Workflow-Extractor - PARSED JSON
+------------------------------------------------------------
+{
+  "module": "Hotel Details & Booking",
+  "workflows": [
+    {
+      "wf_id": "WF-001",
+      "name": "Select a room from the room types list",
+      "actor": "User",
+      "conditional_branch": null,
+      "terminal_action": "Select Room",
+      "on_success": "opens Booking_Form with selected room prefilled; sets Room_Selected == true"
+    },
+    {
+      "wf_id": "WF-002",
+      "name": "Book Now when a room is selected and user is logged in",
+      "actor": "User",
+      "conditional_branch": "Room_Selected == true AND user_logged_in == true",
+      "terminal_action": "Book Now",
+      "on_success": "navigates to Payment Processing"
+    },
+    {
+      "wf_id": "WF-003",
+      "name": "Book Now when a room is selected but user is not logged in",
+      "actor": "User",
+      "conditional_branch": "Room_Selected == true AND user_logged_in == false",
+      "terminal_action": "Book Now",
+      "on_success": "redirects to Login"
+    }
+  ],
+  "total": 3
 }
