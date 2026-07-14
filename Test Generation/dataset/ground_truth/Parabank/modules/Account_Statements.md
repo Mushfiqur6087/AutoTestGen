@@ -11,8 +11,8 @@ Source: dataset/ground_truth/Parabank/Parabank.md
 | MW-AS-001 | Generate monthly statement | User logged in | 1. Select month-and-year period<br>2. Select account<br>3. Click "Generate Statement" | "Statement generated successfully." | High |
 | MW-AS-002 | Generate custom date range | User logged in | 1. Select custom date range<br>2. Enter start and end dates<br>3. Select account<br>4. Submit | Statement generated | High |
 | MW-AS-003 | Invalid date range | User logged in | 1. Enter end date before start date<br>2. Submit | Validation error | High |
-| MW-AS-004 | No account selected | User logged in | 1. Don't select account<br>2. Submit | Validation error | High |
-| MW-AS-005 | Generation failure | User logged in | 1. Trigger generation error (server issue) | "Unable to generate statement — please try again later." | Medium |
+| MW-AS-004 | Month and Year left blank when selected | User logged in | 1. Select "Month and Year" period<br>2. Leave Month and Year blank<br>3. Select account<br>4. Submit | Validation error, form does not submit | High |
+| MW-AS-005 | Unauthenticated access blocked | User not logged in | 1. Navigate directly to Account Statements page URL | Redirected to login page, Statements content not accessible | Medium |
 
 ### E-Statement Preference Tests
 

@@ -21,9 +21,9 @@ Source: dataset/ground_truth/Parabank/Parabank.md
 | MW-LOGIN-007 | Empty email | None | 1. Leave email empty<br>2. Enter password<br>3. Click "Sign In" | Validation error for email field | High |
 | MW-LOGIN-008 | Empty password | None | 1. Enter email<br>2. Leave password empty<br>3. Click "Sign In" | Validation error for password field | High |
 | MW-LOGIN-009 | Password less than 8 chars | None | 1. Enter valid email<br>2. Enter password < 8 characters<br>3. Click "Sign In" | Validation error: password must be at least 8 characters | High |
-| MW-LOGIN-010 | Password without uppercase | None | 1. Enter password without uppercase letter | Validation error: password must contain uppercase | Medium |
-| MW-LOGIN-011 | Password without lowercase | None | 1. Enter password without lowercase letter | Validation error: password must contain lowercase | Medium |
-| MW-LOGIN-012 | Password without number | None | 1. Enter password without number | Validation error: password must contain number | Medium |
+| MW-LOGIN-010 | Forgot Password link | None | 1. Click "Forgot Password?" link on login form | Password Reset page opens with Email/Username field and submit control | Medium |
+| MW-LOGIN-011 | Already-authenticated user redirected from Sign In | User already logged in | 1. Navigate to the Sign In page while authenticated | Sign In form not displayed; user remains on/redirected to Accounts Overview | Medium |
+| MW-LOGIN-012 | Email whitespace trimmed | Registered user exists | 1. Enter registered email with leading/trailing whitespace<br>2. Enter valid password<br>3. Click "Sign In" | Whitespace trimmed, sign-in succeeds | Low |
 | MW-LOGIN-013 | Password without special char | None | 1. Enter password without special character | Validation error: password must contain special character | Medium |
 | MW-LOGIN-014 | Login with extremely long email | None | 1. Enter email > 255 chars | Validation error or prevented | Low |
 | MW-LOGIN-015 | SQL injection in email | None | 1. Enter "' OR 1=1 --" in email | Error message, no login | High |

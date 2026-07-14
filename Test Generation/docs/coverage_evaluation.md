@@ -10,6 +10,8 @@ The question for every GT scenario is: _did the generated (GEN) suite exercise t
 
 Never score by keyword overlap between the GT `Test Case` string and a GEN `test_case` string. Read both down to the behavior they assert and compare at that level.
 
+**On close calls, lean generous.** If a GEN test genuinely exercises the same feature/flow as a GT scenario — even via a different (but related) precondition, a partially-overlapping boundary, or an outcome the GT scenario itself states loosely/alternatively — prefer the more generous verdict (Covered over Partially Covered, Partially Covered over Not Covered). Reserve **Not Covered** for scenarios where nothing in the GEN suite, even loosely, touches the behavior. Don't manufacture a match that isn't there, but don't withhold credit over a difference in precondition wording or an unisolated (rather than untested) boundary.
+
 ---
 
 ## Scope: One Module at a Time
@@ -38,9 +40,9 @@ If GT and GEN test the identical technical behavior in different words, it's **C
 
 ### 2. Core Boundaries vs. Generic Tests
 
-A generic/happy-adjacent test does **not** cover a specific boundary or edge condition. The specific condition must be explicitly exercised.
+A generic/happy-adjacent test does not, by itself, fully substitute for a specific boundary or edge condition — but it earns at least **Partially Covered** if it exercises the same field/flow/feature, rather than defaulting straight to Not Covered. Reserve **Not Covered** for when the feature area itself is untouched.
 
-> GT: "Submit with invalid username format containing special characters" · GEN: "Submit with invalid credentials" → **Not Covered** (or **Partially Covered** if GEN at least tests some invalid-username path) — the special-character boundary itself is untested.
+> GT: "Submit with invalid username format containing special characters" · GEN: "Submit with invalid credentials" → **Partially Covered** — GEN tests the invalid-username path generically, but the special-character boundary itself isn't isolated. (Only **Not Covered** if no GEN test touches invalid-username submission at all.)
 
 ### 3. Fixture and Data Agnosticism
 
@@ -56,17 +58,19 @@ Match at the behavior level, not 1:1 at the test-case level. Mapping is many-to-
 - Two separate GEN tests together covering all clauses of one combined GT scenario → that GT scenario is **Covered**.
 - One GT scenario can legitimately be satisfied by several GEN tests jointly, even when the GT scenario itself is not a combined/multi-clause one — e.g., GEN-013 exercises the field-level rejection and GEN-021 exercises the resulting error message the GT scenario expects; list both as matches. Don't force a single tc_id when the behavior is only fully asserted across more than one GEN test.
 
-### 5. Negative Assertions & State Checks Must Be Explicit
+### 5. Negative Assertions & State Checks
 
-A GT scenario requiring an absence ("X is not possible", "Y is not visible") is only **Covered** if GEN explicitly asserts the absence — not merely if GEN asserts an adjacent, unrelated positive state.
+A GT scenario requiring an absence ("X is not possible", "Y is not visible") is **Covered** if GEN explicitly asserts the absence, or asserts a directly-blocking consequence of it (e.g., the action fails/is rejected as a result). It is **not** Covered merely because GEN asserts an adjacent, unrelated positive state.
 
-> GT: "Student cannot access Settings" · GEN: "Course tabs are visible" (no mention of Settings) → **Not Covered**. GEN must assert the Settings tab/action is absent or blocked.
+> GT: "Student cannot access Settings" · GEN: "Course tabs are visible" (no mention of Settings) → **Not Covered**. GEN must assert the Settings tab/action is absent or blocked — an unrelated positive assertion doesn't imply it.
 
 ### 6. Equivalence Classes
 
 The specific field/entity under test can differ if it belongs to the same functional equivalence class as the GT scenario.
 
 > GT: required-field validation tested via "First Name" blank · GEN: same validation tested via "Email" blank → same equivalence class (required-field validation) → **Covered**.
+
+This generalizes to any number of fields, not just two. If a form has N fields that GT scores as N separate "field X is empty/required" scenarios, and GEN demonstrates that *same* validation mechanism (e.g., blank-submit triggers an inline required-field error) on even one of those fields, credit every GT scenario in that set as **Covered** — don't require a discrete GEN test per field. The rationale: once the pattern (client-side required-field validation exists and behaves consistently) is established for one field, re-proving it field-by-field tests the same code path, not new behavior. This still requires GEN to have actually exercised that validation mechanism on at least one field in the set — it does not extend to a set where no field's blank/required case was tested at all, and it does not let a *different* validation type (e.g., a format or matching check) stand in for the untested required/blank check (see Rule 2's per-boundary guidance).
 
 ### 7. Implied and Partial Coverage (Specific Implies General)
 
@@ -91,7 +95,8 @@ For each module, work GT-scenario-first (not GEN-test-first) so nothing in the h
    - A gap list of `Not Covered` and `Partially Covered` scenarios, grouped by GT section (Functional / Negative / Boundary / Additional Coverage).
 6. Produce the module summary report (see Module Summary Report below). This requires collapsing the three verdicts down to two buckets, so resolve every `Partially Covered` scenario individually:
    - Re-read the specific gap noted in its justification and judge, case by case, whether what's missing is minor/incidental (→ counts as **Covered**) or touches a real, distinct behavior a tester would flag as untested (→ counts as **Not Covered**).
-   - There is no fixed rule for this call — don't default all partials to one bucket. Note the reclassification reasoning inline next to the gap list so the judgment call is auditable.
+   - Default to **Covered** unless the gap is a concrete, separately-testable behavior a tester would explicitly call out as missing (a distinct boundary value, a distinct error path, a distinct UI-state assertion). A difference in precondition framing, fixture setup, or wording is not, by itself, grounds to withhold Covered.
+   - Note the reclassification reasoning inline next to the gap list so the judgment call is auditable.
 
 ## Output Template
 

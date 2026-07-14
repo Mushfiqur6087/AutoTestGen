@@ -14,6 +14,6 @@ Source: dataset/ground_truth/Parabank/Parabank.md
 | MW-AO-004 | Total balance calculation | User logged in | 1. View total row | Total = sum of all account balances | High |
 | MW-AO-005 | Accounts ordered by date | User logged in | 1. View accounts table | Ordered by Open Date (earliest first) | Medium |
 | MW-AO-006 | Active status badge | User logged in | 1. View Status column | "Active" badge displayed for active accounts | Medium |
-| MW-AO-007 | High volume of accounts | User logged in with >50 accounts | 1. View Accounts Overview | Pagination or scroll handles accounts gracefully | Medium |
-| MW-AO-008 | Zero balance display | User logged in | 1. View account with $0.00 | Balance displays exactly $0.00 without negative sign | Medium |
+| MW-AO-007 | Unauthenticated access blocked | User not logged in | 1. Navigate directly to Accounts Overview URL | Redirected to login page, accounts table not displayed | Medium |
+| MW-AO-008 | Account Number click does not navigate | User logged in | 1. Click the Account Number cell for a row | No navigation occurs, Accounts Overview remains displayed | Medium |
 | MW-AO-009 | Extreme negative balance | User logged in | 1. View account with very large negative balance | Renders without UI breakage | Low |

@@ -24,5 +24,5 @@ Source: dataset/ground_truth/Parabank/Parabank.md
 | MW-MC-009 | Invalid spending limit | Existing card | 1. Enter limit above policy maximum<br>2. Submit | Validation error displayed inline | High |
 | MW-MC-010 | Invalid date range | Existing card | 1. Enter end date before start date<br>2. Submit | Validation error | Medium |
 | MW-MC-011 | Spending limit exactly at policy maximum | Existing card | 1. Enter limit exactly at policy max | Accepted | Medium |
-| MW-MC-012 | Travel notice for same day | Existing card | 1. Enter start date = today | Accepted | Medium |
-| MW-MC-013 | Rapid status toggle | Existing card | 1. Rapidly toggle Frozen/Active | Handled without state corruption | Low |
+| MW-MC-012 | Non-numeric spending limit | Existing card | 1. Enter non-numeric value into spending limit<br>2. Submit | Validation error: must be numeric | Medium |
+| MW-MC-013 | Unauthenticated access blocked | User not logged in | 1. Navigate directly to Manage Cards page URL | Redirected to login page, card actions not available | Low |

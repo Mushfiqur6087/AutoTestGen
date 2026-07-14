@@ -60,9 +60,9 @@
 | MW-LOGIN-007 | Empty email | None | 1. Leave email empty<br>2. Enter password<br>3. Click "Sign In" | Validation error for email field | High |
 | MW-LOGIN-008 | Empty password | None | 1. Enter email<br>2. Leave password empty<br>3. Click "Sign In" | Validation error for password field | High |
 | MW-LOGIN-009 | Password less than 8 chars | None | 1. Enter valid email<br>2. Enter password < 8 characters<br>3. Click "Sign In" | Validation error: password must be at least 8 characters | High |
-| MW-LOGIN-010 | Password without uppercase | None | 1. Enter password without uppercase letter | Validation error: password must contain uppercase | Medium |
-| MW-LOGIN-011 | Password without lowercase | None | 1. Enter password without lowercase letter | Validation error: password must contain lowercase | Medium |
-| MW-LOGIN-012 | Password without number | None | 1. Enter password without number | Validation error: password must contain number | Medium |
+| MW-LOGIN-010 | Forgot Password link | None | 1. Click "Forgot Password?" link on login form | Password Reset page opens with Email/Username field and submit control | Medium |
+| MW-LOGIN-011 | Already-authenticated user redirected from Sign In | User already logged in | 1. Navigate to the Sign In page while authenticated | Sign In form not displayed; user remains on/redirected to Accounts Overview | Medium |
+| MW-LOGIN-012 | Email whitespace trimmed | Registered user exists | 1. Enter registered email with leading/trailing whitespace<br>2. Enter valid password<br>3. Click "Sign In" | Whitespace trimmed, sign-in succeeds | Low |
 | MW-LOGIN-013 | Password without special char | None | 1. Enter password without special character | Validation error: password must contain special character | Medium |
 | MW-LOGIN-014 | Login with extremely long email | None | 1. Enter email > 255 chars | Validation error or prevented | Low |
 | MW-LOGIN-015 | SQL injection in email | None | 1. Enter "' OR 1=1 --" in email | Error message, no login | High |
@@ -125,8 +125,8 @@
 | MW-AO-004 | Total balance calculation | User logged in | 1. View total row | Total = sum of all account balances | High |
 | MW-AO-005 | Accounts ordered by date | User logged in | 1. View accounts table | Ordered by Open Date (earliest first) | Medium |
 | MW-AO-006 | Active status badge | User logged in | 1. View Status column | "Active" badge displayed for active accounts | Medium |
-| MW-AO-007 | High volume of accounts | User logged in with >50 accounts | 1. View Accounts Overview | Pagination or scroll handles accounts gracefully | Medium |
-| MW-AO-008 | Zero balance display | User logged in | 1. View account with $0.00 | Balance displays exactly $0.00 without negative sign | Medium |
+| MW-AO-007 | Unauthenticated access blocked | User not logged in | 1. Navigate directly to Accounts Overview URL | Redirected to login page, accounts table not displayed | Medium |
+| MW-AO-008 | Account Number click does not navigate | User logged in | 1. Click the Account Number cell for a row | No navigation occurs, Accounts Overview remains displayed | Medium |
 | MW-AO-009 | Extreme negative balance | User logged in | 1. View account with very large negative balance | Renders without UI breakage | Low |
 
 ---
@@ -214,17 +214,17 @@
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | MW-BP-004 | Payee Name empty | User logged in | 1. Leave Payee Name empty<br>2. Submit | Validation error | High |
-| MW-BP-005 | Street Address empty | User logged in | 1. Leave Address empty<br>2. Submit | Validation error | High |
-| MW-BP-006 | City empty | User logged in | 1. Leave City empty<br>2. Submit | Validation error | High |
-| MW-BP-007 | State empty | User logged in | 1. Leave State empty<br>2. Submit | Validation error | High |
-| MW-BP-008 | ZIP Code empty | User logged in | 1. Leave ZIP empty<br>2. Submit | Validation error | High |
-| MW-BP-009 | Phone empty | User logged in | 1. Leave Phone empty<br>2. Submit | Validation error | High |
-| MW-BP-010 | Account Number empty | User logged in | 1. Leave Account Number empty<br>2. Submit | Validation error | High |
-| MW-BP-011 | Confirm Account empty | User logged in | 1. Leave Confirm Account empty<br>2. Submit | Validation error | High |
+| MW-BP-005 | Unauthenticated access blocked | User not logged in | 1. Navigate to Payments page without logging in | Redirected to login page, Pay form not accessible | High |
+| MW-BP-006 | Amount exactly equals available balance | User logged in, source account balance = amount entered | 1. Enter amount equal to source account balance<br>2. Submit | "Payment submitted successfully." with reference code, balance reduced to $0.00 | Medium |
+| MW-BP-007 | Amount one unit over available balance | User logged in | 1. Enter amount = balance + smallest currency unit<br>2. Submit | Error: "Insufficient funds" | Medium |
+| MW-BP-008 | Account Number and Confirm Account exact match | User logged in | 1. Enter identical values in Account Number and Confirm Account<br>2. Submit | "Payment submitted successfully." with reference code | Medium |
+| MW-BP-009 | Account numbers differ by one digit | User logged in | 1. Enter Account Number and Confirm Account differing by a single digit<br>2. Submit | Error: "Account numbers do not match" | Medium |
+| MW-BP-010 | Rapid double-click on Pay button | User logged in, valid form filled | 1. Click "Pay"<br>2. Immediately click "Pay" again | Only one payment processed, single confirmation and reference code shown | Low |
+| MW-BP-011 | Confirm Account whitespace-only difference | User logged in | 1. Enter Confirm Account matching Account Number but with leading/trailing whitespace<br>2. Submit | Error: "Account numbers do not match" | Low |
 | MW-BP-012 | Account numbers mismatch | User logged in | 1. Enter different account numbers<br>2. Submit | Error: "Account numbers do not match" | High |
-| MW-BP-013 | Amount empty | User logged in | 1. Leave Amount empty<br>2. Submit | Validation error | High |
+| MW-BP-013 | Non-numeric amount | User logged in | 1. Enter non-numeric value in Amount<br>2. Submit | Validation error: must be numeric | Medium |
 | MW-BP-014 | Insufficient funds | User logged in | 1. Enter amount > source balance<br>2. Submit | Error: "Insufficient funds" | High |
-| MW-BP-015 | No source account | User logged in | 1. Don't select source<br>2. Submit | Validation error | High |
+| MW-BP-015 | Source account has no available funds | User logged in, source account balance = $0 | 1. Select $0-balance source account<br>2. Submit | Validation error: no funded source account available | High |
 | MW-BP-016 | Payee name maximum length | User logged in | 1. Enter payee name > 50 chars | Validation error or truncation | Low |
 | MW-BP-017 | XSS payload in Payee Name | User logged in | 1. Enter "<script>alert(1)</script>" | Payload neutralized | High |
 
@@ -325,8 +325,8 @@
 | MW-MC-009 | Invalid spending limit | Existing card | 1. Enter limit above policy maximum<br>2. Submit | Validation error displayed inline | High |
 | MW-MC-010 | Invalid date range | Existing card | 1. Enter end date before start date<br>2. Submit | Validation error | Medium |
 | MW-MC-011 | Spending limit exactly at policy maximum | Existing card | 1. Enter limit exactly at policy max | Accepted | Medium |
-| MW-MC-012 | Travel notice for same day | Existing card | 1. Enter start date = today | Accepted | Medium |
-| MW-MC-013 | Rapid status toggle | Existing card | 1. Rapidly toggle Frozen/Active | Handled without state corruption | Low |
+| MW-MC-012 | Non-numeric spending limit | Existing card | 1. Enter non-numeric value into spending limit<br>2. Submit | Validation error: must be numeric | Medium |
+| MW-MC-013 | Unauthenticated access blocked | User not logged in | 1. Navigate directly to Manage Cards page URL | Redirected to login page, card actions not available | Low |
 
 ---
 
@@ -373,8 +373,8 @@
 | MW-AS-001 | Generate monthly statement | User logged in | 1. Select month-and-year period<br>2. Select account<br>3. Click "Generate Statement" | "Statement generated successfully." | High |
 | MW-AS-002 | Generate custom date range | User logged in | 1. Select custom date range<br>2. Enter start and end dates<br>3. Select account<br>4. Submit | Statement generated | High |
 | MW-AS-003 | Invalid date range | User logged in | 1. Enter end date before start date<br>2. Submit | Validation error | High |
-| MW-AS-004 | No account selected | User logged in | 1. Don't select account<br>2. Submit | Validation error | High |
-| MW-AS-005 | Generation failure | User logged in | 1. Trigger generation error (server issue) | "Unable to generate statement — please try again later." | Medium |
+| MW-AS-004 | Month and Year left blank when selected | User logged in | 1. Select "Month and Year" period<br>2. Leave Month and Year blank<br>3. Select account<br>4. Submit | Validation error, form does not submit | High |
+| MW-AS-005 | Unauthenticated access blocked | User not logged in | 1. Navigate directly to Account Statements page URL | Redirected to login page, Statements content not accessible | Medium |
 
 ### E-Statement Preference Tests
 
@@ -399,9 +399,9 @@
 | MW-SS-001 | Successful password change | User logged in | 1. Enter current password<br>2. Enter new password meeting requirements<br>3. Confirm new password<br>4. Click "Change Password" | "Password changed successfully." | High |
 | MW-SS-002 | Incorrect current password | User logged in | 1. Enter wrong current password<br>2. Enter new password<br>3. Submit | Validation error: current password incorrect | High |
 | MW-SS-003 | New password too short | User logged in | 1. Enter correct current<br>2. Enter new password < 8 chars<br>3. Submit | Validation error: password policy | High |
-| MW-SS-004 | New password missing uppercase | User logged in | 1. Enter new password without uppercase<br>2. Submit | Validation error | High |
-| MW-SS-005 | New password missing lowercase | User logged in | 1. Enter new password without lowercase<br>2. Submit | Validation error | High |
-| MW-SS-006 | New password missing number | User logged in | 1. Enter new password without number<br>2. Submit | Validation error | High |
+| MW-SS-004 | Unauthenticated access blocked | User not logged in | 1. Navigate directly to Security Settings page URL | Redirected to login page, Change Password form not accessible | High |
+| MW-SS-005 | Rapid double-submit of Change Password | User logged in, valid form filled | 1. Click "Change Password"<br>2. Immediately click "Change Password" again | Only one success confirmation shown, no duplicate | Low |
+| MW-SS-006 | New password composed of emoji/Unicode characters | User logged in | 1. Enter new password made entirely of emoji/extended Unicode characters<br>2. Submit | Validation error: does not meet strong-password policy | Low |
 | MW-SS-007 | New password missing special char | User logged in | 1. Enter new password without special char<br>2. Submit | Validation error | High |
 | MW-SS-008 | Passwords don't match | User logged in | 1. Enter different values for new and confirm<br>2. Submit | Validation error: passwords must match | High |
 | MW-SS-009 | New password matches current password | User logged in | 1. Enter new password identical to current | Error: Cannot reuse old password | High |
