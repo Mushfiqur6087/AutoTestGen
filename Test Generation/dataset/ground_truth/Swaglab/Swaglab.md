@@ -66,8 +66,8 @@
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | SL-LOGIN-012 | Password field masking | None | 1. Enter text in password field | Password characters are masked | High |
-| SL-LOGIN-013 | Error message dismissible | SL-LOGIN-004 completed | 1. Click X button on error message | Error message disappears | Medium |
-| SL-LOGIN-014 | Tab navigation | None | 1. Use Tab key to navigate | Focus moves: username → password → Login button | Medium |
+| SL-LOGIN-013 | Browser Back after login shows blank form | Logged in successfully | 1. Press browser Back button | Sign-in page shown, fields empty (no pre-filled credentials) | Medium |
+| SL-LOGIN-014 | Extremely long username | None | 1. Enter username > 200 chars<br>2. Enter valid password<br>3. Click "Login" | Treated as invalid credentials, mismatch error shown | Medium |
 | SL-LOGIN-015 | Enter key submission | None | 1. Fill credentials<br>2. Press Enter | Form submits | Medium |
 
 ---
@@ -80,14 +80,14 @@
 |-------|-----------|---------------|-------|-----------------|----------|
 | SL-INV-001 | Products displayed | User logged in | 1. View inventory page | All products displayed with name, description, price, and "Add to cart" button | High |
 | SL-INV-002 | Add product to cart | User logged in | 1. Click "Add to cart" on any product | Button changes to "Remove", cart badge shows "1" | High |
-| SL-INV-003 | Add multiple products | User logged in | 1. Add product 1 to cart<br>2. Add product 2 to cart<br>3. Add product 3 to cart | Cart badge shows "3" | High |
+| SL-INV-003 | Immediate Add then Remove nets zero | User logged in | 1. Click "Add to cart"<br>2. Immediately click "Remove" | Cart badge returns to original count, button shows "Add to cart" | High |
 | SL-INV-004 | Remove product from cart | Product in cart | 1. Click "Remove" button | Button changes to "Add to cart", cart badge decrements | High |
 | SL-INV-005 | Sort A-Z (default) | User logged in | 1. Check default sort order | Products sorted alphabetically A-Z | High |
-| SL-INV-006 | Sort Z-A | User logged in | 1. Select "Name (Z to A)" from dropdown | Products sorted alphabetically Z-A | High |
+| SL-INV-006 | Open About page from hamburger menu | User logged in | 1. Open hamburger menu<br>2. Click "About" | About page displayed | High |
 | SL-INV-007 | Sort Price low to high | User logged in | 1. Select "Price (low to high)" | Products sorted by price ascending | High |
-| SL-INV-008 | Sort Price high to low | User logged in | 1. Select "Price (high to low)" | Products sorted by price descending | High |
+| SL-INV-008 | Logout via hamburger menu | User logged in | 1. Open hamburger menu<br>2. Click "Logout" | Sign-in page displayed | High |
 | SL-INV-009 | Navigate to product detail | User logged in | 1. Click on product name or image | Navigates to product detail page | High |
-| SL-INV-010 | Cart icon navigation | User logged in | 1. Click cart icon | Navigates to shopping cart page | High |
+| SL-INV-010 | Cart button opens Checkout sequence | User logged in | 1. Click "Cart" button in header | Checkout sequence opens at the Information step | High |
 
 ### Negative Tests
 
@@ -123,8 +123,8 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| SL-PD-005 | Large product image | On product detail | 1. View product image | Larger image than inventory thumbnail | Medium |
-| SL-PD-006 | Price matches inventory | On product detail | 1. Compare price with inventory listing | Price is identical | High |
+| SL-PD-005 | Rapid double-click Add to cart | On product detail, not in cart | 1. Click "Add to cart" twice in rapid succession | Only one addition applied, no duplicate cart entry | Medium |
+| SL-PD-006 | Cart icon navigates to Shopping Cart | On product detail | 1. Click cart icon in header | Shopping Cart page is shown | High |
 | SL-PD-007 | Cart state preserved | Product added from inventory | 1. Navigate to product detail | "Remove" button shown (not "Add to cart") | High |
 
 ---
@@ -135,12 +135,12 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| SL-CART-001 | View cart with items | Items added to cart | 1. Click cart icon | All added items displayed with name, description, price, quantity | High |
+| SL-CART-001 | Item description with special characters displayed intact | Item with emoji/unicode in description added | 1. Click cart icon<br>2. View item description | Emoji and unicode characters rendered intact, no placeholders | High |
 | SL-CART-002 | Remove item from cart | Items in cart | 1. Click "Remove" on an item | Item removed from cart, list updates | High |
 | SL-CART-003 | Continue shopping | On cart page | 1. Click "Continue Shopping" | Returns to inventory page | High |
 | SL-CART-004 | Proceed to checkout | Items in cart | 1. Click "Checkout" | Navigates to checkout information page | High |
 | SL-CART-005 | Cart persists across pages | Items added | 1. Navigate to different pages<br>2. Return to cart | Items still in cart | High |
-| SL-CART-006 | Quantity display | Items in cart | 1. View cart | Quantity shown as "1" for each item | Medium |
+| SL-CART-006 | Unauthenticated access blocked | User not logged in | 1. Navigate directly to Shopping Cart URL | Redirected to login page, cart not shown | Medium |
 
 ### Negative Tests
 
@@ -190,7 +190,7 @@
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | SL-CHK1-011 | Form elements displayed | On checkout info | 1. View page | First Name, Last Name, Postal Code fields, Continue and Cancel buttons visible | Medium |
-| SL-CHK1-012 | Error message style | Error triggered | 1. Submit with empty field | Error displayed with red styling and X icon | Medium |
+| SL-CHK1-012 | Unauthenticated access blocked | User not logged in | 1. Navigate directly to Checkout - Information URL | Redirected to login page, form not accessible | Medium |
 
 ---
 
@@ -200,12 +200,12 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| SL-CHK2-001 | Order summary displayed | Completed checkout info | 1. View checkout overview | All cart items listed with prices | High |
-| SL-CHK2-002 | Item total correct | Items in cart | 1. View Item total | Sum of all item prices | High |
+| SL-CHK2-001 | Unauthenticated access blocked | User not logged in | 1. Navigate directly to Checkout - Overview URL | Redirected to login page, overview not shown | High |
+| SL-CHK2-002 | Finish blocked with empty cart | On overview page, cart empty | 1. Click "Finish" | Finish blocked, error indicating cart is empty | High |
 | SL-CHK2-003 | Tax calculated | On overview page | 1. View Tax amount | Tax calculated (typically 8%) | High |
 | SL-CHK2-004 | Total correct | On overview page | 1. View Total | Total = Item Total + Tax | High |
 | SL-CHK2-005 | Finish purchase | On overview page | 1. Click "Finish" | Order placed, confirmation page shown | High |
-| SL-CHK2-006 | Cancel from overview | On overview page | 1. Click "Cancel" | Returns to inventory page | High |
+| SL-CHK2-006 | Cancel from overview | On overview page | 1. Click "Cancel" | Returns to Shopping Cart page | High |
 
 ### UI/UX Tests
 
@@ -231,8 +231,8 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| SL-CHK3-004 | Success image displayed | Order completed | 1. View confirmation page | Pony Express image or checkmark visible | Medium |
-| SL-CHK3-005 | Order dispatch message | Order completed | 1. View confirmation page | "Your order has been dispatched" or similar message | Medium |
+| SL-CHK3-004 | Confirmation blocked if checkout not completed | Logged in, checkout not completed | 1. Navigate directly to Confirmation page URL | Access blocked, redirected into checkout flow | Medium |
+| SL-CHK3-005 | Back Home then add item updates cart | On confirmation page | 1. Click "Back Home"<br>2. Immediately add a product from inventory | Cart badge increments to 1 for the newly added item | Medium |
 
 ---
 

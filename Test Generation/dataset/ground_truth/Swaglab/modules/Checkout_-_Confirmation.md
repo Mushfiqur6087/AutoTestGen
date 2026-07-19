@@ -16,5 +16,5 @@ Source: dataset/ground_truth/Swaglab/Swaglab.md
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| SL-CHK3-004 | Success image displayed | Order completed | 1. View confirmation page | Pony Express image or checkmark visible | Medium |
-| SL-CHK3-005 | Order dispatch message | Order completed | 1. View confirmation page | "Your order has been dispatched" or similar message | Medium |
+| SL-CHK3-004 | Confirmation blocked if checkout not completed | Logged in, checkout not completed | 1. Navigate directly to Confirmation page URL | Access blocked, redirected into checkout flow | Medium |
+| SL-CHK3-005 | Back Home then add item updates cart | On confirmation page | 1. Click "Back Home"<br>2. Immediately add a product from inventory | Cart badge increments to 1 for the newly added item | Medium |

@@ -23,6 +23,6 @@ Source: dataset/ground_truth/MoodleStudent/MoodleStudent.md
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | MS-LOGOUT-005 | Double-click logout | Student is logged in | 1. Double-click "Log out" | Logout completes once without visible error | Low |
-| MS-LOGOUT-006 | Session timeout behaves like logout | Student session has expired | 1. Open protected page | User is required to authenticate again | High |
+| MS-LOGOUT-006 | Direct navigation to Logout endpoint while unauthenticated | User not authenticated | 1. Navigate directly to the Logout endpoint URL | No logout performed (no session to terminate); login page shown, no protected content rendered | High |
 | MS-LOGOUT-007 | Logout in Tab A blocks protected page reload in Tab B — redirect to login | `student1` is logged in on two browser tabs showing a protected page | 1. In Tab A, log out via the user menu<br>2. Switch to Tab B<br>3. Reload the protected page in Tab B | Tab B redirects to the login page; no authenticated content from the previous session is rendered | High |
 | MS-LOGOUT-008 | Navigate directly to protected URL after logout redirects to login page | `student1` has just logged out | 1. Type the Dashboard URL directly into the address bar and press Enter | Browser is redirected to the login page; Dashboard content is not rendered | High |

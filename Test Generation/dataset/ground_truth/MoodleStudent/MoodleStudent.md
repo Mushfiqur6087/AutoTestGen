@@ -101,13 +101,13 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| MS-DASH-001 | Personalized dashboard greeting | Student is logged in | 1. Open Dashboard | Greeting for the logged-in student is displayed | High |
+| MS-DASH-001 | Open Full calendar view from Dashboard | Student is logged in | 1. Open Dashboard<br>2. In Calendar block, click "Full calendar" | Full calendar view opens showing month grid, heading, and navigation controls | High |
 | MS-DASH-002 | Timeline shows upcoming activities | `Essay Draft` has a due date within the selected timeline range | 1. Log in as `student1`<br>2. Open Dashboard<br>3. Inspect Timeline block | Timeline lists `Essay Draft` with course name, due date, and direct activity link | High |
 | MS-DASH-003 | Timeline controls update content | Timeline contains `Essay Draft` and at least one non-matching activity | 1. Select a range containing `Essay Draft`<br>2. Sort by date<br>3. Search for `Essay` | Timeline shows `Essay Draft`, hides non-matching activities, and preserves the selected controls | High |
 | MS-DASH-004 | Calendar block supports personal event flow | Calendar block is visible | 1. Click "New event" | Personal calendar event form or modal opens with event title, date, and save/cancel controls | Medium |
-| MS-DASH-005 | Calendar navigation and links | Calendar block is visible | 1. Select `QA Automation 101` in the course filter<br>2. Navigate to next month and back<br>3. Click Full calendar | Calendar heading changes then returns to the original month; Full calendar opens with `QA Automation 101` filter context visible | Medium |
-| MS-DASH-006 | Add student dashboard block | Student is on Dashboard and Edit mode is enabled | 1. Click "+ Add a block"<br>2. Add `Latest announcements`<br>3. Refresh Dashboard | `Latest announcements` appears on `student1` Dashboard after refresh and is not added to `teacher1` Dashboard | Medium |
-| MS-DASH-013 | Delete student dashboard block | `Latest announcements` is visible on `student1` Dashboard in Edit mode | 1. Open the block menu<br>2. Delete `Latest announcements`<br>3. Refresh Dashboard | `Latest announcements` is removed from `student1` Dashboard after refresh | Medium |
+| MS-DASH-005 | Move Calendar block via block menu | Dashboard open, Edit mode enabled | 1. Open Calendar block menu<br>2. Click "Move" | Move mode activates for Calendar block; placeholder drop positions shown | Medium |
+| MS-DASH-006 | Add a block opens the block library | Student is on Dashboard and Edit mode is enabled | 1. Click "+ Add a block" | Block library page opens listing available block types | Medium |
+| MS-DASH-013 | Delete Calendar block via block menu | Calendar block present, Edit mode enabled | 1. Open Calendar block menu<br>2. Click "Delete" | Calendar block is removed from the Dashboard and no longer visible | Medium |
 | MS-DASH-016 | Reset dashboard to default in edit mode reverts layout | `student1` is on Dashboard with Edit mode enabled and at least one block repositioned or added | 1. Click the "Reset page to default" option in Edit mode<br>2. Confirm the reset | Dashboard layout reverts to the default block arrangement and any added or repositioned blocks return to their original positions | Medium |
 
 ### Negative Tests
@@ -123,12 +123,12 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| MS-DASH-010 | Dashboard with no upcoming work | Student has no pending activities | 1. Open Dashboard | Timeline shows its no-activity empty state and Calendar block remains visible | Low |
+| MS-DASH-010 | Open Configure for Timeline block | Dashboard open, Edit mode enabled | 1. Open Timeline block menu<br>2. Click "Configure" | Timeline block configuration dialog opens | Medium |
 | MS-DASH-011 | Calendar year boundary | Calendar displays January | 1. Click previous-month arrow | Calendar shows December of previous year | Medium |
 | MS-DASH-012 | Rapid edit-mode toggle | Dashboard is visible | 1. Toggle Edit mode repeatedly | Final UI state matches final toggle | Medium |
 | MS-DASH-014 | Timeline empty state when selected range has zero activities | `student1` is on Dashboard; a date range with no activities is known | 1. Select the date range that contains no scheduled activities | Timeline block displays its empty-state message and no activity rows are rendered | Low |
 | MS-DASH-015 | Timeline search with special characters and emoji accepted | `student1` is on Dashboard | 1. Type `@@##🎓` into the Timeline search field | Search field accepts the input without error; timeline shows empty-results state or matching items; no crash or validation dialog appears | Low |
-| MS-DASH-018 | Navigate calendar to previous month removes current-date highlight | Calendar block is visible and shows the current month | 1. Click the previous-month arrow on the Calendar block | Calendar advances to the previous month; the current-date highlight is absent on the previous month view | Low |
+| MS-DASH-018 | Block menu actions unavailable when Edit mode is OFF | Edit mode is OFF, Timeline block present | 1. Inspect Timeline block for three-dot menu/Move icon<br>2. Attempt to open Configure | Block-level menu and Move icon are not visible; no configuration UI available | Low |
 
 ---
 
@@ -138,8 +138,8 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| MS-COURSES-001 | Student course cards displayed | Student is enrolled in courses | 1. Open My Courses | Course cards show image, course name, and category | High |
-| MS-COURSES-002 | Filter, search, sort, and layout controls | `student1` is enrolled in `QA Automation 101` and at least one other course | 1. Select All status filter<br>2. Search for `QA Automation`<br>3. Sort by course name<br>4. Switch to list layout | Only matching course cards/rows remain visible, order follows the sort selection, and list layout persists after refresh | High |
+| MS-COURSES-001 | Star course blocked for inactive student account | Student account is inactive | 1. Open card menu<br>2. Click "Star this course" | Action blocked; course not pinned; visible blocking indication shown | High |
+| MS-COURSES-002 | Remove from view blocked for inactive student account | Student account is inactive | 1. Open card menu<br>2. Click "Remove from view" | Action blocked; course remains visible; visible blocking indication shown | High |
 | MS-COURSES-003 | Open course from course card | At least one course is visible | 1. Click course name | Student opens course main page | High |
 | MS-COURSES-004 | Star course from course card | `QA Automation 101` course card menu is visible | 1. Open card menu<br>2. Click "Star this course"<br>3. Refresh My Courses | `QA Automation 101` appears in the Starred filter and `student1` remains enrolled | Medium |
 | MS-COURSES-009 | Remove course from view without unenrolling | `QA Automation 101` course card menu is visible | 1. Open card menu<br>2. Click "Remove from view"<br>3. Select Hidden filter<br>4. Open the hidden course card | `QA Automation 101` appears under Hidden, opens successfully, and `student1` remains enrolled as student | Medium |
@@ -173,14 +173,14 @@
 | MS-COURSE-001 | Student course tabs displayed | `student1` is enrolled in `QA Automation 101` | 1. Open the `QA Automation 101` course page | Course, Participants, Grades, Activities, and Competencies tabs are visible; Settings tab and edit controls are not visible | High |
 | MS-COURSE-002 | Course sections and activities displayed | Course contains sections | 1. Inspect course content | Sections, activity icons, and activity/resource names are visible | High |
 | MS-COURSE-003 | Collapse all sections | Sections are expanded | 1. Click "Collapse all" | Sections collapse | Medium |
-| MS-COURSE-004 | Course Index navigation | Course Index is visible | 1. Click a section or activity in Course Index | Page navigates to selected content | Medium |
+| MS-COURSE-004 | Toggle section with very long name (200+ chars) | Course contains a section with a 200+ character name | 1. Click chevron to expand the long-named section<br>2. Click section name to collapse it | Long name renders without breaking layout; expand/collapse both succeed | Low |
 | MS-COURSE-005 | Open activity from course page | Activity link is visible | 1. Click assignment, forum, page, or resource link | Activity/resource page opens | High |
 
 ### Negative Tests
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| MS-COURSE-006 | Student cannot access Settings tab | Student is on course page | 1. Inspect course tabs | Settings tab and teacher settings controls are absent | High |
+| MS-COURSE-006 | Not-enrolled user cannot use Collapse all | User logged in, not enrolled in course | 1. Navigate to Course Page<br>2. Attempt to click "Collapse all" | Collapse all link not visible/actionable; section states unchanged | High |
 | MS-COURSE-007 | Student cannot enable course edit mode | Student is on course page | 1. Inspect page controls<br>2. Navigate directly to the edit-mode course URL | Edit toggle is absent; direct edit-mode URL returns to read-only course view or access denied without authoring controls | High |
 | MS-COURSE-008 | Course page blocked while unauthenticated | User is logged out | 1. Navigate directly to course URL | User is redirected to the login page before course sections render | High |
 
@@ -188,9 +188,9 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| MS-COURSE-009 | Hide Course Index sidebar | Course Index is open | 1. Click close button | Sidebar closes without affecting course content | Low |
-| MS-COURSE-010 | Rapid section toggles | Section `Week 1` is visible | 1. Expand/collapse `Week 1` three times | `Week 1` ends in the final clicked state and each activity row appears once | Medium |
-| MS-COURSE-011 | Collapse all when course has zero sections — no error | Course page for a course with no sections is open | 1. Click "Collapse all" when no sections exist | No error message or JavaScript alert appears; the page remains stable and the course page is still rendered | Low |
+| MS-COURSE-009 | Open activity with emoji/Unicode name | Course contains an activity with emoji/Unicode in its name | 1. Expand the section if collapsed<br>2. Click the activity's clickable name | Activity opens; the activity title shows the same emoji/Unicode characters; no error | Low |
+| MS-COURSE-010 | Rapid double-click "Collapse all" while sections expanded | At least one section expanded | 1. Click "Collapse all"<br>2. Immediately click "Collapse all" again | All sections end collapsed; no duplicate action, error, or visual corruption | Medium |
+| MS-COURSE-011 | Collapse all when all sections already collapsed | Every section is in the collapsed state | 1. Click "Collapse all" | All sections remain collapsed; no error or visual glitch appears | Low |
 | MS-COURSE-012 | Collapse all when some sections already collapsed — all end collapsed | `QA Automation 101` course page shows a mix of expanded and collapsed sections | 1. Click "Collapse all" | All sections are collapsed regardless of their prior state; no section headers show expanded content | Medium |
 | MS-COURSE-013 | Rapid single-section toggle ends in final clicked state | Section `Week 1` is visible | 1. Click the `Week 1` toggle arrow rapidly three times in quick succession | `Week 1` ends in the state corresponding to the final click (expanded or collapsed); no intermediate state is permanently locked | Medium |
 | MS-COURSE-014 | Collapse all after adding then removing all sections succeeds silently | Course page is open; all sections were added then removed so the course has zero sections | 1. Click "Collapse all" | Collapse all completes silently; no error is displayed and the empty course page remains rendered | Low |
@@ -223,8 +223,8 @@
 | MS-PART-008 | Filter no matching users | Participants page is visible | 1. Apply filter with no matches | Empty/no-results state is displayed | Medium |
 | MS-PART-009 | Multiple filter conditions | Participants include `student1` and `teacher1` | 1. Add a Role filter for Teacher<br>2. Add a name filter for `teacher1`<br>3. Apply filters | Table shows `teacher1`; `student1` and non-matching users are absent from the filtered table | Medium |
 | MS-PART-010 | Apply filters with empty condition row — participants list updates without error | Participants page is visible with the filter panel open | 1. Add a filter condition row but leave its value empty<br>2. Click "Apply filters" | Participants list updates or shows all participants without a JavaScript error; no page crash occurs | Low |
-| MS-PART-011 | Rapid First Name initial changes resolve to final selection only | Participants page is visible | 1. Click alphabetical initial "A"<br>2. Immediately click initial "B"<br>3. Immediately click initial "C" | Table reflects the last-clicked initial ("C") only; no stale intermediate filter result is permanently shown | Medium |
-| MS-PART-012 | Row checkbox selection persists after navigating to participant profile and pressing Back | Participants page is visible; at least two participant rows exist | 1. Check the checkbox for `student1` row<br>2. Click `student1` name to open profile<br>3. Press browser Back | Participants page reloads; the previously checked row checkbox for `student1` is no longer checked (fresh page state) and no JavaScript error appears | Low |
+| MS-PART-011 | Rapid double-click of Apply filters is idempotent | At least one condition row exists in Filter Builder | 1. Click "Apply filters"<br>2. Immediately click "Apply filters" again | Second click ignored; filtered results shown once, no duplicate application | Medium |
+| MS-PART-012 | Extremely long search string in participants table search | Participants table search field visible | 1. Enter a search string longer than 200 characters<br>2. Execute the search | Search succeeds; table shows zero rows with visible empty-state indicator; UI remains responsive | Low |
 | MS-PART-013 | Student role enrollment management features not visible or interactive | `student1` is on the Participants page | 1. Inspect each participant row for role-edit controls<br>2. Inspect the toolbar for enrollment management buttons | Role-edit icons, "Enrol users" button, and enrollment duration controls are not rendered for any row | High |
 
 ---
@@ -251,13 +251,13 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| MS-GRADE-007 | No graded activities yet | Student has no graded activities | 1. Open Grades | User report opens with empty grade placeholders for activity rows and no other students' grades | Low |
+| MS-GRADE-007 | Large number of graded activities all reachable | Course has many graded activities under one header | 1. Expand course header<br>2. Scroll through all revealed activities<br>3. Verify AGGREGATION Course total row | All activity rows rendered and reachable; Course total row present at bottom | Low |
 | MS-GRADE-008 | Decimal percentage display | Grade item has decimal percentage | 1. Inspect percentage column | Decimal precision is displayed consistently | Low |
 | MS-GRADE-009 | Rapid consecutive course-group toggle ends in stable expanded/collapsed state | `student1` is on the Grades page; `QA Automation 101` course group is visible | 1. Click the course-group collapse control three times in rapid succession | Course group ends in the state corresponding to the final click; no intermediate state is locked and no JavaScript error appears | Medium |
 | MS-GRADE-010 | Keyboard Space/Enter activates course-group collapse control | `student1` is on the Grades page; `QA Automation 101` course-group row is focused | 1. Tab to the course-group collapse control<br>2. Press Space or Enter | Course group expands or collapses in response to the keypress; the same toggle behavior as a mouse click is produced | Medium |
-| MS-GRADE-011 | Long feedback text (200+ chars) truncated in cell; full text accessible on hover | Teacher has entered 200+ character feedback for `Essay Draft` | 1. Open Grades page<br>2. Locate the Feedback cell for `Essay Draft`<br>3. Hover over the cell | Feedback cell displays truncated text within the column width; full feedback text is accessible via tooltip or hover reveal | Low |
+| MS-GRADE-011 | Very long Grade item name (200+ chars) rendered without breaking layout | Grade item name is 200+ characters | 1. Open Grades page<br>2. Locate the long-named Grade item row | Table renders without horizontal overflow; long name wrapped/truncated, row remains usable | Low |
 | MS-GRADE-012 | Unicode/emoji in Feedback column renders correctly without garbled display | Teacher has entered feedback containing Unicode and emoji for `Essay Draft` | 1. Open Grades page<br>2. Locate the Feedback cell for `Essay Draft` | Feedback cell renders Unicode characters and emoji as intended; no garbled or replacement characters are displayed | Low |
-| MS-GRADE-013 | Whitespace-only feedback displays as empty placeholder not as visible whitespace | Teacher has entered whitespace-only feedback for a grade item | 1. Open Grades page<br>2. Inspect the Feedback cell for the whitespace-feedback item | Feedback cell shows the empty-placeholder indicator (dash or blank); no visible whitespace block occupies the cell | Low |
+| MS-GRADE-013 | Leading/trailing whitespace in Grade item name trimmed on display | Grade item name stored with leading/trailing whitespace | 1. Open Grades page<br>2. Inspect the Grade item cell | Name displayed without visible leading/trailing whitespace; column alignment correct | Low |
 
 ---
 
@@ -267,34 +267,34 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| MS-ASGN-001 | Assignment details displayed | Assignment is available | 1. Open assignment page | Opened date, due date, description, and submission status are visible | High |
+| MS-ASGN-001 | Add submission form opens when no submissions exist | No submissions made yet | 1. Open assignment page<br>2. Click "Add submission" | Submission form displays online text editor and/or file upload area as configured | High |
 | MS-ASGN-002 | Submit online text | `Essay Draft` accepts online text and is open for submissions | 1. Click "Add submission"<br>2. Enter `My essay draft text` in the online text editor<br>3. Click "Save changes"<br>4. Reopen the assignment page | Submission status shows Submitted for grading and `My essay draft text` is visible in the submission preview | High |
 | MS-ASGN-003 | Submit file upload | `Essay Draft` accepts file submissions and is open for submissions | 1. Click "Add submission"<br>2. Upload `essay-draft.pdf` within the allowed size/type<br>3. Save/submit the submission<br>4. Reopen the assignment page | Submission status includes `essay-draft.pdf` as a downloadable file link | High |
 | MS-ASGN-004 | Edit submission before deadline | Editable submission exists before due date | 1. Click "Edit submission"<br>2. Replace text with `Updated essay draft text`<br>3. Save changes<br>4. Reopen the assignment page | Updated text is shown and the previous text is no longer the active submission content | Medium |
-| MS-ASGN-005 | Remove submission when allowed | Removable submission exists before due date | 1. Click "Remove submission"<br>2. Confirm removal<br>3. Reopen the assignment page | Submission file/text is removed and submission status returns to not submitted or draft-empty state | Medium |
+| MS-ASGN-005 | Unauthenticated user cannot open Add submission | User not logged in | 1. Navigate to Assignment page URL<br>2. Attempt to open Add submission | Access is blocked; redirected to login page; submission form not opened | High |
 | MS-ASGN-006 | View grade and feedback | Teacher has graded submission | 1. Open assignment page | Earned grade and teacher feedback are visible | High |
 
 ### Negative Tests
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| MS-ASGN-007 | Required online text missing | Assignment requires online text | 1. Add submission<br>2. Leave online text empty<br>3. Submit | Submission is blocked with validation feedback | High |
-| MS-ASGN-008 | Required file missing | Assignment requires file upload | 1. Add submission<br>2. Do not attach file<br>3. Submit | Submission is blocked with validation feedback | High |
+| MS-ASGN-007 | Not-enrolled user cannot submit | Logged in but not enrolled in course | 1. Navigate to Assignment page<br>2. Look for Add submission button | Add submission button is not present; submission form cannot be opened | High |
+| MS-ASGN-008 | View/Edit submission unavailable when no submissions made | Assignment status is "No submissions have been made yet" | 1. Open Assignment page<br>2. Inspect action bar | View submission and Edit submission buttons are not visible; status remains "No submissions have been made yet" | High |
 | MS-ASGN-009 | Late submission blocked when closed | Due/cut-off date has passed and late submissions are disabled | 1. Open assignment<br>2. Inspect submission controls<br>3. Navigate directly to the submission edit URL | Add/Edit submission controls are not rendered and direct submission edit URL shows the assignment-closed message before an editor appears | High |
 
 ### Boundary Tests
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| MS-ASGN-010 | File at allowed upload limit | Assignment accepts files with 10 MB maximum upload size | 1. Upload `essay-limit-10mb.pdf`<br>2. Click "Save changes"<br>3. Reopen assignment page | `essay-limit-10mb.pdf` appears in the submission file list after reopening the assignment page | Low |
+| MS-ASGN-010 | Submit online text with emoji and Unicode characters | Assignment allows online text | 1. Add submission<br>2. Enter text with emoji and Unicode characters<br>3. Submit | Submission created; emoji/Unicode rendered correctly in submission content | Low |
 | MS-ASGN-011 | Long online text submission | Assignment accepts online text | 1. Enter boundary text starting `GT-LONG-TEXT-START` and ending `GT-LONG-TEXT-END`<br>2. Click "Save changes"<br>3. Reopen assignment page | Submission preview contains both `GT-LONG-TEXT-START` and `GT-LONG-TEXT-END`, proving the saved text kept its beginning and ending sentinels | Low |
 | MS-ASGN-012 | Resubmit after grading not allowed | Assignment is graded and resubmission disabled | 1. Open assignment page | Edit/resubmit controls are absent or disabled | Medium |
-| MS-ASGN-013 | Submit when no input areas are enabled still succeeds | `Essay Draft` is configured with no online text and no file submission enabled | 1. Open the assignment page<br>2. Click "Add submission"<br>3. Click "Save changes" without entering any content | Submission status changes to Submitted for grading; no validation error is raised for an empty submission when no input types are enabled | Medium |
+| MS-ASGN-013 | View submission shows submitted content and status | Submission exists, status is Submitted for grading | 1. Open assignment page<br>2. Click "View submission" | Submission details panel shows submitted content, status "Submitted for grading", and last modified timestamp | Medium |
 | MS-ASGN-014 | Edit submission allowed when due date is exactly today and teacher permits resubmission | `Essay Draft` due date is set to today; teacher has enabled resubmission | 1. Open assignment page<br>2. Click "Edit submission" | Edit submission form opens without a late-submission or access-denied message | Medium |
 | MS-ASGN-015 | Edit submission blocked when due date passed by one day even if teacher permits resubmission | `Essay Draft` due date was yesterday; teacher has enabled resubmission but late submissions are disabled | 1. Open assignment page<br>2. Inspect submission controls | Edit/resubmit controls are absent or show an assignment-closed message; submission form does not render | High |
 | MS-ASGN-016 | Online text with leading/trailing whitespace is trimmed on save | `Essay Draft` is open for online text submission | 1. Click "Add submission"<br>2. Enter `   Trimmed essay text   ` (with leading and trailing spaces) in the online text editor<br>3. Click "Save changes"<br>4. Reopen the assignment page | Submission preview shows `Trimmed essay text` without the surrounding whitespace | Low |
 | MS-ASGN-017 | File with special-character/emoji filename uploads and filename is preserved | `Essay Draft` accepts file submissions | 1. Click "Add submission"<br>2. Upload a file whose name contains special characters and emoji (e.g., `essay_🎓_draft.pdf`)<br>3. Click "Save changes"<br>4. Reopen the assignment page | The file appears in the submission file list with its original filename preserved including the special characters and emoji | Low |
-| MS-ASGN-018 | Rapid re-submission via browser Back does not create duplicate submission | `student1` has just saved an `Essay Draft` submission | 1. Immediately after saving, press browser Back<br>2. Resubmit the form if prompted<br>3. Reopen the assignment page | Only one submission record exists for `student1`; no duplicate submission entry or duplicate file appears | Medium |
+| MS-ASGN-018 | Rapid double-click Submit results in single submission | Add submission form open with required field filled | 1. Click "Submit"<br>2. Immediately click "Submit" again | Only one submission record created; duplicate submit prevented | Medium |
 
 ---
 
@@ -304,7 +304,7 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| MS-ACT-001 | Activities overview displayed | Course has activities | 1. Open Activities tab | Activities are grouped by type; Assignments section is expanded by default | High |
+| MS-ACT-001 | Add new Activity Type row | User logged in | 1. Open Activities tab<br>2. Click "Add Row" in Additional Activity Types<br>3. Enter activity type name<br>4. Save | New collapsible Additional Activity Type section appears in the accordion | High |
 | MS-ACT-002 | Assignment activity table | Assignments exist | 1. Inspect Assignments section | Name, due date, and submission status columns are visible | High |
 | MS-ACT-003 | Expand collapsed activity type | Forums or Resources section is collapsed | 1. Click section arrow | Section expands and displays activities | Medium |
 | MS-ACT-004 | Open activity from overview | Activity row exists | 1. Click activity name | Activity page opens | High |
@@ -314,13 +314,13 @@
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | MS-ACT-005 | Activities blocked while unauthenticated | User is logged out | 1. Navigate directly to Activities URL | User is redirected to the login page before activity groups render | High |
-| MS-ACT-006 | Hidden activity not exposed | Teacher has hidden `Essay Draft` in `QA Automation 101` | 1. Open Activities page as `student1`<br>2. Search or browse activity groups for `Essay Draft`<br>3. Try the direct `Essay Draft` URL | `Essay Draft` is absent from Activities page and the direct URL shows an access restriction page without rendering assignment content | High |
+| MS-ACT-006 | Not-enrolled user cannot view Assignments | User logged in but not enrolled in course | 1. Navigate to course page<br>2. Open Activities tab<br>3. Attempt to view/click an assignment | Access restriction notice shown; Activities accordion and assignment content not available | High |
 
 ### Boundary Tests
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| MS-ACT-007 | Course with no activities | Course has no activities | 1. Open Activities tab | Activities page shows an empty-state message and no activity-group table is rendered | Low |
+| MS-ACT-007 | Expanding Forums with zero activities shows empty state | Forums section collapsed, course has zero Forum activities | 1. Click the Forums expand arrow | Forums section expands showing empty-state content area; no error appears | Low |
 | MS-ACT-008 | Many activity types | Course has Assignments, Forums, Resources, and one additional activity group | 1. Open Activities tab<br>2. Expand Forums<br>3. Expand Resources<br>4. Collapse Forums | Resources remains expanded while Forums collapses, proving activity groups toggle independently | Low |
 | MS-ACT-009 | Rapid double-click on assignment name causes only one navigation | Activities tab is open; at least one assignment row is visible | 1. Double-click the assignment name link rapidly | Browser navigates to the assignment page exactly once; no duplicate page-load or error page appears | Medium |
 | MS-ACT-010 | Expand collapsed Forums section then immediately click first activity — succeeds | Activities tab is open; Forums section is collapsed | 1. Click the Forums section arrow to expand it<br>2. Immediately click the first forum activity name | Forums section expands and the forum activity page opens successfully; no stale-state error appears | Medium |
@@ -356,10 +356,10 @@
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | MS-PROFILE-010 | Cancel edit profile | Edit profile form has unsaved changes | 1. Click "Cancel" | Unsaved changes are discarded | Medium |
-| MS-PROFILE-011 | Missing optional description | Student profile has no description | 1. Open Profile | Profile page renders initials, full name, and information cards; description area is empty and no placeholder error is shown | Low |
+| MS-PROFILE-011 | Leading/trailing whitespace in City/Town trimmed on save | Edit profile form open | 1. Enter City/Town value with leading/trailing spaces<br>2. Click "Update profile" | Profile detail shows City/Town without leading/trailing whitespace | Low |
 | MS-PROFILE-012 | Very long Description field (200+ chars) accepted or blocked with visible feedback | Edit profile form is open for `student1` | 1. Enter a 200+ character string in the Description field<br>2. Click "Update profile" | Either the description is saved and visible on the profile page, or a clear validation message explains the length limit; no silent data loss or crash occurs | Low |
 | MS-PROFILE-013 | Non-Latin Unicode and emoji in First/Last name fields accepted or blocked with visible feedback | Edit profile form is open for `student1` | 1. Enter `জন 🎓` in the First name field and `ডো 🎓` in the Last name field<br>2. Click "Update profile" | Either the names are saved and rendered correctly on the profile page, or a clear validation message explains the character restriction; no garbled text or silent failure occurs | Low |
-| MS-PROFILE-014 | Rapid re-submit of Update profile does not create duplicate profile records | Edit profile form is open for `student1` with a change ready | 1. Click "Update profile" rapidly twice | Profile is saved once; no duplicate profile record is created and no duplicate success/error message is stacked | Medium |
+| MS-PROFILE-014 | Leading/trailing whitespace in Email Address trimmed on save | Edit profile form open | 1. Enter Email Address with leading/trailing spaces<br>2. Click "Update profile" | Profile detail shows Email Address without leading/trailing whitespace, in standard form | Low |
 
 ---
 
@@ -384,7 +384,7 @@
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | MS-LOGOUT-005 | Double-click logout | Student is logged in | 1. Double-click "Log out" | Logout completes once without visible error | Low |
-| MS-LOGOUT-006 | Session timeout behaves like logout | Student session has expired | 1. Open protected page | User is required to authenticate again | High |
+| MS-LOGOUT-006 | Direct navigation to Logout endpoint while unauthenticated | User not authenticated | 1. Navigate directly to the Logout endpoint URL | No logout performed (no session to terminate); login page shown, no protected content rendered | High |
 | MS-LOGOUT-007 | Logout in Tab A blocks protected page reload in Tab B — redirect to login | `student1` is logged in on two browser tabs showing a protected page | 1. In Tab A, log out via the user menu<br>2. Switch to Tab B<br>3. Reload the protected page in Tab B | Tab B redirects to the login page; no authenticated content from the previous session is rendered | High |
 | MS-LOGOUT-008 | Navigate directly to protected URL after logout redirects to login page | `student1` has just logged out | 1. Type the Dashboard URL directly into the address bar and press Enter | Browser is redirected to the login page; Dashboard content is not rendered | High |
 

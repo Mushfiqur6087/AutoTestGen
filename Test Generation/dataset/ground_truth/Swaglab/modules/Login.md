@@ -35,6 +35,6 @@ Source: dataset/ground_truth/Swaglab/Swaglab.md
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | SL-LOGIN-012 | Password field masking | None | 1. Enter text in password field | Password characters are masked | High |
-| SL-LOGIN-013 | Error message dismissible | SL-LOGIN-004 completed | 1. Click X button on error message | Error message disappears | Medium |
-| SL-LOGIN-014 | Tab navigation | None | 1. Use Tab key to navigate | Focus moves: username → password → Login button | Medium |
+| SL-LOGIN-013 | Browser Back after login shows blank form | Logged in successfully | 1. Press browser Back button | Sign-in page shown, fields empty (no pre-filled credentials) | Medium |
+| SL-LOGIN-014 | Extremely long username | None | 1. Enter username > 200 chars<br>2. Enter valid password<br>3. Click "Login" | Treated as invalid credentials, mismatch error shown | Medium |
 | SL-LOGIN-015 | Enter key submission | None | 1. Fill credentials<br>2. Press Enter | Form submits | Medium |

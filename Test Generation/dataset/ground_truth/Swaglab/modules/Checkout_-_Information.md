@@ -34,4 +34,4 @@ Source: dataset/ground_truth/Swaglab/Swaglab.md
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | SL-CHK1-011 | Form elements displayed | On checkout info | 1. View page | First Name, Last Name, Postal Code fields, Continue and Cancel buttons visible | Medium |
-| SL-CHK1-012 | Error message style | Error triggered | 1. Submit with empty field | Error displayed with red styling and X icon | Medium |
+| SL-CHK1-012 | Unauthenticated access blocked | User not logged in | 1. Navigate directly to Checkout - Information URL | Redirected to login page, form not accessible | Medium |

@@ -8,8 +8,8 @@ Source: dataset/ground_truth/MoodleStudent/MoodleStudent.md
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| MS-COURSES-001 | Student course cards displayed | Student is enrolled in courses | 1. Open My Courses | Course cards show image, course name, and category | High |
-| MS-COURSES-002 | Filter, search, sort, and layout controls | `student1` is enrolled in `QA Automation 101` and at least one other course | 1. Select All status filter<br>2. Search for `QA Automation`<br>3. Sort by course name<br>4. Switch to list layout | Only matching course cards/rows remain visible, order follows the sort selection, and list layout persists after refresh | High |
+| MS-COURSES-001 | Star course blocked for inactive student account | Student account is inactive | 1. Open card menu<br>2. Click "Star this course" | Action blocked; course not pinned; visible blocking indication shown | High |
+| MS-COURSES-002 | Remove from view blocked for inactive student account | Student account is inactive | 1. Open card menu<br>2. Click "Remove from view" | Action blocked; course remains visible; visible blocking indication shown | High |
 | MS-COURSES-003 | Open course from course card | At least one course is visible | 1. Click course name | Student opens course main page | High |
 | MS-COURSES-004 | Star course from course card | `QA Automation 101` course card menu is visible | 1. Open card menu<br>2. Click "Star this course"<br>3. Refresh My Courses | `QA Automation 101` appears in the Starred filter and `student1` remains enrolled | Medium |
 | MS-COURSES-009 | Remove course from view without unenrolling | `QA Automation 101` course card menu is visible | 1. Open card menu<br>2. Click "Remove from view"<br>3. Select Hidden filter<br>4. Open the hidden course card | `QA Automation 101` appears under Hidden, opens successfully, and `student1` remains enrolled as student | Medium |

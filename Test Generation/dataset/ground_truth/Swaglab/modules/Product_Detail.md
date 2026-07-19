@@ -17,6 +17,6 @@ Source: dataset/ground_truth/Swaglab/Swaglab.md
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| SL-PD-005 | Large product image | On product detail | 1. View product image | Larger image than inventory thumbnail | Medium |
-| SL-PD-006 | Price matches inventory | On product detail | 1. Compare price with inventory listing | Price is identical | High |
+| SL-PD-005 | Rapid double-click Add to cart | On product detail, not in cart | 1. Click "Add to cart" twice in rapid succession | Only one addition applied, no duplicate cart entry | Medium |
+| SL-PD-006 | Cart icon navigates to Shopping Cart | On product detail | 1. Click cart icon in header | Shopping Cart page is shown | High |
 | SL-PD-007 | Cart state preserved | Product added from inventory | 1. Navigate to product detail | "Remove" button shown (not "Add to cart") | High |
