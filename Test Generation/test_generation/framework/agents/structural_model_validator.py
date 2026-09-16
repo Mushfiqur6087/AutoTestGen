@@ -2,7 +2,7 @@
 
 import json
 from importlib import resources
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from test_generation.framework.agents.base import BaseAgent
 
@@ -59,11 +59,10 @@ class StructuralModelValidatorAgent(BaseAgent):
         ast: Dict[str, Any],
         attempt: int = 1,
         max_attempts: int = 3,
-        module_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         self._active_system_prompt = _render_validator_system_prompt(attempt, max_attempts)
         return self.call_llm_json(
-            self._build_prompt(description, ast, module_context),
+            self._build_prompt(description, ast),
             temperature=0.1,
             max_tokens=6144,
             reasoning_effort="medium",
@@ -75,11 +74,10 @@ class StructuralModelValidatorAgent(BaseAgent):
         ast: Dict[str, Any],
         attempt: int = 1,
         max_attempts: int = 3,
-        module_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         self._active_system_prompt = _render_validator_system_prompt(attempt, max_attempts)
         return await self.acall_llm_json(
-            self._build_prompt(description, ast, module_context),
+            self._build_prompt(description, ast),
             temperature=0.1,
             max_tokens=6144,
             reasoning_effort="medium",
@@ -90,12 +88,8 @@ class StructuralModelValidatorAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_prompt(description: str, ast: Dict[str, Any], module_context: Optional[Dict[str, Any]] = None) -> str:
-        prompt = ""
-        if module_context:
-            prompt += f"<module_context>\n{json.dumps(module_context, indent=2)}\n</module_context>\n\n"
-        prompt += (
+    def _build_prompt(description: str, ast: Dict[str, Any]) -> str:
+        return (
             f"<description>\n{description}\n</description>\n\n"
             f"<ast>\n{json.dumps(ast, indent=2)}\n</ast>"
         )
-        return prompt

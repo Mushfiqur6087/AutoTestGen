@@ -19,10 +19,6 @@ Every item above is a confirmed error from the previous attempt. Do not repeat t
 
 **INPUT:**
 
-<module_context>
-{Module context: summary, where_it_fits, assumed_state_on_entry — may be absent}
-</module_context>
-
 <module_name>{Module name}</module_name>
 
 <ast>
@@ -127,7 +123,6 @@ Go through these one by one. If any check fails, fix it before outputting.
 2. Is the `terminal_action` the exact `action_name` or `element_name` value from the AST, or an explicit action verb from the description? If no → fix it.
 3. Do two workflows reach the same `on_success` via the same code path (e.g. differing only by an independent toggle that does not change the outcome, or being repeated Cancel variants)? If yes → merge them into one. Keep a separate workflow only when its branch reveals a **distinct required-field group** that needs its own coverage.
 4. Does any workflow cross module boundaries (steps in another module)? If yes → trim at the exit point.
-5. If a `<module_context>` block is present, check that the `actor` field on each workflow is consistent with any roles described in `assumed_state_on_entry`. Update generic `<role>` placeholders with the specific role if the context names one.
 
 ---
 
