@@ -8,10 +8,10 @@ Source: dataset/ground_truth/Phptravels/Phptravels.md
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| REVIEW-001 | Aggregate ratings displayed on listing cards | User is on a hotel, tour, or car listing page | 1. Review listing cards | Rating score, label, and review count are displayed | High |
-| REVIEW-002 | Review breakdown displayed on detail page | Hotel, tour, or car detail page is open | 1. Scroll to the reviews section | Aggregate score, category breakdown, and individual reviews are visible | High |
+| REVIEW-001 | Submitted review displays the overall star rating in the reviews list | User has submitted a post-stay review with an overall rating | 1. Submit a review with a valid overall star rating<br>2. View the Reviews list for the listing | The new review appears in the Reviews list showing the submitted overall star rating | High |
+| REVIEW-002 | Reviews Filters narrow the individual reviews list shown on the item detail page | Item detail page is open with review data available | 1. Select a rating, date range, and traveler type in the Reviews Filters form<br>2. Click "Apply Filters" | The Reviews list updates to show only individual reviews matching the selected criteria; unrelated reviews are no longer visible | High |
 | REVIEW-003 | Submit review for completed booking | Logged in user has an eligible completed booking | 1. Open review submission flow<br>2. Enter valid ratings and comment<br>3. Submit review | Review is submitted successfully or queued for moderation | High |
-| REVIEW-004 | Sort reviews | Detail page has multiple reviews | 1. Change review sort option | Review list updates according to selected order | Medium |
+| REVIEW-004 | Clear Filters returns the Reviews list to the default unfiltered view | Filters are currently applied in the Reviews Filters form | 1. Click the Clear Filters button | All filter controls are cleared and the Reviews list displays the default unfiltered set of reviews | Medium |
 
 ### Negative Tests
 
@@ -24,4 +24,4 @@ Source: dataset/ground_truth/Phptravels/Phptravels.md
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| REVIEW-007 | Maximum allowed photo upload count | Logged in user is on review submission form | 1. Upload the maximum allowed number of photos<br>2. Submit review | Upload is accepted at the allowed boundary | Low |
+| REVIEW-007 | Rapid double-click of Submit Review does not create a duplicate review | User is authenticated and has a completed booking eligible for review | 1. Fill required review fields with valid values<br>2. Click Submit Review twice in rapid succession | Second submission attempt is blocked; only one new review appears in the Reviews list | Low |

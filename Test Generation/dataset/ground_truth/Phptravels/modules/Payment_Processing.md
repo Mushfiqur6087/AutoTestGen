@@ -28,5 +28,5 @@ Source: dataset/ground_truth/Phptravels/Phptravels.md
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| PAY-011 | CVV length boundary by card type | User is on payment page | 1. Enter 3-digit CVV for standard card or 4-digit CVV for AmEx-like card | CVV is accepted only when length matches card type rules | Medium |
-| PAY-012 | Promo code expiry boundary | Promo code is near expiration | 1. Apply promo code at validity boundary | Promo code is accepted or rejected consistently based on actual validity window | Low |
+| PAY-011 | Retry Payment action is not available when previous attempt did not fail | A completed booking/reservation is present; payment intent is initiated; Payment_Last_Attempt is not Failed | 1. Open the Payment page for a booking where the previous attempt did not fail<br>2. Attempt to locate a Retry Payment button or control | Retry Payment control is not visible on the Payment page; user cannot initiate a retry action from this state | Medium |
+| PAY-012 | Download Invoice/Voucher actions are not available before successful booking confirmation | User is on the Payment page or pre-confirmation state (payment not successful) | 1. Open the Payment page for a booking before completing payment<br>2. Attempt to locate the Download Invoice and Download Voucher actions | Download Invoice and Download Voucher actions are not visible prior to a successful booking confirmation; no download is initiated | Low |

@@ -10,7 +10,7 @@ Source: dataset/ground_truth/Phptravels/Phptravels.md
 |-------|-----------|---------------|-------|-----------------|----------|
 | REG-001 | Registration page elements displayed | None | 1. Navigate to the signup page | Required fields, mobile number country code selector, terms checkbox, and "Sign Up" button are visible | High |
 | REG-002 | Successful registration | Email address is not already registered | 1. Enter valid required data<br>2. Accept terms and conditions<br>3. Click "Sign Up" | Account is created and success message or post-registration redirect is shown | High |
-| REG-003 | Country code selector works | None | 1. Open mobile country code selector<br>2. Select another country code | Selected country code is applied to the mobile number field | Medium |
+| REG-003 | Registration blocked while already authenticated | User is already authenticated and has access to the Dashboard | 1. While authenticated, navigate to the Registration page or click the Register link in navigation | Registration is blocked for authenticated users: the Registration form or Register button is not presented; no ability to submit a new registration is available while authenticated | Medium |
 
 ### Negative Tests
 
@@ -26,5 +26,5 @@ Source: dataset/ground_truth/Phptravels/Phptravels.md
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| REG-009 | Minimum password length boundary | None | 1. Enter password at the minimum accepted length<br>2. Fill other valid data<br>3. Submit form | Registration succeeds or validates consistently at the minimum boundary | Low |
+| REG-009 | Very long First Name accepted (200+ characters) | Visitor is not authenticated and is on the Registration form | 1. Enter a string of 200+ characters in the First Name field<br>2. Fill other required fields with valid values<br>3. Submit form | Form submission succeeds; no inline field errors are displayed for First Name (registration proceeds) | Low |
 | REG-010 | Mobile number with selected country code | None | 1. Select country code<br>2. Enter valid number at expected length boundary | Number is accepted in the expected format | Low |

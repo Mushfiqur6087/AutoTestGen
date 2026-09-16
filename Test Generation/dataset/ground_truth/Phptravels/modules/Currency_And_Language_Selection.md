@@ -23,4 +23,4 @@ Source: dataset/ground_truth/Phptravels/Phptravels.md
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | PREF-006 | Currency preference persists across page navigation | None | 1. Change currency<br>2. Navigate to another page | Selected currency remains active across navigation | Medium |
-| PREF-007 | Authenticated preference persists after relogin | Logged in as user | 1. Change language or currency<br>2. Log out and log back in | Stored preference remains applied if profile persistence is supported | Low |
+| PREF-007 | Authenticated language selection persists to profile preferences | User is authenticated and on any page with an active session; Account/Preferences page is available | 1. Open the Language selector<br>2. Select a language different from the current site language<br>3. Navigate to the Account or Preferences page | The Account/Preferences page visibly shows the newly selected language as the saved preference; the site continues to display the chosen language across pages | Low |

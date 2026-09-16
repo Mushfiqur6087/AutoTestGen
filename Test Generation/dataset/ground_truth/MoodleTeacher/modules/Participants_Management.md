@@ -10,7 +10,7 @@ Source: dataset/ground_truth/MoodleTeacher/MoodleTeacher.md
 |-------|-----------|---------------|-------|-----------------|----------|
 | MT-PART-001 | Participants management controls displayed | Teacher opens Participants page | 1. Open Participants tab | Scope dropdown, Enrol users button, filters, alphabetical filters, table, row menus, and bulk dropdown are visible | High |
 | MT-PART-002 | Filter participants by student name | Participants include `student1` | 1. Add a First name filter for the seeded student<br>2. Apply filters | Participants table shows `student1` and hides unrelated participant rows | High |
-| MT-PART-003 | Alphabetical filtering | Participants exist | 1. Select First name or Last name initial | Participants table filters by selected initial | Medium |
+| MT-PART-003 | Sorting participants by First name reorders the table | Participants exist with varying first names | 1. Click the First Name column header to sort ascending | Participants table is sorted by First name ascending; the top visible rows reflect the earliest alphabetical first names | Medium |
 | MT-PART-004 | Enrol user dialog | A non-enrolled fixture user exists | 1. Click "Enrol users"<br>2. Search for the fixture user<br>3. Select Student role and enrollment duration<br>4. Confirm<br>5. Search the participants table for that user | User appears in the participants table with Student role and active enrollment status | High |
 | MT-PART-005 | Row action menu targets selected participant | Participants table includes `student1` | 1. Open the row action menu for `student1`<br>2. Select view profile | `student1` profile opens and the page does not navigate to any other participant profile | Medium |
 | MT-PART-012 | Bulk action requires explicit checked rows | Participants table includes `student1` and another user | 1. Check only `student1`<br>2. Open "With selected users..." dropdown | Bulk action context is limited to the checked row; unchecked participant rows remain unselected | Medium |
@@ -24,7 +24,7 @@ Source: dataset/ground_truth/MoodleTeacher/MoodleTeacher.md
 | MT-PART-008 | Filter with no matches | Participants page is visible | 1. Apply filter that matches no users | Empty/no-results state is displayed | Medium |
 | MT-PART-009 | Clear filters resets conditions | Filters are active | 1. Click "Clear filters" | Filters are removed and full list returns | Medium |
 | MT-PART-013 | Confirm enrollment with no user selected | Enrol users dialog is open | 1. Leave User search blank<br>2. Select `Student` role<br>3. Click "Enrol users" | Save is blocked by a required-field validation error on the user search field | High |
-| MT-PART-014 | Confirm enrollment with no role selected | Enrol users dialog is open | 1. Select a valid user<br>2. Leave Role dropdown blank<br>3. Click "Enrol users" | Save is blocked by a required-field validation error on the role field | High |
+| MT-PART-014 | Enrollment blocked when user lacks manage-participants permission | User does NOT have permission to manage participants | 1. Click "Enrol users"<br>2. Search for and select an existing user, choose a role<br>3. Click "Enrol users" to confirm | Enrollment is blocked; the dialog remains open (or the user stays on the Participants page); a visible permission error indicates the account lacks rights to enrol users; no user is added | High |
 
 ### Boundary Tests
 

@@ -28,11 +28,11 @@ Source: dataset/ground_truth/Mifos/Mifos.md
 | MF-USER-014 | Create user without office                   | None                           | 1. Omit office selection<br>2. Submit  | Validation error shown for office                           | High     |
 | MF-USER-015 | Create user without password                 | None                           | 1. Leave password blank<br>2. Submit   | Validation error shown                                      | High     |
 | MF-USER-016 | Duplicate username                           | Existing username exists       | 1. Create user using existing username | Validation or server-side uniqueness error occurs           | High     |
-| MF-USER-018 | Disable own currently logged-in user account | Admin logged in as target user | 1. Attempt to disable own account      | System blocks or handles safely according to business rules | Medium   |
+| MF-USER-018 | Unauthenticated user cannot access Users page | User is not authenticated | 1. Navigate to the Users & Roles page URL without logging in | User is redirected to the login page or shown an access-denied message; Users content is not accessible | High      |
 
 ### Additional Coverage Tests
 
 | TC ID       | Test Case                                        | Preconditions         | Steps                                                                       | Expected Result                                                | Priority |
 | ----------- | ------------------------------------------------ | --------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------- | -------- |
-| MF-USER-019 | Password reset for existing user                 | User exists           | 1. Open user<br>2. Reset password<br>3. Submit                              | User password is updated and old password becomes invalid      | High     |
-| MF-USER-021 | Maker-checker permissions assigned through roles | Maker-checker enabled | 1. Assign maker/checker permissions to role<br>2. Perform relevant workflow | User can create or approve actions according to permission set | Medium   |
+| MF-USER-019 | Non-administrator cannot open Manage Permissions for a role | Logged in as a user without administrative privileges | 1. Navigate to the Roles page<br>2. Attempt to click Manage Permissions for a role | Action is blocked: the Manage Permissions page does not open and a visible indication shows administrative privileges are required | High     |
+| MF-USER-021 | Create User form is blocked when required Offices/Staff records are missing | No Offices exist in the system | 1. Ensure no Offices (and/or required Staff records) are configured<br>2. Click Create User | Create User form does not open; a visible message indicates Offices and Staff records are required and the action is blocked | Medium   |

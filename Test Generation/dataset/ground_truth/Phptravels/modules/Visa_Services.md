@@ -24,4 +24,4 @@ Source: dataset/ground_truth/Phptravels/Phptravels.md
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| VISA-007 | Document upload at allowed size limit | Visa application form is enabled | 1. Upload a supported document at the maximum allowed size<br>2. Submit application | Document is accepted at the allowed boundary | Low |
+| VISA-007 | Supporting Documents can be added and removed from the repeating group before submission | Visa application form is enabled with Nationality and Destination Country selected | 1. Add two entries to the Supporting Documents repeating group, uploading a file to each<br>2. Remove both entries, leaving zero entries<br>3. Fill all other required fields and submit the application | Form submits successfully; the created application appears in the user's Dashboard bookings and shows no Supporting Documents listed | Low |

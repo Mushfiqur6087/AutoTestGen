@@ -22,9 +22,9 @@ Source: dataset/ground_truth/Mifos/Mifos.md
 | TC ID        | Test Case                                      | Preconditions                 | Steps                                       | Expected Result                                | Priority |
 | ------------ | ---------------------------------------------- | ----------------------------- | ------------------------------------------- | ---------------------------------------------- | -------- |
 | MF-SHARE-009 | Purchase shares below minimum allowed quantity | Active share account exists   | 1. Attempt purchase below minimum threshold | Validation or business rule blocks transaction | High     |
-| MF-SHARE-010 | Redeem more shares than held                   | Active share account exists   | 1. Attempt redemption exceeding holdings    | Transaction is blocked                         | High     |
+| MF-SHARE-010 | Redeem blocked when client has no linked savings account for crediting redemption | Active share account exists; client has no active savings accounts linked for charges/crediting | 1. Open share account<br>2. Click Redeem Shares action<br>3. Enter valid number of Shares to Redeem<br>4. Click Redeem/Submit button | Dialog does not submit; a visible error/notice indicates there is no linked savings account to credit redemption (or Redeem button is disabled); no redemption is processed and holdings remain unchanged | High     |
 | MF-SHARE-011 | Purchase or redeem on non-active share account | Account not active            | 1. Attempt transaction                      | Action is blocked                              | High     |
-| MF-SHARE-012 | Activate share account with invalid date order | Approved share account exists | 1. Activate with invalid date               | Validation prevents activation                 | Medium   |
+| MF-SHARE-012 | Undo Approval on an Approved share account reverts it to Pending | Approved share account exists | 1. Open share account<br>2. Click Undo Approval action<br>3. Confirm on the Undo Approval dialog | Share Account Detail page displays status badge 'Pending'; Approved-state fields such as Approved Date are no longer shown as current | Medium   |
 
 ### Additional Coverage Tests
 

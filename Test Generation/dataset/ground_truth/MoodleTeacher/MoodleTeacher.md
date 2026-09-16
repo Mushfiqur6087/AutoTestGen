@@ -98,7 +98,7 @@
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | MT-LOGIN-008 | Failed login retains username | Login page is visible | 1. Enter invalid username and password<br>2. Submit login | Username remains populated and password is cleared | Medium |
-| MT-LOGIN-009 | Rapid double login click | Login page is visible | 1. Enter invalid credentials<br>2. Double-click "Log in" | One login error message is visible, password is cleared once, username remains populated, and the form controls remain enabled | Medium |
+| MT-LOGIN-009 | Log in action blocked while already authenticated | Teacher is already authenticated and on Dashboard | 1. While authenticated, navigate to the Login page<br>2. Attempt to interact with the "Log in" button or submit the login form | The Log in action is not allowed while already authenticated: the button is not visible or is disabled/non-interactive; submitting does not create a new session or switch to a guest session; teacher remains authenticated | Medium |
 | MT-LOGIN-010 | Both fields empty shows simultaneous validation | Login page is visible | 1. Leave Username and Password both empty<br>2. Click "Log in" | Both username and password fields are flagged with validation errors simultaneously; no authenticated page opens | High |
 | MT-LOGIN-011 | Username with leading/trailing whitespace retained after failed login | Login page is visible | 1. Enter `  teacher1  ` (with spaces) as the username<br>2. Enter `WrongPass#2026`<br>3. Click "Log in" | Login is rejected with error; username field retains the entered string including the surrounding whitespace | Low |
 | MT-LOGIN-012 | Very long username rejected without crash | Login page is visible | 1. Enter a 200+ character username and an invalid password<br>2. Click "Log in" | Login error is shown, the long username remains populated without breaking the page layout, and password is cleared | Low |
@@ -113,7 +113,7 @@
 |-------|-----------|---------------|-------|-----------------|----------|
 | MT-DASH-001 | Personalized dashboard greeting | Teacher is logged in | 1. Open Dashboard | Greeting for the logged-in teacher is displayed | High |
 | MT-DASH-002 | Timeline block displays teaching actions | `Essay Draft` has a due date within the selected timeline range | 1. Log in as `teacher1`<br>2. Open Dashboard<br>3. Inspect Timeline block | Timeline lists `Essay Draft` with its course name and due date; no unrelated course item appears when the course filter is active | High |
-| MT-DASH-003 | Timeline filtering and search | Timeline contains `Essay Draft` and at least one non-matching activity | 1. Select a range containing `Essay Draft`<br>2. Sort by date<br>3. Search for `Essay` | Timeline shows `Essay Draft`, hides non-matching activities, and preserves the selected range/sort controls | High |
+| MT-DASH-003 | Timeline search filters to matching activities | Timeline contains `Essay Draft` and at least one non-matching activity | 1. Enter a search term matching `Essay Draft` in the Timeline search field | Timeline displays only activities matching the search term; unrelated activities are no longer visible | High |
 | MT-DASH-004 | Calendar block navigation | Calendar block is visible and has at least one event for `QA Automation 101` | 1. Select `QA Automation 101` in the course filter<br>2. Record the month heading<br>3. Click previous month<br>4. Click next month | Month heading changes on navigation, returns to the original month after the second click, and only selected-course events are shown | High |
 | MT-DASH-005 | Calendar links open destination pages | Calendar block is visible | 1. Click "Full calendar"<br>2. Return<br>3. Click "Import or export calendars" | Full calendar and calendar data management pages open | Medium |
 
@@ -131,9 +131,9 @@
 | MT-DASH-008 | Calendar year boundary | Calendar displays January | 1. Click previous-month arrow | Calendar shows December of the previous year | Medium |
 | MT-DASH-009 | Very long timeline search | Timeline block is visible | 1. Enter a 200+ character search term ending in `Essay` | Search field retains the full entered term, Timeline displays the no-results state, and the Calendar block remains visible beside it | Low |
 | MT-DASH-010 | Timeline empty state when selected range has zero activities | `teacher1` is on Dashboard; a date range with no activities is known | 1. Select the date range that contains no scheduled activities | Timeline block displays its empty-state message and no activity rows are rendered | Low |
-| MT-DASH-011 | Timeline search with special characters and emoji accepted | `teacher1` is on Dashboard | 1. Type `@@##🎓` into the Timeline search field | Search field accepts the input without error; timeline shows empty-results state or matching items; no crash or validation dialog appears | Low |
+| MT-DASH-011 | Timeline search with leading/trailing whitespace is trimmed | `teacher1` is on Dashboard and a known timeline item exists | 1. Enter the exact name of the timeline item with leading and trailing spaces into the Timeline search field | Search input is trimmed; the matching item appears in the Timeline with its normal name, no leading/trailing spaces displayed | Low |
 | MT-DASH-012 | Navigate calendar to previous month removes current-date highlight | Calendar block is visible and shows the current month | 1. Click the previous-month arrow on the Calendar block | Calendar advances to the previous month; the current-date highlight is absent on the previous month view | Low |
-| MT-DASH-013 | Rapid toggle of Timeline sort by date/courses | Timeline block is visible | 1. Toggle sorting rapidly between Sort by dates and Sort by courses | Timeline block ends in the sorting state corresponding to the final click; no intermediate or broken state is locked | Medium |
+| MT-DASH-013 | Rapid double-click New event does not open duplicate interfaces | Calendar block is visible | 1. Click the Calendar block's "New event" button<br>2. Immediately click "New event" again | Second click is blocked; only one New event creation interface is displayed; no duplicate modal/page instances appear | Medium |
 
 ---
 
@@ -144,8 +144,8 @@
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | MT-DEDIT-001 | Enable dashboard edit mode | Teacher is on Dashboard | 1. Toggle Edit mode on | Reset button, Add a block button, block move icons, and block menus are visible | High |
-| MT-DEDIT-002 | Add a dashboard block | Edit mode is on and `Latest announcements` block is not already present | 1. Click "+ Add a block"<br>2. Select `Latest announcements` | `Latest announcements` block appears on the teacher Dashboard and remains visible after page refresh | High |
-| MT-DEDIT-003 | Configure a dashboard block | Edit mode is on and `Latest announcements` block is visible | 1. Open the block menu<br>2. Select configure<br>3. Change a non-destructive block setting<br>4. Save and refresh Dashboard | Updated block configuration is preserved for `teacher1` and does not change the student's dashboard | Medium |
+| MT-DEDIT-002 | Opening Add a block page lists available block types | Edit mode is on | 1. Click "+ Add a block" | The Add a block page opens and lists the available block types, including `Latest announcements` | High |
+| MT-DEDIT-003 | Opening a block's Configure UI displays the configuration panel | Edit mode is on and an existing block is visible | 1. Open the block's options menu<br>2. Click "Configure" | The block configuration UI is displayed for the block (a configuration panel or modal with controls to edit the block is visible) | Medium |
 | MT-DEDIT-004 | Reset dashboard to default | Edit mode is on and layout was customized | 1. Click "Reset page to default" | Dashboard returns to default block arrangement | High |
 | MT-DEDIT-010 | Move a block via drag and drop | Edit mode is on and Dashboard contains at least two blocks | 1. Click and hold the Move icon for a block<br>2. Drag the block to a new position in the layout<br>3. Release to drop the block | The block is moved to the new position and the layout persists for the teacher | High |
 | MT-DEDIT-011 | Move a block via the block options menu | Edit mode is on and Dashboard contains at least two blocks | 1. Open the block menu for a block<br>2. Select the Move action | The block is moved to the selected position and the layout persists for the teacher | Medium |
@@ -155,7 +155,7 @@
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | MT-DEDIT-005 | Add block unavailable outside edit mode | Edit mode is off | 1. Inspect dashboard controls | "+ Add a block" is not rendered and no add-block URL is exposed from the Dashboard controls | High |
-| MT-DEDIT-006 | Block menu unavailable outside edit mode | Edit mode is off | 1. Inspect existing dashboard blocks | Configure, move, and delete options are not rendered on dashboard blocks | High |
+| MT-DEDIT-006 | Configure action blocked for users without dashboard edit permission | Edit mode is on but the user lacks dashboard edit permission | 1. Open the options menu for an existing block<br>2. Attempt to click "Configure" | "Configure" is not present or not actionable for this user; clicking does not open the block configuration UI and the block remains unchanged | High |
 | MT-DEDIT-007 | Cancel add-block flow | Add-block page is open | 1. Click "Cancel" | No block is added and teacher returns to Dashboard | Medium |
 | MT-DEDIT-012 | Add block blocked when block type is not selected | Edit mode is on and Add a block page is open | 1. Leave the Block Type dropdown empty<br>2. Click to submit or add | Submission is blocked by required-field validation and no block is added | High |
 | MT-DEDIT-013 | Move handle is hidden when edit mode is off | Edit mode is off and Dashboard contains blocks | 1. Inspect existing blocks on the Dashboard | Move handles (drag icons) are absent and blocks cannot be dragged | High |
@@ -165,11 +165,11 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| MT-DEDIT-008 | Rapid edit-mode toggle | Dashboard is visible | 1. Toggle Edit mode on and off several times quickly | Final UI state matches the final toggle state | Medium |
+| MT-DEDIT-008 | Toggling Edit Mode off closes an open block options menu | Edit mode is on and a block's options menu is open | 1. Open the options menu for a block<br>2. Toggle Edit Mode off while the menu is open | The options menu and move handles are no longer visible and the menu closes immediately; the Dashboard returns to view mode without error | Medium |
 | MT-DEDIT-009 | Delete all optional blocks | Edit mode is on and blocks exist | 1. Delete available optional blocks<br>2. Reload Dashboard | Layout persists without duplicate or ghost blocks | Medium |
 | MT-DEDIT-015 | Toggle edit mode off closes Add block page | Add a block page is open in Edit mode | 1. Click the Edit mode toggle to turn it off | Add a block page closes, teacher is returned to the standard Dashboard, and no block is added | Medium |
-| MT-DEDIT-016 | Reset to default immediately after adding a block | Edit mode is on and layout was customized | 1. Add a new block<br>2. Immediately click "Reset page to default" | Dashboard reverts to the default block arrangement and the newly added block is removed if it was not part of the default layout | Medium |
-| MT-DEDIT-017 | Rapid Add block double-click | Edit mode is on | 1. Click "+ Add a block" rapidly twice | Add a block page opens only once; no duplicate modal or error state occurs | Low |
+| MT-DEDIT-016 | Reset immediately after moving a block reverts its position | Edit mode is on and Dashboard contains at least one block in a known position | 1. Use the move handle to drag a block to a different position<br>2. Immediately click "Reset page to default" | Dashboard visibly reverts to the default layout; the moved block returns to its original default position with no error shown | Medium |
+| MT-DEDIT-017 | Reset when layout is already default succeeds with no error | Edit mode is on and the Dashboard layout already matches the system default | 1. Click "Reset page to default" | Reset succeeds: the Dashboard remains in the default layout with no visible change and no error is shown; Edit Mode remains active | Low |
 
 ---
 
@@ -183,14 +183,14 @@
 | MT-COURSES-002 | Filter, search, sort, and layout controls | `teacher1` has access to `QA Automation 101` and at least one other course | 1. Select All status filter<br>2. Search for `QA Automation`<br>3. Sort by course name<br>4. Switch to list layout | Only matching courses remain visible, order follows the sort selection, and list layout persists after refresh | High |
 | MT-COURSES-003 | Open course from course card | At least one course is visible | 1. Click a course name | Teacher opens the course main page | High |
 | MT-COURSES-004 | Star course from course card | `QA Automation 101` course card menu is visible | 1. Open card menu<br>2. Click "Star this course"<br>3. Refresh My Courses | `QA Automation 101` appears in the Starred filter and teacher enrollment remains unchanged | Medium |
-| MT-COURSES-009 | Remove course from view without unenrolling | `QA Automation 101` course card menu is visible | 1. Open card menu<br>2. Click "Remove from view"<br>3. Select Hidden filter<br>4. Open the hidden course card | `QA Automation 101` appears under Hidden, opens successfully, and `teacher1` remains enrolled as teacher | Medium |
+| MT-COURSES-009 | Remove course from view hides it from the default grid | `QA Automation 101` course card menu is visible | 1. Open card menu<br>2. Click "Remove from view" | `QA Automation 101` card is no longer shown in the Course Cards grid; other course cards remain visible | Medium |
 
 ### Negative Tests
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | MT-COURSES-005 | My Courses blocked while unauthenticated | User is logged out | 1. Navigate directly to My Courses URL | User is redirected to login | High |
-| MT-COURSES-006 | Search with no matching course | Teacher is logged in | 1. Search for a non-existent course | Empty/no-results state is shown | Medium |
+| MT-COURSES-006 | Search with a long or special-character query returns safely | Teacher is logged in | 1. Enter a long or special-character search string<br>2. Submit the search | Search executes without error; the Course Cards grid updates to show matching cards or a visible empty-results state | Medium |
 
 ### Boundary Tests
 
@@ -212,7 +212,7 @@
 | MT-COURSE-001 | Teacher course tabs displayed | `teacher1` is enrolled as teacher in `QA Automation 101` | 1. Open the `QA Automation 101` course page | Course, Settings, Participants, Grades, Activities, and Competencies tabs are visible; Settings is visible for the teacher | High |
 | MT-COURSE-002 | Sections and activities displayed | Course contains sections | 1. Inspect course content | Sections, activity icons, and activity/resource names are visible | High |
 | MT-COURSE-003 | Collapse all sections | Sections are expanded | 1. Click "Collapse all" | All visible sections collapse | Medium |
-| MT-COURSE-004 | Course index navigation | Course index is visible | 1. Click a section or activity in Course Index | Page navigates to the selected content | Medium |
+| MT-COURSE-004 | Open an activity from an expanded section | An expanded section contains an activity/resource | 1. Locate the activity/resource in the expanded section<br>2. Click the activity/resource name link | The activity/resource page opens; the page heading displays the activity name | Medium |
 
 ### Negative Tests
 
@@ -227,7 +227,7 @@
 |-------|-----------|---------------|-------|-----------------|----------|
 | MT-COURSE-007 | Hide Course Index sidebar | Course Index is open | 1. Click Course Index close button | Sidebar is hidden, course heading remains visible, and the tab bar remains clickable | Low |
 | MT-COURSE-008 | Rapid section toggles | Section `Week 1` is visible | 1. Expand/collapse `Week 1` three times | `Week 1` ends in the final clicked state and each activity row appears once | Medium |
-| MT-COURSE-009 | Rapid double-click on activity link causes single navigation | Course page is visible and an activity link is present | 1. Double-click the activity name rapidly | Browser navigates to the activity page exactly once; no duplicate page-load or error page appears | Medium |
+| MT-COURSE-009 | Activity link is blocked when its section is collapsed | Course page is visible and a section showing activities is then collapsed | 1. Collapse the section containing an activity<br>2. Attempt to click the activity's name link | The activity link is not visible or clickable while its section is collapsed; no navigation occurs and the section remains collapsed | Medium |
 
 ---
 
@@ -239,7 +239,7 @@
 |-------|-----------|---------------|-------|-----------------|----------|
 | MT-CEDIT-001 | Enable course edit mode | Teacher is on course page | 1. Toggle edit mode on | Section, activity, bulk action, and add controls become visible | High |
 | MT-CEDIT-002 | Rename a course section inline | Edit mode is on and section `Week 1` exists | 1. Click the section inline edit icon<br>2. Rename `Week 1` to `Week 1 - Orientation`<br>3. Save and refresh course page | The renamed section title persists after refresh and the old title is no longer shown | High |
-| MT-CEDIT-003 | Hide an activity from students | Edit mode is on and `Essay Draft` is visible | 1. Open the `Essay Draft` activity menu<br>2. Select Hide<br>3. Open the course as `student1` | `Essay Draft` is hidden from the student view while remaining visible to `teacher1` with a hidden indicator | High |
+| MT-CEDIT-003 | Hide an activity shows a hidden indicator | Edit mode is on and `Essay Draft` is visible | 1. Open the `Essay Draft` activity menu<br>2. Select Hide<br>3. If a confirmation appears, click Confirm | The `Essay Draft` row shows a visible hidden/visibility indicator confirming it is not visible to students | High |
 | MT-CEDIT-004 | Bulk hide selected activities | Edit mode is on and at least two visible activities exist | 1. Select `Essay Draft` and one other activity<br>2. Use the bulk action toolbar to hide selected activities<br>3. Refresh course page | Only the selected activities are hidden; unselected activities remain visible | Medium |
 | MT-CEDIT-005 | Open Activity Chooser | Edit mode is on | 1. Click "+ Add an activity or resource" | Activity Chooser modal opens with categories, search, and activity/resource tiles | High |
 | MT-CEDIT-006 | Select Assignment from Activity Chooser | Activity Chooser is open | 1. Select Assignment<br>2. Click "Add" | Assignment creation form opens | High |
@@ -250,7 +250,7 @@
 |-------|-----------|---------------|-------|-----------------|----------|
 | MT-CEDIT-007 | Edit controls hidden when edit mode is off | Teacher is on course page with edit mode off | 1. Inspect sections and activities | Authoring controls are hidden | High |
 | MT-CEDIT-008 | Add action with no tile selected | Activity Chooser is open | 1. Click Add without selecting an activity/resource | No activity is created and user is prompted to select an item | Medium |
-| MT-CEDIT-009 | Delete action requires confirmation | Edit mode is on | 1. Delete a section or activity<br>2. Cancel confirmation | Item remains unchanged | High |
+| MT-CEDIT-009 | Delete action removes the item after confirmation | Edit mode is on | 1. Delete a section or activity<br>2. Confirm the deletion dialog | The deleted section/activity is no longer present in the course listing | High |
 
 ### Boundary Tests
 
@@ -258,16 +258,16 @@
 |-------|-----------|---------------|-------|-----------------|----------|
 | MT-CEDIT-010 | Activity chooser search no results | Activity Chooser is open | 1. Search for non-existent activity type | Empty/no-results state is displayed | Low |
 | MT-CEDIT-011 | Nested subsection creation | Edit mode is on in section `Week 1` | 1. Click "+ Add a subsection"<br>2. Name it `Ground Truth Subsection`<br>3. Save and refresh course page | `Ground Truth Subsection` appears nested under `Week 1` after refresh and can be removed during cleanup | Medium |
-| MT-CEDIT-012 | Rename section inline with empty text | Edit mode is on | 1. Click inline edit for a section<br>2. Clear the text and press Enter | Section name reverts to its previous value or displays a required-field error; no unnamed section is created | High |
-| MT-CEDIT-013 | Rename section inline with very long text | Edit mode is on | 1. Click inline edit for a section<br>2. Enter a 200+ character string and press Enter | Long text is saved and visible, wrapping correctly without breaking the page layout | Low |
-| MT-CEDIT-014 | Drag and drop an activity to reorder | Edit mode is on and course has activities | 1. Click and hold the move handle for an activity<br>2. Drag it to a new position<br>3. Release | Activity appears in the new position and layout persists | High |
-| MT-CEDIT-015 | Drag and drop a section to reorder | Edit mode is on and course has multiple sections | 1. Click and hold the move handle for a section<br>2. Drag it above another section<br>3. Release | Section appears in the new position with its contents intact and layout persists | High |
+| MT-CEDIT-012 | Rename section inline trims leading/trailing whitespace | Edit mode is on | 1. Click inline edit for a section<br>2. Enter a title with leading and trailing whitespace<br>3. Press Enter | The section title is saved and displayed with the intended text; leading/trailing whitespace is removed | High |
+| MT-CEDIT-013 | Open section edit interface from three-dot menu | Edit mode is on | 1. Click the section's three-dot menu<br>2. Click "Edit" | The section edit panel is displayed, showing section settings controls and the section's title | Low |
+| MT-CEDIT-014 | Initiate moving an activity via the three-dot menu | Edit mode is on and course has activities | 1. Open the three-dot menu for an activity<br>2. Select "Move" | A move UI is displayed allowing selection of a new location for the activity | High |
+| MT-CEDIT-015 | Initiate moving a section via the three-dot menu | Edit mode is on and course has multiple sections | 1. Open the three-dot menu for a section<br>2. Select "Move" | A move UI is displayed allowing selection of a new position for the section | High |
 | MT-CEDIT-016 | Rapid consecutive clicks on hide/show activity toggle | Edit mode is on and an activity is visible | 1. Open activity action menu<br>2. Rapidly toggle Hide/Show multiple times | Activity ends in the visibility state corresponding to the final toggle action; no intermediate locked state | Medium |
 | MT-CEDIT-017 | Duplicate an activity | Edit mode is on and `Essay Draft` exists | 1. Open action menu for `Essay Draft`<br>2. Select Duplicate | A copy of the activity appears with "copy" in the title; original activity remains unchanged | High |
-| MT-CEDIT-018 | Delete section containing activities warns of cascading delete | Edit mode is on and section contains activities | 1. Open action menu for the section<br>2. Select Delete | A confirmation dialog explicitly warns that deleting the section will also delete its contained activities | High |
-| MT-CEDIT-019 | Rapid double-click on Add activity button | Edit mode is on | 1. Rapidly double-click "+ Add an activity or resource" | Activity Chooser modal opens exactly once | Low |
+| MT-CEDIT-018 | Bulk delete selected activities | Edit mode is on and multiple activities are present | 1. Select checkboxes for two activities<br>2. Click the Bulk Actions toolbar and select "Delete Selected"<br>3. Confirm the bulk deletion dialog | The selected activity rows are no longer present in the section's activity list | High |
+| MT-CEDIT-019 | Bulk move selected activities to another section | Edit mode is on and multiple activities are present across sections | 1. Select checkboxes for two activities<br>2. Click the Bulk Actions toolbar and select "Move Selected"<br>3. Choose a target section and confirm | The moved activities are visible in the target section and no longer listed in their original section | Low |
 | MT-CEDIT-020 | Activity chooser search with special characters | Activity Chooser is open | 1. Search for `@@##🎓` | Search field accepts input without error and displays the no-results state | Low |
-| MT-CEDIT-021 | Bulk action bar clears selection when closed | Edit mode is on and bulk action bar is visible | 1. Select multiple activities<br>2. Click the 'X' to close the bulk action bar | Bulk action bar closes and all activity checkboxes are deselected | Medium |
+| MT-CEDIT-021 | Bulk 'Set Access Restrictions' opens editor for selected activities | Edit mode is on and bulk action bar is visible | 1. Select checkboxes for two activities<br>2. Click the Bulk Actions toolbar and select "Set Access Restrictions Selected" | The access restrictions editor opens and lists the selected activities with controls to configure restrictions | Medium |
 | MT-CEDIT-022 | Edit settings action opens activity form | Edit mode is on and an activity exists | 1. Open action menu for the activity<br>2. Select Edit settings | Activity configuration form opens successfully | High |
 
 ---
@@ -280,9 +280,9 @@
 |-------|-----------|---------------|-------|-----------------|----------|
 | MT-ACREATE-001 | Create assignment and return to course | Teacher opens assignment creation form from `QA Automation 101` | 1. Enter assignment name `Essay Draft - Ground Truth`<br>2. Enter a short description<br>3. Enable online text and file submissions<br>4. Click "Save and return to course" | Assignment is created, course page opens, and `Essay Draft - Ground Truth` appears in the selected section after refresh | High |
 | MT-ACREATE-002 | Create assignment and display it | Teacher opens assignment creation form from `QA Automation 101` | 1. Enter assignment name `Essay Draft Display Check`<br>2. Configure required fields<br>3. Click "Save and display" | Assignment page opens with the new assignment name, description, due date/status panel, and teacher tabs | High |
-| MT-ACREATE-003 | Configure availability dates | Assignment form is open | 1. Enable submission/due/cut-off date controls<br>2. Set dates and times | Date settings are saved and visible after save | Medium |
-| MT-ACREATE-004 | Configure submission and feedback types | Assignment form is open | 1. Enable online text and file submissions<br>2. Configure feedback comments/files/offline worksheet | Selected submission and feedback settings are saved | High |
-| MT-ACREATE-005 | Configure grade and completion settings | Assignment form is open | 1. Set grade type to Point<br>2. Set maximum points to `100`<br>3. Enable activity completion tracking<br>4. Add tag `ground-truth`<br>5. Save and reopen settings | Grade type, maximum points, completion tracking, and `ground-truth` tag are persisted in the assignment settings | Medium |
+| MT-ACREATE-003 | Configure group submissions | Assignment form is open | 1. Check the Group submissions checkbox<br>2. Configure Require all group members to submit and select a Grouping<br>3. Click "Save and return to course" | Assignment is created with Group submissions configured as set in the creation form; course page opens | Medium |
+| MT-ACREATE-004 | Configure File submissions and limits | Assignment form is open | 1. Check the File submissions checkbox<br>2. Set maximum number of files, maximum submission size, and accepted file types<br>3. Click "Save and return to course" | Assignment is created with File submissions enabled and the configured limits as set in the creation form | High |
+| MT-ACREATE-005 | Save and display shows configured submission settings | Assignment form is open | 1. Enable File submissions and Group submissions with configured limits and grouping<br>2. Click "Save and display" | The new assignment page opens showing File submissions enabled with the configured maximum files/size, and the Group submissions configuration showing the selected grouping and requirement | Medium |
 
 ### Negative Tests
 
@@ -290,21 +290,21 @@
 |-------|-----------|---------------|-------|-----------------|----------|
 | MT-ACREATE-006 | Assignment name empty | Assignment form is open | 1. Leave Assignment name empty<br>2. Click save | Inline required-field validation is shown and assignment is not created | High |
 | MT-ACREATE-007 | Oversized additional file | Assignment form is open | 1. Upload `oversize-11mb.pdf` to Additional files | Upload is blocked, file-size validation is displayed, and `oversize-11mb.pdf` is not listed in Additional files | Medium |
-| MT-ACREATE-008 | Invalid accepted file type | File submissions are enabled | 1. Enter `not-an-extension` in accepted file types<br>2. Save | Save is blocked, the accepted file types field is marked invalid, and no assignment is created from the invalid configuration | Medium |
+| MT-ACREATE-008 | Non-numeric value in maximum file count blocked | File submissions are enabled | 1. Enter a non-numeric value in "Maximum number of uploaded files"<br>2. Save | Save is blocked, inline validation indicates a numeric value is required, and no assignment is created from the invalid configuration | Medium |
 | MT-ACREATE-009 | Cancel discards assignment creation | Assignment form has unsaved changes | 1. Click "Cancel" | No assignment is created and teacher returns to previous page | Medium |
 
 ### Boundary Tests
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| MT-ACREATE-010 | Disabled availability dates are not enforced | Assignment form is open | 1. Disable Allow submissions from, Due date, and Cut-off date toggles<br>2. Save and display assignment | Assignment page shows no enforced open, due, or cut-off date for the new assignment | Low |
-| MT-ACREATE-011 | Maximum number of uploaded files | File submissions are enabled | 1. Select the highest value displayed in "Maximum number of uploaded files"<br>2. Save and reopen assignment settings | The same maximum-file count label remains selected after reopening settings | Low |
-| MT-ACREATE-012 | Due date earlier than Allow submissions from date | Assignment form is open | 1. Set Due date to a time earlier than Allow submissions from date<br>2. Save | Save is blocked with an inline date-validation error | High |
+| MT-ACREATE-010 | Enable File and Group submissions together | Assignment form is open | 1. Enable File submissions with configured limits and accepted file types<br>2. Enable Group submissions with a selected grouping and requirement<br>3. Click "Save and return to course" | Assignment is created with both File and Group submissions configured as set in the creation form | Low |
+| MT-ACREATE-011 | Assignment Creation blocked without edit permission | User is logged in without course-edit permission (e.g., Student role) | 1. Open the Activity Chooser while logged in without edit permissions<br>2. Attempt to select Assignment | The Activity Chooser does not open the Assignment Creation form for this user; the Assignment option is unavailable or selecting it has no effect; the user remains on the Course page | Low |
+| MT-ACREATE-012 | Invalid due date format rejected | Assignment form is open | 1. Enable Due date<br>2. Enter an invalid date format into Due date<br>3. Save | Save is blocked with an inline validation error indicating the date/time is invalid; no assignment is created | High |
 | MT-ACREATE-013 | Cut-off date earlier than Due date | Assignment form is open | 1. Set Cut-off date to a time earlier than Due date<br>2. Save | Save is blocked with an inline date-validation error | High |
-| MT-ACREATE-014 | Negative maximum points blocked | Assignment form is open with Point grading | 1. Set Maximum points to `-10`<br>2. Save | Save is blocked and a validation error requires points to be greater than 0 | High |
-| MT-ACREATE-015 | Very long assignment description | Assignment form is open | 1. Enter a 10,000+ character description<br>2. Save and display | Assignment saves successfully and the full description is displayed on the assignment page | Low |
-| MT-ACREATE-016 | Rapid double-click on Save and return to course | Assignment form is open and filled | 1. Rapidly double-click "Save and return to course" | Assignment is created exactly once and no duplicate entries appear on the course page | Medium |
-| MT-ACREATE-017 | Disable all submission types | Assignment form is open | 1. Uncheck both Online text and File submissions<br>2. Save | Save is blocked with validation indicating at least one submission type must be enabled | High |
+| MT-ACREATE-014 | Repeating completion conditions can be added and removed before save | Assignment form is open | 1. Add multiple Activity completion required conditions<br>2. Remove all of them so none remain<br>3. Click "Save and display" | The new assignment page opens and the Activity completion section shows zero required conditions; save succeeds even after all repeating entries were removed | Low |
+| MT-ACREATE-015 | File submissions save with optional limits left blank | Assignment form is open | 1. Enable File submissions<br>2. Leave the maximum-files and maximum-size fields blank<br>3. Click "Save and return to course" | Save succeeds; the course page is shown and the new assignment appears in the Course Index; no inline error about the missing optional limits is shown | Low |
+| MT-ACREATE-016 | Extremely long assignment name blocked | Assignment form is open | 1. Enter a 200+ character string in Assignment name<br>2. Attempt to save | Inline validation indicates the value exceeds the maximum allowed length; Save is blocked until the value is shortened | Medium |
+| MT-ACREATE-017 | Assignment Creation blocked while unauthenticated | User is not authenticated; course page is reachable | 1. Navigate to the Course page while not logged in<br>2. Open the Activity Chooser<br>3. Select Assignment | Access to the Assignment Creation form is blocked: the user is redirected to the login page and the form is not displayed | High |
 | MT-ACREATE-018 | Additional file with emoji filename | Assignment form is open | 1. Upload a file named `assignment_🎓_reqs.pdf`<br>2. Save and display | File uploads successfully and the emoji filename is preserved on the assignment page | Low |
 | MT-ACREATE-019 | Maximum points boundary value | Assignment form is open with Point grading | 1. Set Maximum points to the highest allowed system value (e.g., 1000000)<br>2. Save and reopen settings | High point value is saved and displayed without causing a system overflow error | Low |
 
@@ -317,9 +317,9 @@
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | MT-CSET-001 | Save required course settings | Teacher opens Course Settings | 1. Change full name to `QA Automation 101 - Ground Truth`<br>2. Keep short name and category populated<br>3. Click "Save and display" | Course page opens with heading `QA Automation 101 - Ground Truth`; the original course name is restored during cleanup | High |
-| MT-CSET-002 | Configure visibility and date fields | Course Settings is open | 1. Set Course visibility to Hide<br>2. Enable start/end date fields<br>3. Set start before end<br>4. Save and reopen settings | Visibility is Hide and the saved start/end date values are still populated after reopening settings | Medium |
-| MT-CSET-003 | Configure course summary and image | Course Settings is open | 1. Set summary to `Ground truth course summary`<br>2. Upload `course-banner-ground-truth.png`<br>3. Save and reopen settings | Summary text and uploaded image filename are visible after reopening Course Settings | Medium |
-| MT-CSET-004 | Configure format, completion, groups, and tags | Course Settings is open | 1. Set format to Topics format<br>2. Enable completion tracking<br>3. Set group mode to Separate groups<br>4. Add tag `ground-truth`<br>5. Save and reopen settings | Topics format, completion tracking, Separate groups, and tag `ground-truth` remain selected after reopening settings | Medium |
+| MT-CSET-002 | Course Start Date invalid format is rejected | Course Settings is open | 1. Enter an invalid date format into Course Start Date<br>2. Click Save and display | Save is blocked; inline validation error appears on the Course Start Date field indicating it must be a valid date; settings are not persisted | Medium |
+| MT-CSET-003 | Course summary with emoji is saved and preserved | Course Settings is open | 1. Paste a rich-text course summary containing emoji and special Unicode characters<br>2. Save and reopen settings | Form saves successfully and the full summary content, including emoji/special characters, is preserved after reopening Course Settings | Medium |
+| MT-CSET-004 | Course format selection reveals and persists Layout Controls | Course Settings is open | 1. Select a Course Format to trigger Layout Controls visibility<br>2. Enter a long value into Layout Controls<br>3. Save and reopen settings | Form saves successfully and the Layout Controls field displays the full saved value with no truncation after reopening | Medium |
 
 ### Negative Tests
 
@@ -334,16 +334,16 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| MT-CSET-009 | End date earlier than start date | Course Settings is open | 1. Enable end date<br>2. Set end date before course start date<br>3. Save | Save is blocked with a date-range validation message and the previous course dates remain unchanged | Medium |
+| MT-CSET-009 | Conditional Course End Date enabled but invalid is rejected | Course Settings is open | 1. Check the Enable Course End Date checkbox<br>2. Enter an invalid date format into Course End Date<br>3. Click Save and display | Save is blocked; inline validation error appears on the Course End Date field indicating it must be a valid date; settings are not persisted | Medium |
 | MT-CSET-010 | Maximum upload size option | Course Settings is open | 1. Select `10 MB` in Maximum upload size<br>2. Save and reopen settings | Maximum upload size remains `10 MB` after reopening Course Settings | Low |
-| MT-CSET-011 | Course end date exactly equals start date | Course Settings is open | 1. Enable end date<br>2. Set end date to the exact same day/time as start date<br>3. Save and display | Form saves successfully and the course dates are updated | Medium |
+| MT-CSET-011 | Enabling Course End Date reveals the field and saves successfully | Course Settings is open | 1. Check the Enable Course End Date checkbox<br>2. Verify the Course End Date field becomes visible<br>3. Enter a valid date and click Save and display | Form submits successfully and returns to the course page; the course heading shows the updated course name | Medium |
 | MT-CSET-012 | Course end date one day before start date | Course Settings is open | 1. Enable end date<br>2. Set end date to exactly one day before start date<br>3. Save | Save is blocked by date-range validation and settings are not updated | Medium |
 | MT-CSET-013 | Very long Course Full Name (200+ chars) | Course Settings is open | 1. Enter a 200+ character string in Course full name<br>2. Save | Name is saved and visible, possibly truncated at system limit, but does not crash the page | Low |
 | MT-CSET-014 | Special characters and emoji in Course Short Name | Course Settings is open | 1. Enter a short name containing emoji and special characters<br>2. Save and reopen settings | Form saves successfully and the exact emoji/characters are preserved | Low |
 | MT-CSET-015 | Leading/trailing whitespace in Course Short Name trimmed | Course Settings is open | 1. Enter a short name with leading and trailing spaces<br>2. Save and reopen settings | Whitespace is automatically trimmed from the saved short name | Low |
 | MT-CSET-016 | Non-numeric value in Appearance News Items | Course Settings is open | 1. Expand Appearance section<br>2. Enter a non-numeric string in "Number of announcements"<br>3. Save | Save is blocked by numeric validation on the field | Medium |
-| MT-CSET-017 | Rapid re-submission via browser Back | Course Settings is open | 1. Save settings successfully<br>2. Press browser Back to return to form<br>3. Click save again | Second save succeeds without creating duplicate courses or configurations | Medium |
-| MT-CSET-018 | Dropdown visibility toggle state preservation | Course Settings is open | 1. Set Group mode to Separate groups<br>2. Select a Grouping<br>3. Change Group mode to No groups (Grouping field hides)<br>4. Change Group mode back to Separate groups | The previously selected Grouping value is restored when the field becomes visible again | Low |
+| MT-CSET-017 | Course Settings blocked while unauthenticated | User is not logged in | 1. Open the Course Settings URL for an existing course while logged out | User is redirected to the login page or shown an access-denied page; the Course Settings form and Save button are not accessible | Medium |
+| MT-CSET-018 | Settings tab not present for non-teacher role | User is logged in as a non-teacher role (e.g., student) | 1. Log in as a user without teacher/editing permissions<br>2. Navigate to the course page | The Settings tab is not present on the course's tab bar for this user role; the Course Settings form is not visible or accessible | Low |
 
 ---
 
@@ -355,7 +355,7 @@
 |-------|-----------|---------------|-------|-----------------|----------|
 | MT-PART-001 | Participants management controls displayed | Teacher opens Participants page | 1. Open Participants tab | Scope dropdown, Enrol users button, filters, alphabetical filters, table, row menus, and bulk dropdown are visible | High |
 | MT-PART-002 | Filter participants by student name | Participants include `student1` | 1. Add a First name filter for the seeded student<br>2. Apply filters | Participants table shows `student1` and hides unrelated participant rows | High |
-| MT-PART-003 | Alphabetical filtering | Participants exist | 1. Select First name or Last name initial | Participants table filters by selected initial | Medium |
+| MT-PART-003 | Sorting participants by First name reorders the table | Participants exist with varying first names | 1. Click the First Name column header to sort ascending | Participants table is sorted by First name ascending; the top visible rows reflect the earliest alphabetical first names | Medium |
 | MT-PART-004 | Enrol user dialog | A non-enrolled fixture user exists | 1. Click "Enrol users"<br>2. Search for the fixture user<br>3. Select Student role and enrollment duration<br>4. Confirm<br>5. Search the participants table for that user | User appears in the participants table with Student role and active enrollment status | High |
 | MT-PART-005 | Row action menu targets selected participant | Participants table includes `student1` | 1. Open the row action menu for `student1`<br>2. Select view profile | `student1` profile opens and the page does not navigate to any other participant profile | Medium |
 | MT-PART-012 | Bulk action requires explicit checked rows | Participants table includes `student1` and another user | 1. Check only `student1`<br>2. Open "With selected users..." dropdown | Bulk action context is limited to the checked row; unchecked participant rows remain unselected | Medium |
@@ -369,7 +369,7 @@
 | MT-PART-008 | Filter with no matches | Participants page is visible | 1. Apply filter that matches no users | Empty/no-results state is displayed | Medium |
 | MT-PART-009 | Clear filters resets conditions | Filters are active | 1. Click "Clear filters" | Filters are removed and full list returns | Medium |
 | MT-PART-013 | Confirm enrollment with no user selected | Enrol users dialog is open | 1. Leave User search blank<br>2. Select `Student` role<br>3. Click "Enrol users" | Save is blocked by a required-field validation error on the user search field | High |
-| MT-PART-014 | Confirm enrollment with no role selected | Enrol users dialog is open | 1. Select a valid user<br>2. Leave Role dropdown blank<br>3. Click "Enrol users" | Save is blocked by a required-field validation error on the role field | High |
+| MT-PART-014 | Enrollment blocked when user lacks manage-participants permission | User does NOT have permission to manage participants | 1. Click "Enrol users"<br>2. Search for and select an existing user, choose a role<br>3. Click "Enrol users" to confirm | Enrollment is blocked; the dialog remains open (or the user stays on the Participants page); a visible permission error indicates the account lacks rights to enrol users; no user is added | High |
 
 ### Boundary Tests
 
@@ -406,7 +406,7 @@
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | MT-ATVIEW-007 | Assignment with zero submissions | Assignment exists with no submissions | 1. Open assignment page | Grading summary shows Number of submissions `0` and Needs grading `0`; Grade button and assignment tab bar remain visible | Medium |
-| MT-ATVIEW-008 | Expired due date | Assignment due date has passed | 1. Open assignment page | Time remaining clearly indicates overdue/closed state | Low |
+| MT-ATVIEW-008 | Assignment with missing dates shows a clear empty-state | Opened date and/or Due date fields are unset (null) | 1. Open assignment page | The Opened and Due date areas display a visible empty-state indicating no date is set; the page remains usable and is not in an error state | Low |
 | MT-ATVIEW-009 | Rapid multiple clicks on Grade button | Assignment view is visible | 1. Rapidly double-click "Grade" | Grading interface modal opens exactly once; no duplicate modal or background load issues occur | Medium |
 | MT-ATVIEW-010 | Very long assignment description does not break layout | Assignment view is visible | 1. View an assignment with a 10,000+ character description | Description renders fully and the grading summary table below it remains accessible and correctly aligned | Low |
 
@@ -419,9 +419,9 @@
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | MT-ASUB-001 | Submission table displayed | Assignment has enrolled students | 1. Open Submissions tab | Student identity, status, grading status, date, online text, files, comments, feedback, and final grade columns are visible | High |
-| MT-ASUB-002 | Search and filter submissions | Submissions tab includes `student1` | 1. Search for `student1`<br>2. Filter by submission status Submitted for grading | Table shows `student1` submitted row and hides rows that do not match the selected status | High |
+| MT-ASUB-002 | Quick grading unavailable when assignment has no submissions | Assignment currently has no student submissions and is not ready to receive them | 1. Open the Submissions tab for the assignment<br>2. Observe the filter/control area above the submissions table | Quick grading checkbox is not displayed because preconditions are not met; Final grade inline fields are not visible in the table | High |
 | MT-ASUB-003 | Open row grading workflow | Submission row exists | 1. Open row action menu<br>2. Select grade action | Grading workflow opens for selected student | High |
-| MT-ASUB-004 | Enable quick grading | Quick grading is available and `student1` has a submission | 1. Enable quick grading<br>2. Enter grade `85` and feedback `Meets rubric` for `student1`<br>3. Save changes<br>4. Refresh Submissions tab | Grade `85` and feedback `Meets rubric` persist for `student1` | High |
+| MT-ASUB-004 | Enable quick grading reveals inline Final grade fields | Quick grading is available and `student1` has a submission | 1. Enable quick grading<br>2. Observe the Submissions table rows | Final grade inline fields become visible and editable in the Submissions table rows | High |
 | MT-ASUB-005 | Download submitted file | `student1` submitted `essay-draft.pdf` | 1. Click `essay-draft.pdf` in the File submission column | Browser receives the `essay-draft.pdf` file response and no access-denied page is shown | Medium |
 
 ### Negative Tests
@@ -437,8 +437,8 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| MT-ASUB-009 | Maximum valid grade | Quick grading is enabled | 1. Enter grade `100` for `student1`<br>2. Save and refresh Submissions tab | Grade `100` remains visible for `student1` after refresh | Medium |
-| MT-ASUB-010 | Late submission row | Assignment has late submission | 1. Open Submissions tab | Late timing/status is shown accurately | Medium |
+| MT-ASUB-009 | View submission comments for a student | Submission row exists with submission comments | 1. Open the row for `student1`<br>2. Click "View Submission Comments" | A Submission Comments pane or modal opens showing the submission comments for `student1` | Medium |
+| MT-ASUB-010 | View feedback comments for a student | Submission row exists with feedback comments | 1. Open the row for `student1`<br>2. Click "View Feedback Comments" | A Feedback Comments pane or modal opens showing the instructor's feedback comments for `student1`'s submission | Medium |
 | MT-ASUB-012 | Rapidly toggle Quick Grading on and off | Assignment Submissions table is visible | 1. Rapidly toggle Quick grading multiple times | Table stabilizes in the state matching the final toggle action; no duplicate inline inputs appear | Medium |
 | MT-ASUB-013 | Rapid double-click "Grade" in action menu | Assignment Submissions table is visible | 1. Open action menu for a student<br>2. Rapidly double-click "Grade" | Grading interface opens exactly once without triggering multiple browser navigation requests | Medium |
 | MT-ASUB-014 | Student Name search with leading and trailing whitespace is trimmed | Assignment Submissions table is visible | 1. Search for `   student1   ` | Table filters to show `student1`; surrounding whitespace is safely ignored | Low |
@@ -498,19 +498,19 @@
 |-------|-----------|---------------|-------|-----------------|----------|
 | MT-PROFILE-005 | Profile blocked while unauthenticated | User is logged out | 1. Navigate directly to profile URL | User is redirected to the login page before profile cards render | High |
 | MT-PROFILE-006 | Other-user private details restricted | `teacher1` opens another user's profile | 1. Inspect email visibility, login activity, and private details cards | Fields outside `teacher1` permission are not rendered; public name and allowed course details remain visible | Medium |
-| MT-PROFILE-009 | View non-existent user profile | Teacher is logged in | 1. Manually edit profile URL to use an invalid user ID (e.g., `?id=99999`) | System displays a standard user-not-found error page | High |
-| MT-PROFILE-010 | Student viewing teacher profile | `student1` is logged in | 1. Navigate to `teacher1` profile | Private activity reports and sensitive data cards are hidden from the student | High |
+| MT-PROFILE-009 | Non-Teacher user does not see the Edit profile link | User is logged in with a non-Teacher role (e.g., Student) | 1. Open the top-navigation user menu<br>2. Navigate to Profile | The User details card does not display the "Edit profile" link for this user; no navigation to the Edit profile page is possible | High |
+| MT-PROFILE-010 | Non-Teacher user cannot use the Message button | User is logged in with a non-Teacher role (e.g., Student) | 1. Open the top-navigation user menu<br>2. Navigate to Profile<br>3. Attempt to locate and activate the Message button | The Message button is not visible or not enabled for this user; the action to open the message composer is not available | High |
 
 ### Boundary Tests
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| MT-PROFILE-007 | Missing optional description | Teacher profile has no description | 1. Open Profile | Profile page renders initials, full name, and information cards; description area is empty and no placeholder error is shown | Low |
-| MT-PROFILE-008 | Long display name | Teacher profile full name is 80+ characters | 1. Open Profile | Full name wraps within the profile header, and the message button remains visible below or beside the name | Low |
+| MT-PROFILE-007 | Learning plans page opens from Miscellaneous card | Profile page is open | 1. Click the Learning plans link in the Miscellaneous card | The Learning plans page opens showing the "Learning plans" heading and the user's learning plans area | Low |
+| MT-PROFILE-008 | Grades overview report opens from Reports card | Profile page is open | 1. Click the Grades overview link in the Reports card | The Grades overview report page opens showing the "Grades overview" heading and the grades overview table or summary area | Low |
 | MT-PROFILE-011 | Very long profile description | Teacher profile has a 10,000+ character description | 1. Open Profile | Description renders safely without breaking layout | Low |
-| MT-PROFILE-012 | Emoji in display name | Teacher profile name contains emoji | 1. Open Profile | Emoji render correctly in the profile header | Low |
+| MT-PROFILE-012 | Profile description accepts emoji and extended Unicode characters | Profile page is open | 1. Click Edit profile<br>2. Enter a profile description containing emoji and extended Unicode characters<br>3. Save | Save completes; the Profile page displays the description showing the emoji and Unicode characters verbatim, with no replacement characters or encoding errors | Low |
 | MT-PROFILE-013 | Profile picture loading failure | Custom profile picture URL is unreachable | 1. Open Profile | Profile falls back gracefully to displaying the teacher's initials | Low |
-| MT-PROFILE-014 | Enrolled in numerous courses | Teacher is enrolled in 50+ courses | 1. Open Profile | Course details card displays courses in a scrollable list or paginates cleanly | Low |
+| MT-PROFILE-014 | Forum discussions page opens from Miscellaneous card | Profile page is open | 1. Click the Forum discussions link in the Miscellaneous card | The Forum discussions page opens showing the "Forum discussions" heading and the list area for the user's discussions | Low |
 
 ---
 

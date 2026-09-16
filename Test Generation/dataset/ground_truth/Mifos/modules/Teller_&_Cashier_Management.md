@@ -23,7 +23,7 @@ Source: dataset/ground_truth/Mifos/Mifos.md
 | ------------- | ------------------------------------------------ | -------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------- | -------- |
 | MF-TELLER-009 | Create teller without mandatory office           | None                       | 1. Omit office while creating teller<br>2. Submit                                        | Validation error shown                                  | High     |
 | MF-TELLER-010 | Assign cashier with invalid overlapping schedule | Existing assignment exists | 1. Create overlapping cashier assignment for same user/teller if restricted<br>2. Submit | Validation or business rule prevents overlap            | High     |
-| MF-TELLER-011 | Allocate negative or zero cash amount            | Active cashier exists      | 1. Enter invalid amount<br>2. Submit                                                     | Validation error shown                                  | High     |
+| MF-TELLER-011 | Allocate Cash rejected when Transaction Date is invalid | Active cashier exists      | 1. Open Allocate Cash dialog<br>2. Enter invalid/impossible Transaction Date<br>3. Submit | Inline validation error shown on Transaction Date field; no allocation transaction is recorded | High     |
 | MF-TELLER-012 | Settle cashier with inconsistent cash balance    | Cashier imbalance exists   | 1. Attempt settlement without resolving discrepancy if required                          | Process is blocked or discrepancy is surfaced correctly | High     |
 
 ### Additional Coverage Tests

@@ -9,7 +9,7 @@ Source: dataset/ground_truth/Phptravels/Phptravels.md
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | LOGIN-001 | Successful login | Registered user exists | 1. Navigate to login page<br>2. Enter valid email<br>3. Enter valid password<br>4. Click "Login" | User is redirected to the dashboard or prior protected page | High |
-| LOGIN-002 | Remember Me login | Registered user exists | 1. Enter valid credentials<br>2. Check "Remember Me"<br>3. Click "Login" | Session remains active according to remember-me behavior | Medium |
+| LOGIN-002 | Login action unavailable while already authenticated | User is already authenticated with an active session | 1. While authenticated, navigate to Account/Login or the Login page | Login action is not available: the Login button/form is not visible; user is not presented the login form | Medium |
 | LOGIN-003 | Login page alternate options displayed | None | 1. Navigate to login page | Forgot password link, signup link, and any enabled social login buttons are visible | Medium |
 
 ### Negative Tests
@@ -18,7 +18,7 @@ Source: dataset/ground_truth/Phptravels/Phptravels.md
 |-------|-----------|---------------|-------|-----------------|----------|
 | LOGIN-004 | Invalid email or password | None | 1. Enter invalid email or password<br>2. Click "Login" | Error message is displayed and login does not succeed | High |
 | LOGIN-005 | Empty email | None | 1. Leave email empty<br>2. Enter password<br>3. Click "Login" | Validation or login error is displayed | High |
-| LOGIN-006 | Empty password | None | 1. Enter email<br>2. Leave password empty<br>3. Click "Login" | Validation or login error is displayed | High |
+| LOGIN-006 | CAPTCHA left blank when required is rejected | Multiple consecutive failed login attempts have made CAPTCHA required and visible | 1. Enter registered email<br>2. Enter correct password<br>3. Leave the CAPTCHA field blank<br>4. Click "Login" | CAPTCHA field displays an inline validation error indicating it is required; login is blocked and the form does not submit | High |
 
 ### Boundary Tests
 

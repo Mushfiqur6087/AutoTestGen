@@ -32,7 +32,7 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| HOME-001 | Home page navigation elements displayed | None | 1. Navigate to the PHPTravels home page | Top navigation, currency selector, language selector, login/signup links, and search widget are visible | High |
+| HOME-001 | Search widget with Hotels/Flights/Tours/Cars tabs is visible and functional | None | 1. Navigate to the PHPTravels home page<br>2. Select each of the Hotels, Flights, Tours, and Cars tabs | Each tab's search form fields are visible and accept input; searches can be submitted from every tab | High |
 | HOME-002 | Hotel search from home page | None | 1. Select the Hotels tab<br>2. Enter destination<br>3. Select valid check-in and check-out dates<br>4. Set guests and rooms<br>5. Click "Search" | User is redirected to the hotel listing page with matching search criteria summary | High |
 | HOME-003 | Flight search from home page | None | 1. Select the Flights tab<br>2. Enter origin and destination<br>3. Select valid dates and class<br>4. Click "Search" | User is redirected to the flight listing page with results matching the search criteria | High |
 | HOME-004 | Tour search from home page | None | 1. Select the Tours tab<br>2. Enter destination<br>3. Select travel date<br>4. Click "Search" | User is redirected to the tour listing page with matching results | Medium |
@@ -51,8 +51,8 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| HOME-010 | One-way flight disables return date | None | 1. Select Flights tab<br>2. Choose "One Way" | Return date field becomes disabled or inactive | Medium |
-| HOME-011 | Same-day search values | None | 1. Perform search using the earliest allowed same-day date values | Search handles the earliest valid date boundary consistently | Low |
+| HOME-010 | Flight search Departure City accepts special characters and emoji | None | 1. Select the Flights tab<br>2. Enter a Departure City value containing special characters and emoji<br>3. Fill other required fields with valid values<br>4. Click "Search" | Search succeeds; the search summary on the Flights listing page displays the Departure City value with special characters and emoji preserved | Medium |
+| HOME-011 | Hotels Destination accepts very long free-text input | None | 1. Select the Hotels tab<br>2. Enter a very long string (200+ characters) in the Destination field<br>3. Fill other required fields with valid values<br>4. Click "Search" | Search succeeds; the search summary on the Hotels listing page displays the full entered Destination string with no truncation | Low |
 
 ---
 
@@ -64,7 +64,7 @@
 |-------|-----------|---------------|-------|-----------------|----------|
 | REG-001 | Registration page elements displayed | None | 1. Navigate to the signup page | Required fields, mobile number country code selector, terms checkbox, and "Sign Up" button are visible | High |
 | REG-002 | Successful registration | Email address is not already registered | 1. Enter valid required data<br>2. Accept terms and conditions<br>3. Click "Sign Up" | Account is created and success message or post-registration redirect is shown | High |
-| REG-003 | Country code selector works | None | 1. Open mobile country code selector<br>2. Select another country code | Selected country code is applied to the mobile number field | Medium |
+| REG-003 | Registration blocked while already authenticated | User is already authenticated and has access to the Dashboard | 1. While authenticated, navigate to the Registration page or click the Register link in navigation | Registration is blocked for authenticated users: the Registration form or Register button is not presented; no ability to submit a new registration is available while authenticated | Medium |
 
 ### Negative Tests
 
@@ -80,7 +80,7 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| REG-009 | Minimum password length boundary | None | 1. Enter password at the minimum accepted length<br>2. Fill other valid data<br>3. Submit form | Registration succeeds or validates consistently at the minimum boundary | Low |
+| REG-009 | Very long First Name accepted (200+ characters) | Visitor is not authenticated and is on the Registration form | 1. Enter a string of 200+ characters in the First Name field<br>2. Fill other required fields with valid values<br>3. Submit form | Form submission succeeds; no inline field errors are displayed for First Name (registration proceeds) | Low |
 | REG-010 | Mobile number with selected country code | None | 1. Select country code<br>2. Enter valid number at expected length boundary | Number is accepted in the expected format | Low |
 
 ---
@@ -92,7 +92,7 @@
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | LOGIN-001 | Successful login | Registered user exists | 1. Navigate to login page<br>2. Enter valid email<br>3. Enter valid password<br>4. Click "Login" | User is redirected to the dashboard or prior protected page | High |
-| LOGIN-002 | Remember Me login | Registered user exists | 1. Enter valid credentials<br>2. Check "Remember Me"<br>3. Click "Login" | Session remains active according to remember-me behavior | Medium |
+| LOGIN-002 | Login action unavailable while already authenticated | User is already authenticated with an active session | 1. While authenticated, navigate to Account/Login or the Login page | Login action is not available: the Login button/form is not visible; user is not presented the login form | Medium |
 | LOGIN-003 | Login page alternate options displayed | None | 1. Navigate to login page | Forgot password link, signup link, and any enabled social login buttons are visible | Medium |
 
 ### Negative Tests
@@ -101,7 +101,7 @@
 |-------|-----------|---------------|-------|-----------------|----------|
 | LOGIN-004 | Invalid email or password | None | 1. Enter invalid email or password<br>2. Click "Login" | Error message is displayed and login does not succeed | High |
 | LOGIN-005 | Empty email | None | 1. Leave email empty<br>2. Enter password<br>3. Click "Login" | Validation or login error is displayed | High |
-| LOGIN-006 | Empty password | None | 1. Enter email<br>2. Leave password empty<br>3. Click "Login" | Validation or login error is displayed | High |
+| LOGIN-006 | CAPTCHA left blank when required is rejected | Multiple consecutive failed login attempts have made CAPTCHA required and visible | 1. Enter registered email<br>2. Enter correct password<br>3. Leave the CAPTCHA field blank<br>4. Click "Login" | CAPTCHA field displays an inline validation error indicating it is required; login is blocked and the form does not submit | High |
 
 ### Boundary Tests
 
@@ -171,17 +171,17 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| HBOOK-001 | Hotel details page content displayed | Hotel details page is open | 1. Review hotel details page | Gallery, description, map link, amenities, room availability, reviews, and policies are visible | High |
+| HBOOK-001 | Room Types list with availability is displayed on the Hotel Details page | Hotel details page is open with stay dates and guest count selected | 1. Review the Room Types list on the Hotel Details page | Room Types list is visible, showing each available room type ready for selection | High |
 | HBOOK-002 | View room availability and select room | Hotel details page is open and rooms are available | 1. Review room options<br>2. Click "Select" or "Book Now" on an available room | Booking form opens for the chosen room | High |
 | HBOOK-003 | Submit valid hotel booking form | Room selection form is open | 1. Enter valid guest information<br>2. Review price breakdown<br>3. Click booking continuation button | User proceeds to payment step | High |
-| HBOOK-004 | Reviews section displayed on hotel details page | Hotel details page is open | 1. Scroll to reviews area | Aggregate rating and individual reviews are visible | Medium |
+| HBOOK-004 | Selecting a different room updates the visible booking form | Hotel details page is open with one room already selected and the Booking form visible | 1. Click Select Room for a different room type | Booking form updates to show the newly selected room's details, replacing the previous selection | Medium |
 
 ### Negative Tests
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | HBOOK-005 | Required guest details missing | Hotel booking form is open | 1. Leave required guest fields empty<br>2. Submit booking form | Validation errors are displayed and form is not submitted | High |
-| HBOOK-006 | Sold-out room cannot be booked | Hotel details page includes sold-out inventory | 1. Attempt to select a sold-out room | Booking action is blocked and room remains unavailable | Medium |
+| HBOOK-006 | Book Now while unauthenticated redirects to Login | Hotel details page is open, a room is selected, and the Booking form is visible; user is not logged in | 1. Fill the Booking form with valid guest details<br>2. Click "Book Now" | The Login page is displayed, requiring the user to authenticate before completing the booking | Medium |
 
 ### Boundary Tests
 
@@ -201,7 +201,7 @@
 | FLIGHT-002 | Flight filters work | Valid flight search has been submitted | 1. Apply airline, stops, or departure-time filters | Flight results update to match selected filters | High |
 | FLIGHT-003 | View flight details from listing | Valid flight search has been submitted | 1. Click "View Details" | Expanded or detailed fare information is displayed | Medium |
 | FLIGHT-004 | Proceed to flight booking with valid passenger data | Flight has been selected | 1. Enter valid passenger details<br>2. Accept terms if required<br>3. Continue | User proceeds to payment step | High |
-| FLIGHT-005 | Round-trip search shows outbound and return selections | Valid round-trip search has been submitted | 1. Review results | Outbound and return itineraries are displayed | Medium |
+| FLIGHT-005 | Round-trip search summary displays both outbound and return travel dates | Valid round-trip flight search has been submitted with departure and return dates | 1. Review the Flights Listing page header | The search summary shows the selected origin, destination, and both the outbound and return travel dates | Medium |
 
 ### Negative Tests
 
@@ -215,7 +215,7 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| FLIGHT-009 | One-way trip boundary on booking flow | Valid one-way flight search has been submitted | 1. Complete one-way flight selection<br>2. Continue to booking | Booking flow proceeds without requiring return leg data | Low |
+| FLIGHT-009 | Continue is blocked without a selected itinerary and passenger count | User is on the Flight Booking page without a selected flight itinerary and/or passenger count | 1. Fill all required traveler and lead contact fields with valid values<br>2. Click "Continue" | Continue is blocked; the page shows an error indicating a flight itinerary and passenger count must be selected before proceeding; user remains on the Flight Booking page | Low |
 
 ---
 
@@ -227,7 +227,7 @@
 |-------|-----------|---------------|-------|-----------------|----------|
 | TOUR-001 | Tour listing cards displayed | Valid tour search has been submitted | 1. View tours listing page | Tour cards show image, title, destination, duration, price, and rating | High |
 | TOUR-002 | Filter tours by destination or type | Valid tour search has been submitted | 1. Apply destination or tour-type filters | Tours list updates to match selected filters | Medium |
-| TOUR-003 | Tour details page displays itinerary and inclusions | Tour details page is open | 1. Review tour details page | Itinerary, inclusions, exclusions, departure dates, and pricing are visible | High |
+| TOUR-003 | Tour Details page displays title, image, price and booking call-to-action | Visitor has performed a tour search | 1. Click View Details on a tour result card | Tour Details page opens showing the tour title, main image, starting price, and a visible booking call-to-action | High |
 | TOUR-004 | Book tour with valid traveler information | Tour details page is open and departure date is available | 1. Select departure date<br>2. Enter traveler details<br>3. Click "Book Now" | User proceeds to payment step | High |
 
 ### Negative Tests
@@ -261,14 +261,14 @@
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | CAR-005 | Required driver information missing | Car booking form is open | 1. Leave required driver fields empty<br>2. Continue | Validation errors are displayed | High |
-| CAR-006 | Driver below minimum age | Car booking form is open | 1. Enter age below minimum policy threshold<br>2. Continue | Booking is blocked or age surcharge/policy message is shown | High |
+| CAR-006 | Very long License Number input is rejected | Car booking form is open | 1. Enter a very long string (significantly longer than typical license numbers) in the License Number field<br>2. Fill other required fields with valid values<br>3. Click "Confirm Booking" | An inline error is displayed indicating the License Number exceeds the allowed length; form submission is blocked | High |
 | CAR-007 | Terms and conditions unchecked | Car booking form is open | 1. Fill valid data<br>2. Leave terms unchecked<br>3. Continue | Booking does not proceed and terms validation is shown | High |
 
 ### Boundary Tests
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| CAR-008 | Same pick-up and drop-off location | Car booking form is open | 1. Set same pick-up and drop-off location<br>2. Continue | Booking flow handles same-location return consistently | Low |
+| CAR-008 | Access Cars Listings page directly without performing a search is blocked | User has not performed a search and has not supplied pick-up/drop-off locations or dates | 1. Navigate directly to the Cars Listings page URL without submitting the Cars Search form | The page does not display car listings for a search; the Search form is shown or an inline notice indicates search criteria are required; no Book Now buttons are visible or enabled | Low |
 
 ---
 
@@ -294,7 +294,7 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| VISA-007 | Document upload at allowed size limit | Visa application form is enabled | 1. Upload a supported document at the maximum allowed size<br>2. Submit application | Document is accepted at the allowed boundary | Low |
+| VISA-007 | Supporting Documents can be added and removed from the repeating group before submission | Visa application form is enabled with Nationality and Destination Country selected | 1. Add two entries to the Supporting Documents repeating group, uploading a file to each<br>2. Remove both entries, leaving zero entries<br>3. Fill all other required fields and submit the application | Form submits successfully; the created application appears in the user's Dashboard bookings and shows no Supporting Documents listed | Low |
 
 ---
 
@@ -304,7 +304,7 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| UDB-001 | Dashboard sections displayed | Logged in as authenticated user | 1. Open dashboard | My Bookings, My Profile, Wallet, Wishlist, Reviews, and Settings sections are available | High |
+| UDB-001 | Dashboard sections for My Bookings, My Profile, Reviews, and Settings are available | Logged in as authenticated user | 1. Open dashboard | My Bookings, My Profile, Reviews, and Settings sections are available | High |
 | UDB-002 | View booking details | Logged in and at least one booking exists | 1. Open My Bookings<br>2. Click "View Details" | Booking detail page opens with status, traveler data, and pricing breakdown | High |
 | UDB-003 | Modify eligible booking | Logged in and modifiable booking exists | 1. Open booking details<br>2. Click "Modify"<br>3. Change eligible details<br>4. Confirm changes | Booking updates successfully and confirmation is shown | High |
 | UDB-004 | Cancel eligible booking | Logged in and cancellable booking exists | 1. Open booking details<br>2. Click "Cancel"<br>3. Confirm cancellation | Booking status changes to cancelled and refund details are displayed | High |
@@ -317,13 +317,13 @@
 |-------|-----------|---------------|-------|-----------------|----------|
 | UDB-007 | Modify non-eligible booking | Logged in and non-modifiable booking exists | 1. Open booking details for restricted booking<br>2. Attempt modification | Modification is blocked and policy feedback is displayed | Medium |
 | UDB-008 | Cancel non-eligible booking | Logged in and non-cancellable booking exists | 1. Open booking details for restricted booking<br>2. Attempt cancellation | Cancellation is blocked and applicable policy is displayed | Medium |
-| UDB-009 | Invalid profile email update | Logged in | 1. Enter invalid email format in profile<br>2. Save | Validation error is displayed | Medium |
+| UDB-009 | Attempting to Save Settings while unauthenticated is blocked | User is not authenticated, Settings page URL is accessible directly | 1. Navigate directly to the Settings section URL without logging in<br>2. Attempt to interact with settings controls (e.g., click Save Settings) | User is redirected to the login page or shown an authentication prompt; Save Settings action is not performed and settings are not updated | Medium |
 
 ### Boundary Tests
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| UDB-010 | Cancellation policy threshold boundary | Logged in and booking has a free-cancellation deadline | 1. Attempt cancellation near the policy cut-off time | Refund amount and policy messaging match the applicable boundary rules | Low |
+| UDB-010 | Review submission is blocked when booking status is Confirmed instead of Completed | Authenticated user has a booking with Selected_Booking_Status == Confirmed | 1. Locate the booking row whose status is Confirmed<br>2. Attempt to click an action to open the Review Submission Form for that booking | Action is blocked; the Review Submission Form is not displayed and no submit option is available for that booking | Low |
 
 ---
 
@@ -353,8 +353,8 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| PAY-011 | CVV length boundary by card type | User is on payment page | 1. Enter 3-digit CVV for standard card or 4-digit CVV for AmEx-like card | CVV is accepted only when length matches card type rules | Medium |
-| PAY-012 | Promo code expiry boundary | Promo code is near expiration | 1. Apply promo code at validity boundary | Promo code is accepted or rejected consistently based on actual validity window | Low |
+| PAY-011 | Retry Payment action is not available when previous attempt did not fail | A completed booking/reservation is present; payment intent is initiated; Payment_Last_Attempt is not Failed | 1. Open the Payment page for a booking where the previous attempt did not fail<br>2. Attempt to locate a Retry Payment button or control | Retry Payment control is not visible on the Payment page; user cannot initiate a retry action from this state | Medium |
+| PAY-012 | Download Invoice/Voucher actions are not available before successful booking confirmation | User is on the Payment page or pre-confirmation state (payment not successful) | 1. Open the Payment page for a booking before completing payment<br>2. Attempt to locate the Download Invoice and Download Voucher actions | Download Invoice and Download Voucher actions are not visible prior to a successful booking confirmation; no download is initiated | Low |
 
 ---
 
@@ -379,7 +379,7 @@
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | PREF-006 | Currency preference persists across page navigation | None | 1. Change currency<br>2. Navigate to another page | Selected currency remains active across navigation | Medium |
-| PREF-007 | Authenticated preference persists after relogin | Logged in as user | 1. Change language or currency<br>2. Log out and log back in | Stored preference remains applied if profile persistence is supported | Low |
+| PREF-007 | Authenticated language selection persists to profile preferences | User is authenticated and on any page with an active session; Account/Preferences page is available | 1. Open the Language selector<br>2. Select a language different from the current site language<br>3. Navigate to the Account or Preferences page | The Account/Preferences page visibly shows the newly selected language as the saved preference; the site continues to display the chosen language across pages | Low |
 
 ---
 
@@ -405,7 +405,7 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| FILTER-007 | Price or time range filter at extreme bounds | User is on a listing page with range sliders | 1. Move a range slider to the minimum or maximum boundary | Results update correctly at the selected extreme | Low |
+| FILTER-007 | Reset all filters is blocked when no search has been executed | User is on a listing page but has not executed a search and no results are loaded | 1. Locate the "Reset all filters" control in the Active Filters Summary panel<br>2. Click the "Reset all filters" button | Reset all filters is blocked: the control is disabled or an inline message indicates a search must be executed first; results are not refreshed | Low |
 
 ---
 
@@ -415,10 +415,10 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| REVIEW-001 | Aggregate ratings displayed on listing cards | User is on a hotel, tour, or car listing page | 1. Review listing cards | Rating score, label, and review count are displayed | High |
-| REVIEW-002 | Review breakdown displayed on detail page | Hotel, tour, or car detail page is open | 1. Scroll to the reviews section | Aggregate score, category breakdown, and individual reviews are visible | High |
+| REVIEW-001 | Submitted review displays the overall star rating in the reviews list | User has submitted a post-stay review with an overall rating | 1. Submit a review with a valid overall star rating<br>2. View the Reviews list for the listing | The new review appears in the Reviews list showing the submitted overall star rating | High |
+| REVIEW-002 | Reviews Filters narrow the individual reviews list shown on the item detail page | Item detail page is open with review data available | 1. Select a rating, date range, and traveler type in the Reviews Filters form<br>2. Click "Apply Filters" | The Reviews list updates to show only individual reviews matching the selected criteria; unrelated reviews are no longer visible | High |
 | REVIEW-003 | Submit review for completed booking | Logged in user has an eligible completed booking | 1. Open review submission flow<br>2. Enter valid ratings and comment<br>3. Submit review | Review is submitted successfully or queued for moderation | High |
-| REVIEW-004 | Sort reviews | Detail page has multiple reviews | 1. Change review sort option | Review list updates according to selected order | Medium |
+| REVIEW-004 | Clear Filters returns the Reviews list to the default unfiltered view | Filters are currently applied in the Reviews Filters form | 1. Click the Clear Filters button | All filter controls are cleared and the Reviews list displays the default unfiltered set of reviews | Medium |
 
 ### Negative Tests
 
@@ -431,7 +431,7 @@
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| REVIEW-007 | Maximum allowed photo upload count | Logged in user is on review submission form | 1. Upload the maximum allowed number of photos<br>2. Submit review | Upload is accepted at the allowed boundary | Low |
+| REVIEW-007 | Rapid double-click of Submit Review does not create a duplicate review | User is authenticated and has a completed booking eligible for review | 1. Fill required review fields with valid values<br>2. Click Submit Review twice in rapid succession | Second submission attempt is blocked; only one new review appears in the Reviews list | Low |
 
 ---
 
@@ -451,7 +451,7 @@
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | OFFER-005 | Newsletter subscription with invalid email | Offers page is open | 1. Enter invalid email<br>2. Click "Subscribe" | Validation error is displayed | Medium |
-| OFFER-006 | Expired offer cannot be applied | Expired offer exists | 1. Attempt to use expired offer | Offer is rejected or clearly marked as unavailable | Medium |
+| OFFER-006 | Book Now blocked when booking/payment subsystem is unavailable | Offers page is open, booking and/or payment subsystems are unavailable | 1. Locate an offer row in the Offers list<br>2. Click the Book Now button for that offer | Clicking Book Now is blocked: a visible error banner or modal indicates the booking/payment subsystem is unavailable; the user is not redirected | Medium |
 
 ### Boundary Tests
 

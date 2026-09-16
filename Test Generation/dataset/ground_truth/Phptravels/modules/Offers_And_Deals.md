@@ -18,7 +18,7 @@ Source: dataset/ground_truth/Phptravels/Phptravels.md
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | OFFER-005 | Newsletter subscription with invalid email | Offers page is open | 1. Enter invalid email<br>2. Click "Subscribe" | Validation error is displayed | Medium |
-| OFFER-006 | Expired offer cannot be applied | Expired offer exists | 1. Attempt to use expired offer | Offer is rejected or clearly marked as unavailable | Medium |
+| OFFER-006 | Book Now blocked when booking/payment subsystem is unavailable | Offers page is open, booking and/or payment subsystems are unavailable | 1. Locate an offer row in the Offers list<br>2. Click the Book Now button for that offer | Clicking Book Now is blocked: a visible error banner or modal indicates the booking/payment subsystem is unavailable; the user is not redirected | Medium |
 
 ### Boundary Tests
 

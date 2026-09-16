@@ -18,11 +18,11 @@ Source: dataset/ground_truth/Phptravels/Phptravels.md
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | CAR-005 | Required driver information missing | Car booking form is open | 1. Leave required driver fields empty<br>2. Continue | Validation errors are displayed | High |
-| CAR-006 | Driver below minimum age | Car booking form is open | 1. Enter age below minimum policy threshold<br>2. Continue | Booking is blocked or age surcharge/policy message is shown | High |
+| CAR-006 | Very long License Number input is rejected | Car booking form is open | 1. Enter a very long string (significantly longer than typical license numbers) in the License Number field<br>2. Fill other required fields with valid values<br>3. Click "Confirm Booking" | An inline error is displayed indicating the License Number exceeds the allowed length; form submission is blocked | High |
 | CAR-007 | Terms and conditions unchecked | Car booking form is open | 1. Fill valid data<br>2. Leave terms unchecked<br>3. Continue | Booking does not proceed and terms validation is shown | High |
 
 ### Boundary Tests
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| CAR-008 | Same pick-up and drop-off location | Car booking form is open | 1. Set same pick-up and drop-off location<br>2. Continue | Booking flow handles same-location return consistently | Low |
+| CAR-008 | Access Cars Listings page directly without performing a search is blocked | User has not performed a search and has not supplied pick-up/drop-off locations or dates | 1. Navigate directly to the Cars Listings page URL without submitting the Cars Search form | The page does not display car listings for a search; the Search form is shown or an inline notice indicates search criteria are required; no Book Now buttons are visible or enabled | Low |

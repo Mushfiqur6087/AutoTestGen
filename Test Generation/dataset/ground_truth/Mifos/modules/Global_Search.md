@@ -18,14 +18,14 @@ Source: dataset/ground_truth/Mifos/Mifos.md
 | TC ID         | Test Case                | Preconditions  | Steps                                                        | Expected Result                                                       | Priority |
 | ------------- | ------------------------ | -------------- | ------------------------------------------------------------ | --------------------------------------------------------------------- | -------- |
 | MF-SEARCH-009 | Search non-existent term | User logged in | 1. Enter random string not mapped to any entity<br>2. Submit | "No results found" or equivalent empty-state message displayed        | Medium   |
-| MF-SEARCH-010 | Empty search submission  | User logged in | 1. Leave search input empty<br>2. Submit                     | Search is not executed or empty-state guidance is shown without error | Low      |
+| MF-SEARCH-010 | Unauthenticated user cannot open Global Search | User is not authenticated | 1. Open the application root URL as an unauthenticated user<br>2. Attempt to click the top-bar search icon | Search input does not open; the user is redirected to the login page and no search UI is focused or usable | Low      |
 
 ### Boundary Tests
 
 | TC ID         | Test Case                                                  | Preconditions                                                    | Steps                                  | Expected Result                                                               | Priority |
 | ------------- | ---------------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------- | -------- |
 | MF-SEARCH-013 | Partial prefix match                                       | Multiple entities with similar prefixes exist                    | 1. Enter partial prefix of entity name | Relevant matching results are returned according to supported search behavior | Medium   |
-| MF-SEARCH-014 | Exact account number match preferred over loose text match | Entity with exact account number and similar text entities exist | 1. Search exact account number         | Exact account result appears clearly and opens correct detail page            | Medium   |
+| MF-SEARCH-014 | Opening an entity detail from search results is blocked when the user lacks detail-view permission | User can invoke search but lacks permission to view the matched entity's detail page | 1. Search for a term matching an entity the user lacks detail-view permission for<br>2. Click the matching item in the results dropdown | Navigation to the entity's detail page is blocked; an access-denied indicator is shown and the user remains on the current page | Medium   |
 
 ### Additional Coverage Tests
 

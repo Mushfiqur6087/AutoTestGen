@@ -12,14 +12,14 @@ Source: dataset/ground_truth/MoodleTeacher/MoodleTeacher.md
 | MT-COURSES-002 | Filter, search, sort, and layout controls | `teacher1` has access to `QA Automation 101` and at least one other course | 1. Select All status filter<br>2. Search for `QA Automation`<br>3. Sort by course name<br>4. Switch to list layout | Only matching courses remain visible, order follows the sort selection, and list layout persists after refresh | High |
 | MT-COURSES-003 | Open course from course card | At least one course is visible | 1. Click a course name | Teacher opens the course main page | High |
 | MT-COURSES-004 | Star course from course card | `QA Automation 101` course card menu is visible | 1. Open card menu<br>2. Click "Star this course"<br>3. Refresh My Courses | `QA Automation 101` appears in the Starred filter and teacher enrollment remains unchanged | Medium |
-| MT-COURSES-009 | Remove course from view without unenrolling | `QA Automation 101` course card menu is visible | 1. Open card menu<br>2. Click "Remove from view"<br>3. Select Hidden filter<br>4. Open the hidden course card | `QA Automation 101` appears under Hidden, opens successfully, and `teacher1` remains enrolled as teacher | Medium |
+| MT-COURSES-009 | Remove course from view hides it from the default grid | `QA Automation 101` course card menu is visible | 1. Open card menu<br>2. Click "Remove from view" | `QA Automation 101` card is no longer shown in the Course Cards grid; other course cards remain visible | Medium |
 
 ### Negative Tests
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
 | MT-COURSES-005 | My Courses blocked while unauthenticated | User is logged out | 1. Navigate directly to My Courses URL | User is redirected to login | High |
-| MT-COURSES-006 | Search with no matching course | Teacher is logged in | 1. Search for a non-existent course | Empty/no-results state is shown | Medium |
+| MT-COURSES-006 | Search with a long or special-character query returns safely | Teacher is logged in | 1. Enter a long or special-character search string<br>2. Submit the search | Search executes without error; the Course Cards grid updates to show matching cards or a visible empty-results state | Medium |
 
 ### Boundary Tests
 

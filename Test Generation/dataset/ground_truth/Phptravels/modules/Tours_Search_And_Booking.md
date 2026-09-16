@@ -10,7 +10,7 @@ Source: dataset/ground_truth/Phptravels/Phptravels.md
 |-------|-----------|---------------|-------|-----------------|----------|
 | TOUR-001 | Tour listing cards displayed | Valid tour search has been submitted | 1. View tours listing page | Tour cards show image, title, destination, duration, price, and rating | High |
 | TOUR-002 | Filter tours by destination or type | Valid tour search has been submitted | 1. Apply destination or tour-type filters | Tours list updates to match selected filters | Medium |
-| TOUR-003 | Tour details page displays itinerary and inclusions | Tour details page is open | 1. Review tour details page | Itinerary, inclusions, exclusions, departure dates, and pricing are visible | High |
+| TOUR-003 | Tour Details page displays title, image, price and booking call-to-action | Visitor has performed a tour search | 1. Click View Details on a tour result card | Tour Details page opens showing the tour title, main image, starting price, and a visible booking call-to-action | High |
 | TOUR-004 | Book tour with valid traveler information | Tour details page is open and departure date is available | 1. Select departure date<br>2. Enter traveler details<br>3. Click "Book Now" | User proceeds to payment step | High |
 
 ### Negative Tests

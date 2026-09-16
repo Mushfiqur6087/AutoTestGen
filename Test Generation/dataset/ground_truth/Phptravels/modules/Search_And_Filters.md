@@ -24,4 +24,4 @@ Source: dataset/ground_truth/Phptravels/Phptravels.md
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| FILTER-007 | Price or time range filter at extreme bounds | User is on a listing page with range sliders | 1. Move a range slider to the minimum or maximum boundary | Results update correctly at the selected extreme | Low |
+| FILTER-007 | Reset all filters is blocked when no search has been executed | User is on a listing page but has not executed a search and no results are loaded | 1. Locate the "Reset all filters" control in the Active Filters Summary panel<br>2. Click the "Reset all filters" button | Reset all filters is blocked: the control is disabled or an inline message indicates a search must be executed first; results are not refreshed | Low |

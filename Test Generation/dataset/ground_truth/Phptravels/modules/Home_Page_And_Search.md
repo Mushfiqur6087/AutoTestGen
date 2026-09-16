@@ -8,7 +8,7 @@ Source: dataset/ground_truth/Phptravels/Phptravels.md
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| HOME-001 | Home page navigation elements displayed | None | 1. Navigate to the PHPTravels home page | Top navigation, currency selector, language selector, login/signup links, and search widget are visible | High |
+| HOME-001 | Search widget with Hotels/Flights/Tours/Cars tabs is visible and functional | None | 1. Navigate to the PHPTravels home page<br>2. Select each of the Hotels, Flights, Tours, and Cars tabs | Each tab's search form fields are visible and accept input; searches can be submitted from every tab | High |
 | HOME-002 | Hotel search from home page | None | 1. Select the Hotels tab<br>2. Enter destination<br>3. Select valid check-in and check-out dates<br>4. Set guests and rooms<br>5. Click "Search" | User is redirected to the hotel listing page with matching search criteria summary | High |
 | HOME-003 | Flight search from home page | None | 1. Select the Flights tab<br>2. Enter origin and destination<br>3. Select valid dates and class<br>4. Click "Search" | User is redirected to the flight listing page with results matching the search criteria | High |
 | HOME-004 | Tour search from home page | None | 1. Select the Tours tab<br>2. Enter destination<br>3. Select travel date<br>4. Click "Search" | User is redirected to the tour listing page with matching results | Medium |
@@ -27,5 +27,5 @@ Source: dataset/ground_truth/Phptravels/Phptravels.md
 
 | TC ID | Test Case | Preconditions | Steps | Expected Result | Priority |
 |-------|-----------|---------------|-------|-----------------|----------|
-| HOME-010 | One-way flight disables return date | None | 1. Select Flights tab<br>2. Choose "One Way" | Return date field becomes disabled or inactive | Medium |
-| HOME-011 | Same-day search values | None | 1. Perform search using the earliest allowed same-day date values | Search handles the earliest valid date boundary consistently | Low |
+| HOME-010 | Flight search Departure City accepts special characters and emoji | None | 1. Select the Flights tab<br>2. Enter a Departure City value containing special characters and emoji<br>3. Fill other required fields with valid values<br>4. Click "Search" | Search succeeds; the search summary on the Flights listing page displays the Departure City value with special characters and emoji preserved | Medium |
+| HOME-011 | Hotels Destination accepts very long free-text input | None | 1. Select the Hotels tab<br>2. Enter a very long string (200+ characters) in the Destination field<br>3. Fill other required fields with valid values<br>4. Click "Search" | Search succeeds; the search summary on the Hotels listing page displays the full entered Destination string with no truncation | Low |
